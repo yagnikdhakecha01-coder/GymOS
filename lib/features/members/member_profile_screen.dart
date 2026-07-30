@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../core/theme/theme.dart';
 import '../../core/widgets/custom_card.dart';
+import '../../core/widgets/success_dialog.dart';
 import 'members_viewmodel.dart';
 import '../../core/models/member.dart';
 import '../workout/workout_viewmodel.dart';
@@ -320,15 +321,41 @@ Thank you.''';
                       if (enteredAmount <= 0) return;
                       Navigator.pop(context); // Close sheet
                       
-                      setState(() => _isLoading = true);
-                      await membersVm.recordPayment(
-                        memberId: member.id,
-                        amount: enteredAmount,
-                        paymentMethod: selectedMethod,
-                        category: 'Membership',
-                        notes: notesController.text.trim().isNotEmpty ? notesController.text.trim() : 'Received Payment',
+                      // Show loading spinner
+                      showDialog(
+                        context: context,
+                        barrierDismissible: false,
+                        builder: (ctx) => const Center(child: CircularProgressIndicator(color: AppTheme.primary)),
                       );
-                      setState(() => _isLoading = false);
+
+                      try {
+                        await membersVm.recordPayment(
+                          memberId: member.id,
+                          amount: enteredAmount,
+                          paymentMethod: selectedMethod,
+                          category: 'Membership',
+                          notes: notesController.text.trim().isNotEmpty ? notesController.text.trim() : 'Received Payment',
+                        );
+                        
+                        if (mounted) {
+                          Navigator.pop(context); // Pop loading spinner
+                          SuccessDialog.show(
+                            context,
+                            title: 'Payment Successful',
+                            message: 'Payment of ₹${NumberFormat('#,##,###').format(enteredAmount)} has been received.',
+                          );
+                        }
+                      } catch (e) {
+                        if (mounted) {
+                          Navigator.pop(context); // Pop loading spinner
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              backgroundColor: Colors.redAccent,
+                              content: Text('Failed to record payment: $e'),
+                            ),
+                          );
+                        }
+                      }
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppTheme.primary,
@@ -460,16 +487,42 @@ Thank you.''';
                       final receiveToday = double.tryParse(receiveController.text) ?? 0.0;
                       Navigator.pop(context); // Close sheet
 
-                      setState(() => _isLoading = true);
-                      final updated = member.copyWith(
-                        membershipPlanId: selectedPlan!.id,
-                        discountAmount: discountVal,
-                        totalReceivedAmount: receiveToday,
-                        pendingAmount: finalAmount - receiveToday,
-                        paymentStatus: (finalAmount - receiveToday) <= 0 ? 'Paid' : 'Partial',
+                      // Show loading spinner
+                      showDialog(
+                        context: context,
+                        barrierDismissible: false,
+                        builder: (ctx) => const Center(child: CircularProgressIndicator(color: AppTheme.primary)),
                       );
-                      await membersVm.updateMember(updated, paymentMethod: selectedMethod);
-                      setState(() => _isLoading = false);
+
+                      try {
+                        final updated = member.copyWith(
+                          membershipPlanId: selectedPlan!.id,
+                          discountAmount: discountVal,
+                          totalReceivedAmount: receiveToday,
+                          pendingAmount: finalAmount - receiveToday,
+                          paymentStatus: (finalAmount - receiveToday) <= 0 ? 'Paid' : 'Partial',
+                        );
+                        await membersVm.updateMember(updated, paymentMethod: selectedMethod);
+                        
+                        if (mounted) {
+                          Navigator.pop(context); // Pop loading spinner
+                          SuccessDialog.show(
+                            context,
+                            title: 'Membership Renewed',
+                            message: '${member.name}\'s membership has been renewed successfully.',
+                          );
+                        }
+                      } catch (e) {
+                        if (mounted) {
+                          Navigator.pop(context); // Pop loading spinner
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              backgroundColor: Colors.redAccent,
+                              content: Text('Failed to renew membership: $e'),
+                            ),
+                          );
+                        }
+                      }
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppTheme.primary,
