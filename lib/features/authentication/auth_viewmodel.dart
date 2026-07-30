@@ -1,0 +1,721 @@
+import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../core/services/local_storage.dart';
+import '../../core/services/auth_service.dart';
+import '../../core/services/supabase_service.dart';
+import '../../core/models/user_profile.dart';
+import '../../core/models/staff.dart';
+import '../../core/models/association_model.dart';
+import '../../core/repository/gym_repository.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
+
+class AuthViewModel extends ChangeNotifier {
+  final LocalStorageService _storage;
+  final GymRepository _gymRepository;
+  final AuthService _authService = AuthService();
+
+  String? _selectedRole;
+  bool _isLoggedIn = false;
+  Map<String, dynamic>? _gymInfo;
+  UserProfile? _currentProfile;
+  Staff? _staffRecord;
+  bool _isLoading = false;
+  List<UserGymAssociation> _userAssociations = [];
+  UserGymAssociation? _activeAssociation;
+
+  int _unreadNotificationsCount = 0;
+
+  AuthViewModel(this._storage, this._gymRepository) {
+    try {
+      _isLoggedIn = SupabaseService.client.auth.currentSession != null;
+    } catch (_) {
+      _isLoggedIn = _storage.isLoggedIn();
+    }
+    _selectedRole = _storage.getUserRole();
+    _gymInfo = _storage.getGymInfo();
+  }
+
+  // Getters
+  int get unreadNotificationsCount => _unreadNotificationsCount;
+  String? get selectedRole => _selectedRole;
+  bool get isLoggedIn => _isLoggedIn;
+  Map<String, dynamic>? get gymInfo => _gymInfo;
+  UserProfile? get currentProfile => _currentProfile;
+  Staff? get staffRecord => _staffRecord;
+  bool get isLoading => _isLoading;
+  User? get currentUser => _authService.currentUser;
+  List<UserGymAssociation> get userAssociations => _userAssociations;
+  UserGymAssociation? get activeAssociation => _activeAssociation;
+
+  void clearUnreadNotifications() {
+    _unreadNotificationsCount = 0;
+    notifyListeners();
+  }
+
+  void setUnreadNotificationsCount(int count) {
+    _unreadNotificationsCount = count;
+    notifyListeners();
+  }
+
+  Future<void> selectRole(String role) async {
+    _selectedRole = role;
+    await _storage.setUserRole(role);
+    notifyListeners();
+  }
+
+  /// Sets loading state
+  void _setLoading(bool val) {
+    _isLoading = val;
+    notifyListeners();
+  }
+
+  /// Performs server-side verified login
+  Future<void> login(String email, String password) async {
+    _setLoading(true);
+    try {
+      await _authService.signIn(
+        email: email,
+        password: password,
+      );
+
+      // Load profile
+      final profile = await _authService.getVerifiedProfile();
+      _currentProfile = profile;
+      _isLoggedIn = true;
+      await _storage.setLoggedIn(true);
+
+      if (profile != null) {
+        // Fetch associations
+        final allAssociations = (await _authService.getUserGymAssociations(profile.id)) ?? [];
+        final roleFilter = _selectedRole;
+        final associations = allAssociations.where((a) => roleFilter == null || a.role.name == roleFilter).toList();
+        _userAssociations = associations;
+
+        _staffRecord = null;
+
+        if (associations.isEmpty) {
+          _selectedRole = _storage.getUserRole();
+          _gymInfo = null;
+        } else if (associations.length == 1) {
+          final assoc = associations.first;
+          _activeAssociation = assoc;
+          _selectedRole = assoc.role.name;
+          _currentProfile = profile.copyWith(
+            role: assoc.role,
+            gymId: assoc.gymId,
+            setupCompleted: assoc.setupCompleted,
+          );
+          await _storage.setUserRole(_selectedRole!);
+
+          if (_currentProfile?.role == UserRole.staff) {
+            try {
+              final res = await SupabaseService.client
+                  .from('staff')
+                  .select()
+                  .eq('user_id', profile.id)
+                  .maybeSingle();
+              if (res != null) {
+                _staffRecord = Staff.fromJson(res);
+              }
+            } catch (e) {
+              print('Error loading staff record in login: $e');
+            }
+          }
+
+          final info = {
+            'id': assoc.gymId,
+            'name': assoc.gymName ?? 'FitZone Gym',
+            'gym_code': assoc.gymCode ?? 'MOCK123',
+            'owner': profile.email,
+          };
+          _gymInfo = info;
+          await _storage.setGymInfo(info);
+        } else {
+          // Multiple associations exist: the UI must direct to selector.
+          _selectedRole = null;
+          _activeAssociation = null;
+        }
+      }
+      notifyListeners();
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  /// Switches active profile/gym context
+  Future<void> selectAssociation(UserGymAssociation assoc) async {
+    _activeAssociation = assoc;
+    _selectedRole = assoc.role.name;
+    await _storage.setUserRole(_selectedRole!);
+
+    if (_currentProfile != null) {
+      _currentProfile = _currentProfile!.copyWith(
+        role: assoc.role,
+        gymId: assoc.gymId,
+        setupCompleted: assoc.setupCompleted,
+      );
+    }
+
+    try {
+      final gymData = await SupabaseService.client
+          .from('gyms')
+          .select()
+          .eq('id', assoc.gymId)
+          .maybeSingle();
+
+      if (gymData != null) {
+        final info = {
+          'id': gymData['id'],
+          'name': gymData['name'],
+          'logo': gymData['logo_url'] ?? '',
+          'logo_url': gymData['logo_url'] ?? '',
+          'gym_code': gymData['gym_code'],
+          'owner': _currentProfile?.email ?? '',
+          'email': gymData['email'] ?? _currentProfile?.email ?? '',
+          'phone': gymData['phone_number'] ?? '',
+          'address': gymData['address'] ?? '',
+          'city': gymData['city'] ?? '',
+          'state': gymData['state'] ?? '',
+          'country': gymData['country'] ?? '',
+          'pin_code': gymData['pin_code'] ?? '',
+          'gym_type': gymData['gym_type'] ?? '',
+        };
+        _gymInfo = info;
+        await _storage.setGymInfo(info);
+      }
+    } catch (_) {
+      final info = {
+        'id': assoc.gymId,
+        'name': assoc.gymName ?? 'FitZone Gym',
+        'gym_code': assoc.gymCode ?? 'MOCK1234',
+        'owner': _currentProfile?.email ?? '',
+      };
+      _gymInfo = info;
+      await _storage.setGymInfo(info);
+    }
+
+    if (_currentProfile?.role == UserRole.staff) {
+      try {
+        final res = await SupabaseService.client
+            .from('staff')
+            .select()
+            .eq('user_id', _currentProfile!.id)
+            .maybeSingle();
+        if (res != null) {
+          _staffRecord = Staff.fromJson(res);
+        }
+      } catch (e) {
+        print('Error loading staff record in selectAssociation: $e');
+      }
+    } else {
+      _staffRecord = null;
+    }
+
+    notifyListeners();
+  }
+
+  /// Creates an additional gym under the owner profile context
+  Future<UserGymAssociation?> createAdditionalGym({
+    required String gymName,
+    required String gymLogo,
+    required String gymType,
+    required String gymPhone,
+    required String gymEmail,
+    required String gymAddress,
+    required String gymCity,
+    required String gymState,
+    required String gymCountry,
+    required String gymPinCode,
+  }) async {
+    _setLoading(true);
+    try {
+      final uid = currentUser?.id ?? 'mock_user_123';
+      final email = currentUser?.email ?? gymEmail;
+      
+      String gymId = 'mock_gym_${DateTime.now().millisecondsSinceEpoch}';
+      if (SupabaseService.client != null) {
+        final gymData = await SupabaseService.client
+            .from('gyms')
+            .insert({
+              'name': gymName.trim(),
+              'logo_url': gymLogo.trim(),
+              'gym_type': gymType.trim(),
+              'phone_number': gymPhone.trim(),
+              'email': gymEmail.trim(),
+              'address': gymAddress.trim(),
+              'city': gymCity.trim(),
+              'state': gymState.trim(),
+              'country': gymCountry.trim(),
+              'pin_code': gymPinCode.trim(),
+            })
+            .select()
+            .single();
+        gymId = gymData['id'] as String;
+
+        await SupabaseService.client
+            .from('user_gym_associations')
+            .insert({
+              'user_id': uid,
+              'gym_id': gymId,
+              'role': 'owner',
+              'setup_completed': true,
+            });
+
+        await _gymRepository.initializeDefaultRoles(gymId);
+      }
+
+      // Reload associations
+      await loadCurrentProfile();
+      
+      return _userAssociations.firstWhere((a) => a.gymId == gymId);
+    } catch (e) {
+      print('createAdditionalGym error: $e');
+      rethrow;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  /// Sign up using Supabase Auth only (No DB queries)
+  Future<void> signup(String email, String password) async {
+    _setLoading(true);
+    try {
+      await _authService.signUp(
+        email: email,
+        password: password,
+      );
+      _isLoggedIn = true;
+      await _storage.setLoggedIn(true);
+      notifyListeners();
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  /// Log out securely
+  Future<void> logout() async {
+    _setLoading(true);
+    try {
+      await _authService.signOut();
+      _isLoggedIn = false;
+      _selectedRole = null;
+      _currentProfile = null;
+      _gymInfo = null;
+      await _storage.clearAll();
+      _gymRepository.clearAllData();
+      notifyListeners();
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  /// Real Google Sign-In trigger (Native Google Sign-In on Mobile, OAuth on Web)
+  Future<void> signInWithGoogle() async {
+    _setLoading(true);
+    try {
+      // Clean sign out first to support switching roles/users cleanly
+      try {
+        await SupabaseService.client.auth.signOut();
+      } catch (_) {}
+
+      if (kIsWeb) {
+        // Standard OAuth flow is highly optimized and recommended for Web
+        await SupabaseService.client.auth.signInWithOAuth(
+          OAuthProvider.google,
+          redirectTo: 'http://127.0.0.1:8080/',
+        );
+      } else {
+        // Native Google Sign-In for Android & iOS
+        final GoogleSignIn googleSignIn = GoogleSignIn(
+          serverClientId: '225633708172-7st3l0u84rl22ccnaphap3dfpooai0o6.apps.googleusercontent.com',
+          scopes: ['email', 'profile'],
+        );
+
+        final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
+        if (googleUser == null) {
+          // User cancelled flow
+          return;
+        }
+
+        final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+        final String? idToken = googleAuth.idToken;
+        final String? accessToken = googleAuth.accessToken;
+
+        if (idToken == null) {
+          throw Exception('Failed to obtain Google ID Token.');
+        }
+
+        await SupabaseService.client.auth.signInWithIdToken(
+          provider: OAuthProvider.google,
+          idToken: idToken,
+          accessToken: accessToken,
+        );
+
+        await loadCurrentProfile();
+      }
+    } on PlatformException catch (pe) {
+      String msg = 'Google Sign-in failed.';
+      if (pe.code == 'sign_in_canceled' || pe.code == '12501') {
+        msg = 'Sign-in cancelled by user.';
+      } else if (pe.code == 'network_error' || pe.code == '7') {
+        msg = 'Network connection error. Please check your internet connection.';
+      } else {
+        msg = 'Google error (${pe.code}): ${pe.message}';
+      }
+      print('signInWithGoogle native platform error: $pe');
+      throw Exception(msg);
+    } catch (e) {
+      print('signInWithGoogle native error: $e');
+      rethrow;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  /// Completes the first-time setup flow after authentication
+  Future<void> completeFirstTimeSetup({
+    required UserRole role,
+    String? gymName,
+    String? gymCode,
+    required String fullName,
+  }) async {
+    _setLoading(true);
+    try {
+      final profile = await _authService.completeSetup(
+        role: role,
+        gymName: gymName,
+        gymCode: gymCode,
+        fullName: fullName,
+      );
+
+      _currentProfile = profile;
+      _selectedRole = profile.role.name;
+      _isLoggedIn = true;
+
+      // Cache locally
+      await _storage.setLoggedIn(true);
+      await _storage.setUserRole(_selectedRole!);
+
+      if (profile.gymId != null) {
+        try {
+          final gymData = await SupabaseService.client
+              .from('gyms')
+              .select()
+              .eq('id', profile.gymId!)
+              .single();
+
+          final info = {
+            'id': gymData['id'],
+            'name': gymData['name'],
+            'gym_code': gymData['gym_code'],
+            'owner': profile.email,
+          };
+          _gymInfo = info;
+          await _storage.setGymInfo(info);
+        } catch (e) {
+          final info = {
+            'id': 'mock_gym_123',
+            'name': gymName ?? 'FitZone Gym',
+            'gym_code': gymCode ?? 'MOCK1234',
+            'owner': profile.email,
+          };
+          _gymInfo = info;
+          await _storage.setGymInfo(info);
+        }
+      }
+      notifyListeners();
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  /// Set the role of the user (e.g. from splash screen check)
+  void setRole(String role) {
+    _selectedRole = role;
+    _storage.setUserRole(role);
+    notifyListeners();
+  }
+
+  /// Sets gym info and caches it
+  Future<void> setGymInfo(Map<String, dynamic> info) async {
+    _gymInfo = info;
+    await _storage.setGymInfo(info);
+    notifyListeners();
+  }
+
+  /// Syncs user profile state on boot
+  Future<void> loadCurrentProfile() async {
+    var profile = await _authService.getVerifiedProfile();
+    
+    // Fallback for offline/mock mode
+    if (profile == null && _storage.isLoggedIn()) {
+      final roleStr = _storage.getUserRole() ?? 'owner';
+      final role = roleStr == 'owner' 
+          ? UserRole.owner 
+          : (roleStr == 'staff' ? UserRole.staff : UserRole.member);
+      
+      final savedGymInfo = _storage.getGymInfo();
+      profile = UserProfile(
+        id: 'mock_user_123',
+        email: savedGymInfo?['email'] ?? 'owner@gymos.com',
+        role: role,
+        gymId: savedGymInfo != null ? (savedGymInfo['id'] ?? 'mock_gym_123') : null,
+        setupCompleted: true,
+      );
+    }
+
+    _currentProfile = profile;
+    _staffRecord = null;
+
+    if (profile != null) {
+      _isLoggedIn = true;
+      await _storage.setLoggedIn(true);
+
+      // Fetch associations
+      final allAssociations = await _authService.getUserGymAssociations(profile.id);
+      if (allAssociations != null) {
+        final roleFilter = _selectedRole;
+        final associations = allAssociations.where((a) => roleFilter == null || a.role.name == roleFilter).toList();
+        _userAssociations = associations;
+      }
+
+      if (_userAssociations.isNotEmpty) {
+        final savedRole = _storage.getUserRole();
+        final savedGym = _storage.getGymInfo();
+        
+        UserGymAssociation? matchedAssoc;
+        if (savedGym != null && savedGym['id'] != null) {
+          for (var a in _userAssociations) {
+            if (a.gymId == savedGym['id'] && a.role.name == savedRole) {
+              matchedAssoc = a;
+              break;
+            }
+          }
+        }
+        
+        final assoc = matchedAssoc ?? _userAssociations.first;
+        _activeAssociation = assoc;
+        _selectedRole = assoc.role.name;
+        _currentProfile = profile.copyWith(
+          role: assoc.role,
+          gymId: assoc.gymId,
+          setupCompleted: assoc.setupCompleted,
+        );
+        await _storage.setUserRole(_selectedRole!);
+
+        if (_currentProfile?.role == UserRole.staff) {
+          try {
+            final res = await SupabaseService.client
+                .from('staff')
+                .select()
+                .eq('user_id', profile.id)
+                .maybeSingle();
+            if (res != null) {
+              _staffRecord = Staff.fromJson(res);
+            }
+          } catch (e) {
+            print('Error loading staff record in loadCurrentProfile: $e');
+          }
+        }
+
+        // Load Gym Details
+        try {
+          final gymData = await SupabaseService.client
+              .from('gyms')
+              .select()
+              .eq('id', assoc.gymId)
+              .maybeSingle();
+
+          if (gymData != null) {
+            final info = {
+              'id': gymData['id'],
+              'name': gymData['name'],
+              'logo': gymData['logo_url'] ?? '',
+              'logo_url': gymData['logo_url'] ?? '',
+              'gym_code': gymData['gym_code'],
+              'owner': profile.email,
+              'email': gymData['email'] ?? profile.email,
+              'phone': gymData['phone_number'] ?? '',
+              'address': gymData['address'] ?? '',
+              'city': gymData['city'] ?? '',
+              'state': gymData['state'] ?? '',
+              'country': gymData['country'] ?? '',
+              'pin_code': gymData['pin_code'] ?? '',
+              'gym_type': gymData['gym_type'] ?? '',
+            };
+            _gymInfo = info;
+            await _storage.setGymInfo(info);
+          }
+        } catch (_) {
+          final info = _storage.getGymInfo() ?? {
+            'id': assoc.gymId,
+            'name': assoc.gymName ?? 'FitZone Gym',
+            'gym_code': assoc.gymCode ?? 'MOCK1234',
+            'owner': profile.email,
+          };
+          _gymInfo = info;
+          await _storage.setGymInfo(info);
+        }
+      } else {
+        _selectedRole = _storage.getUserRole();
+        _activeAssociation = null;
+        _gymInfo = null;
+      }
+    }
+    notifyListeners();
+  }
+
+  /// Complete the premium onboarding setup specifically for Gym Owners
+  Future<void> completeOwnerOnboarding({
+    required String gymName,
+    required String gymLogo,
+    required String gymType,
+    required String gymPhone,
+    required String gymEmail,
+    required String gymAddress,
+    required String gymCity,
+    required String gymState,
+    required String gymCountry,
+    required String gymPinCode,
+    required String ownerFullName,
+    required String ownerPhone,
+    required String ownerEmail,
+    required String ownerPhoto,
+    required String ownerDob,
+    required String ownerExperience,
+  }) async {
+    _setLoading(true);
+    try {
+      final profile = await _authService.completeOwnerSetup(
+        gymName: gymName,
+        gymLogo: gymLogo,
+        gymType: gymType,
+        gymPhone: gymPhone,
+        gymEmail: gymEmail,
+        gymAddress: gymAddress,
+        gymCity: gymCity,
+        gymState: gymState,
+        gymCountry: gymCountry,
+        gymPinCode: gymPinCode,
+        ownerFullName: ownerFullName,
+        ownerPhone: ownerPhone,
+        ownerEmail: ownerEmail,
+        ownerPhoto: ownerPhoto,
+        ownerDob: ownerDob,
+        ownerExperience: ownerExperience,
+      );
+
+      _currentProfile = profile;
+      if (profile.gymId != null) {
+        await _gymRepository.initializeDefaultRoles(profile.gymId!);
+      }
+      _selectedRole = profile.role.name;
+      _isLoggedIn = true;
+
+      // Cache locally
+      await _storage.setLoggedIn(true);
+      await _storage.setUserRole(_selectedRole!);
+
+      // Fetch or create the gym info maps
+      Map<String, dynamic> info;
+      if (profile.gymId != null && profile.gymId != 'mock_gym_123') {
+        try {
+          final gymData = await SupabaseService.client
+              .from('gyms')
+              .select()
+              .eq('id', profile.gymId!)
+              .single();
+
+          info = {
+            'id': gymData['id'],
+            'name': gymData['name'],
+            'logo': gymData['logo_url'] ?? gymLogo,
+            'logo_url': gymData['logo_url'] ?? gymLogo,
+            'gym_code': gymData['gym_code'],
+            'owner': profile.email,
+            'email': gymData['email'] ?? gymEmail,
+            'phone': gymData['phone_number'] ?? gymPhone,
+            'address': gymData['address'] ?? gymAddress,
+            'city': gymData['city'] ?? gymCity,
+            'state': gymData['state'] ?? gymState,
+            'country': gymData['country'] ?? gymCountry,
+            'pin_code': gymData['pin_code'] ?? gymPinCode,
+            'gym_type': gymData['gym_type'] ?? gymType,
+          };
+        } catch (_) {
+          info = {
+            'id': profile.gymId ?? 'mock_gym_123',
+            'name': gymName,
+            'logo': gymLogo,
+            'logo_url': gymLogo,
+            'gym_code': 'MOCK1234',
+            'owner': profile.email,
+            'email': gymEmail,
+            'phone': gymPhone,
+            'address': gymAddress,
+            'city': gymCity,
+            'state': gymState,
+            'country': gymCountry,
+            'pin_code': gymPinCode,
+            'gym_type': gymType,
+          };
+        }
+      } else {
+        info = {
+          'id': 'mock_gym_123',
+          'name': gymName,
+          'logo': gymLogo,
+          'logo_url': gymLogo,
+          'gym_code': 'MOCK1234',
+          'owner': profile.email,
+          'email': gymEmail,
+          'phone': gymPhone,
+          'address': gymAddress,
+          'city': gymCity,
+          'state': gymState,
+          'country': gymCountry,
+          'pin_code': gymPinCode,
+          'gym_type': gymType,
+        };
+      }
+      
+      _gymInfo = info;
+      await _storage.setGymInfo(info);
+      notifyListeners();
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  /// Submits the invitation code and mobile number to verify.
+  /// Returns a Map with success status and any error text.
+  Future<Map<String, dynamic>> submitInvitationCode({
+    required String code,
+    required String mobileNumber,
+  }) async {
+    _setLoading(true);
+    try {
+      final user = currentUser;
+      if (user == null) {
+        return {'success': false, 'error': 'No active login session found.'};
+      }
+
+      final result = await _authService.verifyInvitation(
+        code: code,
+        mobileNumber: mobileNumber,
+        userId: user.id,
+        email: user.email ?? '',
+      );
+
+      if (result['success'] == true) {
+        // Refresh local user profile and associations to direct dashboard correctly
+        await loadCurrentProfile();
+      }
+      return result;
+    } finally {
+      _setLoading(false);
+    }
+  }
+}

@@ -1,0 +1,30 @@
+# Quick Actions & UI Navigation Audit Tasks
+
+- `[x]` 1. Build PendingPaymentsScreen (Take Payment)
+- `[x]` 2. Build PaymentDetailScreen (record payment form)
+- `[x]` 3. Build ReportsScreen (10-card grid dashboard)
+- `[x]` 4. Build ReportDetailScreen (date filter + export + data)
+- `[x]` 5. Build BroadcastScreen (compose + history)
+- `[x]` Add `mobile_scanner: ^5.1.1` dependency in `pubspec.yaml`.
+- `[x]` Update `member_scan_qr_screen.dart` with real camera `MobileScanner`.
+- `[x]` Update `owner_scanner_screen.dart` with real camera `MobileScanner`.
+- `[x]` Run build checks and verify compilation
+- `[x]` Phase 1: Database Redesign Migration Script (SQL)
+- `[x]` Phase 2: Update Dart Models (`member.dart`, `staff.dart`, `pt_assignment.dart`)
+- `[x]` Phase 3: Update Repository & ViewModel Integration
+- `[x]` Phase 4: UI Connection & Integration Verification
+- `[x]` 9. Add Staff quick action directly triggers AddStaffSheet modal bottom sheet
+- `[x]` 10. Audit More settings screen: replace Backup snackbar with fully functioning BackupRestoreScreen
+- `[x]` 11. Audit Staff Dashboard: fetch live announcements, link notification bell
+- `[x]` 12. Audit Staff More screen: link Profile, Work Schedule, Change Password, Help, Settings
+- `[x]` 13. Audit Member Profile screen: replace placeholder menu items with functional dialogs/sheets
+- `[x]` 14. Fix Today's Overview date picker on Owner Dashboard
+- `[x]` 15. Fix Calendar click and filter functionality in Finance screen
+- `[x]` 16. Wire notification bell on Owner Home screen
+- `[x]` Update Member & Staff Details screens
+  - `[x]` Add Activation Card (showing Pending/Connected/Expired)
+  - `[x]` Add Generate New Invitation Code action
+  - `[x]` Add Unlink Account logic (confirm, unlink, generate new code)
+- `[x]` 17. Implement Notification details dialog and "Mark all read" updates
+- `[x]` 18. Remove "Add New Client" button from Staff Clients screen due to permissions
+- `[x]` 19. Implement StaffCodeScreen and require staff access code after sign-in

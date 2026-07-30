@@ -1,0 +1,735 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../../core/theme/theme.dart';
+import '../../core/config/env.dart';
+import '../../features/authentication/auth_viewmodel.dart';
+import 'attendance_viewmodel.dart';
+
+class OwnerQrSettingsScreen extends StatefulWidget {
+  const OwnerQrSettingsScreen({super.key});
+
+  @override
+  State<OwnerQrSettingsScreen> createState() => _OwnerQrSettingsScreenState();
+}
+
+class _OwnerQrSettingsScreenState extends State<OwnerQrSettingsScreen> {
+  @override
+  Widget build(BuildContext context) {
+    final vm = Provider.of<AttendanceViewModel>(context);
+    final authVm = Provider.of<AuthViewModel>(context);
+    final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'] ?? '';
+
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        elevation: 0,
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: AppTheme.textPrimary, size: 20),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text(
+          'Attendance Settings',
+          style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w600, color: AppTheme.textPrimary),
+        ),
+        centerTitle: true,
+      ),
+      body: vm.settings == null
+          ? const Center(child: CircularProgressIndicator(color: AppTheme.primary))
+          : SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // ── Section: Status ──
+                  Row(
+                    children: [
+                      Text(
+                        'Enable Attendance Module',
+                        style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                      ),
+                      const Spacer(),
+                      Switch(
+                        value: vm.settings?.isEnabled ?? true,
+                        activeColor: AppTheme.primary,
+                        onChanged: (val) => vm.toggleAttendanceEnabled(val),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 32, color: Color(0xFFF3F4F6)),
+
+                      Text(
+                        'Attendance Verification Method',
+                        style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                      ),
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF9F9FB),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFE5E7EB)),
+                        ),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: (vm.settings?.method == 'QR Only' || vm.settings?.method == 'Dynamic QR' || vm.settings?.method == 'Dynamic QR + WiFi' || vm.settings?.method == 'QR + WiFi')
+                                ? 'Dynamic QR'
+                                : (vm.settings?.method == 'Static QR' || vm.settings?.method == 'Static QR + WiFi' ? 'Static QR' : 'Static QR'),
+                            isExpanded: true,
+                            items: const [
+                              DropdownMenuItem(
+                                value: 'Static QR',
+                                child: Text('Static QR', style: TextStyle(color: AppTheme.textPrimary, fontSize: 13.5)),
+                              ),
+                              DropdownMenuItem(
+                                value: 'Dynamic QR',
+                                child: Text('Dynamic QR', style: TextStyle(color: AppTheme.textPrimary, fontSize: 13.5)),
+                              ),
+                            ],
+                            onChanged: (val) {
+                              if (val != null) {
+                                vm.updateAttendanceMethod(val);
+                              }
+                            },
+                          ),
+                        ),
+                      ),
+                      
+                      if (vm.settings?.method == 'Dynamic QR' || vm.settings?.method == 'QR Only' || vm.settings?.method == 'Dynamic QR + WiFi' || vm.settings?.method == 'QR + WiFi') ...[
+                        const SizedBox(height: 16),
+                        Text(
+                          'QR Code Refresh Time',
+                          style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [30, 60, 90, 120, 300].map((seconds) {
+                            final isSelected = vm.settings?.qrValiditySeconds == seconds;
+                            String label = '';
+                            if (seconds < 60) label = '${seconds}s';
+                            else if (seconds == 90) label = '1.5m';
+                            else label = '${seconds ~/ 60}m';
+
+                            return ChoiceChip(
+                              label: Text(label),
+                              selected: isSelected,
+                              onSelected: (selected) {
+                                if (selected) vm.updateQrValiditySeconds(seconds);
+                              },
+                              selectedColor: AppTheme.primary,
+                              labelStyle: TextStyle(
+                                color: isSelected ? Colors.white : AppTheme.textPrimary,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ],
+                      const SizedBox(height: 24),
+
+                  // ── Section: WiFi Config ──
+                  if (vm.isWiFiVerificationEnabled) ...[
+                    Text(
+                      'WiFi Verification Configuration',
+                      style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFFF0F0F2)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Registered SSID', style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted)),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    vm.savedGymWiFiSSID.isEmpty ? "None Registered" : vm.savedGymWiFiSSID,
+                                    style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                                  ),
+                                ],
+                              ),
+                              const Spacer(),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: vm.isGymWiFiConnected ? const Color(0xFFDCFCE7) : AppTheme.dangerLight,
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  vm.isGymWiFiConnected ? 'Connected' : 'Not Connected',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.bold,
+                                    color: vm.isGymWiFiConnected ? const Color(0xFF16A34A) : AppTheme.danger,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: SizedBox(
+                                  height: 40,
+                                  child: ElevatedButton(
+                                    onPressed: () {
+                                      vm.setCurrentConnectedSSID('FitZone_Gym_5G');
+                                      vm.updateWiFiSettings('FitZone_Gym_5G', '');
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('Registered active WiFi: FitZone_Gym_5G'),
+                                          backgroundColor: AppTheme.success,
+                                        ),
+                                      );
+                                    },
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: AppTheme.primary,
+                                      foregroundColor: Colors.white,
+                                      elevation: 0,
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                    ),
+                                    child: Text(
+                                      'Register WiFi',
+                                      style: GoogleFonts.inter(fontSize: 11.5, fontWeight: FontWeight.w600),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: SizedBox(
+                                  height: 40,
+                                  child: OutlinedButton(
+                                    onPressed: () => _showManualWifiDialog(context, vm),
+                                    style: OutlinedButton.styleFrom(
+                                      side: const BorderSide(color: AppTheme.primary),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                    ),
+                                    child: Text(
+                                      'Manual Setup',
+                                      style: GoogleFonts.inter(fontSize: 11.5, fontWeight: FontWeight.w600, color: AppTheme.primary),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                  ],
+
+                  // ── Section: Attendance Rules ──
+                  Text(
+                    'Attendance Rules',
+                    style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFFF0F0F2)),
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Auto Mark Absent',
+                                    style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.w600, color: AppTheme.textPrimary),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'Automatically mark absent if shift starts and no check-in',
+                                    style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Switch(
+                              value: vm.settings?.autoMarkAbsent ?? false,
+                              activeColor: AppTheme.primary,
+                              onChanged: (val) => vm.toggleAutoMarkAbsent(val),
+                            ),
+                          ],
+                        ),
+                        const Divider(height: 24, color: Color(0xFFF3F4F6)),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Auto Close Shift',
+                                    style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.w600, color: AppTheme.textPrimary),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'Automatically check out staff when shift ends',
+                                    style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Switch(
+                              value: vm.settings?.autoCloseShift ?? false,
+                              activeColor: AppTheme.primary,
+                              onChanged: (val) => vm.toggleAutoCloseShift(val),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+
+                  // ── Section: Late Time ──
+                  Text(
+                    'Late Entry Time Settings (Staff)',
+                    style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                  ),
+                  const SizedBox(height: 12),
+                  InkWell(
+                    onTap: () async {
+                      final time = await showTimePicker(
+                        context: context,
+                        initialTime: TimeOfDay.now(),
+                      );
+                      if (time != null) {
+                        final formatted = time.format(context);
+                        vm.updateLateTime(formatted);
+                      }
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF9F9FB),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFE5E7EB)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.access_time_rounded, color: AppTheme.textSecondary, size: 20),
+                          const SizedBox(width: 12),
+                          Text(
+                            'Late Threshold: ${vm.lateTimeSetting}',
+                            style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.w500, color: AppTheme.textPrimary),
+                          ),
+                          const Spacer(),
+                          const Icon(Icons.edit_calendar_outlined, color: AppTheme.primary, size: 20),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+
+                  // ── Section: Static QR ──
+                  if (vm.settings?.method == 'Static QR') ...[
+                    Text(
+                      'Static QR Settings',
+                      style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFFF0F0F2)),
+                      ),
+                      child: Column(
+                        children: [
+                          Row(
+                            children: [
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Static Token', style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted)),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    vm.settings?.staticQrToken.substring(0, 12) ?? 'Not Generated',
+                                    style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                                  ),
+                                ],
+                              ),
+                              const Spacer(),
+                              Row(
+                                children: [
+                                  Text('Locked', style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary)),
+                                  Switch(
+                                    value: vm.settings?.staticQrLocked ?? false,
+                                    activeColor: AppTheme.primary,
+                                    onChanged: (val) => vm.toggleStaticQrLock(val),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton(
+                                  onPressed: (vm.settings?.staticQrLocked ?? false)
+                                      ? null
+                                      : () => vm.generateNewStaticQr(),
+                                  style: OutlinedButton.styleFrom(
+                                    side: const BorderSide(color: AppTheme.primary),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  ),
+                                  child: Text('Regenerate Token', style: GoogleFonts.inter(fontSize: 11.5)),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: () {
+                                    final token = vm.settings?.staticQrToken ?? '';
+                                    if (token.isNotEmpty) {
+                                      final url = 'https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=$token';
+                                      launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+                                    }
+                                  },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppTheme.primary,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                    elevation: 0,
+                                  ),
+                                  child: Text('Download QR', style: GoogleFonts.inter(fontSize: 11.5, color: Colors.white)),
+                                ),
+                              ),
+                            ],
+                          )
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                  ],
+
+                  // ── Section: Display Management ──
+                  Row(
+                    children: [
+                      Text(
+                        'Display Management',
+                        style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                      ),
+                      const Spacer(),
+                      TextButton.icon(
+                        onPressed: () async {
+                          final link = await vm.getOrGenerateDisplayLink();
+                          if (link.isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Failed to generate display link'), backgroundColor: AppTheme.danger),
+                            );
+                            return;
+                          }
+                          Clipboard.setData(ClipboardData(text: link));
+                          showDialog(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                              title: const Text('Display Link Generated'),
+                              content: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Copy this link and open it on your Smart TV or tablet browser:'),
+                                  const SizedBox(height: 12),
+                                  Container(
+                                    padding: const EdgeInsets.all(10),
+                                    decoration: BoxDecoration(color: const Color(0xFFF3F4F6), borderRadius: BorderRadius.circular(8)),
+                                    child: Text(link, style: GoogleFonts.inter(fontSize: 12, fontStyle: FontStyle.italic)),
+                                  ),
+                                ],
+                              ),
+                               actions: [
+                                TextButton(
+                                  onPressed: () {
+                                    Clipboard.setData(ClipboardData(text: link));
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('Display link copied to clipboard!'), backgroundColor: AppTheme.success),
+                                    );
+                                    Navigator.pop(ctx);
+                                  },
+                                  child: const Text('Copy Link', style: TextStyle(color: AppTheme.primary, fontWeight: FontWeight.bold)),
+                                ),
+                                TextButton(
+                                  onPressed: () => Navigator.pop(ctx),
+                                  child: const Text('Close', style: TextStyle(color: AppTheme.textMuted)),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.add_to_queue_rounded, size: 16, color: AppTheme.primary),
+                        label: Text('Get Link', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.primary)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  if (vm.displaySessions.isEmpty)
+                    Container(
+                      padding: const EdgeInsets.symmetric(vertical: 20),
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF9F9FB),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFF3F4F6)),
+                      ),
+                      child: Center(
+                        child: Text(
+                          'No displays registered yet',
+                          style: GoogleFonts.inter(fontSize: 12.5, color: AppTheme.textMuted),
+                        ),
+                      ),
+                    )
+                  else
+                    Column(
+                      children: vm.displaySessions.map((session) {
+                        final isOnline = DateTime.now().difference(session.lastSeen).inSeconds < 45;
+                        
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: const Color(0xFFE5E7EB)),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.02),
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
+                              )
+                            ]
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(10),
+                                    decoration: BoxDecoration(
+                                      color: AppTheme.primary.withOpacity(0.1),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(Icons.tv_rounded, color: AppTheme.primary, size: 20),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          session.deviceName ?? 'Generic Display',
+                                          style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Row(
+                                          children: [
+                                            Container(
+                                              width: 8,
+                                              height: 8,
+                                              decoration: BoxDecoration(
+                                                color: isOnline ? Colors.green : Colors.red,
+                                                shape: BoxShape.circle,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 6),
+                                            Text(
+                                              isOnline ? 'Online' : 'Offline',
+                                              style: GoogleFonts.inter(fontSize: 11, color: isOnline ? Colors.green : Colors.red, fontWeight: FontWeight.w600),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Expanded(
+                                              child: Text(
+                                                '• Public ID: ${session.displayPublicId}',
+                                                style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted),
+                                                overflow: TextOverflow.ellipsis,
+                                                maxLines: 1,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  PopupMenuButton<String>(
+                                    icon: const Icon(Icons.more_vert_rounded, color: AppTheme.textMuted),
+                                    onSelected: (action) async {
+                                      if (action == 'RENAME') {
+                                        _showRenameDialog(context, vm, session.id, session.deviceName ?? '');
+                                      } else if (action == 'TOGGLE_STATUS') {
+                                        await vm.manageDisplayDevice(session.id, 'TOGGLE_STATUS');
+                                      } else if (action == 'REVERIFY') {
+                                        await vm.manageDisplayDevice(session.id, 'REVERIFY');
+                                      } else if (action == 'REMOVE') {
+                                        await vm.manageDisplayDevice(session.id, 'REMOVE');
+                                      }
+                                    },
+                                    itemBuilder: (ctx) => [
+                                      const PopupMenuItem(value: 'RENAME', child: Text('Rename Display')),
+                                      PopupMenuItem(
+                                        value: 'TOGGLE_STATUS', 
+                                        child: Text(session.isEnabled ? 'Disable Display' : 'Enable Display'),
+                                      ),
+                                      const PopupMenuItem(value: 'REVERIFY', child: Text('Force Re-verify')),
+                                      const PopupMenuItem(value: 'REMOVE', child: Text('Remove Device', style: TextStyle(color: Colors.red))),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                              const Divider(height: 24, color: Color(0xFFF3F4F6)),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text('Status', style: GoogleFonts.inter(fontSize: 10, color: AppTheme.textMuted)),
+                                      const SizedBox(height: 2),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color: session.isVerified
+                                              ? const Color(0xFFDCFCE7)
+                                              : const Color(0xFFFEF3C7),
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: Text(
+                                          session.isVerified ? 'Verified' : 'Pending Verification',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 10,
+                                            color: session.isVerified ? const Color(0xFF16A34A) : const Color(0xFFD97706),
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  Column(
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: [
+                                      Text('Last Seen', style: GoogleFonts.inter(fontSize: 10, color: AppTheme.textMuted)),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        DateFormat('hh:mm a, dd MMM').format(session.lastSeen.toLocal()),
+                                        style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary, fontWeight: FontWeight.w500),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                ],
+              ),
+            ),
+    );
+  }
+
+  void _showManualWifiDialog(BuildContext context, AttendanceViewModel vm) {
+    final controller = TextEditingController(text: vm.savedGymWiFiSSID);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text('Manual WiFi Setup', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold)),
+        content: TextField(
+          controller: controller,
+          decoration: InputDecoration(
+            labelText: 'Gym WiFi SSID',
+            labelStyle: GoogleFonts.inter(fontSize: 13),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Cancel', style: GoogleFonts.inter(color: AppTheme.textMuted)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              vm.updateWiFiSettings(controller.text, '');
+              Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Registered WiFi: ${controller.text}'), backgroundColor: AppTheme.success),
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primary,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: Text('Save', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showRenameDialog(BuildContext context, AttendanceViewModel vm, String displayId, String currentName) {
+    final controller = TextEditingController(text: currentName);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text('Rename Display Device', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold)),
+        content: TextField(
+          controller: controller,
+          decoration: InputDecoration(
+            labelText: 'Display Name',
+            labelStyle: GoogleFonts.inter(fontSize: 13),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Cancel', style: GoogleFonts.inter(color: AppTheme.textMuted)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              await vm.manageDisplayDevice(displayId, 'RENAME', name: controller.text);
+              Navigator.pop(ctx);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primary,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: Text('Save', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+  }
+}
