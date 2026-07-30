@@ -15,8 +15,38 @@ import 'add_member_wizard_screen.dart';
 import '../attendance/attendance_viewmodel.dart';
 import '../../core/theme/responsive.dart';
 
-class MembersScreen extends StatelessWidget {
+class MembersScreen extends StatefulWidget {
   const MembersScreen({super.key});
+
+  @override
+  State<MembersScreen> createState() => _MembersScreenState();
+}
+
+class _MembersScreenState extends State<MembersScreen> {
+  late ScrollController _scrollController;
+  double _scrollOffset = 0.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController = ScrollController();
+    _scrollController.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.hasClients) {
+      setState(() {
+        _scrollOffset = _scrollController.offset;
+      });
+    }
+  }
 
   void _showAddMemberSheet(BuildContext context) {
     Navigator.push(
@@ -37,19 +67,20 @@ class MembersScreen extends StatelessWidget {
 
     final checkInRecords = attendanceVm.attendanceHistory.where((r) => r.status == 'Present').length;
     final totalPending = membersVm.allMembers.fold<double>(0, (sum, m) => sum + m.pendingAmount);
-    final bool canScroll = allMembers.length >= 4;
+
+    final double cardsOpacity = (1.0 - (_scrollOffset / 150.0)).clamp(0.0, 1.0);
 
     return Scaffold(
       backgroundColor: AppTheme.background,
       body: SafeArea(
-        child: NestedScrollView(
-          physics: canScroll ? const BouncingScrollPhysics() : const NeverScrollableScrollPhysics(),
-          headerSliverBuilder: (context, innerBoxIsScrolled) {
-            return [
-              SliverToBoxAdapter(
+        child: CustomScrollView(
+          controller: _scrollController,
+          slivers: [
+            SliverToBoxAdapter(
+              child: Opacity(
+                opacity: cardsOpacity,
                 child: Column(
                   children: [
-                    // Mockup Header Row
                     Padding(
                       padding: const EdgeInsets.fromLTRB(AppTheme.pagePadding, 16, AppTheme.pagePadding, 12),
                       child: Row(
@@ -96,8 +127,6 @@ class MembersScreen extends StatelessWidget {
                         ],
                       ),
                     ),
-
-                    // Mockup 2x2 Sparkline Stat Grid
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: AppTheme.pagePadding),
                       child: ResponsiveGrid(
@@ -107,7 +136,6 @@ class MembersScreen extends StatelessWidget {
                         runSpacing: 12,
                         childAspectRatio: context.selectValue(mobile: 1.35, smallMobile: 1.05, tablet: 1.6),
                         children: [
-                          // Attendance stat
                           _buildSparklineStat(
                             title: 'Attendance',
                             value: '$checkInRecords',
@@ -118,7 +146,6 @@ class MembersScreen extends StatelessWidget {
                             sparklineData: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, checkInRecords.toDouble()],
                             sparklineColor: AppTheme.primary,
                           ),
-                          // Active Members stat
                           _buildSparklineStat(
                             title: 'Active Members',
                             value: '$activeCount',
@@ -129,7 +156,6 @@ class MembersScreen extends StatelessWidget {
                             sparklineData: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, activeCount.toDouble()],
                             sparklineColor: AppTheme.success,
                           ),
-                          // Pending Amount stat
                           _buildSparklineStat(
                             title: 'Pending Amount',
                             value: '₹ ${NumberFormat('#,##,###').format(totalPending)}',
@@ -140,15 +166,14 @@ class MembersScreen extends StatelessWidget {
                             sparklineData: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, totalPending.toDouble()],
                             sparklineColor: AppTheme.warning,
                           ),
-                          // PT Members stat
                           _buildSparklineStat(
                             title: 'PT Members',
-                            value: '$trialCount',
+                            value: '0',
                             subtitle: 'Personal training',
                             trend: '↑ 0%',
                             trendLabel: 'vs last month',
                             trendColor: AppTheme.success,
-                            sparklineData: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, trialCount.toDouble()],
+                            sparklineData: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
                             sparklineColor: AppTheme.info,
                           ),
                         ],
@@ -158,59 +183,64 @@ class MembersScreen extends StatelessWidget {
                   ],
                 ),
               ),
-            ];
-          },
-          body: Column(
-            children: [
-              // Tab bar switcher
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: AppTheme.pagePadding),
-                child: Row(
-                  children: [
-                    _buildMockTab('All ($totalCount)', membersVm.selectedFilter == 'All', () {
-                      membersVm.setFilter('All');
-                    }),
-                    _buildMockTab('Active ($activeCount)', membersVm.selectedFilter == 'Active', () {
-                      membersVm.setFilter('Active');
-                    }),
-                    _buildMockTab('Inactive ($inactiveCount)', membersVm.selectedFilter == 'Inactive', () {
-                      membersVm.setFilter('Inactive');
-                    }),
-                    _buildMockTab('Trial ($trialCount)', membersVm.selectedFilter == 'Trial', () {
-                      membersVm.setFilter('Trial');
-                    }),
-                  ],
+            ),
+            SliverPersistentHeader(
+              pinned: true,
+              delegate: _MembersHeaderDelegate(
+                height: 56.0,
+                child: Container(
+                  color: AppTheme.background,
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: AppTheme.pagePadding),
+                    child: Row(
+                      children: [
+                        _buildMockTab('All ($totalCount)', membersVm.selectedFilter == 'All', () {
+                          membersVm.setFilter('All');
+                        }),
+                        _buildMockTab('Active ($activeCount)', membersVm.selectedFilter == 'Active', () {
+                          membersVm.setFilter('Active');
+                        }),
+                        _buildMockTab('Inactive ($inactiveCount)', membersVm.selectedFilter == 'Inactive', () {
+                          membersVm.setFilter('Inactive');
+                        }),
+                        _buildMockTab('Trial ($trialCount)', membersVm.selectedFilter == 'Trial', () {
+                          membersVm.setFilter('Trial');
+                        }),
+                      ],
+                    ),
+                  ),
                 ),
               ),
-              const SizedBox(height: 12),
-
-              // Member Cards List
-              Expanded(
-                child: allMembers.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.people_outline_rounded, size: 48, color: AppTheme.textMuted.withOpacity(0.5)),
-                            const SizedBox(height: 12),
-                            Text(
-                              'No Members Found',
-                              style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Members added to this category will appear here.',
-                              style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary),
-                            ),
-                          ],
-                        ),
-                      )
-                    : ListView.builder(
-                        physics: canScroll ? const AlwaysScrollableScrollPhysics() : const NeverScrollableScrollPhysics(),
-                        padding: const EdgeInsets.symmetric(horizontal: AppTheme.pagePadding),
-                        itemCount: allMembers.length,
-                        itemBuilder: (context, index) {
+            ),
+            allMembers.isEmpty
+                ? SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.people_outline_rounded, size: 48, color: AppTheme.textMuted.withOpacity(0.5)),
+                          const SizedBox(height: 12),
+                          Text(
+                            'No Members Found',
+                            style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Members added to this category will appear here.',
+                            style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : SliverPadding(
+                    padding: const EdgeInsets.symmetric(horizontal: AppTheme.pagePadding, vertical: 8),
+                    sliver: SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) {
                           final member = allMembers[index];
                           final isTrial = member.status == 'Trial';
                           final bool isPaid = member.paymentStatus.toLowerCase() == 'paid' || member.pendingAmount <= 0;
@@ -225,7 +255,7 @@ class MembersScreen extends StatelessWidget {
                               nextDueStr = exp;
                             }
                           }
-                          
+
                           return CustomCard(
                             margin: const EdgeInsets.only(bottom: 12),
                             onTap: () {
@@ -373,10 +403,11 @@ class MembersScreen extends StatelessWidget {
                             ),
                           );
                         },
+                        childCount: allMembers.length,
                       ),
-              ),
-            ],
-          ),
+                    ),
+                  ),
+          ],
         ),
       ),
     );
@@ -431,11 +462,10 @@ class MembersScreen extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              // Icon container placeholder resembling mockup
               Container(
                 padding: const EdgeInsets.all(6),
                 decoration: BoxDecoration(
-                  color: sparklineColor.withValues(alpha: 0.1),
+                  color: sparklineColor.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Icon(
@@ -485,7 +515,6 @@ class MembersScreen extends StatelessWidget {
                   ],
                 ),
               ),
-              // Sparkline curve
               MiniSparkline(data: sparklineData, color: sparklineColor),
             ],
           ),
@@ -509,6 +538,29 @@ class MembersScreen extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+class _MembersHeaderDelegate extends SliverPersistentHeaderDelegate {
+  final double height;
+  final Widget child;
+
+  _MembersHeaderDelegate({required this.height, required this.child});
+
+  @override
+  double get minExtent => height;
+
+  @override
+  double get maxExtent => height;
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+    return child;
+  }
+
+  @override
+  bool shouldRebuild(covariant _MembersHeaderDelegate oldDelegate) {
+    return oldDelegate.height != height || oldDelegate.child != child;
   }
 }
 
