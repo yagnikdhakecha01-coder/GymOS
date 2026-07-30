@@ -41,12 +41,12 @@ BEGIN
     -- Calculate expense_date and revenue_date
     v_expense_date := NEW.date;
     
-    -- If category is Salary and reference_id is a valid UUID (usually pointing to salary_drafts)
-    IF v_category = 'Salary' AND NEW.reference_id IS NOT NULL AND NEW.reference_id ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' THEN
+    -- If category is Salary and reference_id is not null
+    IF v_category = 'Salary' AND NEW.reference_id IS NOT NULL THEN
         -- Try to fetch salary month from salary drafts
         SELECT salary_month INTO v_draft_month
         FROM public.salary_drafts
-        WHERE id = NEW.reference_id::UUID;
+        WHERE id = NEW.reference_id;
 
         IF v_draft_month IS NOT NULL THEN
             v_expense_date := to_date(v_draft_month, 'Month YYYY');
@@ -54,10 +54,10 @@ BEGIN
     END IF;
 
     -- If category is Salary and is an Advance (reference_id is linked to salary_advance_ledger)
-    IF v_expense_date = NEW.date AND v_category = 'Salary' AND NEW.reference_id IS NOT NULL AND NEW.reference_id ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' THEN
+    IF v_expense_date = NEW.date AND v_category = 'Salary' AND NEW.reference_id IS NOT NULL THEN
         SELECT given_date INTO v_expense_date
         FROM public.salary_advance_ledger
-        WHERE id = NEW.reference_id::UUID;
+        WHERE id = NEW.reference_id;
         
         -- Fallback to date if not found
         IF v_expense_date IS NULL THEN
@@ -195,10 +195,10 @@ BEGIN
 
             -- Calculate expense_date and revenue_date
             v_expense_date := r_tx.date;
-            IF v_category = 'Salary' AND r_tx.reference_id IS NOT NULL AND r_tx.reference_id ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' THEN
+            IF v_category = 'Salary' AND r_tx.reference_id IS NOT NULL THEN
                 SELECT salary_month INTO v_draft_month
                 FROM public.salary_drafts
-                WHERE id = r_tx.reference_id::UUID;
+                WHERE id = r_tx.reference_id;
 
                 IF v_draft_month IS NOT NULL THEN
                     v_expense_date := to_date(v_draft_month, 'Month YYYY');
@@ -206,7 +206,7 @@ BEGIN
                     -- Check if it is an advance ledger record instead
                     SELECT given_date INTO v_expense_date
                     FROM public.salary_advance_ledger
-                    WHERE id = r_tx.reference_id::UUID;
+                    WHERE id = r_tx.reference_id;
                     
                     IF v_expense_date IS NULL THEN
                         v_expense_date := r_tx.date;
