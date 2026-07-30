@@ -188,51 +188,55 @@ class _MembersScreenState extends State<MembersScreen> {
               pinned: true,
               delegate: _MembersHeaderDelegate(
                 height: 56.0,
-                child: Container(
-                  color: AppTheme.background,
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: AppTheme.pagePadding),
-                    child: Row(
-                      children: [
-                        _buildMockTab('All ($totalCount)', membersVm.selectedFilter == 'All', () {
-                          membersVm.setFilter('All');
-                        }),
-                        _buildMockTab('Active ($activeCount)', membersVm.selectedFilter == 'Active', () {
-                          membersVm.setFilter('Active');
-                        }),
-                        _buildMockTab('Inactive ($inactiveCount)', membersVm.selectedFilter == 'Inactive', () {
-                          membersVm.setFilter('Inactive');
-                        }),
-                        _buildMockTab('Trial ($trialCount)', membersVm.selectedFilter == 'Trial', () {
-                          membersVm.setFilter('Trial');
-                        }),
-                      ],
+                child: SizedBox.expand(
+                  child: Container(
+                    color: AppTheme.background,
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: AppTheme.pagePadding),
+                      child: Row(
+                        children: [
+                          _buildMockTab('All ($totalCount)', membersVm.selectedFilter == 'All', () {
+                            membersVm.setFilter('All');
+                          }),
+                          _buildMockTab('Active ($activeCount)', membersVm.selectedFilter == 'Active', () {
+                            membersVm.setFilter('Active');
+                          }),
+                          _buildMockTab('Inactive ($inactiveCount)', membersVm.selectedFilter == 'Inactive', () {
+                            membersVm.setFilter('Inactive');
+                          }),
+                          _buildMockTab('Trial ($trialCount)', membersVm.selectedFilter == 'Trial', () {
+                            membersVm.setFilter('Trial');
+                          }),
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
             allMembers.isEmpty
-                ? SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.people_outline_rounded, size: 48, color: AppTheme.textMuted.withOpacity(0.5)),
-                          const SizedBox(height: 12),
-                          Text(
-                            'No Members Found',
-                            style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Members added to this category will appear here.',
-                            style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary),
-                          ),
-                        ],
+                ? SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 80.0),
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.people_outline_rounded, size: 48, color: AppTheme.textMuted.withOpacity(0.5)),
+                            const SizedBox(height: 12),
+                            Text(
+                              'No Members Found',
+                              style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Members added to this category will appear here.',
+                              style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   )
