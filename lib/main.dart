@@ -20,6 +20,7 @@ import 'features/attendance/attendance_viewmodel.dart';
 import 'features/member_app/member_app_viewmodel.dart';
 import 'features/gym_settings/gym_settings_viewmodel.dart';
 import 'core/services/notification_service.dart';
+import 'core/services/alerts_notification_engine.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -117,6 +118,12 @@ class GymOSApp extends StatelessWidget {
         debugShowCheckedModeBanner: false,
         theme: AppTheme.lightTheme,
         home: const SplashScreen(),
+        builder: (context, child) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            AlertsNotificationEngine.start(context);
+          });
+          return child!;
+        },
       ),
     );
   }

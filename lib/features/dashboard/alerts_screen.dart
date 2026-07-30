@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -19,16 +20,23 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
   bool _isLoading = true;
   Map<String, dynamic> _alertsData = {};
   String? _errorMsg;
+  Timer? _refreshTimer;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
     _fetchAlerts();
+    
+    // Periodically fetch from DB every 3 seconds for instant updates in the UI
+    _refreshTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
+      _fetchAlertsQuietly();
+    });
   }
 
   @override
   void dispose() {
+    _refreshTimer?.cancel();
     _tabController.dispose();
     super.dispose();
   }
@@ -73,6 +81,27 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
     }
   }
 
+  Future<void> _fetchAlertsQuietly() async {
+    try {
+      final authVm = Provider.of<AuthViewModel>(context, listen: false);
+      final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
+      
+      if (gymId != null && SupabaseService.isInitialized) {
+        final response = await SupabaseService.client.rpc(
+          'get_dashboard_alerts_v1',
+          params: {'p_gym_id': gymId},
+        );
+        if (mounted) {
+          setState(() {
+            _alertsData = Map<String, dynamic>.from(response as Map);
+          });
+        }
+      }
+    } catch (_) {
+      // Fail silently in background quiet refresh
+    }
+  }
+
   List<String> _getAvatars(dynamic raw) {
     if (raw == null || raw is! List) return [];
     return raw
@@ -92,13 +121,16 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
   @override
   Widget build(BuildContext context) {
     final endingToday = _alertsData['memberships_ending_today']?['count'] ?? 0;
+    final expiring1 = _alertsData['memberships_expiring_1_day']?['count'] ?? 0;
+    final expiring3 = _alertsData['memberships_expiring_3_days']?['count'] ?? 0;
+    final expiring7 = _alertsData['memberships_expiring_7_days']?['count'] ?? 0;
     final expiring15 = _alertsData['memberships_expiring_15_days']?['count'] ?? 0;
     final staffLeaves = _alertsData['staff_leave_requests']?['count'] ?? 0;
     final holidayRequests = _alertsData['holiday_requests']?['count'] ?? 0;
     final paymentsPending = _alertsData['payments_pending']?['count'] ?? 0;
     final ptTrials = _alertsData['pt_trials']?['count'] ?? 0;
 
-    final totalCount = endingToday + expiring15 + staffLeaves + holidayRequests + paymentsPending + ptTrials;
+    final totalCount = endingToday + expiring1 + expiring3 + expiring7 + expiring15 + staffLeaves + holidayRequests + paymentsPending + ptTrials;
 
     return Scaffold(
       backgroundColor: AppTheme.background,
@@ -224,6 +256,9 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
 
   Widget _buildAllAlertsTab() {
     final endingToday = _alertsData['memberships_ending_today']?['count'] ?? 0;
+    final expiring1 = _alertsData['memberships_expiring_1_day']?['count'] ?? 0;
+    final expiring3 = _alertsData['memberships_expiring_3_days']?['count'] ?? 0;
+    final expiring7 = _alertsData['memberships_expiring_7_days']?['count'] ?? 0;
     final expiring15 = _alertsData['memberships_expiring_15_days']?['count'] ?? 0;
     final staffLeaves = _alertsData['staff_leave_requests']?['count'] ?? 0;
     final holidayRequests = _alertsData['holiday_requests']?['count'] ?? 0;
@@ -231,13 +266,16 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
     final ptTrials = _alertsData['pt_trials']?['count'] ?? 0;
 
     final endingAvatars = _getAvatars(_alertsData['memberships_ending_today']?['avatars']);
+    final expiring1Avatars = _getAvatars(_alertsData['memberships_expiring_1_day']?['avatars']);
+    final expiring3Avatars = _getAvatars(_alertsData['memberships_expiring_3_days']?['avatars']);
+    final expiring7Avatars = _getAvatars(_alertsData['memberships_expiring_7_days']?['avatars']);
     final expiring15Avatars = _getAvatars(_alertsData['memberships_expiring_15_days']?['avatars']);
     final staffLeavesAvatars = _getAvatars(_alertsData['staff_leave_requests']?['avatars']);
     final holidayAvatars = _getAvatars(_alertsData['holiday_requests']?['avatars']);
     final paymentsAvatars = _getAvatars(_alertsData['payments_pending']?['avatars']);
     final ptAvatars = _getAvatars(_alertsData['pt_trials']?['avatars']);
 
-    final totalCount = endingToday + expiring15 + staffLeaves + holidayRequests + paymentsPending + ptTrials;
+    final totalCount = endingToday + expiring1 + expiring3 + expiring7 + expiring15 + staffLeaves + holidayRequests + paymentsPending + ptTrials;
 
     if (totalCount == 0) {
       return _buildEmptyState();
@@ -249,7 +287,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          if (endingToday > 0 || expiring15 > 0) ...[
+          if (endingToday > 0 || expiring1 > 0 || expiring3 > 0 || expiring7 > 0 || expiring15 > 0) ...[
             _buildSectionHeader('Membership Alerts'),
             const SizedBox(height: 8),
             if (endingToday > 0)
@@ -269,9 +307,60 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
                   );
                 },
               ),
-            if (expiring15 > 0)
+            if (expiring1 > 0)
+              _buildAlertCard(
+                Icons.hourglass_bottom_rounded,
+                Colors.redAccent,
+                const Color(0xFFFFECEF),
+                '$expiring1 ${expiring1 == 1 ? "Membership" : "Memberships"}',
+                'expiring tomorrow',
+                'Urgent follow-up needed',
+                avatars: expiring1Avatars,
+                badgeText: _getBadgeText(expiring1, expiring1Avatars),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const ExpiringMembershipsScreen()),
+                  );
+                },
+              ),
+            if (expiring3 > 0)
+              _buildAlertCard(
+                Icons.access_time_rounded,
+                Colors.orange,
+                const Color(0xFFFFF6ED),
+                '$expiring3 ${expiring3 == 1 ? "Membership" : "Memberships"}',
+                'expiring in 3 days',
+                'Send payment reminder',
+                avatars: expiring3Avatars,
+                badgeText: _getBadgeText(expiring3, expiring3Avatars),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const ExpiringMembershipsScreen()),
+                  );
+                },
+              ),
+            if (expiring7 > 0)
               _buildAlertCard(
                 Icons.calendar_today_rounded,
+                Colors.amber,
+                const Color(0xFFFFFBEB),
+                '$expiring7 ${expiring7 == 1 ? "Membership" : "Memberships"}',
+                'expiring in 7 days',
+                'Send friendly alert',
+                avatars: expiring7Avatars,
+                badgeText: _getBadgeText(expiring7, expiring7Avatars),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const ExpiringMembershipsScreen()),
+                  );
+                },
+              ),
+            if (expiring15 > 0)
+              _buildAlertCard(
+                Icons.calendar_month_rounded,
                 Colors.orange,
                 const Color(0xFFFFF6ED),
                 '$expiring15 ${expiring15 == 1 ? "Membership" : "Memberships"}',
@@ -348,12 +437,18 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
 
   Widget _buildMembershipAlertsTab() {
     final endingToday = _alertsData['memberships_ending_today']?['count'] ?? 0;
+    final expiring1 = _alertsData['memberships_expiring_1_day']?['count'] ?? 0;
+    final expiring3 = _alertsData['memberships_expiring_3_days']?['count'] ?? 0;
+    final expiring7 = _alertsData['memberships_expiring_7_days']?['count'] ?? 0;
     final expiring15 = _alertsData['memberships_expiring_15_days']?['count'] ?? 0;
 
     final endingAvatars = _getAvatars(_alertsData['memberships_ending_today']?['avatars']);
+    final expiring1Avatars = _getAvatars(_alertsData['memberships_expiring_1_day']?['avatars']);
+    final expiring3Avatars = _getAvatars(_alertsData['memberships_expiring_3_days']?['avatars']);
+    final expiring7Avatars = _getAvatars(_alertsData['memberships_expiring_7_days']?['avatars']);
     final expiring15Avatars = _getAvatars(_alertsData['memberships_expiring_15_days']?['avatars']);
 
-    if (endingToday == 0 && expiring15 == 0) {
+    if (endingToday == 0 && expiring1 == 0 && expiring3 == 0 && expiring7 == 0 && expiring15 == 0) {
       return _buildEmptyState();
     }
 
@@ -380,9 +475,60 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
                 );
               },
             ),
-          if (expiring15 > 0)
+          if (expiring1 > 0)
+            _buildAlertCard(
+              Icons.hourglass_bottom_rounded,
+              Colors.redAccent,
+              const Color(0xFFFFECEF),
+              '$expiring1 ${expiring1 == 1 ? "Membership" : "Memberships"}',
+              'expiring tomorrow',
+              'Urgent follow-up needed',
+              avatars: expiring1Avatars,
+              badgeText: _getBadgeText(expiring1, expiring1Avatars),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const ExpiringMembershipsScreen()),
+                );
+              },
+            ),
+          if (expiring3 > 0)
+            _buildAlertCard(
+              Icons.access_time_rounded,
+              Colors.orange,
+              const Color(0xFFFFF6ED),
+              '$expiring3 ${expiring3 == 1 ? "Membership" : "Memberships"}',
+              'expiring in 3 days',
+              'Send payment reminder',
+              avatars: expiring3Avatars,
+              badgeText: _getBadgeText(expiring3, expiring3Avatars),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const ExpiringMembershipsScreen()),
+                );
+              },
+            ),
+          if (expiring7 > 0)
             _buildAlertCard(
               Icons.calendar_today_rounded,
+              Colors.amber,
+              const Color(0xFFFFFBEB),
+              '$expiring7 ${expiring7 == 1 ? "Membership" : "Memberships"}',
+              'expiring in 7 days',
+              'Send friendly alert',
+              avatars: expiring7Avatars,
+              badgeText: _getBadgeText(expiring7, expiring7Avatars),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const ExpiringMembershipsScreen()),
+                );
+              },
+            ),
+          if (expiring15 > 0)
+            _buildAlertCard(
+              Icons.calendar_month_rounded,
               Colors.orange,
               const Color(0xFFFFF6ED),
               '$expiring15 ${expiring15 == 1 ? "Membership" : "Memberships"}',
