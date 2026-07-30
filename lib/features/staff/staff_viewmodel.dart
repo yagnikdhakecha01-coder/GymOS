@@ -169,6 +169,46 @@ class StaffViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  final Map<String, List<Map<String, dynamic>>> _draftsByMonth = {};
+
+  List<Map<String, dynamic>> getDraftsForMonth(String month) {
+    return _draftsByMonth[month] ?? [];
+  }
+
+  Future<void> fetchSalaryDraftsForMonth(String month) async {
+    if (!SupabaseService.isInitialized) return;
+    try {
+      final List response = await SupabaseService.client
+          .from('salary_drafts')
+          .select()
+          .eq('salary_month', month);
+      
+      _draftsByMonth[month] = List<Map<String, dynamic>>.from(response);
+      notifyListeners();
+    } catch (e) {
+      print('fetchSalaryDraftsForMonth error: $e');
+    }
+  }
+
+  Future<void> fetchPaidSalariesForMonth(String month) async {
+    if (!SupabaseService.isInitialized) return;
+    try {
+      await fetchSalaryDraftsForMonth(month); // Pre-fetch drafts to get correct amounts
+      
+      final List response = await SupabaseService.client
+          .from('salary_drafts')
+          .select('staff_id')
+          .eq('salary_month', month)
+          .eq('status', 'Paid');
+      
+      final Set<String> paidSet = response.map((item) => item['staff_id'].toString()).toSet();
+      _paidStaffByMonth[month] = paidSet;
+      notifyListeners();
+    } catch (e) {
+      print('fetchPaidSalariesForMonth error: $e');
+    }
+  }
+
   List<Staff> getPendingSalaryStaff(String month) {
     return allStaff.where((s) => !isSalaryPaid(s.id, month)).toList();
   }

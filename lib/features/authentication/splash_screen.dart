@@ -67,7 +67,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
       final authVm = Provider.of<AuthViewModel>(context, listen: false);
       await authVm.loadCurrentProfile(); // Sync profile state
       
-      if (authVm.userAssociations.length > 1) {
+      if (authVm.userAssociations.length > 1 && authVm.activeAssociation == null) {
         if (mounted) {
           Navigator.pushReplacement(context, AppRouter.scaleRoute(const GymRoleSelectorScreen()));
         }

@@ -173,7 +173,7 @@ class OwnerStaffCard extends StatelessWidget {
                           ),
                         ],
                       ),
-                      if (salaryPending > 0 && isSmallScreen) ...[
+                      if ((salaryPending > 0 || isSalaryPaid) && isSmallScreen) ...[
                         const SizedBox(height: 6),
                         buildSalaryBadge(),
                       ],
@@ -181,8 +181,8 @@ class OwnerStaffCard extends StatelessWidget {
                   ),
                 ),
 
-                // Salary Pending Badge Container (only on big screens)
-                if (salaryPending > 0 && !isSmallScreen) ...[
+                // Salary Pending/Paid Badge Container (only on big screens)
+                if ((salaryPending > 0 || isSalaryPaid) && !isSmallScreen) ...[
                   buildSalaryBadge(),
                   const SizedBox(width: 8),
                 ],

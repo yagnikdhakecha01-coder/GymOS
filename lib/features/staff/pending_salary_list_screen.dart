@@ -28,6 +28,10 @@ class _PendingSalaryListScreenState extends State<PendingSalaryListScreen> {
       _months.add(DateFormat('MMMM yyyy').format(date));
     }
     _selectedMonth = DateFormat('MMMM yyyy').format(now);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Provider.of<StaffViewModel>(context, listen: false)
+          .fetchPaidSalariesForMonth(_selectedMonth);
+    });
   }
 
   @override
@@ -86,6 +90,8 @@ class _PendingSalaryListScreenState extends State<PendingSalaryListScreen> {
                             setState(() {
                               _selectedMonth = newValue;
                             });
+                            Provider.of<StaffViewModel>(context, listen: false)
+                                .fetchPaidSalariesForMonth(newValue);
                           }
                         },
                         items: _months.map<DropdownMenuItem<String>>((String value) {
@@ -152,10 +158,15 @@ class _PendingSalaryListScreenState extends State<PendingSalaryListScreen> {
                         itemBuilder: (context, index) {
                           final staff = pendingStaff[index];
                           
-                          // Salary calculations logic matching mockup
-                          final double baseSalary = staff.salary;
-                          final double commission = staff.role == 'Trainer' || staff.role == 'Personal Trainer' ? 5000.0 : 0.0;
-                          final double totalPayable = baseSalary + commission;
+                          // Retrieve dynamically calculated totals from database drafts if available
+                          final drafts = staffVm.getDraftsForMonth(_selectedMonth);
+                          final draft = drafts.firstWhere(
+                            (d) => d['staff_id'].toString() == staff.id.toString(),
+                            orElse: () => null,
+                          );
+                          final double totalPayable = draft != null
+                              ? (draft['net_salary'] as num).toDouble()
+                              : staff.salary; // Default fallback to base salary
 
                           return GestureDetector(
                             onTap: () {
@@ -236,9 +247,7 @@ class _PendingSalaryListScreenState extends State<PendingSalaryListScreen> {
                                             borderRadius: BorderRadius.circular(6),
                                           ),
                                           child: Text(
-                                            staff.role == 'Trainer' || staff.role == 'Personal Trainer'
-                                                ? 'Fixed + Commission'
-                                                : 'Fixed Salary',
+                                            staff.salaryType.isNotEmpty ? staff.salaryType : 'Fixed Salary',
                                             style: GoogleFonts.inter(
                                               fontSize: 10,
                                               fontWeight: FontWeight.w600,
