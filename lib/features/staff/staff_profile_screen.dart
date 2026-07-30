@@ -1577,7 +1577,11 @@ Thank you.''';
   // TAB 5: SALARY HISTORY
   // ═══════════════════════════════════════════════════════
   Widget _buildSalaryHistoryTab(Staff staff) {
-    final totalPaid = _salaryHistory.fold<double>(0, (sum, r) => sum + (r['amount'] as double));
+    final totalPaid = _salaryHistory.fold<double>(0, (sum, r) {
+      final double netSalary = (r['amount'] as num?)?.toDouble() ?? 0.0;
+      final double advanceDeduction = (r['advance_deduction'] as num?)?.toDouble() ?? 0.0;
+      return sum + netSalary + advanceDeduction;
+    });
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -2218,7 +2222,7 @@ class _SalaryHistoryItemWidgetState extends State<SalaryHistoryItemWidget> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                '₹${NumberFormat('#,##,###').format(record['amount'])}',
+                '₹${NumberFormat('#,##,###').format((record['amount'] as double) + (record['advance_deduction'] ?? 0.0))}',
                 style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.primary),
               ),
               const SizedBox(width: 8),
@@ -2240,6 +2244,13 @@ class _SalaryHistoryItemWidgetState extends State<SalaryHistoryItemWidget> {
               _buildRow('Additions', '+ ₹${NumberFormat('#,##,###').format(record['other_additions'])}', valueColor: Colors.green),
             if ((record['other_deductions'] ?? 0.0) > 0)
               _buildRow('Deductions', '- ₹${NumberFormat('#,##,###').format(record['other_deductions'])}', valueColor: Colors.red),
+            const SizedBox(height: 4),
+            _buildRow(
+              'Gross Salary',
+              '₹${NumberFormat('#,##,###').format((record['amount'] as double) + (record['advance_deduction'] ?? 0.0))}',
+              isBold: true,
+            ),
+            const SizedBox(height: 4),
             if ((record['advance_deduction'] ?? 0.0) > 0)
               _buildRow('Advance Recovery', '- ₹${NumberFormat('#,##,###').format(record['advance_deduction'])}', valueColor: Colors.red),
             const SizedBox(height: 8),
