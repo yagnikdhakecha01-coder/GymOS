@@ -272,22 +272,47 @@ class MembersScreen extends StatelessWidget {
                                       ),
                                     ),
                                     Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                                       decoration: BoxDecoration(
-                                        color: isPaid
-                                            ? AppTheme.successLight
-                                            : Colors.red.withOpacity(0.1),
-                                        borderRadius: BorderRadius.circular(6),
-                                      ),
-                                      child: Text(
-                                        isPaid ? '🟢 Payment Done' : '🔴 Pending Payment',
-                                        style: TextStyle(
-                                          color: isPaid
-                                              ? AppTheme.success
-                                              : Colors.redAccent,
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.bold,
+                                        color: isPaid ? AppTheme.successLight : const Color(0xFFFEF2F2),
+                                        borderRadius: BorderRadius.circular(10),
+                                        border: Border.all(
+                                          color: isPaid ? AppTheme.successLight : const Color(0xFFFEE2E2),
+                                          width: 0.8,
                                         ),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            isPaid ? Icons.check_circle_outline_rounded : Icons.info_outline_rounded,
+                                            size: 12,
+                                            color: isPaid ? AppTheme.success : const Color(0xFFEF4444),
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Text(
+                                                '₹${NumberFormat('#,##,###').format(isPaid ? member.totalReceivedAmount : member.pendingAmount)}',
+                                                style: GoogleFonts.inter(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w800,
+                                                  color: isPaid ? AppTheme.success : const Color(0xFFB91C1C),
+                                                ),
+                                              ),
+                                              Text(
+                                                isPaid ? 'Payment Done' : 'Payment Pending',
+                                                style: GoogleFonts.inter(
+                                                  fontSize: 8,
+                                                  fontWeight: FontWeight.w500,
+                                                  color: isPaid ? AppTheme.success.withOpacity(0.8) : const Color(0xFF991B1B),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
                                       ),
                                     ),
                                     const SizedBox(width: 8),
