@@ -452,14 +452,19 @@ class StaffViewModel extends ChangeNotifier {
     // Map salary history records
     final salHist = salaryHistory.map((sal) {
       final created = DateTime.tryParse(sal['created_at']?.toString() ?? '') ?? DateTime.now();
+      final double netSalary = (sal['net_salary'] as num?)?.toDouble() ?? 0.0;
+      final double advanceDeduction = (sal['advance_deduction'] as num?)?.toDouble() ?? 0.0;
+      final double grossSalary = (sal['gross_salary'] as num?)?.toDouble() ?? (netSalary + advanceDeduction);
+
       return {
         'id': sal['id'],
         'month': sal['salary_month'] ?? 'N/A',
         'paidOn': DateFormat('dd MMM yyyy').format(created),
-        'amount': (sal['net_salary'] as num?)?.toDouble() ?? 0.0,
+        'amount': netSalary,
+        'gross_salary': grossSalary,
         'base_salary': (sal['base_salary'] as num?)?.toDouble() ?? 0.0,
         'commission_amount': (sal['commission_amount'] as num?)?.toDouble() ?? 0.0,
-        'advance_deduction': (sal['advance_deduction'] as num?)?.toDouble() ?? 0.0,
+        'advance_deduction': advanceDeduction,
         'other_additions': (sal['other_additions'] as num?)?.toDouble() ?? 0.0,
         'other_deductions': (sal['other_deductions'] as num?)?.toDouble() ?? 0.0,
       };

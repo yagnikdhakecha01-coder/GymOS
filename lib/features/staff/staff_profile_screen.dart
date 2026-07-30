@@ -1578,9 +1578,8 @@ Thank you.''';
   // ═══════════════════════════════════════════════════════
   Widget _buildSalaryHistoryTab(Staff staff) {
     final totalPaid = _salaryHistory.fold<double>(0, (sum, r) {
-      final double netSalary = (r['amount'] as num?)?.toDouble() ?? 0.0;
-      final double advanceDeduction = (r['advance_deduction'] as num?)?.toDouble() ?? 0.0;
-      return sum + netSalary + advanceDeduction;
+      final double grossSalary = (r['gross_salary'] as num?)?.toDouble() ?? 0.0;
+      return sum + grossSalary;
     });
 
     return SingleChildScrollView(
@@ -2222,7 +2221,7 @@ class _SalaryHistoryItemWidgetState extends State<SalaryHistoryItemWidget> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                '₹${NumberFormat('#,##,###').format((record['amount'] as double) + (record['advance_deduction'] ?? 0.0))}',
+                '₹${NumberFormat('#,##,###').format(record['gross_salary'] ?? 0.0)}',
                 style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.primary),
               ),
               const SizedBox(width: 8),
@@ -2247,7 +2246,7 @@ class _SalaryHistoryItemWidgetState extends State<SalaryHistoryItemWidget> {
             const SizedBox(height: 4),
             _buildRow(
               'Gross Salary',
-              '₹${NumberFormat('#,##,###').format((record['amount'] as double) + (record['advance_deduction'] ?? 0.0))}',
+              '₹${NumberFormat('#,##,###').format(record['gross_salary'] ?? 0.0)}',
               isBold: true,
             ),
             const SizedBox(height: 4),
