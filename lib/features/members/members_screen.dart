@@ -213,88 +213,137 @@ class MembersScreen extends StatelessWidget {
                         itemBuilder: (context, index) {
                           final member = allMembers[index];
                           final isTrial = member.status == 'Trial';
+                          final bool isPaid = member.paymentStatus.toLowerCase() == 'paid' || member.pendingAmount <= 0;
+                          
+                          String nextDueStr = 'N/A';
+                          final exp = member.extraFields['expiryDate'] as String?;
+                          if (exp != null && exp.isNotEmpty) {
+                            try {
+                              final parsed = DateTime.parse(exp);
+                              nextDueStr = DateFormat('dd MMM yyyy').format(parsed);
+                            } catch (_) {
+                              nextDueStr = exp;
+                            }
+                          }
                           
                           return CustomCard(
                             margin: const EdgeInsets.only(bottom: 12),
                             onTap: () {
                               Navigator.push(context, AppRouter.slideRoute(MemberProfileScreen(member: member)));
                             },
-                            child: Row(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(20),
-                                  child: Container(
-                                    width: 44,
-                                    height: 44,
-                                    color: AppTheme.primaryLight,
-                                    child: Image.network(
-                                      member.avatar.isNotEmpty ? member.avatar : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (c, e, s) => Center(child: Text(member.name[0], style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.primary))),
+                                Row(
+                                  children: [
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(20),
+                                      child: Container(
+                                        width: 44,
+                                        height: 44,
+                                        color: AppTheme.primaryLight,
+                                        child: Image.network(
+                                          member.avatar.isNotEmpty ? member.avatar : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (c, e, s) => Center(child: Text(member.name[0], style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.primary))),
+                                        ),
+                                      ),
                                     ),
-                                  ),
-                                ),
-                                const SizedBox(width: 14),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        member.name,
-                                        style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                                    const SizedBox(width: 14),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            member.name,
+                                            style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            member.phone,
+                                            style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            isTrial ? 'Trial Subscription' : 'Next Due: $nextDueStr',
+                                            style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted),
+                                          ),
+                                        ],
                                       ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        member.phone,
-                                        style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary),
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        isTrial ? 'Trial Subscription' : 'Next Due: 10 May 2026',
-                                        style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: member.status == 'Active'
-                                        ? AppTheme.successLight
-                                        : (member.status == 'Pending Activation'
-                                            ? Colors.orange.withOpacity(0.1)
-                                            : (member.status == 'Invitation Expired'
-                                                ? Colors.red.withOpacity(0.1)
-                                                : (member.status == 'Trial'
-                                                    ? AppTheme.primaryLight
-                                                    : AppTheme.surfaceGray))),
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Text(
-                                    member.status == 'Active'
-                                        ? '🟢 Connected'
-                                        : (member.status == 'Pending Activation'
-                                            ? '🟡 Pending'
-                                            : (member.status == 'Invitation Expired'
-                                                ? '🔴 Expired'
-                                                : member.status)),
-                                    style: TextStyle(
-                                      color: member.status == 'Active'
-                                          ? AppTheme.success
-                                          : (member.status == 'Pending Activation'
-                                              ? Colors.orange
-                                              : (member.status == 'Invitation Expired'
-                                                  ? Colors.redAccent
-                                                  : (member.status == 'Trial'
-                                                      ? AppTheme.primary
-                                                      : AppTheme.textSecondary))),
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.bold,
                                     ),
-                                  ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: isPaid
+                                            ? AppTheme.successLight
+                                            : Colors.red.withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Text(
+                                        isPaid ? '🟢 Payment Done' : '🔴 Pending Payment',
+                                        style: TextStyle(
+                                          color: isPaid
+                                              ? AppTheme.success
+                                              : Colors.redAccent,
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    const Icon(Icons.chevron_right, color: AppTheme.textMuted, size: 20),
+                                  ],
                                 ),
-                                const SizedBox(width: 8),
-                                const Icon(Icons.chevron_right, color: AppTheme.textMuted, size: 20),
+                                const SizedBox(height: 12),
+                                const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                                const SizedBox(height: 10),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      'Member Status',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 11,
+                                        color: AppTheme.textSecondary,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                      decoration: BoxDecoration(
+                                        color: member.status == 'Active'
+                                            ? const Color(0xFFE6F4EA)
+                                            : (member.status == 'Pending Activation'
+                                                ? Colors.orange.withOpacity(0.1)
+                                                : Colors.grey.withOpacity(0.1)),
+                                        borderRadius: BorderRadius.circular(20),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            member.status == 'Active' ? Icons.check : Icons.circle,
+                                            size: 10,
+                                            color: member.status == 'Active'
+                                                ? const Color(0xFF16A34A)
+                                                : (member.status == 'Pending Activation'
+                                                    ? Colors.orange
+                                                    : Colors.grey),
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            member.status,
+                                            style: GoogleFonts.inter(
+                                              fontSize: 10.5,
+                                              fontWeight: FontWeight.w700,
+                                              color: member.status == 'Active' ? const Color(0xFF15803D) : AppTheme.textSecondary,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ],
                             ),
                           );
