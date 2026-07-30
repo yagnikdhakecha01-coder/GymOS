@@ -160,10 +160,13 @@ class _PendingSalaryListScreenState extends State<PendingSalaryListScreen> {
                           
                           // Retrieve dynamically calculated totals from database drafts if available
                           final drafts = staffVm.getDraftsForMonth(_selectedMonth);
-                          final draft = drafts.firstWhere(
-                            (d) => d['staff_id'].toString() == staff.id.toString(),
-                            orElse: () => null,
-                          );
+                          Map<String, dynamic>? draft;
+                          for (var d in drafts) {
+                            if (d['staff_id'].toString() == staff.id.toString()) {
+                              draft = d;
+                              break;
+                            }
+                          }
                           final double totalPayable = draft != null
                               ? (draft['net_salary'] as num).toDouble()
                               : staff.salary; // Default fallback to base salary
