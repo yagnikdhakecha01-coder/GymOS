@@ -325,6 +325,7 @@ class AuthViewModel extends ChangeNotifier {
         await SupabaseService.client.auth.signInWithOAuth(
           OAuthProvider.google,
           redirectTo: 'http://127.0.0.1:8080/',
+          queryParams: {'prompt': 'select_account'},
         );
       } else {
         // Native Google Sign-In for Android & iOS
@@ -332,6 +333,12 @@ class AuthViewModel extends ChangeNotifier {
           serverClientId: '225633708172-7st3l0u84rl22ccnaphap3dfpooai0o6.apps.googleusercontent.com',
           scopes: ['email', 'profile'],
         );
+
+        // Force clearing the previously cached Google account session to prompt the account picker list
+        try {
+          await googleSignIn.signOut();
+          await googleSignIn.disconnect();
+        } catch (_) {}
 
         final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
         if (googleUser == null) {
