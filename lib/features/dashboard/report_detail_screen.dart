@@ -4,9 +4,12 @@ import 'package:provider/provider.dart';
 import '../../core/theme/theme.dart';
 import '../../core/widgets/custom_card.dart';
 import '../members/members_viewmodel.dart';
+import '../members/trial_members_viewmodel.dart';
 import '../staff/staff_viewmodel.dart';
 import '../finance/finance_viewmodel.dart';
 import '../attendance/attendance_viewmodel.dart';
+import '../authentication/auth_viewmodel.dart';
+import '../../core/services/supabase_service.dart';
 
 class ReportDetailScreen extends StatefulWidget {
   final String reportType;
@@ -20,6 +23,43 @@ class ReportDetailScreen extends StatefulWidget {
 
 class _ReportDetailScreenState extends State<ReportDetailScreen> {
   String _dateRange = 'This Month';
+  Map<String, dynamic>? _trialStats;
+  bool _loadingTrialStats = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.reportType == 'trial') {
+      _loadTrialStats();
+    }
+  }
+
+  Future<void> _loadTrialStats() async {
+    setState(() => _loadingTrialStats = true);
+    try {
+      final authVm = Provider.of<AuthViewModel>(context, listen: false);
+      final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
+      if (gymId != null && SupabaseService.isInitialized) {
+        final response = await SupabaseService.client.rpc(
+          'get_trial_report_stats',
+          params: {'p_gym_id': gymId},
+        );
+        if (mounted) {
+          setState(() {
+            _trialStats = Map<String, dynamic>.from(response as Map);
+            _loadingTrialStats = false;
+          });
+        }
+      } else {
+        if (mounted) setState(() => _loadingTrialStats = false);
+      }
+    } catch (e) {
+      print('Error loading trial stats: $e');
+      if (mounted) {
+        setState(() => _loadingTrialStats = false);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -128,6 +168,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         ]);
       case 'pt':
         return _buildPTReport(membersVm, staffVm);
+      case 'trial':
+        return _buildTrialReport(Provider.of<TrialMembersViewModel>(context));
       default:
         return const SizedBox();
     }
@@ -452,6 +494,143 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: GoogleFonts.inter(fontSize: 13, color: AppTheme.textSecondary)),
+          Text(value, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTrialReport(TrialMembersViewModel trialsVm) {
+    if (_loadingTrialStats) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final allTrials = trialsVm.allTrials;
+    final stats = _trialStats ?? {
+      'total': allTrials.length,
+      'active': allTrials.where((t) => t.calculatedStatus == 'Active').length,
+      'expired': allTrials.where((t) => t.calculatedStatus == 'Expired').length,
+      'converted': allTrials.where((t) => t.calculatedStatus == 'Converted').length,
+      'free': allTrials.where((t) => t.trialType == 'Free').length,
+      'paid': allTrials.where((t) => t.trialType == 'Paid').length,
+      'revenue': allTrials.where((t) => t.trialType == 'Paid').fold(0.0, (sum, t) => sum + t.receivedAmount),
+    };
+
+    final total = stats['total'] as int? ?? 0;
+    final active = stats['active'] as int? ?? 0;
+    final expired = stats['expired'] as int? ?? 0;
+    final converted = stats['converted'] as int? ?? 0;
+    final free = stats['free'] as int? ?? 0;
+    final paid = stats['paid'] as int? ?? 0;
+    final double revenue = (stats['revenue'] as num?)?.toDouble() ?? 0.0;
+    
+    final double conversionRate = total > 0 ? (converted / total) * 100 : 0.0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(child: _statCard('Total Trials', '$total', AppTheme.primary)),
+            const SizedBox(width: 10),
+            Expanded(child: _statCard('Active', '$active', AppTheme.success)),
+            const SizedBox(width: 10),
+            Expanded(child: _statCard('Expired', '$expired', AppTheme.danger)),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(child: _statCard('Converted', '$converted', const Color(0xFF8B5CF6))),
+            const SizedBox(width: 10),
+            Expanded(child: _statCard('Revenue', '₹${revenue.toStringAsFixed(0)}', const Color(0xFFF59E0B))),
+            const SizedBox(width: 10),
+            Expanded(child: _statCard('Conv. Rate', '${conversionRate.toStringAsFixed(1)}%', Colors.teal)),
+          ],
+        ),
+        const SizedBox(height: 16),
+
+        Text('TRIAL STATS SUMMARY', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: AppTheme.textMuted, letterSpacing: 1)),
+        const SizedBox(height: 8),
+        CustomCard(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              _buildRow('Free Trials', '$free'),
+              const Divider(height: 16),
+              _buildRow('Paid Trials', '$paid'),
+              const Divider(height: 16),
+              _buildRow('Total Generated Revenue', '₹${revenue.toStringAsFixed(2)}'),
+              const Divider(height: 16),
+              _buildRow('Success Conversion Rate', '${conversionRate.toStringAsFixed(2)}%'),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        Text('TRIAL MEMBERS LIST', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: AppTheme.textMuted, letterSpacing: 1)),
+        const SizedBox(height: 8),
+        ...allTrials.map((t) => Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: CustomCard(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 16, 
+                  backgroundColor: AppTheme.primaryLight, 
+                  backgroundImage: t.avatar.isNotEmpty ? NetworkImage(t.avatar) : null,
+                  child: t.avatar.isEmpty ? Text(t.name[0], style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 12, color: AppTheme.primary)) : null
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(t.name, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600)),
+                      Text(t.trialType == 'Paid' ? 'Paid Trial • ₹${t.receivedAmount.toStringAsFixed(0)}' : 'Free Trial', style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted)),
+                    ],
+                  )
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: t.calculatedStatus == 'Converted' 
+                        ? const Color(0xFFEEF2FF)
+                        : (t.calculatedStatus == 'Expired' ? const Color(0xFFFEF2F2) : const Color(0xFFE6F4EA)), 
+                    borderRadius: BorderRadius.circular(10)
+                  ),
+                  child: Text(
+                    t.calculatedStatus, 
+                    style: GoogleFonts.inter(
+                      fontSize: 10, 
+                      fontWeight: FontWeight.w600, 
+                      color: t.calculatedStatus == 'Converted' 
+                          ? const Color(0xFF4F46E5) 
+                          : (t.calculatedStatus == 'Expired' ? const Color(0xFFEF4444) : const Color(0xFF16A34A))
+                    )
+                  ),
+                ),
+              ],
+            ),
+          ),
+        )),
+        if (allTrials.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 32),
+            child: Center(child: Text('No trial members found', style: GoogleFonts.inter(fontSize: 13, color: AppTheme.textMuted))),
+          ),
+      ],
     );
   }
 }

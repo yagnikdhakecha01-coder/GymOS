@@ -41,42 +41,23 @@ class GymSettingsViewModel extends ChangeNotifier {
     _loadingShifts = true;
     notifyListeners();
     try {
-      if (SupabaseService.client != null) {
-        final settingsRes = await SupabaseService.client
-            .from('gym_shift_settings')
-            .select('mode')
-            .eq('gym_id', gymId)
-            .maybeSingle();
-
-        if (settingsRes != null) {
-          _shiftMode = settingsRes['mode'] ?? 'Single Shift';
-        }
-
-        final shiftsRes = await SupabaseService.client
-            .from('gym_shifts')
-            .select('*')
-            .eq('gym_id', gymId);
-
-        _shifts = List<Map<String, dynamic>>.from(shiftsRes);
-      }
+      await _repository.fetchGymShiftSettingsFromSupabase(gymId);
     } catch (e) {
-      print('Error loading operating hours: $e');
+      print('Error loading operating hours from Supabase: $e');
     }
+    _shiftMode = _repository.shiftMode;
+    _shifts = _repository.shiftsList;
     _loadingShifts = false;
     notifyListeners();
   }
 
   Future<bool> saveOperatingHours(String gymId, String mode, List<Map<String, dynamic>> shiftsList) async {
     try {
-      await SupabaseService.client.rpc('save_gym_operating_hours', params: {
-        'p_gym_id': gymId,
-        'p_mode': mode,
-        'p_shifts': shiftsList,
-      });
+      final success = await _repository.saveOperatingHoursOffline(gymId, mode, shiftsList);
       _shiftMode = mode;
       _shifts = shiftsList;
       notifyListeners();
-      return true;
+      return success;
     } catch (e) {
       print('Error saving operating hours: $e');
       return false;

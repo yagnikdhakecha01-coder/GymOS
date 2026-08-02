@@ -152,6 +152,7 @@ class StaffViewModel extends ChangeNotifier {
         type: 'Expense',
         category: 'Salary',
         date: DateFormat('dd MMM yyyy').format(DateTime.now()),
+        transactionDate: DateTime.now().toIso8601String(),
         notes: notes,
       );
       await _repository.saveTransaction(tx);
@@ -286,18 +287,10 @@ class StaffViewModel extends ChangeNotifier {
 
   // --- Database Leave Requests ---
   Future<List<Map<String, dynamic>>> fetchLeaveRequests(String staffId) async {
-    if (!SupabaseService.isInitialized) return [];
     try {
-      final List response = await SupabaseService.client
-          .from('leave_requests')
-          .select()
-          .eq('staff_id', staffId)
-          .order('start_date', ascending: false);
-      return List<Map<String, dynamic>>.from(response);
-    } catch (e) {
-      print('fetchLeaveRequests error: $e');
-      return [];
-    }
+      await _repository.fetchLeaveRequestsFromSupabase(staffId);
+    } catch (_) {}
+    return _repository.leaveRequests.where((l) => l['staff_id'] == staffId).toList();
   }
 
   Future<void> createLeaveRequest({
@@ -308,54 +301,39 @@ class StaffViewModel extends ChangeNotifier {
     required String endDate,
     required String reason,
   }) async {
-    if (!SupabaseService.isInitialized) return;
-    try {
-      await SupabaseService.client.from('leave_requests').insert({
-        'gym_id': gymId,
-        'staff_id': staffId,
-        'leave_type': leaveType,
-        'start_date': startDate,
-        'end_date': endDate,
-        'reason': reason,
-        'status': 'Pending',
-      });
-      notifyListeners();
-    } catch (e) {
-      print('createLeaveRequest error: $e');
-      throw Exception('Failed to request leave: $e');
-    }
+    await _repository.createLeaveRequestOffline(
+      gymId: gymId,
+      staffId: staffId,
+      startDate: startDate,
+      endDate: endDate,
+      reason: reason,
+      leaveType: leaveType,
+    );
+    notifyListeners();
   }
 
   Future<void> updateLeaveStatus(String leaveId, String status) async {
-    if (!SupabaseService.isInitialized) return;
-    try {
-      final ownerId = SupabaseService.client.auth.currentUser?.id;
-      await SupabaseService.client.from('leave_requests').update({
-        'status': status,
-        'approved_by': ownerId,
-        'approved_at': DateTime.now().toIso8601String(),
-      }).eq('id', leaveId);
-      notifyListeners();
-    } catch (e) {
-      print('updateLeaveStatus error: $e');
-      throw Exception('Failed to update leave status: $e');
-    }
+    await _repository.updateLeaveStatusOffline(
+      requestId: leaveId,
+      status: status,
+    );
+    notifyListeners();
+  }
+
+  Future<void> updateSalaryAdvanceStatus(String requestId, String status) async {
+    await _repository.updateSalaryAdvanceStatusOffline(
+      requestId: requestId,
+      status: status,
+    );
+    notifyListeners();
   }
 
   // --- Database Salary Advances ---
   Future<List<Map<String, dynamic>>> fetchSalaryAdvances(String staffId) async {
-    if (!SupabaseService.isInitialized) return [];
     try {
-      final List response = await SupabaseService.client
-          .from('salary_advance_ledger')
-          .select()
-          .eq('staff_id', staffId)
-          .order('given_date', ascending: false);
-      return List<Map<String, dynamic>>.from(response);
-    } catch (e) {
-      print('fetchSalaryAdvances error: $e');
-      return [];
-    }
+      await _repository.fetchSalaryAdvancesFromSupabase(staffId);
+    } catch (_) {}
+    return _repository.salaryAdvances.where((a) => a['staff_id'] == staffId).toList();
   }
 
   Future<void> createSalaryAdvance({
@@ -365,43 +343,27 @@ class StaffViewModel extends ChangeNotifier {
     required String reason,
     required String date,
   }) async {
-    if (!SupabaseService.isInitialized) return;
-    try {
-      final parsedDate = DateTime.tryParse(date) ?? DateTime.now();
-      final salaryMonth = DateFormat('MMMM yyyy').format(parsedDate);
-
-      await SupabaseService.client.from('salary_advance_ledger').insert({
-        'gym_id': gymId,
-        'staff_id': staffId,
-        'advance_amount': amount,
-        'reason': reason,
-        'status': 'Approved',
-        'given_date': date,
-        'salary_month': salaryMonth,
-      });
-
-      notifyListeners();
-    } catch (e) {
-      print('createSalaryAdvance error: $e');
-      rethrow;
-    }
+    await _repository.saveSalaryAdvanceOffline(
+      gymId: gymId,
+      staffId: staffId,
+      amount: amount,
+      reason: reason,
+      date: date,
+    );
+    notifyListeners();
   }
 
   // --- Database Salary History ---
   Future<List<Map<String, dynamic>>> fetchSalaryHistory(String staffId) async {
-    if (!SupabaseService.isInitialized) return [];
-    try {
-      final List response = await SupabaseService.client
-          .from('salary_drafts')
-          .select()
-          .eq('staff_id', staffId)
-          .eq('status', 'Paid')
-          .order('created_at', ascending: false);
-      return List<Map<String, dynamic>>.from(response);
-    } catch (e) {
-      print('fetchSalaryHistory error: $e');
-      return [];
+    final gymId = _repository.storage.getGymInfo()?['id'];
+    if (gymId != null) {
+      try {
+        await _repository.fetchSalaryDraftsFromSupabase(gymId);
+      } catch (_) {}
     }
+    return _repository.salaryDrafts
+        .where((d) => d['staff_id'] == staffId && d['status'] == 'Paid')
+        .toList();
   }
 
   Future<Map<String, List<Map<String, dynamic>>>> getStaffDashboardData(String staffId) async {

@@ -32,8 +32,8 @@ class _MemberShellState extends State<MemberShell> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkUnlinkedStatus();
     });
-    // Start periodic background check every 5 seconds
-    _syncTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+    // Start periodic background check every 60 seconds
+    _syncTimer = Timer.periodic(const Duration(seconds: 60), (timer) {
       _checkUnlinkedStatus();
     });
   }

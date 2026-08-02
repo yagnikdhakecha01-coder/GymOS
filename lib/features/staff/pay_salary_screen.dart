@@ -10,6 +10,7 @@ import '../authentication/auth_viewmodel.dart';
 import '../../core/widgets/success_dialog.dart';
 import '../../core/services/supabase_service.dart';
 import 'staff_viewmodel.dart';
+import '../../core/repository/gym_repository.dart';
 
 class PaySalaryScreen extends StatefulWidget {
   final Staff staff;
@@ -54,7 +55,22 @@ class _PaySalaryScreenState extends State<PaySalaryScreen> {
   }
 
   Future<void> _loadDraftDetails() async {
-    setState(() => _isLoading = true);
+    // 1. Check local repository cache first so we can render instantly!
+    final gymRepository = Provider.of<GymRepository>(context, listen: false);
+    final cachedDraftMap = gymRepository.salaryDrafts.firstWhere(
+      (d) => d['staff_id'] == widget.staff.id && d['salary_month'] == widget.selectedMonth,
+      orElse: () => {},
+    );
+
+    if (cachedDraftMap.isNotEmpty) {
+      _draft = SalaryDraft.fromJson(cachedDraftMap);
+      _isLoading = false;
+      if (mounted) setState(() {});
+    } else {
+      setState(() => _isLoading = true);
+    }
+
+    // 2. Fetch/update in the background
     try {
       final authVm = Provider.of<AuthViewModel>(context, listen: false);
       final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'] ?? '';
@@ -62,27 +78,64 @@ class _PaySalaryScreenState extends State<PaySalaryScreen> {
 
       final draft = await staffVm.getOrCreateSalaryDraft(gymId, widget.staff.id, widget.selectedMonth);
       if (draft != null) {
-        final adjs = await staffVm.fetchSalaryAdjustments(draft.id);
-        final comms = await staffVm.fetchStaffCommissions(widget.staff.id);
-        final leaveDetails = await staffVm.fetchStaffSalaryMonthLeaveDetails(widget.staff.id, widget.selectedMonth);
-        final advs = await staffVm.fetchSalaryAdvances(widget.staff.id);
+        // Run all queries in parallel to avoid sequential network delays
+        final results = await Future.wait([
+          staffVm.fetchSalaryAdjustments(draft.id),
+          staffVm.fetchStaffCommissions(widget.staff.id),
+          staffVm.fetchStaffSalaryMonthLeaveDetails(widget.staff.id, widget.selectedMonth),
+          staffVm.fetchSalaryAdvances(widget.staff.id),
+        ]);
 
-        setState(() {
-          _draft = draft;
-          _dbAdjustments = adjs;
-          _commissions = comms;
-          _leaveDetails = leaveDetails;
-          _leaves = List<Map<String, dynamic>>.from(leaveDetails?['leave_requests'] ?? []);
-          _attendanceLogs = List<Map<String, dynamic>>.from(leaveDetails?['attendance_logs'] ?? []);
-          _advances = advs;
-          _isLoading = false;
-        });
+        if (mounted) {
+          setState(() {
+            _draft = draft;
+            _dbAdjustments = results[0] as List<SalaryAdjustment>;
+            _commissions = results[1] as List<Map<String, dynamic>>;
+            final leaveDetails = results[2] as Map<String, dynamic>?;
+            _leaveDetails = leaveDetails;
+
+            // Load leaves from local repository to include newly approved ones instantly!
+            final localLeaves = gymRepository.leaveRequests.where((l) {
+              final isOwn = l['staff_id'] == widget.staff.id;
+              final isApproved = l['status'] == 'Approved';
+              if (!isOwn || !isApproved) return false;
+              try {
+                final start = DateTime.tryParse(l['start_date'] ?? '');
+                final end = DateTime.tryParse(l['end_date'] ?? '');
+                if (start == null || end == null) return false;
+                final startMonth = DateFormat('MMMM yyyy').format(start);
+                final endMonth = DateFormat('MMMM yyyy').format(end);
+                return startMonth == widget.selectedMonth || endMonth == widget.selectedMonth;
+              } catch (_) {
+                return false;
+              }
+            }).toList();
+
+            _leaves = List<Map<String, dynamic>>.from(localLeaves);
+            _attendanceLogs = List<Map<String, dynamic>>.from(leaveDetails?['attendance_logs'] ?? []);
+
+            // Load advances from local repository to include newly approved ones instantly!
+            final localAdvances = gymRepository.salaryAdvances.where((a) {
+              final isOwn = a['staff_id'] == widget.staff.id;
+              final isApproved = a['status'] == 'Approved';
+              final isMonth = a['salary_month'] == widget.selectedMonth;
+              return isOwn && isApproved && isMonth;
+            }).toList();
+
+            _advances = List<Map<String, dynamic>>.from(localAdvances);
+            _isLoading = false;
+          });
+        }
       } else {
-        setState(() => _isLoading = false);
+        if (mounted) {
+          setState(() => _isLoading = false);
+        }
       }
     } catch (e) {
-      print('Error loading draft details: $e');
-      setState(() => _isLoading = false);
+      print('Error loading draft details in background: $e');
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 

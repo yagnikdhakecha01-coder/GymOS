@@ -11,6 +11,7 @@ import '../staff_profile_screen.dart';
 import '../../more/help_support_screen.dart';
 import '../../more/settings_screen.dart';
 import '../../../core/models/staff.dart';
+import '../../dashboard/gym_switcher_bottom_sheet.dart';
 
 class StaffMoreScreen extends StatelessWidget {
   const StaffMoreScreen({super.key});
@@ -194,6 +195,14 @@ class StaffMoreScreen extends StatelessWidget {
                     label: 'Help & Support',
                     onTap: () {
                       Navigator.push(context, AppRouter.slideRoute(const HelpSupportScreen()));
+                    },
+                  ),
+                  const Divider(height: 1, color: Color(0xFFF3F4F6), indent: 16, endIndent: 16),
+                  _buildMenuItem(
+                    icon: Icons.swap_horiz_rounded,
+                    label: 'Switch Profile',
+                    onTap: () {
+                      GymSwitcherBottomSheet.show(context);
                     },
                   ),
                   const Divider(height: 1, color: Color(0xFFF3F4F6), indent: 16, endIndent: 16),

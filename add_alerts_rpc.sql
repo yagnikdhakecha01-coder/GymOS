@@ -1,3 +1,34 @@
+-- Redefine log_attendance_alert to do nothing for check-in/out related alert types
+CREATE OR REPLACE FUNCTION public.log_attendance_alert(
+    p_gym_id UUID,
+    p_alert_type TEXT,
+    p_message TEXT,
+    p_metadata JSONB DEFAULT '{}'::jsonb
+)
+RETURNS VOID AS $$
+BEGIN
+    -- Ignore check-in and check-out related alert types
+    IF p_alert_type IN (
+        'Staff Check In', 'Staff Check Out', 'Late Entry', 'Early Exit', 
+        'Duplicate Check In', 'QR Expired', 'Rejected QR', 'Wrong Gym QR', 
+        'Wrong Shift', 'Display Not Verified'
+    ) THEN
+        RETURN;
+    END IF;
+
+    INSERT INTO public.attendance_alerts (gym_id, alert_type, message, metadata, is_read, created_at)
+    VALUES (p_gym_id, p_alert_type, p_message, p_metadata, FALSE, now());
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Clear out legacy check-in/out alert entries
+DELETE FROM public.attendance_alerts 
+WHERE alert_type IN (
+    'Staff Check In', 'Staff Check Out', 'Late Entry', 'Early Exit', 
+    'Duplicate Check In', 'QR Expired', 'Rejected QR', 'Wrong Gym QR', 
+    'Wrong Shift', 'Display Not Verified'
+);
+
 -- 1. Date parser helper to robustly parse text dates ('16 Jul 2026' or '2026-07-16')
 CREATE OR REPLACE FUNCTION public.safe_parse_date(date_str TEXT)
 RETURNS DATE AS $$
@@ -52,6 +83,9 @@ DECLARE
     
     v_pt_trials_count INT := 0;
     v_pt_trials_avatars TEXT[] := ARRAY[]::TEXT[];
+
+    v_staff_advances_count INT := 0;
+    v_staff_advances_avatars TEXT[] := ARRAY[]::TEXT[];
 BEGIN
     -- 1. Memberships ending today (0 days)
     SELECT 
@@ -164,6 +198,18 @@ BEGIN
 
     IF v_pt_trials_avatars IS NULL THEN v_pt_trials_avatars := ARRAY[]::TEXT[]; END IF;
 
+    -- 10. Staff Advance Requests (status = 'Pending')
+    SELECT 
+        COUNT(*)::INT, 
+        ARRAY_AGG(COALESCE(s.avatar, '')) FILTER (WHERE s.avatar IS NOT NULL AND s.avatar != '')
+    INTO v_staff_advances_count, v_staff_advances_avatars
+    FROM public.salary_advance_ledger sal
+    JOIN public.staff s ON sal.staff_id = s.id
+    WHERE sal.gym_id = p_gym_id 
+      AND sal.status = 'Pending'::public.advance_status;
+
+    IF v_staff_advances_avatars IS NULL THEN v_staff_advances_avatars := ARRAY[]::TEXT[]; END IF;
+
     -- Return grouped alerts as JSONB
     RETURN jsonb_build_object(
         'memberships_ending_today', jsonb_build_object(
@@ -201,6 +247,10 @@ BEGIN
         'pt_trials', jsonb_build_object(
             'count', v_pt_trials_count,
             'avatars', to_jsonb(v_pt_trials_avatars)
+        ),
+        'staff_advance_requests', jsonb_build_object(
+            'count', v_staff_advances_count,
+            'avatars', to_jsonb(v_staff_advances_avatars)
         )
     );
 END;
@@ -293,5 +343,18 @@ BEGIN
     JOIN public.staff s ON lr.staff_id = s.id
     WHERE lr.gym_id = p_gym_id 
       AND lr.status = 'Pending'::public.leave_status;
+
+    -- 7. Pending staff advance requests
+    RETURN QUERY
+    SELECT 
+        'staff_advance'::TEXT AS alert_type,
+        sal.id::TEXT AS entity_id,
+        'New Staff Advance Request!'::TEXT AS title,
+        (s.name || ' requested advance of ₹' || sal.advance_amount::TEXT)::TEXT AS message,
+        COALESCE(s.avatar, '')::TEXT AS avatar_url
+    FROM public.salary_advance_ledger sal
+    JOIN public.staff s ON sal.staff_id = s.id
+    WHERE sal.gym_id = p_gym_id 
+      AND sal.status = 'Pending'::public.advance_status;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;

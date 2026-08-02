@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/theme/theme.dart';
+import '../../../core/repository/gym_repository.dart';
 import '../../authentication/auth_viewmodel.dart';
 import '../receptionist_viewmodel.dart';
 import 'receptionist_dashboard_screen.dart';
@@ -23,9 +24,12 @@ class _ReceptionistShellState extends State<ReceptionistShell> {
   Widget build(BuildContext context) {
     final authVm = Provider.of<AuthViewModel>(context);
     final staffUserId = authVm.currentUser?.id ?? '';
+    final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'] ?? '';
 
+    final repo = Provider.of<GymRepository>(context, listen: false);
     return ChangeNotifierProvider<ReceptionistViewModel>(
-      create: (_) => ReceptionistViewModel(staffUserId: staffUserId),
+      key: ValueKey(gymId),
+      create: (_) => ReceptionistViewModel(staffUserId: staffUserId, gymId: gymId, repository: repo),
       child: Consumer<ReceptionistViewModel>(
         builder: (context, vm, child) {
           if (vm.staffRecord == null) {

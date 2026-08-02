@@ -74,7 +74,7 @@ class AttendanceRecord {
 
     return AttendanceRecord(
       id: json['id'] as String? ?? '',
-      userId: json['user_id'] as String? ?? json['userId'] as String? ?? '',
+      userId: json['user_id'] as String? ?? json['member_id'] as String? ?? json['staff_id'] as String? ?? json['userId'] as String? ?? '',
       userName: uName,
       userType: json['user_type'] as String? ?? json['userType'] as String? ?? 'Member',
       checkInTime: checkIn,

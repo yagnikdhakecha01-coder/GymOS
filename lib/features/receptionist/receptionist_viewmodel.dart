@@ -3,9 +3,13 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 import '../../core/services/supabase_service.dart';
 import '../../core/models/staff.dart';
+import '../../core/repository/gym_repository.dart';
+import '../../core/models/member.dart';
 
 class ReceptionistViewModel extends ChangeNotifier {
   final String staffUserId;
+  final String gymId;
+  final GymRepository _repository;
   Staff? _staffRecord;
   RealtimeChannel? _realtimeChannel;
 
@@ -20,7 +24,11 @@ class ReceptionistViewModel extends ChangeNotifier {
   List<Map<String, dynamic>> _recentActivities = [];
   bool _isLoading = false;
 
-  ReceptionistViewModel({required this.staffUserId}) {
+  ReceptionistViewModel({
+    required this.staffUserId,
+    required this.gymId,
+    required GymRepository repository,
+  }) : _repository = repository {
     _init();
   }
 
@@ -66,20 +74,28 @@ class ReceptionistViewModel extends ChangeNotifier {
 
   // Fetch staff record from DB
   Future<void> fetchStaffRecord() async {
-    try {
-      if (!SupabaseService.isInitialized) return;
-      final res = await SupabaseService.client
-          .from('staff')
-          .select()
-          .eq('user_id', staffUserId)
-          .maybeSingle();
+    final staffList = _repository.getStaff();
+    final matching = staffList.where((s) => s.userId == staffUserId).toList();
+    if (matching.isNotEmpty) {
+      _staffRecord = matching.first;
+      notifyListeners();
+    } else {
+      try {
+        if (!SupabaseService.isInitialized) return;
+        final res = await SupabaseService.client
+            .from('staff')
+            .select()
+            .eq('user_id', staffUserId)
+            .eq('gym_id', gymId)
+            .maybeSingle();
 
-      if (res != null) {
-        _staffRecord = Staff.fromJson(res);
-        notifyListeners();
+        if (res != null) {
+          _staffRecord = Staff.fromJson(res);
+          notifyListeners();
+        }
+      } catch (e) {
+        print('Error fetching staff record in ReceptionistViewModel: $e');
       }
-    } catch (e) {
-      print('Error fetching staff record in ReceptionistViewModel: $e');
     }
   }
 
@@ -110,84 +126,70 @@ class ReceptionistViewModel extends ChangeNotifier {
 
   // Fetch Dashboard Stats
   Future<void> fetchDashboardStats() async {
-    if (!SupabaseService.isInitialized || _staffRecord == null) return;
+    if (_staffRecord == null) return;
     _isLoading = true;
     notifyListeners();
 
     try {
       final gymId = _staffRecord!.gymId;
-      final todayStr = DateFormat('dd-MM-yyyy').format(DateTime.now());
+      final now = DateTime.now();
+      final todayDateOnly = DateTime(now.year, now.month, now.day);
 
       // 1. Today's Attendance Stats
-      final attendanceLogs = await SupabaseService.client
-          .from('attendance_logs')
-          .select('id, status')
-          .eq('gym_id', gymId)
-          .eq('date', todayStr);
-
-      final totalMembers = await SupabaseService.client
-          .from('members')
-          .select('id')
-          .eq('gym_id', gymId);
-      
-      _todayTotalExpected = totalMembers.length;
-      _todayAttendanceCount = attendanceLogs.where((l) => l['status'] == 'Present' || l['status'] == 'Late' || l['status'] == 'Half Leave').length;
+      _todayTotalExpected = _repository.activeMembersCount;
+      _todayAttendanceCount = _repository.todayAttendanceCount;
 
       // 2. New Members registered today
-      final now = DateTime.now();
-      final startOfToday = DateTime(now.year, now.month, now.day).toIso8601String();
-      final newMembers = await SupabaseService.client
-          .from('members')
-          .select('id')
-          .eq('gym_id', gymId)
-          .gte('created_at', startOfToday);
+      _newMembersCount = _repository.getMembers().where((m) {
+        final created = DateTime.tryParse(m.createdAt ?? '');
+        if (created == null) return false;
+        final createdDateOnly = DateTime(created.year, created.month, created.day);
+        return createdDateOnly.isAtSameMomentAs(todayDateOnly);
+      }).length;
 
-      _newMembersCount = newMembers.length;
-
-      // 3. Pending Renewals (Memberships expiring in next 7 days or already expired)
-      final endOfRange = DateTime.now().add(const Duration(days: 7)).toIso8601String();
-      final renewals = await SupabaseService.client
-          .from('member_memberships')
-          .select('id')
-          .eq('gym_id', gymId)
-          .lte('end_date', endOfRange);
-
-      _pendingRenewalsCount = renewals.length;
+      // 3. Pending Renewals (Memberships expiring in next 7 days)
+      _pendingRenewalsCount = _repository.getMembers().where((m) {
+        final exp = m.extraFields['expiryDate'] as String?;
+        if (exp == null || exp.isEmpty) return false;
+        final parsed = DateTime.tryParse(exp);
+        if (parsed == null) return false;
+        final expiryDateOnly = DateTime(parsed.year, parsed.month, parsed.day);
+        final diff = expiryDateOnly.difference(todayDateOnly).inDays;
+        return diff >= 0 && diff <= 7;
+      }).length;
 
       // 4. Today's Income & Expense Sum
-      final nowTx = DateTime.now();
-      final startOfTodayTx = DateTime(nowTx.year, nowTx.month, nowTx.day).toUtc().toIso8601String();
-      final endOfTodayTx = DateTime(nowTx.year, nowTx.month, nowTx.day, 23, 59, 59, 999).toUtc().toIso8601String();
-
-      final transactions = await SupabaseService.client
-          .from('finance_transactions')
-          .select('amount, type')
-          .eq('gym_id', gymId)
-          .gte('transaction_date', startOfTodayTx)
-          .lte('transaction_date', endOfTodayTx);
-
       double income = 0.0;
       double expense = 0.0;
-      for (var tx in transactions) {
-        final amount = (tx['amount'] as num?)?.toDouble() ?? 0.0;
-        if (tx['type'] == 'Revenue') {
-          income += amount;
-        } else {
-          expense += amount;
+      for (final tx in _repository.getTransactions()) {
+        final txDateStr = tx.transactionDate.isNotEmpty ? tx.transactionDate : tx.entryDate;
+        final parsed = DateTime.tryParse(txDateStr);
+        if (parsed == null) continue;
+        final parsedDateOnly = DateTime(parsed.year, parsed.month, parsed.day);
+        if (parsedDateOnly.isAtSameMomentAs(todayDateOnly)) {
+          if (tx.type == 'Revenue' || tx.type == 'Income') {
+            income += tx.amount;
+          } else {
+            expense += tx.amount;
+          }
         }
       }
       _todayIncome = income;
       _todayExpense = expense;
 
       // 5. Recent Activities logs
-      final logsRes = await SupabaseService.client
-          .from('activity_logs')
-          .select()
-          .eq('gym_id', gymId)
-          .order('created_at', ascending: false)
-          .limit(10);
-
-      _recentActivities = List<Map<String, dynamic>>.from(logsRes);
+      if (SupabaseService.isInitialized) {
+        try {
+          final logsRes = await SupabaseService.client
+              .from('activity_logs')
+              .select()
+              .eq('gym_id', gymId)
+              .order('created_at', ascending: false)
+              .limit(10)
+              .timeout(const Duration(seconds: 3));
+          _recentActivities = List<Map<String, dynamic>>.from(logsRes);
+        } catch (_) {}
+      }
 
     } catch (e) {
       print('Error loading receptionist dashboard stats: $e');

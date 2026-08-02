@@ -22,6 +22,7 @@ class _OwnerQRScannerScreenState extends State<OwnerQRScannerScreen>
   final MobileScannerController _scannerController = MobileScannerController();
   bool _flashOn = false;
   bool _isScanCompleted = false;
+  bool _showScanner = false;
 
   // Verification overlay state
   String? _verificationState;
@@ -38,6 +39,12 @@ class _OwnerQRScannerScreenState extends State<OwnerQRScannerScreen>
     _scanLineAnim = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _animController, curve: Curves.easeInOut),
     );
+
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (mounted) {
+        setState(() => _showScanner = true);
+      }
+    });
   }
 
   @override
@@ -337,52 +344,60 @@ class _OwnerQRScannerScreenState extends State<OwnerQRScannerScreen>
                     child: Stack(
                       children: [
                         // Real Camera Preview
-                        MobileScanner(
-                          controller: _scannerController,
-                          onDetect: (capture) async {
-                            if (_isScanCompleted) return;
-                            final List<Barcode> barcodes = capture.barcodes;
-                            if (barcodes.isNotEmpty) {
-                              final String? codeValue = barcodes.first.rawValue;
-                              if (codeValue != null) {
-                                setState(() {
-                                  _isScanCompleted = true;
-                                });
-                                await _onQRDetected(codeValue);
+                        if (_showScanner)
+                          MobileScanner(
+                            controller: _scannerController,
+                            onDetect: (capture) async {
+                              if (_isScanCompleted) return;
+                              final List<Barcode> barcodes = capture.barcodes;
+                              if (barcodes.isNotEmpty) {
+                                final String? codeValue = barcodes.first.rawValue;
+                                if (codeValue != null) {
+                                  setState(() {
+                                    _isScanCompleted = true;
+                                  });
+                                  await _onQRDetected(codeValue);
+                                }
                               }
-                            }
-                          },
-                          errorBuilder: (context, error, child) {
-                            return Container(
-                              color: Colors.black.withValues(alpha: 0.85),
-                              alignment: Alignment.center,
-                              padding: const EdgeInsets.all(16),
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  const Icon(Icons.camera_alt_outlined, color: Colors.white54, size: 40),
-                                  const SizedBox(height: 12),
-                                  Text(
-                                    'Camera not available or permission denied.',
-                                    textAlign: TextAlign.center,
-                                    style: GoogleFonts.inter(color: Colors.white54, fontSize: 11),
-                                  ),
-                                  const SizedBox(height: 14),
-                                  TextButton(
-                                    onPressed: () => _showManualScanDialog(context),
-                                    child: Text(
-                                      'Simulate Scan (Type/Paste Code)',
-                                      style: TextStyle(
-                                        color: AppTheme.primary,
-                                        fontWeight: FontWeight.bold,
+                            },
+                            errorBuilder: (context, error, child) {
+                              return Container(
+                                color: Colors.black.withValues(alpha: 0.85),
+                                alignment: Alignment.center,
+                                padding: const EdgeInsets.all(16),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(Icons.camera_alt_outlined, color: Colors.white54, size: 40),
+                                    const SizedBox(height: 12),
+                                    Text(
+                                      'Camera not available or permission denied.',
+                                      textAlign: TextAlign.center,
+                                      style: GoogleFonts.inter(color: Colors.white54, fontSize: 11),
+                                    ),
+                                    const SizedBox(height: 14),
+                                    TextButton(
+                                      onPressed: () => _showManualScanDialog(context),
+                                      child: Text(
+                                        'Simulate Scan (Type/Paste Code)',
+                                        style: TextStyle(
+                                          color: AppTheme.primary,
+                                          fontWeight: FontWeight.bold,
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
+                                  ],
+                                ),
+                              );
+                            },
+                          )
+                        else
+                          Container(
+                            color: Colors.black,
+                            child: const Center(
+                              child: CircularProgressIndicator(color: AppTheme.primary),
+                            ),
+                          ),
                         // Corner brackets
                         _Corner(alignment: Alignment.topLeft),
                         _Corner(alignment: Alignment.topRight),

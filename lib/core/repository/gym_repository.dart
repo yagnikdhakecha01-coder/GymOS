@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/local_storage.dart';
 import '../services/supabase_service.dart';
+import '../services/notification_service_mobile.dart';
 import '../models/member.dart';
 import '../models/staff.dart';
 import '../models/workout_plan.dart';
@@ -19,6 +20,9 @@ import '../models/attendance_settings.dart';
 import '../models/display_session.dart';
 import '../models/attendance_alert.dart';
 import '../models/attendance_correction.dart';
+import '../models/trial_member.dart';
+import '../models/manual_attendance_entry.dart';
+import '../models/attendance_audit_log.dart';
 
 import '../services/notification_service.dart';
 
@@ -38,12 +42,28 @@ class GymRepository extends ChangeNotifier {
   int _dbExpiring15Days = 0;
   int _dbPendingLeaves = 0;
   int _dbPendingHolidays = 0;
+  int _dbPendingAdvances = 0;
+  Map<String, dynamic> _dashboardAlertsData = {};
   bool _loadingDashboardStats = false;
 
   Map<String, dynamic>? _todayAttendanceDetails;
   Map<String, dynamic>? get todayAttendanceDetails => _todayAttendanceDetails;
 
   bool get loadingDashboardStats => _loadingDashboardStats;
+
+  DateTime _selectedDashboardDate = DateTime.now();
+  DateTime get selectedDashboardDate => _selectedDashboardDate;
+
+  void setSelectedDashboardDate(DateTime date) {
+    _selectedDashboardDate = date;
+    // Trigger remote fetch to update stats from Supabase in background
+    final gymId = _storage.getGymInfo()?['id'];
+    if (gymId != null) {
+      final formattedDate = DateFormat('yyyy-MM-dd').format(date);
+      fetchDashboardStatsFromSupabase(gymId, formattedDate);
+    }
+    notifyListeners();
+  }
 
   int get activeMembersCount {
     final localActive = _members.where((m) => m.status == 'Active').length;
@@ -56,28 +76,68 @@ class GymRepository extends ChangeNotifier {
   }
 
   double get monthlyRevenue {
-    final localRevenue = _transactions
-        .where((t) => t.type == 'Revenue')
-        .fold(0.0, (sum, t) => sum + t.amount);
-    return _dbMonthlyRevenue > 0 ? _dbMonthlyRevenue : localRevenue;
+    final targetMonth = _selectedDashboardDate.month;
+    final targetYear = _selectedDashboardDate.year;
+    final targetMonthShort = _getMonthShortName(targetMonth).toLowerCase();
+    final targetYearStr = targetYear.toString();
+
+    return _transactions.where((t) {
+      if (t.type != 'Revenue') return false;
+
+      if (t.transactionDate.isNotEmpty) {
+        try {
+          final dt = DateTime.parse(t.transactionDate);
+          return dt.month == targetMonth && dt.year == targetYear;
+        } catch (_) {}
+      }
+
+      final dateParts = t.date.split(' ');
+      if (dateParts.length >= 3) {
+        final monthStr = dateParts[1].toLowerCase();
+        final yearStr = dateParts[2];
+        return monthStr == targetMonthShort && yearStr == targetYearStr;
+      }
+
+      return false;
+    }).fold(0.0, (sum, t) => sum + t.amount);
   }
 
-  int get todayAttendanceCount => _dbTodayAttendance;
+  static String _getMonthShortName(int month) {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    if (month >= 1 && month <= 12) {
+      return months[month - 1];
+    }
+    return '';
+  }
+
+  int get todayAttendanceCount {
+    final dateStr = DateFormat('dd-MM-yyyy').format(_selectedDashboardDate);
+    final localCount = _attendance
+        .where((a) => a.date == dateStr && a.status != 'Absent')
+        .length;
+    // Fallback to server count if local is 0
+    return localCount > 0 ? localCount : _dbTodayAttendance;
+  }
 
   int get expiringTodayCount => _dbExpiringToday;
   int get expiring15DaysCount => _dbExpiring15Days;
   int get pendingLeavesCount => _dbPendingLeaves;
   int get pendingHolidaysCount => _dbPendingHolidays;
+  int get pendingAdvancesCount => _dbPendingAdvances;
 
   double get attendancePercentage {
     final active = activeMembersCount;
-    return active > 0 ? (_dbTodayAttendance / active) * 100 : 0.0;
+    final todayAtt = todayAttendanceCount;
+    return active > 0 ? (todayAtt / active) * 100 : 0.0;
   }
 
   // Raw JSON caches to prevent redundant notifyListeners calls
   String _lastMembersRaw = '';
   String _lastStaffRaw = '';
   String _lastTransactionsRaw = '';
+  String _lastDietsRaw = '';
+  String _lastMembershipsRaw = '';
+  String _lastWorkoutsRaw = '';
 
   // Network connection error tracking
   bool _hasNetworkConnectionError = false;
@@ -107,6 +167,8 @@ class GymRepository extends ChangeNotifier {
 
   // In-memory caches
   List<Member> _members = [];
+  List<TrialMember> _trialMembers = [];
+  String _lastTrialMembersRaw = '';
   List<Staff> _staff = [];
   List<WorkoutPlan> _workouts = [];
   List<DietPlan> _diets = [];
@@ -122,9 +184,27 @@ class GymRepository extends ChangeNotifier {
   List<AttendanceCorrectionRequest> _corrections = [];
   Map<String, dynamic> _dashboardStats = {};
 
+  List<Map<String, dynamic>> _salaryAdvances = [];
+  List<Map<String, dynamic>> _salaryDrafts = [];
+  List<Map<String, dynamic>> _leaveRequests = [];
+
+  String _shiftMode = 'Single Shift';
+  List<Map<String, dynamic>> _shiftsList = [];
+
+  List<Map<String, dynamic>> get salaryAdvances => List.unmodifiable(_salaryAdvances);
+  List<Map<String, dynamic>> get salaryDrafts => List.unmodifiable(_salaryDrafts);
+  List<Map<String, dynamic>> get leaveRequests => List.unmodifiable(_leaveRequests);
+  String get shiftMode => _shiftMode;
+  List<Map<String, dynamic>> get shiftsList => _shiftsList;
+
   List<AttendanceAlert> get alerts => _alerts;
   List<AttendanceCorrectionRequest> get corrections => _corrections;
   Map<String, dynamic> get dashboardStats => _dashboardStats;
+  Map<String, dynamic> get dashboardAlertsData => _dashboardAlertsData;
+  void updateDashboardAlertsData(Map<String, dynamic> data) {
+    _dashboardAlertsData = data;
+    notifyListeners();
+  }
 
   String get _workoutsKey => 'gymos_workouts_${_storage.getGymInfo()?['id'] ?? 'default'}';
   String get _dietsKey => 'gymos_diets_${_storage.getGymInfo()?['id'] ?? 'default'}';
@@ -132,9 +212,11 @@ class GymRepository extends ChangeNotifier {
   String get _attendanceKey => 'gymos_attendance_${_storage.getGymInfo()?['id'] ?? 'default'}';
   String get _goalsKey => 'gymos_fitness_goals_${_storage.getGymInfo()?['id'] ?? 'default'}';
   String get _customFieldsKey => 'gymos_custom_fields_${_storage.getGymInfo()?['id'] ?? 'default'}';
+  String get _dashboardStatsKey => 'gymos_dashboard_stats_${_storage.getGymInfo()?['id'] ?? 'default'}';
 
   GymRepository(this._storage) {
     _loadAllFromStorage();
+    _loadQueuesFromStorage();
     _startSyncTimer();
     if (SupabaseService.isInitialized) {
       _authStateSubscription = SupabaseService.client.auth.onAuthStateChange.listen((data) {
@@ -151,8 +233,8 @@ class GymRepository extends ChangeNotifier {
 
   void _startSyncTimer() {
     _syncTimer?.cancel();
-    _syncTimer = Timer.periodic(const Duration(seconds: 2), (timer) async {
-      await syncAllFromSupabase();
+    _syncTimer = Timer.periodic(const Duration(seconds: 30), (timer) async {
+      await triggerBackgroundSync();
     });
   }
 
@@ -167,33 +249,42 @@ class GymRepository extends ChangeNotifier {
             event: PostgresChangeEvent.all,
             schema: 'public',
             callback: (payload) {
-              print('Supabase Realtime Event Received: ${payload.eventType}');
+              final tableName = payload.table;
+              print('Supabase Realtime Event Received: ${payload.eventType} on table: $tableName');
               
-              if (payload.eventType == PostgresChangeEvent.insert &&
-                  payload.table == 'attendance_logs') {
-                final newRecord = payload.newRecord;
-                final userType = newRecord['user_type'] as String?;
-                final checkIn = newRecord['check_in'] as String?;
+              if (tableName == 'members') {
+                fetchMembersFromSupabase();
+              } else if (tableName == 'trial_members') {
+                fetchTrialMembersFromSupabase();
+              } else if (tableName == 'staff') {
+                fetchStaffFromSupabase();
+              } else if (tableName == 'transactions') {
+                fetchTransactionsFromSupabase();
+              } else if (tableName == 'attendance_logs') {
+                fetchAttendanceLogsFromSupabase();
+              } else if (tableName == 'workout_plans') {
+                fetchWorkoutsFromSupabase();
+              } else if (tableName == 'goals') {
+                fetchGoalsFromSupabase();
+              } else if (tableName == 'custom_fields') {
+                fetchCustomFieldsFromSupabase();
+              } else if (tableName == 'attendance_settings') {
+                fetchAttendanceSettingsFromSupabase();
+              } else if (tableName == 'display_sessions') {
+                fetchDisplaySessionsFromSupabase();
+              } else {
+                syncAllFromSupabase();
+              }
 
-                if (userType == 'Staff' && checkIn != null) {
-                  final userId = newRecord['user_id'] as String?;
-                  
-                  // Match staff name
-                  final matchingStaff = _staff.where((s) => s.userId == userId).toList();
-                  final staffName = matchingStaff.isNotEmpty ? matchingStaff.first.name : 'Staff';
-                  
-                  final parsedTime = DateTime.tryParse(checkIn)?.toLocal() ?? DateTime.now();
-                  final formattedTime = DateFormat('hh:mm a').format(parsedTime);
-
-                  NotificationService.showNotification(
-                    id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
-                    title: 'Staff Checked In',
-                    body: '$staffName checked in, time is $formattedTime.',
-                  );
+              // Update stats for live screen dashboard counters only for relevant changes
+              if (tableName == 'members' || tableName == 'attendance_logs' || tableName == 'transactions') {
+                final currentGymId = _storage.getGymInfo()?['id'];
+                if (currentGymId != null) {
+                  final todayStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
+                  fetchDashboardStatsFromSupabase(currentGymId, todayStr);
+                  fetchOwnerDashboardStats(currentGymId);
                 }
               }
-              
-              syncAllFromSupabase();
             },
           )
           .subscribe();
@@ -222,6 +313,8 @@ class GymRepository extends ChangeNotifier {
 
     try {
       await fetchMembersFromSupabase();
+      if (_hasNetworkConnectionError) return;
+      await fetchTrialMembersFromSupabase();
       if (_hasNetworkConnectionError) return;
       await fetchStaffFromSupabase();
       if (_hasNetworkConnectionError) return;
@@ -275,6 +368,45 @@ class GymRepository extends ChangeNotifier {
         _dbExpiring15Days = (data['expiring_15_days'] as num?)?.toInt() ?? 0;
         _dbPendingLeaves = (data['pending_leaves'] as num?)?.toInt() ?? 0;
         _dbPendingHolidays = (data['pending_holidays'] as num?)?.toInt() ?? 0;
+
+        // Clamp to local pending counts so locally approved items stay hidden
+        final localPendingLeaves2 = _leaveRequests.where((l) => l['status'] == 'Pending' && l['leave_type'] != 'Other').length;
+        final localPendingHolidays2 = _leaveRequests.where((l) => l['status'] == 'Pending' && l['leave_type'] == 'Other').length;
+        if (_dbPendingLeaves > localPendingLeaves2) _dbPendingLeaves = localPendingLeaves2;
+        if (_dbPendingHolidays > localPendingHolidays2) _dbPendingHolidays = localPendingHolidays2;
+      }
+
+      // Query get_dashboard_alerts_v1 to get accurate realtime counts for alerts section
+      try {
+        final alertsResponse = await SupabaseService.client.rpc(
+          'get_dashboard_alerts_v1',
+          params: {'p_gym_id': gymId},
+        );
+        if (alertsResponse != null && alertsResponse is Map) {
+          final alertsMap = Map<String, dynamic>.from(alertsResponse);
+          _dashboardAlertsData = alertsMap;
+          _dbExpiringToday = (alertsMap['memberships_ending_today']?['count'] as num?)?.toInt() ?? _dbExpiringToday;
+          
+          final exp1 = (alertsMap['memberships_expiring_1_day']?['count'] as num?)?.toInt() ?? 0;
+          final exp3 = (alertsMap['memberships_expiring_3_days']?['count'] as num?)?.toInt() ?? 0;
+          final exp7 = (alertsMap['memberships_expiring_7_days']?['count'] as num?)?.toInt() ?? 0;
+          final exp15 = (alertsMap['memberships_expiring_15_days']?['count'] as num?)?.toInt() ?? 0;
+          _dbExpiring15Days = exp1 + exp3 + exp7 + exp15;
+          
+          _dbPendingLeaves = (alertsMap['staff_leave_requests']?['count'] as num?)?.toInt() ?? _dbPendingLeaves;
+          _dbPendingHolidays = (alertsMap['holiday_requests']?['count'] as num?)?.toInt() ?? _dbPendingHolidays;
+          _dbPendingAdvances = (alertsMap['staff_advance_requests']?['count'] as num?)?.toInt() ?? 0;
+
+          // Clamp to local pending counts so locally approved items stay hidden
+          final localPendingLeaves = _leaveRequests.where((l) => l['status'] == 'Pending' && l['leave_type'] != 'Other').length;
+          final localPendingHolidays = _leaveRequests.where((l) => l['status'] == 'Pending' && l['leave_type'] == 'Other').length;
+          final localPendingAdvances = _salaryAdvances.where((a) => a['status'] == 'Pending').length;
+          if (_dbPendingLeaves > localPendingLeaves) _dbPendingLeaves = localPendingLeaves;
+          if (_dbPendingHolidays > localPendingHolidays) _dbPendingHolidays = localPendingHolidays;
+          if (_dbPendingAdvances > localPendingAdvances) _dbPendingAdvances = localPendingAdvances;
+        }
+      } catch (alertsErr) {
+        print('fetchDashboardStatsFromSupabase (alerts fetch fallback) error: $alertsErr');
       }
     } catch (e) {
       _handleNetworkError('fetchDashboardStatsFromSupabase', e);
@@ -320,24 +452,1285 @@ class GymRepository extends ChangeNotifier {
     _dbExpiring15Days = 0;
     _dbPendingLeaves = 0;
     _dbPendingHolidays = 0;
+    _dbPendingAdvances = 0;
+    _dashboardAlertsData = {};
 
     _lastMembersRaw = '';
     _lastStaffRaw = '';
     _lastTransactionsRaw = '';
-    _lastWorkoutsRaw = null;
+    _lastWorkoutsRaw = '';
+    _lastDietsRaw = '';
+    _lastMembershipsRaw = '';
 
     _hasNetworkConnectionError = false;
 
     notifyListeners();
   }
 
+  // --- Offline First Queues & Background Sync ---
+  List<Map<String, dynamic>> _attendanceQueue = [];
+  List<Map<String, dynamic>> _crudQueue = [];
+  List<ManualAttendanceEntry> _manualAttendanceQueue = [];
+  List<AttendanceAuditLog> _auditLogs = [];
+  bool _isSyncing = false;
+
+  List<Map<String, dynamic>> get attendanceQueue => List.unmodifiable(_attendanceQueue);
+  List<Map<String, dynamic>> get crudQueue => List.unmodifiable(_crudQueue);
+  List<ManualAttendanceEntry> get manualAttendanceQueue => List.unmodifiable(_manualAttendanceQueue);
+  List<AttendanceAuditLog> get auditLogs => List.unmodifiable(_auditLogs);
+
+  void _loadQueuesFromStorage() {
+    final rawAtt = _storage.getString(LocalStorageService.keyAttendanceQueue);
+    if (rawAtt != null && rawAtt.isNotEmpty) {
+      try {
+        _attendanceQueue = List<Map<String, dynamic>>.from(jsonDecode(rawAtt));
+      } catch (_) {}
+    }
+
+    final rawCrud = _storage.getString(LocalStorageService.keyCrudQueue);
+    if (rawCrud != null && rawCrud.isNotEmpty) {
+      try {
+        _crudQueue = List<Map<String, dynamic>>.from(jsonDecode(rawCrud));
+      } catch (_) {}
+    }
+
+    // Load manual attendance queue
+    final rawManual = _storage.getString(LocalStorageService.keyManualAttendanceQueue);
+    if (rawManual != null && rawManual.isNotEmpty) {
+      try {
+        final List decoded = jsonDecode(rawManual);
+        _manualAttendanceQueue = decoded.map((e) => ManualAttendanceEntry.fromJson(e)).toList();
+      } catch (_) {}
+    }
+
+    // Load audit logs
+    final rawAudit = _storage.getString(LocalStorageService.keyAttendanceAuditLog);
+    if (rawAudit != null && rawAudit.isNotEmpty) {
+      try {
+        final List decoded = jsonDecode(rawAudit);
+        _auditLogs = decoded.map((e) => AttendanceAuditLog.fromJson(e)).toList();
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _saveQueuesToStorage() async {
+    await _storage.setString(LocalStorageService.keyAttendanceQueue, jsonEncode(_attendanceQueue));
+    await _storage.setString(LocalStorageService.keyCrudQueue, jsonEncode(_crudQueue));
+    await _storage.setString(
+      LocalStorageService.keyManualAttendanceQueue,
+      jsonEncode(_manualAttendanceQueue.map((e) => e.toJson()).toList()),
+    );
+  }
+
+  Future<void> _saveAuditLogsToStorage() async {
+    await _storage.setString(
+      LocalStorageService.keyAttendanceAuditLog,
+      jsonEncode(_auditLogs.map((e) => e.toJson()).toList()),
+    );
+  }
+
+  Future<bool> isSupabaseReachable() async {
+    if (!SupabaseService.isInitialized) return false;
+    try {
+      await SupabaseService.client.from('gyms').select('id').limit(1).timeout(const Duration(seconds: 5));
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> triggerBackgroundSync({bool forceRetry = false}) async {
+    if (_isSyncing) return;
+    _isSyncing = true;
+    try {
+      final reachable = await isSupabaseReachable();
+      if (!reachable) {
+        print('Offline Sync: Supabase is currently unreachable. Will retry on next timer.');
+        _isSyncing = false;
+        return;
+      }
+      _resetNetworkError();
+
+      if (forceRetry) {
+        // Reset retry count of failed operations so they try again
+        for (var item in _crudQueue) {
+          if (item['sync_status'] == 'failed' || (item['retry_count'] ?? 0) > 5) {
+            item['sync_status'] = 'pending';
+            item['retry_count'] = 0;
+            item['error_message'] = null;
+          }
+        }
+        for (var item in _attendanceQueue) {
+          if (item['sync_status'] == 'failed' || (item['retry_count'] ?? 0) > 5) {
+            item['sync_status'] = 'pending';
+            item['retry_count'] = 0;
+            item['error_message'] = null;
+          }
+        }
+        for (var item in _manualAttendanceQueue) {
+          if (item.syncStatus == 'failed' || item.retryCount > 5) {
+            item.syncStatus = 'pending';
+            item.retryCount = 0;
+            item.errorMessage = null;
+          }
+        }
+        await _saveQueuesToStorage();
+        notifyListeners();
+      }
+
+      await _processAttendanceQueue();
+      await _processCrudQueue();
+      await _processManualAttendanceQueue();
+      await _runBackgroundVerification();
+    } catch (e) {
+      print('triggerBackgroundSync error: $e');
+    } finally {
+      _isSyncing = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> isAttendanceProcessed(String uuid) async {
+    if (!SupabaseService.isInitialized) return false;
+    try {
+      final res = await SupabaseService.client
+          .from('attendance_logs')
+          .select('id')
+          .eq('id', uuid)
+          .maybeSingle();
+      return res != null;
+    } catch (_) {}
+    return false;
+  }
+
+  Future<bool> isOperationProcessed(Map<String, dynamic> item) async {
+    if (!SupabaseService.isInitialized) return false;
+    
+    final table = item['table'] as String;
+    final action = item['action'] as String;
+    final payload = item['payload'] as Map<String, dynamic>;
+    
+    if (table.startsWith('rpc_')) {
+      if (table == 'rpc_pay_salary_draft') {
+        final draftId = payload['p_draft_id'] as String?;
+        if (draftId != null) {
+          try {
+            final res = await SupabaseService.client
+                .from('salary_drafts')
+                .select('status')
+                .eq('id', draftId)
+                .maybeSingle();
+            if (res != null && (res['status'] == 'Paid' || res['status'] == 'paid')) {
+              return true;
+            }
+          } catch (_) {}
+        }
+      }
+      return false;
+    }
+    
+    final id = payload['id'] as String?;
+    if (id == null) return false;
+    
+    try {
+      if (action == 'insert') {
+        final res = await SupabaseService.client
+            .from(table)
+            .select('id')
+            .eq('id', id)
+            .maybeSingle();
+        return res != null;
+      } else if (action == 'delete') {
+        final res = await SupabaseService.client
+            .from(table)
+            .select('id')
+            .eq('id', id)
+            .maybeSingle();
+        return res == null;
+      }
+    } catch (_) {}
+    
+    return false;
+  }
+
+  Future<void> _processAttendanceQueue() async {
+    if (_attendanceQueue.isEmpty) return;
+    if (!SupabaseService.isInitialized) return;
+
+    final List<Map<String, dynamic>> toProcess = List.from(_attendanceQueue);
+
+    for (var item in toProcess) {
+      if (item['sync_status'] == 'synced' || (item['retry_count'] ?? 0) > 5) continue;
+
+      item['sync_status'] = 'syncing';
+      await _saveQueuesToStorage();
+
+      try {
+        final attendanceUuid = item['attendance_uuid'] as String;
+        final alreadyProcessed = await isAttendanceProcessed(attendanceUuid);
+        
+        if (alreadyProcessed) {
+          print('Attendance Sync: Log $attendanceUuid already processed on server. Skipping insert.');
+        } else {
+          final gymId = item['gym_id'] as String;
+          final memberId = item['member_id'] as String?;
+          final staffId = item['staff_id'] as String?;
+          final userId = item['user_id'] as String?;
+          final attendanceType = item['attendance_type'] as String;
+          final shiftId = item['shift_id'] as String?;
+          final date = item['date'] as String;
+          final checkInIso = item['check_in'] as String;
+          final checkOutIso = item['check_out'] as String?;
+          final status = item['status'] as String;
+          final userType = item['user_type'] as String;
+
+          final data = {
+            'id': attendanceUuid,
+            'gym_id': gymId,
+            'user_id': userId,
+            'role': userType,
+            'user_type': userType,
+            'member_id': memberId,
+            'staff_id': staffId,
+            'shift_id': shiftId,
+            'date': date,
+            'check_in': checkInIso,
+            'check_out': checkOutIso,
+            'status': status,
+            'method': 'Manual',
+          };
+
+          await SupabaseService.client.from('attendance_logs').upsert(data);
+        }
+
+        // Success - remove from queue
+        _attendanceQueue.removeWhere((q) => q['attendance_uuid'] == attendanceUuid);
+        await _saveQueuesToStorage();
+        print('Synced attendance log $attendanceUuid successfully.');
+      } catch (e) {
+        print('Error syncing attendance log: $e');
+        item['sync_status'] = 'failed';
+        item['retry_count'] = (item['retry_count'] ?? 0) + 1;
+        item['error_message'] = e.toString();
+        await _saveQueuesToStorage();
+
+        // Push Local Sync Alert
+        try {
+          await NotificationService.showNotification(
+            id: item['attendance_uuid'].hashCode,
+            title: 'Attendance Sync Failed',
+            body: 'Failed to sync manual attendance for ${item['user_name']}: $e',
+          );
+        } catch (_) {}
+      }
+    }
+  }
+
+  Future<void> _processCrudQueue() async {
+    if (_crudQueue.isEmpty) return;
+    if (!SupabaseService.isInitialized) return;
+
+    final List<Map<String, dynamic>> toProcess = List.from(_crudQueue);
+
+    for (var item in toProcess) {
+      if ((item['retry_count'] ?? 0) > 5) continue;
+
+      try {
+        final uuid = item['uuid'] as String;
+        final table = item['table'] as String;
+        final action = item['action'] as String;
+        final payload = item['payload'] as Map<String, dynamic>? ?? {};
+
+        // Auto-heal corrupt queue entries that violate non-null database constraints
+        if (table == 'leave_requests' || table == 'salary_advance_ledger' || table == 'finance_transactions' || table == 'member_memberships' || table == 'members') {
+          final gymId = payload['gym_id'] ?? payload['gymId'];
+          if (gymId == null || gymId.toString().isEmpty) {
+            print('Auto-Heal: Removing corrupt queue entry $uuid for table $table due to missing gym_id.');
+            _crudQueue.removeWhere((q) => q['uuid'] == uuid);
+            await _saveQueuesToStorage();
+            continue;
+          }
+        }
+
+        // Auto-heal corrupt attendance updates missing check_in
+        if (table == 'attendance_logs') {
+          final checkIn = payload['check_in'];
+          if (checkIn == null || checkIn.toString().isEmpty) {
+            print('Auto-Heal: Removing corrupt attendance_logs queue entry $uuid due to missing check_in.');
+            _crudQueue.removeWhere((q) => q['uuid'] == uuid);
+            await _saveQueuesToStorage();
+            continue;
+          }
+        }
+
+        item['sync_status'] = 'syncing';
+        await _saveQueuesToStorage();
+
+        final alreadyProcessed = await isOperationProcessed(item);
+        if (alreadyProcessed) {
+          print('Sync: Operation $uuid already processed on server. Skipping execution.');
+        } else {
+          if (table == 'rpc_pay_salary_draft') {
+            await SupabaseService.client.rpc(
+              'pay_salary_draft_v2',
+              params: payload,
+            );
+          } else if (table == 'rpc_save_gym_operating_hours') {
+            await SupabaseService.client.rpc(
+              'save_gym_operating_hours',
+              params: payload,
+            );
+          } else if (action == 'insert' || action == 'update') {
+            await SupabaseService.client.from(table).upsert(payload);
+          } else if (action == 'delete') {
+            final id = payload['id'] as String;
+            await SupabaseService.client.from(table).delete().eq('id', id);
+          }
+        }
+
+        // Success - remove from queue
+        _crudQueue.removeWhere((q) => q['uuid'] == uuid);
+        await _saveQueuesToStorage();
+        print('Synced CRUD operation $uuid successfully.');
+      } catch (e) {
+        print('Error syncing CRUD operation: $e');
+        item['sync_status'] = 'failed';
+        item['retry_count'] = (item['retry_count'] ?? 0) + 1;
+        item['error_message'] = e.toString();
+        await _saveQueuesToStorage();
+
+        // Push Local Sync Alert
+        try {
+          await NotificationService.showNotification(
+            id: item['uuid'].hashCode,
+            title: 'Data Sync Failed',
+            body: 'Failed to sync ${item['table']} action: $e',
+          );
+        } catch (_) {}
+      }
+    }
+  }
+
+  Future<void> _runBackgroundVerification() async {
+    try {
+      final gymId = _storage.getGymInfo()?['id'];
+      await fetchMembersFromSupabase();
+      await fetchTrialMembersFromSupabase();
+      await fetchStaffFromSupabase();
+      await fetchTransactionsFromSupabase();
+      await fetchAttendanceLogsFromSupabase();
+      await fetchAttendanceSettingsFromSupabase();
+      if (gymId != null) {
+        await fetchOwnerDashboardStats(gymId);
+      }
+      // Refresh offline caches for emergency attendance
+      await cacheOfflineMemberData();
+      await cacheOfflineStaffData();
+    } catch (e) {
+      print('Background verification error: $e');
+    }
+  }
+
+  Future<void> queueAttendance({
+    required String gymId,
+    String? memberId,
+    String? staffId,
+    String? userId,
+    required String attendanceType,
+    String? shiftId,
+    required String date,
+    required String checkIn,
+    String? checkOut,
+    required String status,
+    required String userType,
+    required String userName,
+  }) async {
+    final String uuid = _generateUuidV4();
+    final nowStr = DateTime.now().toIso8601String();
+
+    final item = {
+      'attendance_uuid': uuid,
+      'gym_id': gymId,
+      'member_id': memberId,
+      'staff_id': staffId,
+      'user_id': userId,
+      'attendance_type': attendanceType,
+      'shift_id': shiftId,
+      'date': date,
+      'check_in': checkIn,
+      'check_out': checkOut,
+      'status': status,
+      'user_type': userType,
+      'user_name': userName,
+      'created_at': nowStr,
+      'updated_at': nowStr,
+      'sync_status': 'pending',
+      'retry_count': 0,
+      'error_message': null,
+    };
+
+    _attendanceQueue.add(item);
+    await _saveQueuesToStorage();
+
+    final localRecord = AttendanceRecord(
+      id: uuid,
+      userId: userId ?? staffId ?? memberId ?? '',
+      userName: userName,
+      userType: userType,
+      checkInTime: DateFormat('hh:mm a').format(DateTime.parse(checkIn).toLocal()),
+      checkOutTime: checkOut != null ? DateFormat('hh:mm a').format(DateTime.parse(checkOut).toLocal()) : null,
+      date: date,
+      status: status,
+      workingMinutes: 0,
+      lateMinutes: 0,
+      earlyExitMinutes: 0,
+      overtimeMinutes: 0,
+      ruleVersion: 1,
+      staffId: staffId,
+    );
+
+    _attendance.insert(0, localRecord);
+    await _storage.setString(_attendanceKey, jsonEncode(_attendance.map((e) => e.toJson()).toList()));
+    notifyListeners();
+
+    triggerBackgroundSync();
+  }
+
+  Future<void> queueCheckOut({
+    required String gymId,
+    String? memberId,
+    String? staffId,
+    required String date,
+    required String checkOutTimeIso,
+  }) async {
+    final nowStr = DateTime.now().toIso8601String();
+    final targetId = memberId ?? staffId;
+    final index = _attendance.indexWhere((r) => 
+      (r.userId == targetId || r.staffId == targetId) && 
+      r.date == date && 
+      r.checkOutTime == null
+    );
+
+    if (index >= 0) {
+      final existingRecord = _attendance[index];
+      final checkOutTimeStr = DateFormat('hh:mm a').format(DateTime.parse(checkOutTimeIso).toLocal());
+      
+      _attendance[index] = existingRecord.copyWith(
+        checkOutTime: checkOutTimeStr,
+      );
+      await _storage.setString(_attendanceKey, jsonEncode(_attendance.map((e) => e.toJson()).toList()));
+      notifyListeners();
+
+      final qIndex = _attendanceQueue.indexWhere((q) => 
+        q['attendance_uuid'] == existingRecord.id && 
+        q['sync_status'] == 'pending'
+      );
+
+      if (qIndex >= 0) {
+        _attendanceQueue[qIndex]['check_out'] = checkOutTimeIso;
+        _attendanceQueue[qIndex]['attendance_type'] = 'Check Out';
+        _attendanceQueue[qIndex]['updated_at'] = nowStr;
+      } else {
+        final checkOutItem = {
+          'attendance_uuid': existingRecord.id,
+          'gym_id': gymId,
+          'member_id': memberId,
+          'staff_id': staffId,
+          'user_id': existingRecord.userId,
+          'attendance_type': 'Check Out',
+          'shift_id': existingRecord.shiftStatus,
+          'date': date,
+          'check_in': DateTime.now().toIso8601String(),
+          'check_out': checkOutTimeIso,
+          'status': existingRecord.status,
+          'user_type': existingRecord.userType,
+          'user_name': existingRecord.userName,
+          'created_at': nowStr,
+          'updated_at': nowStr,
+          'sync_status': 'pending',
+          'retry_count': 0,
+          'error_message': null,
+        };
+        _attendanceQueue.add(checkOutItem);
+      }
+      await _saveQueuesToStorage();
+      triggerBackgroundSync();
+    }
+  }
+
+  // ===================================================================
+  // EMERGENCY ATTENDANCE RECOVERY SYSTEM
+  // ===================================================================
+
+  // --- Offline Member/Staff Cache ---
+
+  /// Caches active member data locally for offline manual attendance.
+  Future<void> cacheOfflineMemberData() async {
+    try {
+      final members = getMembers().where((m) => m.status == 'Active').toList();
+      final todayStr = DateFormat('dd-MM-yyyy').format(DateTime.now());
+      final todayAttIds = _attendance
+          .where((a) => a.date == todayStr && a.userType == 'Member')
+          .map((a) => a.userId)
+          .toSet();
+
+      final cacheData = members.map((m) => {
+        'id': m.id,
+        'name': m.name,
+        'avatar': m.avatar,
+        'phone': m.phone,
+        'status': m.status,
+        'membership_plan_id': m.membershipPlanId,
+        'marked_today': todayAttIds.contains(m.id),
+      }).toList();
+
+      await _storage.setString(
+        LocalStorageService.keyOfflineMemberCache,
+        jsonEncode(cacheData),
+      );
+    } catch (e) {
+      print('cacheOfflineMemberData error: $e');
+    }
+  }
+
+  /// Caches active staff data locally for offline manual attendance.
+  Future<void> cacheOfflineStaffData() async {
+    try {
+      final staff = getStaff().where((s) => s.status == 'Active').toList();
+      final cacheData = staff.map((s) => {
+        'id': s.id,
+        'name': s.name,
+        'avatar': s.avatar,
+        'phone': s.phone,
+        'role': s.role,
+        'shift': s.shift,
+        'user_id': s.userId,
+        'status': s.status,
+      }).toList();
+
+      await _storage.setString(
+        LocalStorageService.keyOfflineStaffCache,
+        jsonEncode(cacheData),
+      );
+    } catch (e) {
+      print('cacheOfflineStaffData error: $e');
+    }
+  }
+
+  /// Returns cached members for offline manual attendance.
+  /// Falls back to in-memory members if cache is empty.
+  List<Map<String, dynamic>> getOfflineMembers() {
+    final raw = _storage.getString(LocalStorageService.keyOfflineMemberCache);
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        return List<Map<String, dynamic>>.from(jsonDecode(raw));
+      } catch (_) {}
+    }
+    // Fallback: build from in-memory members
+    final todayStr = DateFormat('dd-MM-yyyy').format(DateTime.now());
+    final todayAttIds = _attendance
+        .where((a) => a.date == todayStr && a.userType == 'Member')
+        .map((a) => a.userId)
+        .toSet();
+
+    return getMembers()
+        .where((m) => m.status == 'Active')
+        .map((m) => {
+              'id': m.id,
+              'name': m.name,
+              'avatar': m.avatar,
+              'phone': m.phone,
+              'status': m.status,
+              'membership_plan_id': m.membershipPlanId,
+              'marked_today': todayAttIds.contains(m.id),
+            })
+        .toList();
+  }
+
+  /// Returns cached staff for offline manual attendance.
+  /// Falls back to in-memory staff if cache is empty.
+  List<Map<String, dynamic>> getOfflineStaff() {
+    final raw = _storage.getString(LocalStorageService.keyOfflineStaffCache);
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        return List<Map<String, dynamic>>.from(jsonDecode(raw));
+      } catch (_) {}
+    }
+    // Fallback: build from in-memory staff
+    return getStaff()
+        .where((s) => s.status == 'Active')
+        .map((s) => {
+              'id': s.id,
+              'name': s.name,
+              'avatar': s.avatar,
+              'phone': s.phone,
+              'role': s.role,
+              'shift': s.shift,
+              'user_id': s.userId,
+              'status': s.status,
+            })
+        .toList();
+  }
+
+  // --- Manual Attendance Queue ---
+
+  /// Queues manual member attendance for multiple members at once.
+  /// Saves locally first, syncs to cloud automatically when available.
+  Future<void> queueManualMemberAttendance({
+    required String gymId,
+    required List<Map<String, dynamic>> members,
+    required String reason,
+    required String addedBy,
+    required String addedByRole,
+  }) async {
+    final todayStr = DateFormat('dd-MM-yyyy').format(DateTime.now());
+    final nowIso = DateTime.now().toUtc().toIso8601String();
+    final now = DateTime.now();
+
+    for (final member in members) {
+      final memberId = member['id'] as String;
+      final memberName = member['name'] as String;
+
+      // Duplicate check: skip if already in queue or already marked today
+      final alreadyQueued = _manualAttendanceQueue.any(
+        (e) => e.memberId == memberId && e.date == todayStr,
+      );
+      final alreadyMarked = _attendance.any(
+        (a) => a.userId == memberId && a.date == todayStr && a.status != 'Absent',
+      );
+      if (alreadyQueued || alreadyMarked) continue;
+
+      final uuid = _generateUuidV4();
+      final entry = ManualAttendanceEntry(
+        operationUuid: uuid,
+        gymId: gymId,
+        memberId: memberId,
+        userType: 'Member',
+        userName: memberName,
+        userAvatar: member['avatar'] as String?,
+        status: 'Present',
+        date: todayStr,
+        checkInIso: nowIso,
+        reason: reason,
+        addedBy: addedBy,
+        addedByRole: addedByRole,
+        createdAt: now,
+        updatedAt: now,
+      );
+
+      _manualAttendanceQueue.add(entry);
+
+      // Add to local attendance list immediately
+      final localRecord = AttendanceRecord(
+        id: uuid,
+        userId: memberId,
+        userName: memberName,
+        userType: 'Member',
+        checkInTime: DateFormat('hh:mm a').format(now),
+        date: todayStr,
+        status: 'Present',
+        method: 'Manual',
+        workingMinutes: 0,
+        lateMinutes: 0,
+        earlyExitMinutes: 0,
+        overtimeMinutes: 0,
+        ruleVersion: 1,
+      );
+      _attendance.insert(0, localRecord);
+
+      // Add audit log
+      _addAuditLog(
+        gymId: gymId,
+        actionType: 'manual_attendance',
+        performedBy: addedBy,
+        performedByRole: addedByRole,
+        targetUserName: memberName,
+        targetUserType: 'Member',
+        targetUserId: memberId,
+        date: todayStr,
+        newStatus: 'Present',
+        reason: reason,
+      );
+    }
+
+    await _storage.setString(
+      _attendanceKey,
+      jsonEncode(_attendance.map((e) => e.toJson()).toList()),
+    );
+    await _saveQueuesToStorage();
+    notifyListeners();
+
+    // Trigger background sync
+    triggerBackgroundSync();
+  }
+
+  /// Queues manual staff attendance.
+  /// Saves locally first, syncs to cloud automatically when available.
+  Future<void> queueManualStaffAttendance({
+    required String gymId,
+    required String staffId,
+    required String? userId,
+    required String staffName,
+    required String? shiftId,
+    required String? shiftName,
+    required String checkInIso,
+    required String? checkOutIso,
+    required String date,
+    required String reason,
+    required String addedBy,
+    required String addedByRole,
+  }) async {
+    // Duplicate check
+    final alreadyQueued = _manualAttendanceQueue.any(
+      (e) => e.staffId == staffId && e.date == date,
+    );
+    final alreadyMarked = _attendance.any(
+      (a) => (a.userId == staffId || a.staffId == staffId) && a.date == date && a.status != 'Absent',
+    );
+    if (alreadyQueued || alreadyMarked) return;
+
+    final uuid = _generateUuidV4();
+    final now = DateTime.now();
+
+    final entry = ManualAttendanceEntry(
+      operationUuid: uuid,
+      gymId: gymId,
+      staffId: staffId,
+      userId: userId,
+      userType: 'Staff',
+      userName: staffName,
+      status: 'Present',
+      date: date,
+      checkInIso: checkInIso,
+      checkOutIso: checkOutIso,
+      shiftId: shiftId,
+      shiftName: shiftName,
+      reason: reason,
+      addedBy: addedBy,
+      addedByRole: addedByRole,
+      createdAt: now,
+      updatedAt: now,
+    );
+
+    _manualAttendanceQueue.add(entry);
+
+    // Add to local attendance list immediately
+    final checkInLocal = DateTime.parse(checkInIso).toLocal();
+    String? checkOutStr;
+    if (checkOutIso != null) {
+      checkOutStr = DateFormat('hh:mm a').format(DateTime.parse(checkOutIso).toLocal());
+    }
+    final localRecord = AttendanceRecord(
+      id: uuid,
+      userId: userId ?? staffId,
+      userName: staffName,
+      userType: 'Staff',
+      checkInTime: DateFormat('hh:mm a').format(checkInLocal),
+      checkOutTime: checkOutStr,
+      date: date,
+      status: 'Present',
+      method: 'Manual',
+      workingMinutes: 0,
+      lateMinutes: 0,
+      earlyExitMinutes: 0,
+      overtimeMinutes: 0,
+      ruleVersion: 1,
+      staffId: staffId,
+    );
+    _attendance.insert(0, localRecord);
+
+    // Add audit log
+    _addAuditLog(
+      gymId: gymId,
+      actionType: 'manual_attendance',
+      performedBy: addedBy,
+      performedByRole: addedByRole,
+      targetUserName: staffName,
+      targetUserType: 'Staff',
+      targetUserId: staffId,
+      date: date,
+      newStatus: 'Present',
+      newCheckIn: DateFormat('hh:mm a').format(checkInLocal),
+      newCheckOut: checkOutStr,
+      newShift: shiftName,
+      reason: reason,
+    );
+
+    await _storage.setString(
+      _attendanceKey,
+      jsonEncode(_attendance.map((e) => e.toJson()).toList()),
+    );
+    await _saveQueuesToStorage();
+    notifyListeners();
+
+    triggerBackgroundSync();
+  }
+
+  // --- Manual Attendance Queue Processing ---
+
+  /// Processes pending manual attendance entries and syncs them to Supabase.
+  /// Automatically resolves absent conflicts.
+  Future<void> _processManualAttendanceQueue() async {
+    if (_manualAttendanceQueue.isEmpty) return;
+    if (!SupabaseService.isInitialized) return;
+
+    final List<ManualAttendanceEntry> toProcess = List.from(_manualAttendanceQueue);
+
+    for (final entry in toProcess) {
+      if (entry.syncStatus == 'synced' || entry.retryCount > 5) continue;
+
+      entry.syncStatus = 'syncing';
+      entry.updatedAt = DateTime.now();
+      await _saveQueuesToStorage();
+
+      try {
+        // Check if a present record already exists for this member/staff on this date
+        final hasPresentOnServer = await _hasPresentRecordOnServer(
+          gymId: entry.gymId,
+          memberId: entry.memberId,
+          staffId: entry.staffId,
+          userId: entry.userId,
+          date: entry.date,
+        );
+
+        if (!hasPresentOnServer) {
+          // Resolve absent conflict: remove auto-absent record if exists
+          await _resolveAbsentConflict(
+            gymId: entry.gymId,
+            userId: entry.userId ?? entry.memberId ?? entry.staffId ?? '',
+            memberId: entry.memberId,
+            staffId: entry.staffId,
+            date: entry.date,
+          );
+
+          // Upsert the present record
+          final data = {
+            'id': entry.operationUuid,
+            'gym_id': entry.gymId,
+            'user_id': entry.userId,
+            'member_id': entry.memberId,
+            'staff_id': entry.staffId,
+            'user_type': entry.userType,
+            'role': entry.userType,
+            'shift_id': entry.shiftId,
+            'date': entry.date,
+            'check_in': entry.checkInIso,
+            'check_out': entry.checkOutIso,
+            'status': entry.status,
+            'method': 'Manual',
+          };
+
+          await SupabaseService.client.from('attendance_logs').upsert(data);
+
+          // Sync audit log for this entry
+          await _syncAuditLogForEntry(entry);
+        } else {
+          print('Emergency Sync: Duplicate present record already exists on server for ${entry.userName} on ${entry.date}. Skipping insert.');
+        }
+
+        // Success — remove from queue
+        _manualAttendanceQueue.removeWhere((e) => e.operationUuid == entry.operationUuid);
+        await _saveQueuesToStorage();
+        print('Emergency Sync: Manual attendance ${entry.operationUuid} synced successfully.');
+      } catch (e) {
+        print('Emergency Sync Error: ${entry.operationUuid}: $e');
+        entry.syncStatus = 'failed';
+        entry.retryCount++;
+        entry.errorMessage = e.toString();
+        entry.updatedAt = DateTime.now();
+        await _saveQueuesToStorage();
+
+        try {
+          await NotificationService.showNotification(
+            id: entry.operationUuid.hashCode,
+            title: 'Manual Attendance Sync Failed',
+            body: 'Failed to sync manual attendance for ${entry.userName}: $e',
+          );
+        } catch (_) {}
+      }
+    }
+  }
+
+  // --- Auto-Absent Conflict Resolution ---
+
+  /// Resolves absent conflicts: if the server has an auto-generated Absent record
+  /// for the same user on the same date, delete it so the Present record takes precedence.
+  Future<void> _resolveAbsentConflict({
+    required String gymId,
+    required String userId,
+    String? memberId,
+    String? staffId,
+    required String date,
+  }) async {
+    if (!SupabaseService.isInitialized) return;
+    try {
+      // Check for existing absent record by member_id or user_id
+      var query = SupabaseService.client
+          .from('attendance_logs')
+          .select('id')
+          .eq('gym_id', gymId)
+          .eq('date', date)
+          .eq('status', 'Absent');
+
+      List<dynamic> results;
+      if (memberId != null && memberId.isNotEmpty) {
+        results = await query.eq('member_id', memberId);
+      } else if (staffId != null && staffId.isNotEmpty) {
+        results = await query.eq('staff_id', staffId);
+      } else if (userId.isNotEmpty) {
+        results = await query.eq('user_id', userId);
+      } else {
+        return;
+      }
+
+      for (final record in results) {
+        final recordId = record['id'] as String;
+        await SupabaseService.client
+            .from('attendance_logs')
+            .delete()
+            .eq('id', recordId);
+        print('Absent Conflict Resolved: Removed auto-absent record $recordId');
+      }
+    } catch (e) {
+      print('_resolveAbsentConflict error: $e');
+      // Non-fatal: the upsert will still work even if this fails
+    }
+  }
+
+  /// Helper to check if a Present/Late attendance record already exists for a user on a given date.
+  Future<bool> _hasPresentRecordOnServer({
+    required String gymId,
+    String? memberId,
+    String? staffId,
+    String? userId,
+    required String date,
+  }) async {
+    if (!SupabaseService.isInitialized) return false;
+    try {
+      var query = SupabaseService.client
+          .from('attendance_logs')
+          .select('id')
+          .eq('gym_id', gymId)
+          .eq('date', date)
+          .neq('status', 'Absent');
+
+      List<dynamic> results;
+      if (memberId != null && memberId.isNotEmpty) {
+        results = await query.eq('member_id', memberId);
+      } else if (staffId != null && staffId.isNotEmpty) {
+        results = await query.eq('staff_id', staffId);
+      } else if (userId != null && userId.isNotEmpty) {
+        results = await query.eq('user_id', userId);
+      } else {
+        return false;
+      }
+      return results.isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // --- Owner Direct Attendance Correction ---
+
+  /// Owner directly corrects an attendance record (no request/review workflow).
+  /// Updates local DB immediately and queues cloud update.
+  Future<Map<String, dynamic>> ownerCorrectAttendance({
+    required String gymId,
+    required String logId,
+    required String targetUserId,
+    required String targetUserName,
+    required String targetUserType,
+    required String date,
+    String? newStatus,
+    String? newCheckIn,
+    String? newCheckOut,
+    String? newShift,
+    required String reason,
+    required String correctedBy,
+  }) async {
+    // Find existing local record
+    final index = _attendance.indexWhere((a) => a.id == logId);
+    String? oldStatus;
+    String? oldCheckIn;
+    String? oldCheckOut;
+    String? oldShift;
+
+    if (index >= 0) {
+      final existing = _attendance[index];
+      oldStatus = existing.status;
+      oldCheckIn = existing.checkInTime;
+      oldCheckOut = existing.checkOutTime;
+      oldShift = existing.shiftStatus;
+
+      // Update local record
+      _attendance[index] = existing.copyWith(
+        status: newStatus ?? existing.status,
+        checkInTime: newCheckIn ?? existing.checkInTime,
+        checkOutTime: newCheckOut ?? existing.checkOutTime,
+        shiftStatus: newShift ?? existing.shiftStatus,
+      );
+
+      await _storage.setString(
+        _attendanceKey,
+        jsonEncode(_attendance.map((e) => e.toJson()).toList()),
+      );
+    }
+
+    // Add audit log
+    _addAuditLog(
+      gymId: gymId,
+      actionType: 'attendance_correction',
+      performedBy: correctedBy,
+      performedByRole: 'Owner',
+      targetUserName: targetUserName,
+      targetUserType: targetUserType,
+      targetUserId: targetUserId,
+      date: date,
+      oldStatus: oldStatus,
+      newStatus: newStatus,
+      oldCheckIn: oldCheckIn,
+      newCheckIn: newCheckIn,
+      oldCheckOut: oldCheckOut,
+      newCheckOut: newCheckOut,
+      oldShift: oldShift,
+      newShift: newShift,
+      reason: reason,
+    );
+
+    // Queue cloud update via CRUD queue
+    final existing = index >= 0 ? _attendance[index] : null;
+
+    String? formatToIso(String? timeStr) {
+      if (timeStr == null || timeStr.isEmpty) return null;
+      try {
+        final parsed = DateFormat('hh:mm a').parse(timeStr);
+        final dateObj = DateFormat('dd-MM-yyyy').parse(date);
+        final fullDt = DateTime(dateObj.year, dateObj.month, dateObj.day, parsed.hour, parsed.minute);
+        return fullDt.toUtc().toIso8601String();
+      } catch (_) {
+        try {
+          DateTime.parse(timeStr);
+          return timeStr;
+        } catch (_) {
+          return null;
+        }
+      }
+    }
+
+    final updatePayload = <String, dynamic>{
+      'id': logId,
+      'gym_id': gymId,
+      'user_id': (existing?.userId != null && existing!.userId.isNotEmpty) ? existing.userId : null,
+      'role': existing?.userType ?? targetUserType,
+      'user_type': existing?.userType ?? targetUserType,
+      'member_id': (existing?.userType ?? targetUserType) == 'Member' ? (existing?.userId ?? targetUserId) : null,
+      'staff_id': (existing?.userType ?? targetUserType) == 'Staff' ? (existing?.staffId ?? existing?.userId ?? targetUserId) : null,
+      'date': existing?.date ?? date,
+      'status': newStatus ?? existing?.status ?? 'Present',
+      'method': existing?.method ?? 'Manual',
+      'shift_id': newShift ?? existing?.shiftStatus,
+      'check_in': formatToIso(newCheckIn ?? existing?.checkInTime) ?? DateTime.now().toUtc().toIso8601String(),
+      'check_out': formatToIso(newCheckOut ?? existing?.checkOutTime),
+    };
+
+    _crudQueue.add({
+      'uuid': _generateUuidV4(),
+      'table': 'attendance_logs',
+      'action': 'update',
+      'payload': updatePayload,
+      'sync_status': 'pending',
+      'retry_count': 0,
+      'created_at': DateTime.now().toIso8601String(),
+    });
+    await _saveQueuesToStorage();
+    notifyListeners();
+
+    triggerBackgroundSync();
+
+    return {'success': true, 'message': 'Attendance corrected successfully'};
+  }
+
+  // --- Audit Log Methods ---
+
+  /// Adds an audit log entry locally (and queues for cloud sync).
+  void _addAuditLog({
+    required String gymId,
+    required String actionType,
+    required String performedBy,
+    required String performedByRole,
+    required String targetUserName,
+    required String targetUserType,
+    required String targetUserId,
+    required String date,
+    String? oldStatus,
+    String? newStatus,
+    String? oldCheckIn,
+    String? newCheckIn,
+    String? oldCheckOut,
+    String? newCheckOut,
+    String? oldShift,
+    String? newShift,
+    required String reason,
+  }) {
+    final log = AttendanceAuditLog(
+      id: _generateUuidV4(),
+      gymId: gymId,
+      actionType: actionType,
+      performedBy: performedBy,
+      performedByRole: performedByRole,
+      targetUserName: targetUserName,
+      targetUserType: targetUserType,
+      targetUserId: targetUserId,
+      date: date,
+      oldStatus: oldStatus,
+      newStatus: newStatus,
+      oldCheckIn: oldCheckIn,
+      newCheckIn: newCheckIn,
+      oldCheckOut: oldCheckOut,
+      newCheckOut: newCheckOut,
+      oldShift: oldShift,
+      newShift: newShift,
+      reason: reason,
+      createdAt: DateTime.now(),
+    );
+
+    _auditLogs.insert(0, log);
+    _saveAuditLogsToStorage();
+  }
+
+  /// Retrieves audit logs, optionally filtered by date and user type.
+  List<AttendanceAuditLog> getAuditLogs({String? date, String? userType}) {
+    return _auditLogs.where((log) {
+      if (date != null && log.date != date) return false;
+      if (userType != null && log.targetUserType != userType) return false;
+      return true;
+    }).toList();
+  }
+
+  /// Syncs a single audit log entry to the cloud.
+  Future<void> _syncAuditLogForEntry(ManualAttendanceEntry entry) async {
+    if (!SupabaseService.isInitialized) return;
+    try {
+      // Find audit logs related to this entry
+      final relatedLogs = _auditLogs.where((log) =>
+        log.targetUserId == (entry.memberId ?? entry.staffId ?? '') &&
+        log.date == entry.date &&
+        log.actionType == 'manual_attendance'
+      );
+
+      for (final log in relatedLogs) {
+        try {
+          await SupabaseService.client.from('attendance_audit_log').upsert(log.toJson());
+        } catch (e) {
+          print('Audit log sync error: $e');
+          // Non-fatal: audit log sync failure should not block attendance sync
+        }
+      }
+    } catch (e) {
+      print('_syncAuditLogForEntry error: $e');
+    }
+  }
+
+  /// Returns members who have NOT been marked present today.
+  /// Used by Emergency Member Attendance screen.
+  List<Map<String, dynamic>> getUnmarkedMembersToday() {
+    final todayStr = DateFormat('dd-MM-yyyy').format(DateTime.now());
+
+    // Get IDs of members already marked (from local attendance + manual queue)
+    final markedIds = <String>{};
+    for (final a in _attendance) {
+      if (a.date == todayStr && a.userType == 'Member' && a.status != 'Absent') {
+        markedIds.add(a.userId);
+      }
+    }
+    for (final e in _manualAttendanceQueue) {
+      if (e.date == todayStr && e.userType == 'Member') {
+        if (e.memberId != null) markedIds.add(e.memberId!);
+      }
+    }
+
+    final allMembers = getOfflineMembers();
+    return allMembers.where((m) {
+      final id = m['id'] as String;
+      final status = m['status'] as String? ?? '';
+      return status == 'Active' && !markedIds.contains(id);
+    }).toList();
+  }
+
+  // ===================================================================
+  // END EMERGENCY ATTENDANCE RECOVERY SYSTEM
+  // ===================================================================
+
   LocalStorageService get storage => _storage;
+
+  bool get isInitialSyncComplete {
+    final gymId = _storage.getGymInfo()?['id'] ?? 'default';
+    return _storage.getBool('${LocalStorageService.keyInitialSyncComplete}_$gymId') ?? false;
+  }
+
+  Future<void> setInitialSyncComplete(bool value) async {
+    final gymId = _storage.getGymInfo()?['id'] ?? 'default';
+    await _storage.setBool('${LocalStorageService.keyInitialSyncComplete}_$gymId', value);
+    notifyListeners();
+  }
+
+  bool _isSyncingInitial = false;
+  bool get isSyncingInitial => _isSyncingInitial;
+
+  Future<void> performInitialSync(String gymId) async {
+    if (_isSyncingInitial) return;
+    _isSyncingInitial = true;
+    notifyListeners();
+
+    try {
+      print('Starting initial offline-first sync for gym $gymId...');
+      
+      await Future.wait([
+        fetchMembersFromSupabase(),
+        fetchTrialMembersFromSupabase(),
+        fetchStaffFromSupabase(),
+        fetchTransactionsFromSupabase(),
+        fetchAttendanceLogsFromSupabase(),
+        fetchAttendanceSettingsFromSupabase(),
+        fetchGymShiftSettingsFromSupabase(gymId),
+        fetchGoalsFromSupabase(),
+        fetchCustomFieldsFromSupabase(),
+        fetchRecentActivitiesFromSupabase(),
+        fetchDisplaySessionsFromSupabase(),
+        fetchWorkoutsFromSupabase(),
+        fetchDietsFromSupabase(),
+        fetchMembershipsFromSupabase(),
+        fetchOwnerDashboardStats(gymId),
+      ]);
+
+      await Future.wait([
+        fetchSalaryDraftsFromSupabase(gymId),
+        fetchAttendanceAlerts(gymId),
+        fetchAttendanceCorrections(gymId),
+      ]);
+
+      await setInitialSyncComplete(true);
+      print('Initial sync completed successfully for gym $gymId.');
+    } catch (e) {
+      print('Initial sync failed: $e');
+    } finally {
+      _isSyncingInitial = false;
+      notifyListeners();
+    }
+  }
 
   Future<void> reloadForActiveGym() async {
     _loadAllFromStorage();
-    await fetchMembersFromSupabase();
-    await fetchStaffFromSupabase();
-    await fetchTransactionsFromSupabase();
+    
+    final gymId = _storage.getGymInfo()?['id'];
+    if (gymId != null) {
+      if (!isInitialSyncComplete) {
+        await performInitialSync(gymId);
+      } else {
+        // Run verification pulls in the background silently
+        _runBackgroundVerification();
+      }
+    }
   }
 
   // Initial load
@@ -351,19 +1744,122 @@ class GymRepository extends ChangeNotifier {
     _loadAttendance();
     _loadGoals();
     _loadCustomFields();
+    _loadSalaryAdvances();
+    _loadSalaryDrafts();
+    _loadLeaveRequests();
+    _loadAttendanceSettings();
+    _loadShiftSettings();
+    _loadDashboardStats();
+  }
+
+  void _loadAttendanceSettings() {
+    final raw = _storage.getString(LocalStorageService.keyAttendanceSettings);
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        _attendanceSettings = GymAttendanceSettings.fromJson(jsonDecode(raw));
+      } catch (_) {}
+    }
+  }
+
+  void _loadDashboardStats() {
+    final raw = _storage.getString(_dashboardStatsKey);
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        _dashboardStats = Map<String, dynamic>.from(jsonDecode(raw));
+      } catch (_) {
+        _dashboardStats = {};
+      }
+    } else {
+      _dashboardStats = {};
+    }
+  }
+
+  void _loadShiftSettings() {
+    _shiftMode = _storage.getString(LocalStorageService.keyGymShiftSettings) ?? 'Single Shift';
+    final rawShifts = _storage.getString(LocalStorageService.keyGymShiftsList);
+    if (rawShifts != null && rawShifts.isNotEmpty) {
+      try {
+        _shiftsList = List<Map<String, dynamic>>.from(jsonDecode(rawShifts));
+      } catch (_) {
+        _shiftsList = [];
+      }
+    } else {
+      _shiftsList = [];
+    }
+  }
+
+  void _loadSalaryAdvances() {
+    final raw = _storage.getString(LocalStorageService.keySalaryAdvances);
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        _salaryAdvances = List<Map<String, dynamic>>.from(jsonDecode(raw));
+      } catch (_) {
+        _salaryAdvances = [];
+      }
+    } else {
+      _salaryAdvances = [];
+    }
+  }
+
+  void _loadSalaryDrafts() {
+    final raw = _storage.getString(LocalStorageService.keySalaryDrafts);
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        _salaryDrafts = List<Map<String, dynamic>>.from(jsonDecode(raw));
+      } catch (_) {
+        _salaryDrafts = [];
+      }
+    } else {
+      _salaryDrafts = [];
+    }
+  }
+
+  void _loadLeaveRequests() {
+    final raw = _storage.getString(LocalStorageService.keyLeaveRequests);
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        _leaveRequests = List<Map<String, dynamic>>.from(jsonDecode(raw));
+      } catch (_) {
+        _leaveRequests = [];
+      }
+    } else {
+      _leaveRequests = [];
+    }
   }
 
   // --- Members ---
   List<Member> getMembers() => List.unmodifiable(_members);
+  List<TrialMember> getTrialMembers() => List.unmodifiable(_trialMembers);
 
   void _loadMembers() {
-    _members = []; // Only load from Supabase database
+    final raw = _storage.getString(LocalStorageService.keyMembers);
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        final List decoded = jsonDecode(raw);
+        _members = decoded.map((e) => Member.fromJson(e)).toList();
+        _lastMembersRaw = raw;
+      } catch (e) {
+        _members = [];
+      }
+    } else {
+      _members = [];
+    }
+
+    final rawTrial = _storage.getString(LocalStorageService.keyTrialMembers);
+    if (rawTrial != null && rawTrial.isNotEmpty) {
+      try {
+        final List decoded = jsonDecode(rawTrial);
+        _trialMembers = decoded.map((e) => TrialMember.fromJson(e)).toList();
+        _lastTrialMembersRaw = rawTrial;
+      } catch (e) {
+        _trialMembers = [];
+      }
+    } else {
+      _trialMembers = [];
+    }
   }
 
   Future<void> saveMember(Member member) async {
-    if (!SupabaseService.isInitialized) {
-      throw Exception('Supabase client is not initialized. Please connect to the database first.');
-    }
     if (!_isValidUUID(member.id)) {
       throw Exception('Invalid member ID format.');
     }
@@ -371,87 +1867,133 @@ class GymRepository extends ChangeNotifier {
     if (gymId == null) {
       throw Exception('Active Gym ID not found. Please select or create a gym.');
     }
+
+    // 1. Immediately update local state & cache
+    final index = _members.indexWhere((m) => m.id == member.id);
+    if (index >= 0) {
+      _members[index] = member;
+    } else {
+      _members.insert(0, member);
+    }
+    await _storage.setString(LocalStorageService.keyMembers, jsonEncode(_members.map((e) => e.toJson()).toList()));
+    notifyListeners();
+
+    // 2. Queue Member save payload for sync
+    final Map<String, dynamic> data = {
+      'id': member.id,
+      'gym_id': gymId,
+      'name': member.name,
+      'phone': member.phone,
+      'status': member.status,
+      'join_date': member.joinDate,
+      'avatar': member.avatar,
+      'membership_plan_id': member.membershipPlanId,
+      'pt_member': member.ptMember,
+      'pt_trainer': _isValidUUID(member.ptTrainer) ? member.ptTrainer : null,
+      'assigned_workout_id': _isValidUUID(member.assignedWorkoutId) ? member.assignedWorkoutId : null,
+      'assigned_diet_id': _isValidUUID(member.assignedDietId) ? member.assignedDietId : null,
+      'medical_details': member.medicalDetails,
+      'notes': member.notes,
+      'pending_amount': member.pendingAmount,
+      'discount_amount': member.discountAmount,
+      'total_received_amount': member.totalReceivedAmount,
+      'payment_status': member.paymentStatus,
+      'extra_fields': member.extraFields,
+    };
+
+    _crudQueue.add({
+      'uuid': _generateUuidV4(),
+      'table': 'members',
+      'action': 'insert',
+      'payload': data,
+      'created_at': DateTime.now().toIso8601String(),
+      'retry_count': 0,
+      'error_message': null,
+    });
+
+    // 3. Queue PT assignment update offline if applicable
+    if (member.ptMember && _isValidUUID(member.ptTrainer)) {
+      final matchingStaff = _staff.where((s) => s.id == member.ptTrainer).toList();
+      final commissionPercentage = matchingStaff.isNotEmpty ? matchingStaff.first.commissionPercentage : 0.0;
+      
+      _crudQueue.add({
+        'uuid': _generateUuidV4(),
+        'table': 'pt_assignments',
+        'action': 'insert',
+        'payload': {
+          'gym_id': gymId,
+          'member_id': member.id,
+          'staff_id': member.ptTrainer,
+          'commission_percentage': commissionPercentage,
+          'assignment_status': 'Active',
+          'pt_start_date': DateTime.now().toIso8601String().substring(0, 10),
+        },
+        'created_at': DateTime.now().toIso8601String(),
+        'retry_count': 0,
+        'error_message': null,
+      });
+    }
+
+    await _saveQueuesToStorage();
+    triggerBackgroundSync();
+  }
+
+  Future<void> saveTrialMember(TrialMember trial) async {
+    if (!SupabaseService.isInitialized) {
+      throw Exception('Supabase client is not initialized.');
+    }
+    if (!_isValidUUID(trial.id)) {
+      throw Exception('Invalid trial ID format.');
+    }
+    final gymId = _storage.getGymInfo()?['id'];
+    if (gymId == null) {
+      throw Exception('Active Gym ID not found.');
+    }
     try {
-      final Map<String, dynamic> data = {
-        'id': member.id,
-        'gym_id': gymId,
-        'name': member.name,
-        'phone': member.phone,
-        'status': member.status,
-        'join_date': member.joinDate,
-        'avatar': member.avatar,
-        'membership_plan_id': member.membershipPlanId,
-        'pt_member': member.ptMember,
-        'pt_trainer': _isValidUUID(member.ptTrainer) ? member.ptTrainer : null,
-        'assigned_workout_id': _isValidUUID(member.assignedWorkoutId) ? member.assignedWorkoutId : null,
-        'assigned_diet_id': _isValidUUID(member.assignedDietId) ? member.assignedDietId : null,
-        'medical_details': member.medicalDetails,
-        'notes': member.notes,
-        'pending_amount': member.pendingAmount,
-        'discount_amount': member.discountAmount,
-        'total_received_amount': member.totalReceivedAmount,
-        'payment_status': member.paymentStatus,
-        'extra_fields': member.extraFields,
-      };
-      await SupabaseService.client.from('members').upsert(data);
-
-      // Handle PT assignment registration automatically when trainer is selected
-      if (member.ptMember && _isValidUUID(member.ptTrainer)) {
-        // Fetch current active assignment if any to see if trainer changed
-        final activeAssignments = await SupabaseService.client
-            .from('pt_assignments')
-            .select()
-            .eq('member_id', member.id)
-            .eq('assignment_status', 'Active');
-        
-        bool isNewAssignmentNeeded = true;
-        
-        if (activeAssignments.isNotEmpty) {
-          final existing = activeAssignments.first;
-          if (existing['staff_id'] == member.ptTrainer) {
-            isNewAssignmentNeeded = false;
-          } else {
-            // Deactivate old assignment
-            await SupabaseService.client
-                .from('pt_assignments')
-                .update({'assignment_status': 'Inactive', 'deleted_at': DateTime.now().toIso8601String()})
-                .eq('id', existing['id']);
-          }
-        }
-        
-        if (isNewAssignmentNeeded) {
-          // Fetch snapshotted commission rate from Staff details
-          final staffRes = await SupabaseService.client
-              .from('staff')
-              .select('commission_percentage')
-              .eq('id', member.ptTrainer)
-              .maybeSingle();
-              
-          final double commissionPercentage = (staffRes?['commission_percentage'] as num?)?.toDouble() ?? 0.0;
-          
-          await SupabaseService.client.from('pt_assignments').insert({
-            'gym_id': gymId,
-            'member_id': member.id,
-            'staff_id': member.ptTrainer,
-            'commission_percentage': commissionPercentage,
-            'assignment_status': 'Active',
-            'pt_start_date': DateTime.now().toIso8601String().substring(0, 10),
-            'created_by': SupabaseService.client.auth.currentUser?.id,
-          });
-        }
-      } else {
-        // Deactivate active assignments if PT toggled off
-        await SupabaseService.client
-            .from('pt_assignments')
-            .update({'assignment_status': 'Inactive', 'deleted_at': DateTime.now().toIso8601String()})
-            .eq('member_id', member.id)
-            .eq('assignment_status', 'Active');
-      }
-
-      await fetchMembersFromSupabase();
+      final Map<String, dynamic> data = trial.toJson();
+      data['gym_id'] = gymId;
+      await SupabaseService.client.from('trial_members').upsert(data);
+      await fetchTrialMembersFromSupabase();
     } catch (e) {
-      print('Supabase saveMember error: $e');
-      throw Exception('Failed to save member: $e');
+      print('Supabase saveTrialMember error: $e');
+      throw Exception('Failed to save trial member: $e');
+    }
+  }
+
+  Future<void> updateTrialStatus(String trialId, String status) async {
+    if (!SupabaseService.isInitialized || !_isValidUUID(trialId)) return;
+    try {
+      await SupabaseService.client
+          .from('trial_members')
+          .update({'status': status})
+          .eq('id', trialId);
+      await fetchTrialMembersFromSupabase();
+    } catch (e) {
+      print('Supabase updateTrialStatus error: $e');
+    }
+  }
+
+  Future<void> fetchTrialMembersFromSupabase() async {
+    if (SupabaseService.isInitialized) {
+      final gymId = _storage.getGymInfo()?['id'];
+      if (gymId != null) {
+        try {
+          final List response = await SupabaseService.client
+              .from('trial_members')
+              .select()
+              .eq('gym_id', gymId);
+          _resetNetworkError();
+          final responseStr = jsonEncode(response);
+          if (responseStr != _lastTrialMembersRaw) {
+            _lastTrialMembersRaw = responseStr;
+            _trialMembers = response.map((e) => TrialMember.fromJson(e)).toList();
+            await _storage.setString(LocalStorageService.keyTrialMembers, responseStr);
+            notifyListeners();
+          }
+        } catch (e) {
+          _handleNetworkError('fetchTrialMembersFromSupabase', e);
+        }
+      }
     }
   }
 
@@ -462,13 +2004,22 @@ class GymRepository extends ChangeNotifier {
   }
 
   Future<void> deleteMember(String id) async {
-    if (SupabaseService.isInitialized && _isValidUUID(id)) {
-      try {
-        await SupabaseService.client.from('members').delete().eq('id', id);
-        await fetchMembersFromSupabase();
-      } catch (e) {
-        print('Supabase deleteMember error: $e');
-      }
+    if (_isValidUUID(id)) {
+      _members.removeWhere((m) => m.id == id);
+      await _storage.setString(LocalStorageService.keyMembers, jsonEncode(_members.map((e) => e.toJson()).toList()));
+      notifyListeners();
+
+      _crudQueue.add({
+        'uuid': _generateUuidV4(),
+        'table': 'members',
+        'action': 'delete',
+        'payload': {'id': id},
+        'created_at': DateTime.now().toIso8601String(),
+        'retry_count': 0,
+        'error_message': null,
+      });
+      await _saveQueuesToStorage();
+      triggerBackgroundSync();
     }
   }
 
@@ -476,13 +2027,21 @@ class GymRepository extends ChangeNotifier {
   List<Staff> getStaff() => List.unmodifiable(_staff);
 
   void _loadStaff() {
-    _staff = []; // Only load from Supabase database
+    final raw = _storage.getString(LocalStorageService.keyStaff);
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        final List decoded = jsonDecode(raw);
+        _staff = decoded.map((e) => Staff.fromJson(e)).toList();
+        _lastStaffRaw = raw;
+      } catch (e) {
+        _staff = [];
+      }
+    } else {
+      _staff = [];
+    }
   }
 
   Future<void> saveStaff(Staff staff) async {
-    if (!SupabaseService.isInitialized) {
-      throw Exception('Supabase client is not initialized. Please connect to the database first.');
-    }
     if (!_isValidUUID(staff.id)) {
       throw Exception('Invalid staff ID format.');
     }
@@ -490,98 +2049,97 @@ class GymRepository extends ChangeNotifier {
     if (gymId == null) {
       throw Exception('Active Gym ID not found. Please select or create a gym.');
     }
-    try {
-      final Map<String, dynamic> data = {
-        'id': staff.id,
-        'gym_id': gymId,
-        'name': staff.name,
-        'email': staff.email,
-        'phone': staff.phone,
-        'role': staff.role,
-        'department': staff.department,
-        'status': staff.status,
-        'avatar': staff.avatar,
-        'join_date': staff.joinDate,
-        'shift': staff.shift,
-        'experience': staff.experience,
-        'rating': staff.rating,
-        'sessions_count': staff.sessionsCount,
-        'members_trained_count': staff.membersTrained,
-        'salary': staff.salary,
-        'salary_due': staff.salaryDue,
-        'gender': staff.gender,
-        'dob': staff.dob,
-        'aadhaar': staff.aadhaar,
-        'emergency_name': staff.emergencyName,
-        'emergency_phone': staff.emergencyPhone,
-        'address': staff.address,
-        'employment_type': staff.employmentType,
-        'salary_type': staff.salaryType,
-        'commission_percentage': staff.commissionPercentage,
-        'qualification': staff.qualification,
-        'notes': staff.notes,
-      };
-      await SupabaseService.client.from('staff').upsert(data);
 
-      // Save staff shift assignment only if it has changed from current active assignment
-      try {
-        final activeRes = await SupabaseService.client
-            .from('staff_shift_assignments')
-            .select('assignment_type')
-            .eq('staff_id', staff.id)
-            .eq('status', 'Active')
-            .maybeSingle();
-            
-        final currentActiveShift = activeRes?['assignment_type'];
-        if (currentActiveShift != staff.shift) {
-          String? shiftId;
-          if (staff.shift != 'Both Shifts') {
-            final shiftRes = await SupabaseService.client
-                .from('gym_shifts')
-                .select('id')
-                .eq('gym_id', gymId)
-                .eq('shift_type', staff.shift)
-                .maybeSingle();
-            if (shiftRes != null) {
-              shiftId = shiftRes['id'];
-            }
-          }
-          
-          // Deactivate old active shift assignments for this staff
-          await SupabaseService.client
-              .from('staff_shift_assignments')
-              .update({'status': 'Inactive'})
-              .eq('staff_id', staff.id)
-              .eq('status', 'Active');
-
-          await SupabaseService.client.from('staff_shift_assignments').insert({
-            'staff_id': staff.id,
-            'gym_id': gymId,
-            'shift_id': shiftId,
-            'assignment_type': staff.shift,
-            'effective_from': DateTime.now().toLocal().toIso8601String().substring(0, 10), // YYYY-MM-DD
-            'status': 'Active'
-          });
-        }
-      } catch (e) {
-        print('Error handling staff shift assignment: $e');
-      }
-
-      await fetchStaffFromSupabase();
-    } catch (e) {
-      print('Supabase saveStaff error: $e');
-      throw Exception('Failed to save staff: $e');
+    // 1. Immediately update local state & cache
+    final index = _staff.indexWhere((s) => s.id == staff.id);
+    if (index >= 0) {
+      _staff[index] = staff;
+    } else {
+      _staff.insert(0, staff);
     }
+    await _storage.setString(LocalStorageService.keyStaff, jsonEncode(_staff.map((e) => e.toJson()).toList()));
+    notifyListeners();
+
+    // 2. Queue Staff save payload for sync
+    final Map<String, dynamic> data = {
+      'id': staff.id,
+      'gym_id': gymId,
+      'name': staff.name,
+      'email': staff.email,
+      'phone': staff.phone,
+      'role': staff.role,
+      'department': staff.department,
+      'status': staff.status,
+      'avatar': staff.avatar,
+      'join_date': staff.joinDate,
+      'shift': staff.shift,
+      'experience': staff.experience,
+      'rating': staff.rating,
+      'sessions_count': staff.sessionsCount,
+      'members_trained_count': staff.membersTrained,
+      'salary': staff.salary,
+      'salary_due': staff.salaryDue,
+      'gender': staff.gender,
+      'dob': staff.dob,
+      'aadhaar': staff.aadhaar,
+      'emergency_name': staff.emergencyName,
+      'emergency_phone': staff.emergencyPhone,
+      'address': staff.address,
+      'employment_type': staff.employmentType,
+      'salary_type': staff.salaryType,
+      'commission_percentage': staff.commissionPercentage,
+      'qualification': staff.qualification,
+      'notes': staff.notes,
+    };
+
+    _crudQueue.add({
+      'uuid': _generateUuidV4(),
+      'table': 'staff',
+      'action': 'insert',
+      'payload': data,
+      'created_at': DateTime.now().toIso8601String(),
+      'retry_count': 0,
+      'error_message': null,
+    });
+
+    // 3. Queue staff shift assignment
+    _crudQueue.add({
+      'uuid': _generateUuidV4(),
+      'table': 'staff_shift_assignments',
+      'action': 'insert',
+      'payload': {
+        'staff_id': staff.id,
+        'gym_id': gymId,
+        'assignment_type': staff.shift,
+        'effective_from': DateTime.now().toLocal().toIso8601String().substring(0, 10),
+        'status': 'Active',
+      },
+      'created_at': DateTime.now().toIso8601String(),
+      'retry_count': 0,
+      'error_message': null,
+    });
+
+    await _saveQueuesToStorage();
+    triggerBackgroundSync();
   }
 
   Future<void> deleteStaff(String id) async {
-    if (SupabaseService.isInitialized && _isValidUUID(id)) {
-      try {
-        await SupabaseService.client.from('staff').delete().eq('id', id);
-        await fetchStaffFromSupabase();
-      } catch (e) {
-        print('Supabase deleteStaff error: $e');
-      }
+    if (_isValidUUID(id)) {
+      _staff.removeWhere((s) => s.id == id);
+      await _storage.setString(LocalStorageService.keyStaff, jsonEncode(_staff.map((e) => e.toJson()).toList()));
+      notifyListeners();
+
+      _crudQueue.add({
+        'uuid': _generateUuidV4(),
+        'table': 'staff',
+        'action': 'delete',
+        'payload': {'id': id},
+        'created_at': DateTime.now().toIso8601String(),
+        'retry_count': 0,
+        'error_message': null,
+      });
+      await _saveQueuesToStorage();
+      triggerBackgroundSync();
     }
   }
 
@@ -589,10 +2147,18 @@ class GymRepository extends ChangeNotifier {
   List<WorkoutPlan> getWorkouts() => List.unmodifiable(_workouts);
 
   void _loadWorkouts() {
-    _workouts = [];
+    final raw = _storage.getString(_workoutsKey);
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        final List decoded = jsonDecode(raw);
+        _workouts = decoded.map((e) => WorkoutPlan.fromJson(e)).toList();
+      } catch (e) {
+        _workouts = [];
+      }
+    } else {
+      _workouts = [];
+    }
   }
-
-  String? _lastWorkoutsRaw;
 
   Future<void> fetchWorkoutsFromSupabase() async {
     if (SupabaseService.isInitialized) {
@@ -608,10 +2174,59 @@ class GymRepository extends ChangeNotifier {
           if (responseStr != _lastWorkoutsRaw) {
             _lastWorkoutsRaw = responseStr;
             _workouts = response.map((e) => WorkoutPlan.fromJson(e)).toList();
+            await _storage.setString(_workoutsKey, responseStr);
             notifyListeners();
           }
         } catch (e) {
           _handleNetworkError('fetchWorkoutsFromSupabase', e);
+        }
+      }
+    }
+  }
+
+  Future<void> fetchDietsFromSupabase() async {
+    if (SupabaseService.isInitialized) {
+      final gymId = _storage.getGymInfo()?['id'];
+      if (gymId != null) {
+        try {
+          final List response = await SupabaseService.client
+              .from('diet_plans')
+              .select()
+              .eq('gym_id', gymId);
+          _resetNetworkError();
+          final responseStr = jsonEncode(response);
+          if (responseStr != _lastDietsRaw) {
+            _lastDietsRaw = responseStr;
+            _diets = response.map((e) => DietPlan.fromJson(e)).toList();
+            await _storage.setString(_dietsKey, responseStr);
+            notifyListeners();
+          }
+        } catch (e) {
+          _handleNetworkError('fetchDietsFromSupabase', e);
+        }
+      }
+    }
+  }
+
+  Future<void> fetchMembershipsFromSupabase() async {
+    if (SupabaseService.isInitialized) {
+      final gymId = _storage.getGymInfo()?['id'];
+      if (gymId != null) {
+        try {
+          final List response = await SupabaseService.client
+              .from('membership_plans')
+              .select()
+              .eq('gym_id', gymId);
+          _resetNetworkError();
+          final responseStr = jsonEncode(response);
+          if (responseStr != _lastMembershipsRaw) {
+            _lastMembershipsRaw = responseStr;
+            _memberships = response.map((e) => MembershipPlan.fromJson(e)).toList();
+            await _storage.setString(_membershipsKey, responseStr);
+            notifyListeners();
+          }
+        } catch (e) {
+          _handleNetworkError('fetchMembershipsFromSupabase', e);
         }
       }
     }
@@ -739,62 +2354,99 @@ class GymRepository extends ChangeNotifier {
   List<FinanceTransaction> getTransactions() => List.unmodifiable(_transactions);
 
   void _loadTransactions() {
-    _transactions = []; // Loaded dynamically from Supabase
+    final raw = _storage.getString(LocalStorageService.keyTransactions);
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        final List decoded = jsonDecode(raw);
+        _transactions = decoded.map((e) => FinanceTransaction.fromJson(e)).toList();
+        _lastTransactionsRaw = raw;
+      } catch (e) {
+        _transactions = [];
+      }
+    } else {
+      _transactions = [];
+    }
   }
 
   Future<void> saveTransaction(FinanceTransaction tx) async {
-    if (!SupabaseService.isInitialized) {
-      throw Exception('Supabase client is not initialized.');
-    }
     final gymId = _storage.getGymInfo()?['id'];
     if (gymId == null) {
       throw Exception('Active Gym ID not found.');
     }
-    final user = SupabaseService.client.auth.currentUser;
-    try {
-      final Map<String, dynamic> data = {
-        'gym_id': gymId,
-        'amount': tx.amount,
-        'type': tx.type,
-        'category': tx.category,
-        'payment_method': tx.paymentMethod,
-        'reference_id': tx.referenceId,
-        'created_by': user?.id,
-        'created_by_info': tx.createdByInfo.isNotEmpty ? tx.createdByInfo : 'Owner',
-        'notes': tx.notes,
-      };
-      if (tx.transactionDate.isNotEmpty) {
-        data['transaction_date'] = tx.transactionDate;
-      }
-      if (tx.expenseDate.isNotEmpty) {
-        data['expense_date'] = tx.expenseDate;
-      }
-      if (tx.revenueDate.isNotEmpty) {
-        data['revenue_date'] = tx.revenueDate;
-      }
-      if (tx.entryDate.isNotEmpty) {
-        data['entry_date'] = tx.entryDate;
-      }
-      if (_isValidUUID(tx.id)) {
-        data['id'] = tx.id;
-      }
-      await SupabaseService.client.from('finance_transactions').upsert(data);
-      await fetchTransactionsFromSupabase();
-      notifyListeners();
-    } catch (e) {
-      print('Supabase saveTransaction error: $e');
-      throw Exception('Failed to save transaction: $e');
+
+    final String resolvedId = _isValidUUID(tx.id) ? tx.id : _generateUuidV4();
+    final updatedTx = tx.copyWith(
+      id: resolvedId,
+      gymId: gymId,
+      transactionDate: tx.transactionDate.isNotEmpty ? tx.transactionDate : DateTime.now().toIso8601String(),
+    );
+
+    // 1. Update local cache & notify UI immediately
+    final index = _transactions.indexWhere((t) => t.id == resolvedId);
+    if (index >= 0) {
+      _transactions[index] = updatedTx;
+    } else {
+      _transactions.insert(0, updatedTx);
     }
+    await _storage.setString(LocalStorageService.keyTransactions, jsonEncode(_transactions.map((e) => e.toJson()).toList()));
+    notifyListeners();
+
+    // 2. Queue transaction payload for sync
+    final Map<String, dynamic> data = {
+      'id': resolvedId,
+      'gym_id': gymId,
+      'amount': updatedTx.amount,
+      'type': updatedTx.type,
+      'category': updatedTx.category,
+      'payment_method': updatedTx.paymentMethod,
+      'reference_id': updatedTx.referenceId,
+      'created_by': updatedTx.createdBy.isNotEmpty ? updatedTx.createdBy : null,
+      'created_by_info': updatedTx.createdByInfo.isNotEmpty ? updatedTx.createdByInfo : 'Owner',
+      'notes': updatedTx.notes,
+    };
+    if (updatedTx.transactionDate.isNotEmpty) {
+      data['transaction_date'] = updatedTx.transactionDate;
+    }
+    if (updatedTx.expenseDate.isNotEmpty) {
+      data['expense_date'] = updatedTx.expenseDate;
+    }
+    if (updatedTx.revenueDate.isNotEmpty) {
+      data['revenue_date'] = updatedTx.revenueDate;
+    }
+    if (updatedTx.entryDate.isNotEmpty) {
+      data['entry_date'] = updatedTx.entryDate;
+    }
+
+    _crudQueue.add({
+      'uuid': _generateUuidV4(),
+      'table': 'finance_transactions',
+      'action': 'insert',
+      'payload': data,
+      'created_at': DateTime.now().toIso8601String(),
+      'retry_count': 0,
+      'error_message': null,
+    });
+    await _saveQueuesToStorage();
+    triggerBackgroundSync();
   }
 
   Future<void> deleteTransaction(String id) async {
-    if (SupabaseService.isInitialized && _isValidUUID(id)) {
-      try {
-        await SupabaseService.client.from('finance_transactions').delete().eq('id', id);
-        await fetchTransactionsFromSupabase();
-      } catch (e) {
-        print('Supabase deleteTransaction error: $e');
-      }
+    if (_isValidUUID(id)) {
+      _transactions.removeWhere((t) => t.id == id);
+      await _storage.setString(LocalStorageService.keyTransactions, jsonEncode(_transactions.map((e) => e.toJson()).toList()));
+      notifyListeners();
+
+      _crudQueue.add({
+        'uuid': _generateUuidV4(),
+        'table': 'finance_transactions',
+        'action': 'delete',
+        'payload': {'id': id},
+        'created_at': DateTime.now().toIso8601String(),
+        'retry_count': 0,
+        'error_message': null,
+      });
+      await _saveQueuesToStorage();
+      triggerBackgroundSync();
     }
   }
 
@@ -1071,6 +2723,86 @@ class GymRepository extends ChangeNotifier {
     );
   }
 
+  List<Member> _mergeMembersList(List<Member> serverList) {
+    final pendingIds = _crudQueue
+        .where((q) => q['table'] == 'members')
+        .map((q) {
+          final payload = q['payload'] as Map<String, dynamic>;
+          return payload['id'] as String;
+        })
+        .toSet();
+
+    final Map<String, Member> merged = {};
+    for (var m in serverList) {
+      merged[m.id] = m;
+    }
+    for (var m in _members) {
+      if (pendingIds.contains(m.id)) {
+        merged[m.id] = m;
+      }
+    }
+    return merged.values.toList();
+  }
+
+  List<Staff> _mergeStaffList(List<Staff> serverList) {
+    final pendingIds = _crudQueue
+        .where((q) => q['table'] == 'staff')
+        .map((q) {
+          final payload = q['payload'] as Map<String, dynamic>;
+          return payload['id'] as String;
+        })
+        .toSet();
+
+    final Map<String, Staff> merged = {};
+    for (var s in serverList) {
+      merged[s.id] = s;
+    }
+    for (var s in _staff) {
+      if (pendingIds.contains(s.id)) {
+        merged[s.id] = s;
+      }
+    }
+    return merged.values.toList();
+  }
+
+  List<FinanceTransaction> _mergeTransactionsList(List<FinanceTransaction> serverList) {
+    final pendingIds = _crudQueue
+        .where((q) => q['table'] == 'finance_transactions')
+        .map((q) {
+          final payload = q['payload'] as Map<String, dynamic>;
+          return payload['id'] as String;
+        })
+        .toSet();
+
+    final Map<String, FinanceTransaction> merged = {};
+    for (var t in serverList) {
+      merged[t.id] = t;
+    }
+    for (var t in _transactions) {
+      if (pendingIds.contains(t.id)) {
+        merged[t.id] = t;
+      }
+    }
+    return merged.values.toList();
+  }
+
+  List<AttendanceRecord> _mergeAttendanceList(List<AttendanceRecord> serverList) {
+    final pendingUuids = _attendanceQueue
+        .map((q) => q['attendance_uuid'] as String)
+        .toSet();
+
+    final Map<String, AttendanceRecord> merged = {};
+    for (var a in serverList) {
+      merged[a.id] = a;
+    }
+    for (var a in _attendance) {
+      if (pendingUuids.contains(a.id)) {
+        merged[a.id] = a;
+      }
+    }
+    return merged.values.toList();
+  }
+
   String _generateRandomCode() {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
     final rnd = Random.secure();
@@ -1090,7 +2822,9 @@ class GymRepository extends ChangeNotifier {
           final responseStr = jsonEncode(response);
           if (responseStr != _lastMembersRaw) {
             _lastMembersRaw = responseStr;
-            _members = response.map((e) => Member.fromJson(e)).toList();
+            final serverList = response.map((e) => Member.fromJson(e)).toList();
+            _members = _mergeMembersList(serverList);
+            await _storage.setString(LocalStorageService.keyMembers, jsonEncode(_members.map((e) => e.toJson()).toList()));
             notifyListeners();
           }
         } catch (e) {
@@ -1136,7 +2870,8 @@ class GymRepository extends ChangeNotifier {
           final responseStr = jsonEncode(response);
           if (responseStr != _lastStaffRaw) {
             _lastStaffRaw = responseStr;
-            _staff = loadedStaff;
+            _staff = _mergeStaffList(loadedStaff);
+            await _storage.setString(LocalStorageService.keyStaff, jsonEncode(_staff.map((e) => e.toJson()).toList()));
             notifyListeners();
           }
         } catch (e) {
@@ -1160,7 +2895,9 @@ class GymRepository extends ChangeNotifier {
           final responseStr = jsonEncode(response);
           if (responseStr != _lastTransactionsRaw) {
             _lastTransactionsRaw = responseStr;
-            _transactions = response.map((e) => FinanceTransaction.fromJson(e)).toList();
+            final serverList = response.map((e) => FinanceTransaction.fromJson(e)).toList();
+            _transactions = _mergeTransactionsList(serverList);
+            await _storage.setString(LocalStorageService.keyTransactions, jsonEncode(_transactions.map((e) => e.toJson()).toList()));
             notifyListeners();
           }
         } catch (e) {
@@ -1168,6 +2905,303 @@ class GymRepository extends ChangeNotifier {
         }
       }
     }
+  }
+
+  // --- Offline Fetchers ---
+  Future<void> fetchSalaryAdvancesFromSupabase(String staffId) async {
+    if (SupabaseService.isInitialized) {
+      try {
+        final List response = await SupabaseService.client
+            .from('salary_advance_ledger')
+            .select()
+            .eq('staff_id', staffId)
+            .order('given_date', ascending: false);
+        _resetNetworkError();
+        _salaryAdvances = List<Map<String, dynamic>>.from(response);
+        await _storage.setString(LocalStorageService.keySalaryAdvances, jsonEncode(_salaryAdvances));
+        notifyListeners();
+      } catch (e) {
+        print('fetchSalaryAdvancesFromSupabase error: $e');
+      }
+    }
+  }
+
+  Future<void> fetchSalaryDraftsFromSupabase(String gymId) async {
+    if (SupabaseService.isInitialized) {
+      try {
+        final List response = await SupabaseService.client
+            .from('salary_drafts')
+            .select()
+            .eq('gym_id', gymId)
+            .order('salary_month', ascending: false);
+        _resetNetworkError();
+        _salaryDrafts = List<Map<String, dynamic>>.from(response);
+        await _storage.setString(LocalStorageService.keySalaryDrafts, jsonEncode(_salaryDrafts));
+        notifyListeners();
+      } catch (e) {
+        print('fetchSalaryDraftsFromSupabase error: $e');
+      }
+    }
+  }
+
+  Future<void> fetchLeaveRequestsFromSupabase(String staffId) async {
+    if (SupabaseService.isInitialized) {
+      try {
+        final List response = await SupabaseService.client
+            .from('leave_requests')
+            .select()
+            .eq('staff_id', staffId)
+            .order('created_at', ascending: false);
+        _resetNetworkError();
+        _leaveRequests = List<Map<String, dynamic>>.from(response);
+        await _storage.setString(LocalStorageService.keyLeaveRequests, jsonEncode(_leaveRequests));
+        notifyListeners();
+      } catch (e) {
+        print('fetchLeaveRequestsFromSupabase error: $e');
+      }
+    }
+  }
+
+  // --- Offline Creators & Updates ---
+  Future<void> saveSalaryAdvanceOffline({
+    required String gymId,
+    required String staffId,
+    required double amount,
+    required String reason,
+    required String date,
+    String status = 'Approved',
+  }) async {
+    final uuid = _generateUuidV4();
+    final parsedDate = DateTime.tryParse(date) ?? DateTime.now();
+    final salaryMonth = DateFormat('MMMM yyyy').format(parsedDate);
+
+    final Map<String, dynamic> item = {
+      'id': uuid,
+      'gym_id': gymId,
+      'staff_id': staffId,
+      'advance_amount': amount,
+      'reason': reason,
+      'status': status,
+      'given_date': date,
+      'salary_month': salaryMonth,
+      'created_at': DateTime.now().toIso8601String(),
+    };
+
+    _salaryAdvances.insert(0, item);
+    await _storage.setString(LocalStorageService.keySalaryAdvances, jsonEncode(_salaryAdvances));
+    notifyListeners();
+
+    _crudQueue.add({
+      'uuid': _generateUuidV4(),
+      'table': 'salary_advance_ledger',
+      'action': 'insert',
+      'payload': item,
+      'created_at': DateTime.now().toIso8601String(),
+      'retry_count': 0,
+      'error_message': null,
+    });
+    await _saveQueuesToStorage();
+    triggerBackgroundSync();
+  }
+
+  Future<void> paySalaryDraftOffline({
+    required String draftId,
+    required String paymentMode,
+    required String notes,
+  }) async {
+    final index = _salaryDrafts.indexWhere((d) => d['id'] == draftId);
+    if (index >= 0) {
+      final updatedDraft = Map<String, dynamic>.from(_salaryDrafts[index]);
+      updatedDraft['status'] = 'Paid';
+      _salaryDrafts[index] = updatedDraft;
+      await _storage.setString(LocalStorageService.keySalaryDrafts, jsonEncode(_salaryDrafts));
+      notifyListeners();
+    }
+
+    _crudQueue.add({
+      'uuid': _generateUuidV4(),
+      'table': 'rpc_pay_salary_draft',
+      'action': 'rpc',
+      'payload': {
+        'p_draft_id': draftId,
+        'p_payment_mode': paymentMode,
+        'p_notes': notes,
+      },
+      'created_at': DateTime.now().toIso8601String(),
+      'retry_count': 0,
+      'error_message': null,
+    });
+    await _saveQueuesToStorage();
+    triggerBackgroundSync();
+  }
+
+  Future<void> createLeaveRequestOffline({
+    required String gymId,
+    required String staffId,
+    required String startDate,
+    required String endDate,
+    required String reason,
+    required String leaveType,
+  }) async {
+    final uuid = _generateUuidV4();
+    final Map<String, dynamic> item = {
+      'id': uuid,
+      'gym_id': gymId,
+      'staff_id': staffId,
+      'start_date': startDate,
+      'end_date': endDate,
+      'reason': reason,
+      'leave_type': leaveType,
+      'status': 'Pending',
+      'created_at': DateTime.now().toIso8601String(),
+    };
+
+    _leaveRequests.insert(0, item);
+    await _storage.setString(LocalStorageService.keyLeaveRequests, jsonEncode(_leaveRequests));
+    notifyListeners();
+
+    _crudQueue.add({
+      'uuid': _generateUuidV4(),
+      'table': 'leave_requests',
+      'action': 'insert',
+      'payload': item,
+      'created_at': DateTime.now().toIso8601String(),
+      'retry_count': 0,
+      'error_message': null,
+    });
+    await _saveQueuesToStorage();
+    triggerBackgroundSync();
+  }
+
+  Future<void> updateLeaveStatusOffline({
+    required String requestId,
+    required String status,
+  }) async {
+    final index = _leaveRequests.indexWhere((l) => l['id'] == requestId);
+    if (index >= 0) {
+      final updated = Map<String, dynamic>.from(_leaveRequests[index]);
+      updated['status'] = status;
+      _leaveRequests[index] = updated;
+      await _storage.setString(LocalStorageService.keyLeaveRequests, jsonEncode(_leaveRequests));
+      
+      // Update local dashboard alerts count
+      if (_dashboardAlertsData['staff_leave_requests'] != null) {
+        final currentCount = (_dashboardAlertsData['staff_leave_requests']['count'] as num?)?.toInt() ?? 0;
+        if (currentCount > 0) {
+          _dashboardAlertsData['staff_leave_requests']['count'] = currentCount - 1;
+        }
+      }
+      if (_dbPendingLeaves > 0) _dbPendingLeaves--;
+      
+      notifyListeners();
+    }
+
+    _crudQueue.add({
+      'uuid': _generateUuidV4(),
+      'table': 'leave_requests',
+      'action': 'update',
+      'payload': {
+        'id': requestId,
+        'status': status,
+      },
+      'created_at': DateTime.now().toIso8601String(),
+      'retry_count': 0,
+      'error_message': null,
+    });
+    await _saveQueuesToStorage();
+    triggerBackgroundSync();
+  }
+
+  Future<void> updateSalaryAdvanceStatusOffline({
+    required String requestId,
+    required String status,
+  }) async {
+    final index = _salaryAdvances.indexWhere((a) => a['id'] == requestId);
+    if (index >= 0) {
+      final updated = Map<String, dynamic>.from(_salaryAdvances[index]);
+      updated['status'] = status;
+      _salaryAdvances[index] = updated;
+      await _storage.setString(LocalStorageService.keySalaryAdvances, jsonEncode(_salaryAdvances));
+      
+      // Update local dashboard alerts count
+      if (_dashboardAlertsData['staff_advance_requests'] != null) {
+        final currentCount = (_dashboardAlertsData['staff_advance_requests']['count'] as num?)?.toInt() ?? 0;
+        if (currentCount > 0) {
+          _dashboardAlertsData['staff_advance_requests']['count'] = currentCount - 1;
+        }
+      }
+      if (_dbPendingAdvances > 0) _dbPendingAdvances--;
+
+      notifyListeners();
+    }
+
+    _crudQueue.add({
+      'uuid': _generateUuidV4(),
+      'table': 'salary_advance_ledger',
+      'action': 'update',
+      'payload': {
+        'id': requestId,
+        'status': status,
+      },
+      'created_at': DateTime.now().toIso8601String(),
+      'retry_count': 0,
+      'error_message': null,
+    });
+    await _saveQueuesToStorage();
+    triggerBackgroundSync();
+  }
+
+  Future<void> fetchGymShiftSettingsFromSupabase(String gymId) async {
+    if (SupabaseService.isInitialized) {
+      try {
+        final settingsRes = await SupabaseService.client
+            .from('gym_shift_settings')
+            .select('mode')
+            .eq('gym_id', gymId)
+            .maybeSingle();
+
+        if (settingsRes != null) {
+          _shiftMode = settingsRes['mode'] ?? 'Single Shift';
+          await _storage.setString(LocalStorageService.keyGymShiftSettings, _shiftMode);
+        }
+
+        final shiftsRes = await SupabaseService.client
+            .from('gym_shifts')
+            .select('*')
+            .eq('gym_id', gymId);
+
+        _shiftsList = List<Map<String, dynamic>>.from(shiftsRes);
+        await _storage.setString(LocalStorageService.keyGymShiftsList, jsonEncode(_shiftsList));
+        notifyListeners();
+      } catch (e) {
+        print('fetchGymShiftSettingsFromSupabase error: $e');
+      }
+    }
+  }
+
+  Future<bool> saveOperatingHoursOffline(String gymId, String mode, List<Map<String, dynamic>> shiftsList) async {
+    _shiftMode = mode;
+    _shiftsList = shiftsList;
+    await _storage.setString(LocalStorageService.keyGymShiftSettings, mode);
+    await _storage.setString(LocalStorageService.keyGymShiftsList, jsonEncode(shiftsList));
+    notifyListeners();
+
+    _crudQueue.add({
+      'uuid': _generateUuidV4(),
+      'table': 'rpc_save_gym_operating_hours',
+      'action': 'rpc',
+      'payload': {
+        'p_gym_id': gymId,
+        'p_mode': mode,
+        'p_shifts': shiftsList,
+      },
+      'created_at': DateTime.now().toIso8601String(),
+      'retry_count': 0,
+      'error_message': null,
+    });
+    await _saveQueuesToStorage();
+    triggerBackgroundSync();
+    return true;
   }
 
   Future<void> fetchGoalsFromSupabase() async {
@@ -1269,6 +3303,7 @@ class GymRepository extends ChangeNotifier {
               .maybeSingle();
           if (response != null) {
             _attendanceSettings = GymAttendanceSettings.fromJson(response);
+            await _storage.setString(LocalStorageService.keyAttendanceSettings, jsonEncode(response));
             notifyListeners();
           }
         } catch (e) {
@@ -1279,16 +3314,23 @@ class GymRepository extends ChangeNotifier {
   }
 
   Future<void> saveAttendanceSettingsToSupabase(GymAttendanceSettings settings) async {
-    if (SupabaseService.isInitialized) {
-      try {
-        await SupabaseService.client.from('attendance_settings').upsert(settings.toJson());
-        _attendanceSettings = settings;
-        notifyListeners();
-      } catch (e) {
-        _handleNetworkError('saveAttendanceSettingsToSupabase', e);
-        throw Exception('Failed to save settings: $e');
-      }
-    }
+    // 1. Save locally instantly
+    _attendanceSettings = settings;
+    await _storage.setString(LocalStorageService.keyAttendanceSettings, jsonEncode(settings.toJson()));
+    notifyListeners();
+
+    // 2. Queue for database sync
+    _crudQueue.add({
+      'uuid': _generateUuidV4(),
+      'table': 'attendance_settings',
+      'action': 'insert',
+      'payload': settings.toJson(),
+      'created_at': DateTime.now().toIso8601String(),
+      'retry_count': 0,
+      'error_message': null,
+    });
+    await _saveQueuesToStorage();
+    triggerBackgroundSync();
   }
 
   Future<void> fetchDisplaySessionsFromSupabase() async {
@@ -1390,7 +3432,8 @@ class GymRepository extends ChangeNotifier {
 
           final List response = await query.order('check_in', ascending: false);
           _resetNetworkError();
-          _attendance = response.map((e) => AttendanceRecord.fromJson(e)).toList();
+          final serverList = response.map((e) => AttendanceRecord.fromJson(e)).toList();
+          _attendance = _mergeAttendanceList(serverList);
           await _storage.setString(_attendanceKey, jsonEncode(_attendance.map((e) => e.toJson()).toList()));
           notifyListeners();
         } catch (e) {
@@ -1548,6 +3591,7 @@ class GymRepository extends ChangeNotifier {
         });
         if (response != null) {
           _dashboardStats = Map<String, dynamic>.from(response as Map);
+          await _storage.setString(_dashboardStatsKey, jsonEncode(_dashboardStats));
           notifyListeners();
         }
       } catch (e) {
@@ -1864,20 +3908,11 @@ class GymRepository extends ChangeNotifier {
     required String paymentMode,
     required String notes,
   }) async {
-    if (!SupabaseService.isInitialized) return;
-    try {
-      await SupabaseService.client.rpc(
-        'pay_salary_draft_v2',
-        params: {
-          'p_draft_id': draftId,
-          'p_payment_mode': paymentMode,
-          'p_notes': notes,
-        },
-      );
-    } catch (e) {
-      print('paySalaryDraft error: $e');
-      rethrow;
-    }
+    await paySalaryDraftOffline(
+      draftId: draftId,
+      paymentMode: paymentMode,
+      notes: notes,
+    );
   }
 
   Future<List<Map<String, dynamic>>> fetchStaffCommissions(String staffId, {bool pendingOnly = true}) async {

@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'supabase_service.dart';
 import 'notification_service_mobile.dart';
+import '../repository/gym_repository.dart';
 import '../../features/authentication/auth_viewmodel.dart';
 
 class AlertsNotificationEngine {
@@ -15,8 +17,20 @@ class AlertsNotificationEngine {
     if (_isRunning) return;
     _isRunning = true;
 
-    // Periodically run check every 3 seconds to guarantee near instant alerts
-    _timer = Timer.periodic(const Duration(seconds: 3), (timer) async {
+    final gymRepo = Provider.of<GymRepository>(context, listen: false);
+    final storage = gymRepo.storage;
+
+    // Load persisted notified entities from shared preferences
+    final savedData = storage.getString('notified_entities');
+    if (savedData != null && savedData.isNotEmpty) {
+      try {
+        final List parsed = jsonDecode(savedData);
+        _notifiedEntities.addAll(parsed.map((e) => e.toString()));
+      } catch (_) {}
+    }
+
+    // Periodically run check every 20 seconds to guarantee alerts
+    _timer = Timer.periodic(const Duration(seconds: 20), (timer) async {
       try {
         final authVm = Provider.of<AuthViewModel>(context, listen: false);
         final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
@@ -39,6 +53,24 @@ class AlertsNotificationEngine {
             if (!_notifiedEntities.contains(uniqueKey)) {
               _notifiedEntities.add(uniqueKey);
               
+              // Persist notified entities list
+              await storage.setString('notified_entities', jsonEncode(_notifiedEntities.toList()));
+
+              // Insert the alert as a notification in Supabase so it appears in the notification center
+              try {
+                await SupabaseService.client.from('notifications').insert({
+                  'gym_id': gymId,
+                  'title': title,
+                  'body': message,
+                  'is_read': false,
+                });
+              } catch (e) {
+                debugPrint('Error inserting notification to DB: $e');
+              }
+
+              // Update local unread notifications count in viewmodel
+              authVm.setUnreadNotificationsCount(authVm.unreadNotificationsCount + 1);
+
               // Generate a stable numeric notification ID
               final notificationId = uniqueKey.hashCode;
               

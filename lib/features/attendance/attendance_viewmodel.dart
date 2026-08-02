@@ -331,4 +331,109 @@ class AttendanceViewModel extends ChangeNotifier {
       gymId: gymId,
     );
   }
+
+  // ===================================================================
+  // EMERGENCY ATTENDANCE RECOVERY SYSTEM
+  // ===================================================================
+
+  /// Returns active members whose attendance has NOT been marked today.
+  List<Map<String, dynamic>> getUnmarkedMembersToday() {
+    return _repository.getUnmarkedMembersToday();
+  }
+
+  /// Returns cached offline staff for emergency attendance.
+  List<Map<String, dynamic>> getOfflineStaff() {
+    return _repository.getOfflineStaff();
+  }
+
+  /// Returns the gym's shift configuration.
+  String get shiftMode => _repository.shiftMode;
+  List<Map<String, dynamic>> get shiftsList => _repository.shiftsList;
+
+  /// Marks manual member attendance for multiple members (offline-first).
+  Future<void> markManualMemberAttendance({
+    required String gymId,
+    required List<Map<String, dynamic>> members,
+    required String reason,
+    required String addedBy,
+    required String addedByRole,
+  }) async {
+    await _repository.queueManualMemberAttendance(
+      gymId: gymId,
+      members: members,
+      reason: reason,
+      addedBy: addedBy,
+      addedByRole: addedByRole,
+    );
+  }
+
+  /// Marks manual staff attendance (offline-first).
+  Future<void> markManualStaffAttendance({
+    required String gymId,
+    required String staffId,
+    required String? userId,
+    required String staffName,
+    required String? shiftId,
+    required String? shiftName,
+    required String checkInIso,
+    required String? checkOutIso,
+    required String date,
+    required String reason,
+    required String addedBy,
+    required String addedByRole,
+  }) async {
+    await _repository.queueManualStaffAttendance(
+      gymId: gymId,
+      staffId: staffId,
+      userId: userId,
+      staffName: staffName,
+      shiftId: shiftId,
+      shiftName: shiftName,
+      checkInIso: checkInIso,
+      checkOutIso: checkOutIso,
+      date: date,
+      reason: reason,
+      addedBy: addedBy,
+      addedByRole: addedByRole,
+    );
+  }
+
+  /// Owner directly corrects an attendance record.
+  Future<Map<String, dynamic>> ownerCorrectAttendance({
+    required String gymId,
+    required String logId,
+    required String targetUserId,
+    required String targetUserName,
+    required String targetUserType,
+    required String date,
+    String? newStatus,
+    String? newCheckIn,
+    String? newCheckOut,
+    String? newShift,
+    required String reason,
+    required String correctedBy,
+  }) async {
+    return await _repository.ownerCorrectAttendance(
+      gymId: gymId,
+      logId: logId,
+      targetUserId: targetUserId,
+      targetUserName: targetUserName,
+      targetUserType: targetUserType,
+      date: date,
+      newStatus: newStatus,
+      newCheckIn: newCheckIn,
+      newCheckOut: newCheckOut,
+      newShift: newShift,
+      reason: reason,
+      correctedBy: correctedBy,
+    );
+  }
+
+  /// Returns audit logs for the emergency attendance system.
+  List getAuditLogs({String? date, String? userType}) {
+    return _repository.getAuditLogs(date: date, userType: userType);
+  }
+
+  /// Returns the manual attendance queue entries.
+  List get manualAttendanceQueue => _repository.manualAttendanceQueue;
 }

@@ -7,6 +7,9 @@ import 'attendance_viewmodel.dart';
 import 'owner_scanner_screen.dart';
 import 'owner_history_screen.dart';
 import 'owner_settings_screen.dart';
+import 'manual_attendance_screen.dart';
+import 'emergency_attendance_hub_screen.dart';
+import '../gym_settings/online_database_screen.dart';
 
 class AttendanceScreen extends StatelessWidget {
   const AttendanceScreen({super.key});
@@ -104,6 +107,18 @@ class AttendanceScreen extends StatelessWidget {
               title: 'Attendance History',
               subtitle: 'View past records',
               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const OwnerAttendanceHistoryScreen())),
+            ),
+            _MenuItem(
+              icon: Icons.edit_calendar_rounded,
+              title: 'Manual Attendance',
+              subtitle: 'Mark attendance manually',
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EmergencyAttendanceHubScreen())),
+            ),
+            _MenuItem(
+              icon: Icons.cloud_sync_rounded,
+              title: 'Online Database',
+              subtitle: 'View sync queue & health',
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const OnlineDatabaseScreen())),
             ),
             _MenuItem(
               icon: Icons.settings_outlined,

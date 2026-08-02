@@ -7,6 +7,7 @@ import '../../core/widgets/custom_card.dart';
 import '../../core/widgets/success_dialog.dart';
 import '../../core/services/supabase_service.dart';
 import '../authentication/auth_viewmodel.dart';
+import '../gym_settings/online_database_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -325,6 +326,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                       );
                     },
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    title: Text('Online Database', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
+                    subtitle: Text('View sync status, queue size, and retry operations', style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted)),
+                    trailing: const Icon(Icons.chevron_right_rounded, color: AppTheme.textMuted),
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const OnlineDatabaseScreen())),
                   ),
                 ],
               ),

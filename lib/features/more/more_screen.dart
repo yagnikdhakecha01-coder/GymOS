@@ -11,12 +11,14 @@ import '../diet/diet_plans_screen.dart';
 import '../membership/membership_plans_screen.dart';
 import '../gym_settings/gym_settings_menu_screen.dart';
 import 'reports_screen.dart';
+import '../members/trial_members_screen.dart';
 import 'notifications_screen.dart';
 import 'settings_screen.dart';
 import 'help_support_screen.dart';
 import 'about_gymos_screen.dart';
 import 'backup_restore_screen.dart';
 import '../receptionist/portal/receptionist_activity_log_screen.dart';
+import '../dashboard/gym_switcher_bottom_sheet.dart';
 
 class MoreScreen extends StatelessWidget {
   const MoreScreen({super.key});
@@ -165,7 +167,20 @@ class MoreScreen extends StatelessWidget {
                       Navigator.push(context, AppRouter.slideRoute(const GymSettingsMenuScreen()));
                     },
                   ),
-                   const Divider(height: 1),
+                  const Divider(height: 1),
+
+                  // Switch Profile Item
+                  _buildSettingTile(
+                    context,
+                    icon: Icons.swap_horiz_rounded,
+                    color: AppTheme.warning,
+                    title: 'Switch Profile',
+                    subtitle: 'Switch role or gym profile context',
+                    onTap: () {
+                      GymSwitcherBottomSheet.show(context);
+                    },
+                  ),
+                  const Divider(height: 1),
 
                   // 5. Reports
                   _buildSettingTile(
@@ -176,6 +191,19 @@ class MoreScreen extends StatelessWidget {
                     subtitle: 'Track revenues, members, attendance',
                     onTap: () {
                       Navigator.push(context, AppRouter.slideRoute(const ReportsScreen()));
+                    },
+                  ),
+                  const Divider(height: 1),
+
+                  // Trial Members
+                  _buildSettingTile(
+                    context,
+                    icon: Icons.assignment_ind_outlined,
+                    color: Colors.deepOrange,
+                    title: 'Trial Members',
+                    subtitle: 'Manage free and paid member trials',
+                    onTap: () {
+                      Navigator.push(context, AppRouter.slideRoute(const TrialMembersScreen()));
                     },
                   ),
                   const Divider(height: 1),

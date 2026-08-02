@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'dart:io';
+import 'dart:convert';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/services/local_storage.dart';
 import '../../core/services/auth_service.dart';
@@ -52,6 +54,20 @@ class AuthViewModel extends ChangeNotifier {
   void clearUnreadNotifications() {
     _unreadNotificationsCount = 0;
     notifyListeners();
+
+    // Mark notifications as read in Supabase
+    final gymId = activeAssociation?.gymId ?? gymInfo?['id'];
+    if (gymId != null && SupabaseService.isInitialized) {
+      SupabaseService.client
+          .from('notifications')
+          .update({'is_read': true})
+          .eq('gym_id', gymId)
+          .eq('is_read', false)
+          .then((_) {})
+          .catchError((e) {
+            print('Error updating notifications in Supabase: $e');
+          });
+    }
   }
 
   void setUnreadNotificationsCount(int count) {
@@ -63,6 +79,25 @@ class AuthViewModel extends ChangeNotifier {
     _selectedRole = role;
     await _storage.setUserRole(role);
     notifyListeners();
+  }
+
+  String? getCachedImage(String key) => _storage.getCachedImage(key);
+
+  Future<void> cacheImageLocally(String? url, String key) async {
+    if (url == null || url.isEmpty || (!url.startsWith('http') && !url.startsWith('https'))) return;
+    try {
+      final client = HttpClient();
+      final request = await client.getUrl(Uri.parse(url));
+      final response = await request.close();
+      if (response.statusCode == 200) {
+        final bytes = await response.fold<List<int>>([], (list, element) => list..addAll(element));
+        final base64Str = base64Encode(bytes);
+        await _storage.setCachedImage(key, base64Str);
+        notifyListeners();
+      }
+    } catch (e) {
+      print('Error caching image locally for key $key: $e');
+    }
   }
 
   /// Sets loading state
@@ -83,23 +118,24 @@ class AuthViewModel extends ChangeNotifier {
       // Load profile
       final profile = await _authService.getVerifiedProfile();
       _currentProfile = profile;
+      if (profile?.photoUrl != null && profile!.photoUrl!.isNotEmpty) {
+        cacheImageLocally(profile.photoUrl, 'user_avatar');
+      }
       _isLoggedIn = true;
       await _storage.setLoggedIn(true);
 
       if (profile != null) {
         // Fetch associations
         final allAssociations = (await _authService.getUserGymAssociations(profile.id)) ?? [];
-        final roleFilter = _selectedRole;
-        final associations = allAssociations.where((a) => roleFilter == null || a.role.name == roleFilter).toList();
-        _userAssociations = associations;
+        _userAssociations = allAssociations;
 
         _staffRecord = null;
 
-        if (associations.isEmpty) {
+        if (_userAssociations.isEmpty) {
           _selectedRole = _storage.getUserRole();
           _gymInfo = null;
-        } else if (associations.length == 1) {
-          final assoc = associations.first;
+        } else if (_userAssociations.length == 1) {
+          final assoc = _userAssociations.first;
           _activeAssociation = assoc;
           _selectedRole = assoc.role.name;
           _currentProfile = profile.copyWith(
@@ -115,6 +151,7 @@ class AuthViewModel extends ChangeNotifier {
                   .from('staff')
                   .select()
                   .eq('user_id', profile.id)
+                  .eq('gym_id', assoc.gymId)
                   .maybeSingle();
               if (res != null) {
                 _staffRecord = Staff.fromJson(res);
@@ -184,6 +221,10 @@ class AuthViewModel extends ChangeNotifier {
         };
         _gymInfo = info;
         await _storage.setGymInfo(info);
+        final logoUrl = info['logo'] ?? info['logo_url'];
+        if (logoUrl != null && logoUrl.isNotEmpty) {
+          cacheImageLocally(logoUrl, 'gym_logo_${info['id']}');
+        }
       }
     } catch (_) {
       final info = {
@@ -196,15 +237,19 @@ class AuthViewModel extends ChangeNotifier {
       await _storage.setGymInfo(info);
     }
 
-    if (_currentProfile?.role == UserRole.staff) {
+    if (assoc.role == UserRole.staff) {
       try {
-        final res = await SupabaseService.client
-            .from('staff')
-            .select()
-            .eq('user_id', _currentProfile!.id)
-            .maybeSingle();
-        if (res != null) {
-          _staffRecord = Staff.fromJson(res);
+        final userId = _currentProfile?.id ?? SupabaseService.client.auth.currentUser?.id;
+        if (userId != null) {
+          final res = await SupabaseService.client
+              .from('staff')
+              .select()
+              .eq('user_id', userId)
+              .eq('gym_id', assoc.gymId)
+              .maybeSingle();
+          if (res != null) {
+            _staffRecord = Staff.fromJson(res);
+          }
         }
       } catch (e) {
         print('Error loading staff record in selectAssociation: $e');
@@ -212,6 +257,11 @@ class AuthViewModel extends ChangeNotifier {
     } else {
       _staffRecord = null;
     }
+
+    // Clear repository cache and reload for the new gym context
+    _gymRepository.clearAllData();
+    await _gymRepository.reloadForActiveGym();
+    _gymRepository.syncAllFromSupabase();
 
     notifyListeners();
   }
@@ -449,6 +499,10 @@ class AuthViewModel extends ChangeNotifier {
   Future<void> setGymInfo(Map<String, dynamic> info) async {
     _gymInfo = info;
     await _storage.setGymInfo(info);
+    final logoUrl = info['logo'] ?? info['logo_url'];
+    if (logoUrl != null && logoUrl.isNotEmpty) {
+      cacheImageLocally(logoUrl, 'gym_logo_${info['id']}');
+    }
     notifyListeners();
   }
 
@@ -474,6 +528,9 @@ class AuthViewModel extends ChangeNotifier {
     }
 
     _currentProfile = profile;
+    if (profile?.photoUrl != null && profile!.photoUrl!.isNotEmpty) {
+      cacheImageLocally(profile.photoUrl, 'user_avatar');
+    }
     _staffRecord = null;
 
     if (profile != null) {
@@ -483,9 +540,7 @@ class AuthViewModel extends ChangeNotifier {
       // Fetch associations
       final allAssociations = await _authService.getUserGymAssociations(profile.id);
       if (allAssociations != null) {
-        final roleFilter = _selectedRole;
-        final associations = allAssociations.where((a) => roleFilter == null || a.role.name == roleFilter).toList();
-        _userAssociations = associations;
+        _userAssociations = allAssociations;
       }
 
       if (_userAssociations.isNotEmpty) {
@@ -518,6 +573,7 @@ class AuthViewModel extends ChangeNotifier {
                 .from('staff')
                 .select()
                 .eq('user_id', profile.id)
+                .eq('gym_id', assoc.gymId)
                 .maybeSingle();
             if (res != null) {
               _staffRecord = Staff.fromJson(res);
@@ -564,6 +620,20 @@ class AuthViewModel extends ChangeNotifier {
           };
           _gymInfo = info;
           await _storage.setGymInfo(info);
+        }
+
+        // Fetch unread notifications count from Supabase
+        try {
+          if (SupabaseService.isInitialized) {
+            final res = await SupabaseService.client
+                .from('notifications')
+                .select('id')
+                .eq('gym_id', assoc.gymId)
+                .eq('is_read', false);
+            _unreadNotificationsCount = (res as List).length;
+          }
+        } catch (e) {
+          print('Error fetching unread notifications count: $e');
         }
       } else {
         _selectedRole = _storage.getUserRole();

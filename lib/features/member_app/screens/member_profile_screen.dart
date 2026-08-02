@@ -9,6 +9,7 @@ import 'member_membership_screen.dart';
 import 'member_notifications_screen.dart';
 import '../../more/help_support_screen.dart';
 import '../../more/settings_screen.dart';
+import '../../dashboard/gym_switcher_bottom_sheet.dart';
 
 class MemberProfileScreen extends StatelessWidget {
   const MemberProfileScreen({super.key});
@@ -231,6 +232,10 @@ class MemberProfileScreen extends StatelessWidget {
                             context,
                             MaterialPageRoute(builder: (_) => const MemberMembershipScreen()),
                           );
+                        }),
+                        _divider(),
+                        _buildMenuItem(Icons.swap_horiz_rounded, 'Switch Profile', () {
+                          GymSwitcherBottomSheet.show(context);
                         }),
                         _divider(),
                         _buildMenuItem(Icons.settings_outlined, 'Settings', () {

@@ -71,6 +71,8 @@ class Staff {
       'take_payment': true,
       'send_reminder': true,
       'broadcast': false,
+      'manual_attendance': false,
+      'attendance_correction': false,
     },
   });
 
@@ -114,6 +116,8 @@ class Staff {
         'take_payment': true,
         'send_reminder': true,
         'broadcast': false,
+        'manual_attendance': false,
+        'attendance_correction': false,
       },
     );
   }

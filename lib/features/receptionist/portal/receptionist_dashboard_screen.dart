@@ -7,11 +7,15 @@ import '../../../core/widgets/custom_card.dart';
 import '../../../core/services/supabase_service.dart';
 import '../../authentication/auth_viewmodel.dart';
 import '../../attendance/owner_scanner_screen.dart';
-import '../../members/add_member_wizard_screen.dart';
+import '../../attendance/manual_attendance_screen.dart';
+import '../../gym_settings/online_database_screen.dart';
+import '../../../core/repository/gym_repository.dart';
+import '../../../core/widgets/add_member_selection_sheet.dart';
 import '../receptionist_viewmodel.dart';
 import 'widgets/receptionist_restricted_widget.dart';
 import '../../../core/theme/responsive.dart';
 import 'receptionist_activity_log_screen.dart';
+import '../../dashboard/gym_switcher_bottom_sheet.dart';
 
 class ReceptionistDashboardScreen extends StatefulWidget {
   const ReceptionistDashboardScreen({super.key});
@@ -25,6 +29,7 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
   Widget build(BuildContext context) {
     final authVm = Provider.of<AuthViewModel>(context);
     final vm = Provider.of<ReceptionistViewModel>(context);
+    final repo = Provider.of<GymRepository>(context);
     final staff = vm.staffRecord;
     final gymName = authVm.gymInfo?['name'] ?? 'FitZone Gym';
 
@@ -63,9 +68,28 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
                             style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
                           ),
                           const SizedBox(height: 2),
-                          Text(
-                            'Receptionist • $gymName',
-                            style: GoogleFonts.inter(fontSize: 11, color: AppTheme.primary, fontWeight: FontWeight.w600),
+                          GestureDetector(
+                            onTap: () {
+                              GymSwitcherBottomSheet.show(context);
+                            },
+                            child: MouseRegion(
+                              cursor: SystemMouseCursors.click,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    'Receptionist • $gymName',
+                                    style: GoogleFonts.inter(fontSize: 11, color: AppTheme.primary, fontWeight: FontWeight.w600),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  const Icon(
+                                    Icons.arrow_drop_down_rounded,
+                                    size: 16,
+                                    color: AppTheme.primary,
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
                         ],
                       ),
@@ -85,6 +109,38 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
                   ],
                 ),
                 const SizedBox(height: 20),
+                if (repo.attendanceQueue.isNotEmpty || repo.crudQueue.isNotEmpty) ...[
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const OnlineDatabaseScreen()),
+                      );
+                    },
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 16),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: AppTheme.danger.withOpacity(0.06),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppTheme.danger.withOpacity(0.2)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.sync_problem_rounded, color: AppTheme.danger, size: 20),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'You have offline data pending sync. Tap to sync.',
+                              style: GoogleFonts.inter(fontSize: 12, color: AppTheme.danger, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                          const Icon(Icons.arrow_forward_ios_rounded, color: AppTheme.danger, size: 14),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
 
                 // Date display
                 Container(
@@ -348,10 +404,7 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
         'icon': Icons.person_add_outlined,
         'color': AppTheme.primary,
         'action': () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const AddMemberWizardScreen()),
-          );
+          AddMemberSelectionSheet.show(context);
         }
       },
       {
@@ -363,6 +416,18 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
           Navigator.push(
             context,
             MaterialPageRoute(builder: (_) => const OwnerQRScannerScreen(isCheckIn: true)),
+          );
+        }
+      },
+      {
+        'key': 'scan_attendance',
+        'label': 'Manual Attendance',
+        'icon': Icons.edit_calendar_rounded,
+        'color': AppTheme.primary,
+        'action': () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const ManualAttendanceScreen()),
           );
         }
       },

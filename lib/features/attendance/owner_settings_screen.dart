@@ -8,6 +8,8 @@ import '../../core/theme/theme.dart';
 import '../../core/config/env.dart';
 import '../../features/authentication/auth_viewmodel.dart';
 import 'attendance_viewmodel.dart';
+import 'emergency_attendance_hub_screen.dart';
+import 'owner_attendance_correction_screen.dart';
 
 class OwnerQrSettingsScreen extends StatefulWidget {
   const OwnerQrSettingsScreen({super.key});
@@ -652,6 +654,138 @@ class _OwnerQrSettingsScreenState extends State<OwnerQrSettingsScreen> {
                         );
                       }).toList(),
                     ),
+
+                  // ── Section: Emergency & Recovery ──
+                  const SizedBox(height: 8),
+                  const Divider(color: Color(0xFFF3F4F6)),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Emergency & Recovery',
+                    style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Use only when QR attendance is unavailable',
+                    style: GoogleFonts.inter(fontSize: 11.5, color: AppTheme.textMuted),
+                  ),
+                  const SizedBox(height: 14),
+
+                  // Manual Attendance
+                  Material(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    child: InkWell(
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const EmergencyAttendanceHubScreen()),
+                      ),
+                      borderRadius: BorderRadius.circular(14),
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: const Color(0xFFF0F0F2)),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFEF3C7),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Icon(Icons.edit_calendar_rounded, color: Color(0xFFD97706), size: 20),
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Manual Attendance',
+                                    style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.textPrimary),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'Mark attendance for members and staff manually',
+                                    style: GoogleFonts.inter(fontSize: 11.5, color: AppTheme.textMuted),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Icon(Icons.chevron_right_rounded, color: AppTheme.textMuted, size: 22),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+
+                  // Attendance Correction
+                  Material(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    child: InkWell(
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const OwnerAttendanceCorrectionScreen()),
+                      ),
+                      borderRadius: BorderRadius.circular(14),
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: const Color(0xFFF0F0F2)),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFEE2E2),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Icon(Icons.edit_note_rounded, color: Color(0xFFDC2626), size: 20),
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Text(
+                                        'Attendance Correction',
+                                        style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.textPrimary),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFFEE2E2),
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: Text(
+                                          'Owner',
+                                          style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.bold, color: AppTheme.danger),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'Correct attendance status, times, and shifts',
+                                    style: GoogleFonts.inter(fontSize: 11.5, color: AppTheme.textMuted),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Icon(Icons.chevron_right_rounded, color: AppTheme.textMuted, size: 22),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),

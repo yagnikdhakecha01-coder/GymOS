@@ -6,6 +6,9 @@ import '../../authentication/auth_viewmodel.dart';
 import '../../authentication/role_selection_screen.dart';
 import '../receptionist_viewmodel.dart';
 import 'receptionist_activity_log_screen.dart';
+import '../../members/trial_members_screen.dart';
+import '../../dashboard/gym_switcher_bottom_sheet.dart';
+import '../../staff/portal/staff_requests_screen.dart';
 
 class ReceptionistMoreScreen extends StatelessWidget {
   const ReceptionistMoreScreen({super.key});
@@ -47,24 +50,12 @@ class ReceptionistMoreScreen extends StatelessWidget {
                       children: [
                         Text(
                           staff?.name ?? 'Receptionist',
-                          style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                          style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800, color: AppTheme.textPrimary),
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          staff?.phone ?? 'No Phone',
+                          staff?.phone ?? '9876543210',
                           style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary),
-                        ),
-                        const SizedBox(height: 4),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: AppTheme.primary.withOpacity(0.08),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            'Receptionist',
-                            style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.bold, color: AppTheme.primary),
-                          ),
                         ),
                       ],
                     ),
@@ -80,7 +71,7 @@ class ReceptionistMoreScreen extends StatelessWidget {
               child: Column(
                 children: [
                   _buildMenuRow(
-                    icon: Icons.task_outlined,
+                    icon: Icons.task_alt_rounded,
                     title: 'Tasks',
                     onTap: () {},
                   ),
@@ -100,6 +91,38 @@ class ReceptionistMoreScreen extends StatelessWidget {
                         context,
                         MaterialPageRoute(builder: (_) => ReceptionistActivityLogScreen(gymId: vm.staffRecord!.gymId)),
                       );
+                    },
+                  ),
+                  _divider(),
+                  _buildMenuRow(
+                    icon: Icons.post_add_rounded,
+                    title: 'My Requests',
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const StaffRequestsScreen()),
+                      );
+                    },
+                  ),
+                  if (vm.hasPermission('add_member')) ...[
+                    _divider(),
+                    _buildMenuRow(
+                      icon: Icons.assignment_ind_outlined,
+                      title: 'Trial Members',
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const TrialMembersScreen()),
+                        );
+                      },
+                    ),
+                  ],
+                  _divider(),
+                  _buildMenuRow(
+                    icon: Icons.swap_horiz_rounded,
+                    title: 'Switch Profile',
+                    onTap: () {
+                      GymSwitcherBottomSheet.show(context);
                     },
                   ),
                   _divider(),

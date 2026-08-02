@@ -6,7 +6,11 @@ import 'package:intl/intl.dart';
 import '../../core/theme/theme.dart';
 import '../authentication/auth_viewmodel.dart';
 import '../../core/services/supabase_service.dart';
+import '../../core/repository/gym_repository.dart';
 import 'expiring_memberships_screen.dart';
+import '../members/members_viewmodel.dart';
+import '../../core/models/member.dart';
+import '../staff/portal/staff_request_approval_screen.dart';
 
 class AlertsScreen extends StatefulWidget {
   const AlertsScreen({super.key});
@@ -18,7 +22,6 @@ class AlertsScreen extends StatefulWidget {
 class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
   bool _isLoading = true;
-  Map<String, dynamic> _alertsData = {};
   String? _errorMsg;
   Timer? _refreshTimer;
 
@@ -28,8 +31,8 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
     _tabController = TabController(length: 3, vsync: this);
     _fetchAlerts();
     
-    // Periodically fetch from DB every 3 seconds for instant updates in the UI
-    _refreshTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
+    // Periodically fetch from DB every 20 seconds for updates in the UI
+    _refreshTimer = Timer.periodic(const Duration(seconds: 20), (timer) {
       _fetchAlertsQuietly();
     });
   }
@@ -39,6 +42,35 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
     _refreshTimer?.cancel();
     _tabController.dispose();
     super.dispose();
+  }
+
+  /// Reads alerts data from GymRepository (which may have locally decremented counts)
+  Map<String, dynamic> get _alertsData {
+    try {
+      final repo = Provider.of<GymRepository>(context, listen: false);
+      final data = Map<String, dynamic>.from(repo.dashboardAlertsData);
+
+      // Override staff leave & advance counts from local pending items
+      // This ensures approved items are excluded instantly even before sync
+      final pendingLeaves = repo.leaveRequests.where((l) => l['status'] == 'Pending').length;
+      final pendingAdvances = repo.salaryAdvances.where((a) => a['status'] == 'Pending').length;
+
+      if (data['staff_leave_requests'] != null) {
+        final rpcCount = (data['staff_leave_requests']['count'] as num?)?.toInt() ?? 0;
+        // Use whichever is smaller: the locally counted pending or the RPC count
+        data['staff_leave_requests'] = Map<String, dynamic>.from(data['staff_leave_requests']);
+        data['staff_leave_requests']['count'] = rpcCount < pendingLeaves ? rpcCount : pendingLeaves;
+      }
+      if (data['staff_advance_requests'] != null) {
+        final rpcCount = (data['staff_advance_requests']['count'] as num?)?.toInt() ?? 0;
+        data['staff_advance_requests'] = Map<String, dynamic>.from(data['staff_advance_requests']);
+        data['staff_advance_requests']['count'] = rpcCount < pendingAdvances ? rpcCount : pendingAdvances;
+      }
+
+      return data;
+    } catch (_) {
+      return {};
+    }
   }
 
   Future<void> _fetchAlerts() async {
@@ -53,13 +85,15 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
       final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
       
       if (gymId != null) {
+        final repo = Provider.of<GymRepository>(context, listen: false);
         final response = await SupabaseService.client.rpc(
           'get_dashboard_alerts_v1',
           params: {'p_gym_id': gymId},
         );
         if (mounted) {
+          // Store in repository so local decrements are respected
+          repo.updateDashboardAlertsData(Map<String, dynamic>.from(response as Map));
           setState(() {
-            _alertsData = Map<String, dynamic>.from(response as Map);
             _isLoading = false;
           });
         }
@@ -87,18 +121,32 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
       final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
       
       if (gymId != null && SupabaseService.isInitialized) {
+        final repo = Provider.of<GymRepository>(context, listen: false);
         final response = await SupabaseService.client.rpc(
           'get_dashboard_alerts_v1',
           params: {'p_gym_id': gymId},
         );
         if (mounted) {
-          setState(() {
-            _alertsData = Map<String, dynamic>.from(response as Map);
-          });
+          repo.updateDashboardAlertsData(Map<String, dynamic>.from(response as Map));
+          setState(() {});
         }
       }
     } catch (_) {
       // Fail silently in background quiet refresh
+    }
+  }
+
+  int? _getDaysLeft(Member member) {
+    final exp = member.extraFields['expiryDate'] as String?;
+    if (exp == null || exp.isEmpty) return null;
+    try {
+      final parsed = DateTime.parse(exp);
+      final today = DateTime.now();
+      final todayDateOnly = DateTime(today.year, today.month, today.day);
+      final expiryDateOnly = DateTime(parsed.year, parsed.month, parsed.day);
+      return expiryDateOnly.difference(todayDateOnly).inDays;
+    } catch (_) {
+      return null;
     }
   }
 
@@ -120,17 +168,59 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
 
   @override
   Widget build(BuildContext context) {
-    final endingToday = _alertsData['memberships_ending_today']?['count'] ?? 0;
-    final expiring1 = _alertsData['memberships_expiring_1_day']?['count'] ?? 0;
-    final expiring3 = _alertsData['memberships_expiring_3_days']?['count'] ?? 0;
-    final expiring7 = _alertsData['memberships_expiring_7_days']?['count'] ?? 0;
-    final expiring15 = _alertsData['memberships_expiring_15_days']?['count'] ?? 0;
+    final membersVm = Provider.of<MembersViewModel>(context);
+    // Listen to GymRepository for real-time local count updates (e.g., after leave approval)
+    Provider.of<GymRepository>(context);
+    final allMembers = membersVm.allMembers;
+
+    final endingTodayMembers = <Member>[];
+    final expiring1Members = <Member>[];
+    final expiring3Members = <Member>[];
+    final expiring7Members = <Member>[];
+    final expiring15Members = <Member>[];
+    final expired1MonthMembers = <Member>[];
+
+    for (final m in allMembers) {
+      final daysLeft = _getDaysLeft(m);
+      if (daysLeft == null) continue;
+      if (daysLeft == 0) {
+        endingTodayMembers.add(m);
+      } else if (daysLeft == 1) {
+        expiring1Members.add(m);
+      } else if (daysLeft >= 2 && daysLeft <= 3) {
+        expiring3Members.add(m);
+      } else if (daysLeft >= 4 && daysLeft <= 7) {
+        expiring7Members.add(m);
+      } else if (daysLeft >= 8 && daysLeft <= 15) {
+        expiring15Members.add(m);
+      } else if (daysLeft >= -30 && daysLeft < 0) {
+        expired1MonthMembers.add(m);
+      }
+    }
+
+    final endingToday = endingTodayMembers.length;
+    final expiring1 = expiring1Members.length;
+    final expiring3 = expiring3Members.length;
+    final expiring7 = expiring7Members.length;
+    final expiring15 = expiring15Members.length;
+    final expired1Month = expired1MonthMembers.length;
+
+    final endingAvatars = endingTodayMembers.map((m) => m.avatar).where((a) => a.isNotEmpty && a.startsWith('http')).take(3).toList();
+    final expiring1Avatars = expiring1Members.map((m) => m.avatar).where((a) => a.isNotEmpty && a.startsWith('http')).take(3).toList();
+    final expiring3Avatars = expiring3Members.map((m) => m.avatar).where((a) => a.isNotEmpty && a.startsWith('http')).take(3).toList();
+    final expiring7Avatars = expiring7Members.map((m) => m.avatar).where((a) => a.isNotEmpty && a.startsWith('http')).take(3).toList();
+    final expiring15Avatars = expiring15Members.map((m) => m.avatar).where((a) => a.isNotEmpty && a.startsWith('http')).take(3).toList();
+    final expired1MonthAvatars = expired1MonthMembers.map((m) => m.avatar).where((a) => a.isNotEmpty && a.startsWith('http')).take(3).toList();
+
     final staffLeaves = _alertsData['staff_leave_requests']?['count'] ?? 0;
     final holidayRequests = _alertsData['holiday_requests']?['count'] ?? 0;
-    final paymentsPending = _alertsData['payments_pending']?['count'] ?? 0;
-    final ptTrials = _alertsData['pt_trials']?['count'] ?? 0;
+    final staffAdvances = _alertsData['staff_advance_requests']?['count'] ?? 0;
 
-    final totalCount = endingToday + expiring1 + expiring3 + expiring7 + expiring15 + staffLeaves + holidayRequests + paymentsPending + ptTrials;
+    final staffLeavesAvatars = _getAvatars(_alertsData['staff_leave_requests']?['avatars']);
+    final holidayAvatars = _getAvatars(_alertsData['holiday_requests']?['avatars']);
+    final staffAdvancesAvatars = _getAvatars(_alertsData['staff_advance_requests']?['avatars']);
+
+    final totalCount = endingToday + expiring1 + expiring3 + expiring7 + expiring15 + expired1Month + staffLeaves + holidayRequests + staffAdvances;
 
     return Scaffold(
       backgroundColor: AppTheme.background,
@@ -222,8 +312,40 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
                     : TabBarView(
                         controller: _tabController,
                         children: [
-                          _buildAllAlertsTab(),
-                          _buildMembershipAlertsTab(),
+                          _buildAllAlertsTab(
+                            endingToday: endingToday,
+                            expiring1: expiring1,
+                            expiring3: expiring3,
+                            expiring7: expiring7,
+                            expiring15: expiring15,
+                            expired1Month: expired1Month,
+                            endingAvatars: endingAvatars,
+                            expiring1Avatars: expiring1Avatars,
+                            expiring3Avatars: expiring3Avatars,
+                            expiring7Avatars: expiring7Avatars,
+                            expiring15Avatars: expiring15Avatars,
+                            expired1MonthAvatars: expired1MonthAvatars,
+                            staffLeaves: staffLeaves,
+                            holidayRequests: holidayRequests,
+                            staffAdvances: staffAdvances,
+                            staffLeavesAvatars: staffLeavesAvatars,
+                            holidayAvatars: holidayAvatars,
+                            staffAdvancesAvatars: staffAdvancesAvatars,
+                          ),
+                          _buildMembershipAlertsTab(
+                            endingToday: endingToday,
+                            expiring1: expiring1,
+                            expiring3: expiring3,
+                            expiring7: expiring7,
+                            expiring15: expiring15,
+                            expired1Month: expired1Month,
+                            endingAvatars: endingAvatars,
+                            expiring1Avatars: expiring1Avatars,
+                            expiring3Avatars: expiring3Avatars,
+                            expiring7Avatars: expiring7Avatars,
+                            expiring15Avatars: expiring15Avatars,
+                            expired1MonthAvatars: expired1MonthAvatars,
+                          ),
                           _buildRequestsAlertsTab(),
                         ],
                       ),
@@ -254,28 +376,27 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
     );
   }
 
-  Widget _buildAllAlertsTab() {
-    final endingToday = _alertsData['memberships_ending_today']?['count'] ?? 0;
-    final expiring1 = _alertsData['memberships_expiring_1_day']?['count'] ?? 0;
-    final expiring3 = _alertsData['memberships_expiring_3_days']?['count'] ?? 0;
-    final expiring7 = _alertsData['memberships_expiring_7_days']?['count'] ?? 0;
-    final expiring15 = _alertsData['memberships_expiring_15_days']?['count'] ?? 0;
-    final staffLeaves = _alertsData['staff_leave_requests']?['count'] ?? 0;
-    final holidayRequests = _alertsData['holiday_requests']?['count'] ?? 0;
-    final paymentsPending = _alertsData['payments_pending']?['count'] ?? 0;
-    final ptTrials = _alertsData['pt_trials']?['count'] ?? 0;
-
-    final endingAvatars = _getAvatars(_alertsData['memberships_ending_today']?['avatars']);
-    final expiring1Avatars = _getAvatars(_alertsData['memberships_expiring_1_day']?['avatars']);
-    final expiring3Avatars = _getAvatars(_alertsData['memberships_expiring_3_days']?['avatars']);
-    final expiring7Avatars = _getAvatars(_alertsData['memberships_expiring_7_days']?['avatars']);
-    final expiring15Avatars = _getAvatars(_alertsData['memberships_expiring_15_days']?['avatars']);
-    final staffLeavesAvatars = _getAvatars(_alertsData['staff_leave_requests']?['avatars']);
-    final holidayAvatars = _getAvatars(_alertsData['holiday_requests']?['avatars']);
-    final paymentsAvatars = _getAvatars(_alertsData['payments_pending']?['avatars']);
-    final ptAvatars = _getAvatars(_alertsData['pt_trials']?['avatars']);
-
-    final totalCount = endingToday + expiring1 + expiring3 + expiring7 + expiring15 + staffLeaves + holidayRequests + paymentsPending + ptTrials;
+  Widget _buildAllAlertsTab({
+    required int endingToday,
+    required int expiring1,
+    required int expiring3,
+    required int expiring7,
+    required int expiring15,
+    required int expired1Month,
+    required List<String> endingAvatars,
+    required List<String> expiring1Avatars,
+    required List<String> expiring3Avatars,
+    required List<String> expiring7Avatars,
+    required List<String> expiring15Avatars,
+    required List<String> expired1MonthAvatars,
+    required int staffLeaves,
+    required int holidayRequests,
+    required int staffAdvances,
+    required List<String> staffLeavesAvatars,
+    required List<String> holidayAvatars,
+    required List<String> staffAdvancesAvatars,
+  }) {
+    final totalCount = endingToday + expiring1 + expiring3 + expiring7 + expiring15 + expired1Month + staffLeaves + holidayRequests + staffAdvances;
 
     if (totalCount == 0) {
       return _buildEmptyState();
@@ -287,7 +408,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          if (endingToday > 0 || expiring1 > 0 || expiring3 > 0 || expiring7 > 0 || expiring15 > 0) ...[
+          if (endingToday > 0 || expiring1 > 0 || expiring3 > 0 || expiring7 > 0 || expiring15 > 0 || expired1Month > 0) ...[
             _buildSectionHeader('Membership Alerts'),
             const SizedBox(height: 8),
             if (endingToday > 0)
@@ -303,7 +424,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
                 onTap: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (_) => const ExpiringMembershipsScreen()),
+                    MaterialPageRoute(builder: (_) => const ExpiringMembershipsScreen(initialTabIndex: 2)),
                   );
                 },
               ),
@@ -320,7 +441,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
                 onTap: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (_) => const ExpiringMembershipsScreen()),
+                    MaterialPageRoute(builder: (_) => const ExpiringMembershipsScreen(initialTabIndex: 1)),
                   );
                 },
               ),
@@ -337,7 +458,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
                 onTap: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (_) => const ExpiringMembershipsScreen()),
+                    MaterialPageRoute(builder: (_) => const ExpiringMembershipsScreen(initialTabIndex: 1)),
                   );
                 },
               ),
@@ -354,7 +475,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
                 onTap: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (_) => const ExpiringMembershipsScreen()),
+                    MaterialPageRoute(builder: (_) => const ExpiringMembershipsScreen(initialTabIndex: 1)),
                   );
                 },
               ),
@@ -371,13 +492,30 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
                 onTap: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (_) => const ExpiringMembershipsScreen()),
+                    MaterialPageRoute(builder: (_) => const ExpiringMembershipsScreen(initialTabIndex: 0)),
+                  );
+                },
+              ),
+            if (expired1Month > 0)
+              _buildAlertCard(
+                Icons.dangerous_outlined,
+                Colors.red,
+                const Color(0xFFFFECEF),
+                '$expired1Month ${expired1Month == 1 ? "Membership" : "Memberships"}',
+                'expired',
+                'Renewal follow-up recommended',
+                avatars: expired1MonthAvatars,
+                badgeText: _getBadgeText(expired1Month, expired1MonthAvatars),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const ExpiringMembershipsScreen(initialTabIndex: 3)),
                   );
                 },
               ),
             const SizedBox(height: 16),
           ],
-          if (staffLeaves > 0 || holidayRequests > 0) ...[
+          if (staffLeaves > 0 || holidayRequests > 0 || staffAdvances > 0) ...[
             _buildSectionHeader('Staff Requests'),
             const SizedBox(height: 8),
             if (staffLeaves > 0)
@@ -390,6 +528,12 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
                 '',
                 avatars: staffLeavesAvatars,
                 badgeText: _getBadgeText(staffLeaves, staffLeavesAvatars),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const StaffRequestApprovalScreen(initialTabIndex: 0)),
+                  );
+                },
               ),
             if (holidayRequests > 0)
               _buildAlertCard(
@@ -401,54 +545,52 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
                 '',
                 avatars: holidayAvatars,
                 badgeText: _getBadgeText(holidayRequests, holidayAvatars),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const StaffRequestApprovalScreen(initialTabIndex: 0)),
+                  );
+                },
+              ),
+            if (staffAdvances > 0)
+              _buildAlertCard(
+                Icons.account_balance_wallet_outlined,
+                Colors.deepPurple,
+                const Color(0xFFF5F3FF),
+                '$staffAdvances ${staffAdvances == 1 ? "Staff Advance Request" : "Staff Advance Requests"}',
+                'awaiting approval',
+                '',
+                avatars: staffAdvancesAvatars,
+                badgeText: _getBadgeText(staffAdvances, staffAdvancesAvatars),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const StaffRequestApprovalScreen(initialTabIndex: 1)),
+                  );
+                },
               ),
             const SizedBox(height: 16),
-          ],
-          if (paymentsPending > 0 || ptTrials > 0) ...[
-            _buildSectionHeader('Other Alerts'),
-            const SizedBox(height: 8),
-            if (paymentsPending > 0)
-              _buildAlertCard(
-                Icons.payment_outlined,
-                Colors.redAccent,
-                const Color(0xFFFFECEF),
-                '$paymentsPending ${paymentsPending == 1 ? "Payment" : "Payments"}',
-                'still pending',
-                '',
-                avatars: paymentsAvatars,
-                badgeText: _getBadgeText(paymentsPending, paymentsAvatars),
-              ),
-            if (ptTrials > 0)
-              _buildAlertCard(
-                Icons.fitness_center_outlined,
-                Colors.green,
-                const Color(0xFFE8F5E9),
-                '$ptTrials ${ptTrials == 1 ? "PT Trial" : "PT Trials"}',
-                'scheduled today',
-                '',
-                avatars: ptAvatars,
-                badgeText: _getBadgeText(ptTrials, ptAvatars),
-              ),
           ],
         ],
       ),
     );
   }
 
-  Widget _buildMembershipAlertsTab() {
-    final endingToday = _alertsData['memberships_ending_today']?['count'] ?? 0;
-    final expiring1 = _alertsData['memberships_expiring_1_day']?['count'] ?? 0;
-    final expiring3 = _alertsData['memberships_expiring_3_days']?['count'] ?? 0;
-    final expiring7 = _alertsData['memberships_expiring_7_days']?['count'] ?? 0;
-    final expiring15 = _alertsData['memberships_expiring_15_days']?['count'] ?? 0;
-
-    final endingAvatars = _getAvatars(_alertsData['memberships_ending_today']?['avatars']);
-    final expiring1Avatars = _getAvatars(_alertsData['memberships_expiring_1_day']?['avatars']);
-    final expiring3Avatars = _getAvatars(_alertsData['memberships_expiring_3_days']?['avatars']);
-    final expiring7Avatars = _getAvatars(_alertsData['memberships_expiring_7_days']?['avatars']);
-    final expiring15Avatars = _getAvatars(_alertsData['memberships_expiring_15_days']?['avatars']);
-
-    if (endingToday == 0 && expiring1 == 0 && expiring3 == 0 && expiring7 == 0 && expiring15 == 0) {
+  Widget _buildMembershipAlertsTab({
+    required int endingToday,
+    required int expiring1,
+    required int expiring3,
+    required int expiring7,
+    required int expiring15,
+    required int expired1Month,
+    required List<String> endingAvatars,
+    required List<String> expiring1Avatars,
+    required List<String> expiring3Avatars,
+    required List<String> expiring7Avatars,
+    required List<String> expiring15Avatars,
+    required List<String> expired1MonthAvatars,
+  }) {
+    if (endingToday == 0 && expiring1 == 0 && expiring3 == 0 && expiring7 == 0 && expiring15 == 0 && expired1Month == 0) {
       return _buildEmptyState();
     }
 
@@ -471,7 +613,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
               onTap: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const ExpiringMembershipsScreen()),
+                  MaterialPageRoute(builder: (_) => const ExpiringMembershipsScreen(initialTabIndex: 2)),
                 );
               },
             ),
@@ -488,7 +630,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
               onTap: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const ExpiringMembershipsScreen()),
+                  MaterialPageRoute(builder: (_) => const ExpiringMembershipsScreen(initialTabIndex: 1)),
                 );
               },
             ),
@@ -505,7 +647,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
               onTap: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const ExpiringMembershipsScreen()),
+                  MaterialPageRoute(builder: (_) => const ExpiringMembershipsScreen(initialTabIndex: 1)),
                 );
               },
             ),
@@ -522,7 +664,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
               onTap: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const ExpiringMembershipsScreen()),
+                  MaterialPageRoute(builder: (_) => const ExpiringMembershipsScreen(initialTabIndex: 1)),
                 );
               },
             ),
@@ -539,7 +681,24 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
               onTap: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const ExpiringMembershipsScreen()),
+                  MaterialPageRoute(builder: (_) => const ExpiringMembershipsScreen(initialTabIndex: 0)),
+                );
+              },
+            ),
+          if (expired1Month > 0)
+            _buildAlertCard(
+              Icons.dangerous_outlined,
+              Colors.red,
+              const Color(0xFFFFECEF),
+              '$expired1Month ${expired1Month == 1 ? "Membership" : "Memberships"}',
+              'expired',
+              'Renewal follow-up recommended',
+              avatars: expired1MonthAvatars,
+              badgeText: _getBadgeText(expired1Month, expired1MonthAvatars),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const ExpiringMembershipsScreen(initialTabIndex: 3)),
                 );
               },
             ),
@@ -551,11 +710,13 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
   Widget _buildRequestsAlertsTab() {
     final staffLeaves = _alertsData['staff_leave_requests']?['count'] ?? 0;
     final holidayRequests = _alertsData['holiday_requests']?['count'] ?? 0;
+    final staffAdvances = _alertsData['staff_advance_requests']?['count'] ?? 0;
 
     final staffLeavesAvatars = _getAvatars(_alertsData['staff_leave_requests']?['avatars']);
     final holidayAvatars = _getAvatars(_alertsData['holiday_requests']?['avatars']);
+    final staffAdvancesAvatars = _getAvatars(_alertsData['staff_advance_requests']?['avatars']);
 
-    if (staffLeaves == 0 && holidayRequests == 0) {
+    if (staffLeaves == 0 && holidayRequests == 0 && staffAdvances == 0) {
       return _buildEmptyState();
     }
 
@@ -575,6 +736,12 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
               '',
               avatars: staffLeavesAvatars,
               badgeText: _getBadgeText(staffLeaves, staffLeavesAvatars),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const StaffRequestApprovalScreen(initialTabIndex: 0)),
+                );
+              },
             ),
           if (holidayRequests > 0)
             _buildAlertCard(
@@ -586,6 +753,29 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
               '',
               avatars: holidayAvatars,
               badgeText: _getBadgeText(holidayRequests, holidayAvatars),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const StaffRequestApprovalScreen(initialTabIndex: 0)),
+                );
+              },
+            ),
+          if (staffAdvances > 0)
+            _buildAlertCard(
+              Icons.account_balance_wallet_outlined,
+              Colors.deepPurple,
+              const Color(0xFFF5F3FF),
+              '$staffAdvances ${staffAdvances == 1 ? "Staff Advance Request" : "Staff Advance Requests"}',
+              'awaiting approval',
+              '',
+              avatars: staffAdvancesAvatars,
+              badgeText: _getBadgeText(staffAdvances, staffAdvancesAvatars),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const StaffRequestApprovalScreen(initialTabIndex: 1)),
+                );
+              },
             ),
         ],
       ),

@@ -3,11 +3,15 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme/theme.dart';
 import '../../core/navigation/app_router.dart';
 import 'login_screen.dart';
+import 'first_time_setup_screen.dart';
+import '../member_app/screens/member_code_screen.dart';
 import '../staff/portal/staff_dashboard_screen.dart';
 import '../member_app/screens/member_shell.dart';
 
 class RoleSelectionScreen extends StatelessWidget {
-  const RoleSelectionScreen({super.key});
+  final bool isAddProfile;
+
+  const RoleSelectionScreen({super.key, this.isAddProfile = false});
 
   @override
   Widget build(BuildContext context) {
@@ -52,10 +56,19 @@ class RoleSelectionScreen extends StatelessWidget {
                 subtitle: 'Manage your gym',
                 icon: Icons.business_rounded,
                 imagePath: 'assets/images/role/owner.png',
-                onTap: () => Navigator.push(
-                  context,
-                  AppRouter.slideRoute(const LoginScreen(role: 'Gym Owner')),
-                ),
+                onTap: () {
+                  if (isAddProfile) {
+                    Navigator.pushReplacement(
+                      context,
+                      AppRouter.slideRoute(const FirstTimeSetupScreen(isAddingAdditionalGym: true)),
+                    );
+                  } else {
+                    Navigator.push(
+                      context,
+                      AppRouter.slideRoute(const LoginScreen(role: 'Gym Owner')),
+                    );
+                  }
+                },
               ),
               const SizedBox(height: 12),
               _RoleCard(
@@ -63,10 +76,19 @@ class RoleSelectionScreen extends StatelessWidget {
                 subtitle: 'Trainer / Reception',
                 icon: Icons.badge_outlined,
                 imagePath: 'assets/images/role/staff.png',
-                onTap: () => Navigator.push(
-                  context,
-                  AppRouter.slideRoute(const LoginScreen(role: 'Gym Staff')),
-                ),
+                onTap: () {
+                  if (isAddProfile) {
+                    Navigator.pushReplacement(
+                      context,
+                      AppRouter.slideRoute(const MemberCodeScreen()),
+                    );
+                  } else {
+                    Navigator.push(
+                      context,
+                      AppRouter.slideRoute(const LoginScreen(role: 'Gym Staff')),
+                    );
+                  }
+                },
               ),
               const SizedBox(height: 12),
               _RoleCard(
@@ -74,10 +96,19 @@ class RoleSelectionScreen extends StatelessWidget {
                 subtitle: 'Access your account',
                 icon: Icons.person_outline_rounded,
                 imagePath: 'assets/images/role/member.png',
-                onTap: () => Navigator.push(
-                  context,
-                  AppRouter.slideRoute(const LoginScreen(role: 'Gym Member')),
-                ),
+                onTap: () {
+                  if (isAddProfile) {
+                    Navigator.pushReplacement(
+                      context,
+                      AppRouter.slideRoute(const MemberCodeScreen()),
+                    );
+                  } else {
+                    Navigator.push(
+                      context,
+                      AppRouter.slideRoute(const LoginScreen(role: 'Gym Member')),
+                    );
+                  }
+                },
               ),
 
               const Spacer(flex: 3),

@@ -3,8 +3,10 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/theme.dart';
 import '../../core/models/association_model.dart';
+import '../../core/models/user_profile.dart';
 import '../authentication/auth_viewmodel.dart';
 import '../authentication/first_time_setup_screen.dart';
+import '../authentication/role_selection_screen.dart';
 import '../../core/navigation/app_router.dart';
 import '../members/members_viewmodel.dart';
 import '../staff/staff_viewmodel.dart';
@@ -13,6 +15,11 @@ import '../membership/membership_viewmodel.dart';
 import '../workout/workout_viewmodel.dart';
 import '../diet/diet_viewmodel.dart';
 import '../attendance/attendance_viewmodel.dart';
+import '../staff/portal/staff_shell.dart';
+import '../receptionist/portal/receptionist_shell.dart';
+import '../member_app/screens/member_shell.dart';
+import '../member_app/member_app_viewmodel.dart';
+import 'main_navigation_holder.dart';
 
 class GymSwitcherBottomSheet extends StatelessWidget {
   const GymSwitcherBottomSheet({super.key});
@@ -74,8 +81,8 @@ class GymSwitcherBottomSheet extends StatelessWidget {
                 Container(
                   width: 60,
                   height: 60,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFEF3C7),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFFEF3C7),
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(
@@ -86,7 +93,7 @@ class GymSwitcherBottomSheet extends StatelessWidget {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'Switch Gym?',
+                  'Switch Profile?',
                   style: GoogleFonts.inter(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
@@ -105,11 +112,11 @@ class GymSwitcherBottomSheet extends StatelessWidget {
                     children: [
                       const TextSpan(text: 'You are about to switch to\n'),
                       TextSpan(
-                        text: assoc.gymName ?? 'Power Fitness',
+                        text: '${assoc.gymName ?? 'FitZone Gym'} (${assoc.role == UserRole.owner ? 'Owner' : assoc.role == UserRole.staff ? 'Staff' : 'Member'})',
                         style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
                       ),
                       const TextSpan(
-                        text: '\nAll Members, Staff, Finance, Reports, Attendance and Settings will now be shown for this Gym only.',
+                        text: '\nYour dashboard and data views will change to match this role and gym context.',
                       ),
                     ],
                   ),
@@ -143,12 +150,40 @@ class GymSwitcherBottomSheet extends StatelessWidget {
                           Navigator.pop(sheetContext); // Close confirmation
                           Navigator.pop(context); // Close switcher sheet
                           
-                          // Switch Gym
+                          // Switch gym/profile context
                           await authVm.selectAssociation(assoc);
                           
-                          // Refresh all UI view models
                           if (context.mounted) {
-                            await _reloadAllGymData(context);
+                            Widget targetScreen;
+                            switch (assoc.role) {
+                              case UserRole.owner:
+                                if (assoc.setupCompleted) {
+                                  targetScreen = const MainNavigationHolder();
+                                } else {
+                                  targetScreen = const FirstTimeSetupScreen();
+                                }
+                                await _reloadAllGymData(context);
+                                break;
+                              case UserRole.staff:
+                                final staffRole = authVm.staffRecord?.role.toLowerCase() ?? '';
+                                if (staffRole.contains('reception')) {
+                                  targetScreen = const ReceptionistShell();
+                                } else {
+                                  targetScreen = const StaffShell();
+                                }
+                                await _reloadAllGymData(context);
+                                break;
+                              case UserRole.member:
+                                targetScreen = const MemberShell();
+                                await Provider.of<MemberAppViewModel>(context, listen: false).loadMemberDataFromSupabase();
+                                break;
+                            }
+                            
+                            Navigator.pushAndRemoveUntil(
+                              context,
+                              AppRouter.scaleRoute(targetScreen),
+                              (route) => false,
+                            );
                           }
                         },
                         style: ElevatedButton.styleFrom(
@@ -180,17 +215,12 @@ class GymSwitcherBottomSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final authVm = Provider.of<AuthViewModel>(context);
-    final associations = authVm.userAssociations;
     final activeAssoc = authVm.activeAssociation;
-
-    // Curated accent colors for gym avatars if they don't have custom logos
-    final List<Color> avatarColors = [
-      const Color(0xFF6C3AED), // Violet
-      const Color(0xFFF59E0B), // Amber/Orange
-      const Color(0xFFEF4444), // Red/Pink
-      const Color(0xFF3B82F6), // Blue
-      const Color(0xFF10B981), // Green
-    ];
+    final activeRole = activeAssoc?.role;
+    final associations = authVm.userAssociations.where((assoc) {
+      if (activeRole == null) return true;
+      return assoc.role == activeRole;
+    }).toList();
 
     return DraggableScrollableSheet(
       initialChildSize: 0.6,
@@ -214,14 +244,14 @@ class GymSwitcherBottomSheet extends StatelessWidget {
                   ),
                 ),
               ),
-              // Top title & Create Gym button
+              // Top title & Create Gym/Profile button
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 8.0),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'My Gyms',
+                      'My Profiles',
                       style: GoogleFonts.inter(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
@@ -234,7 +264,7 @@ class GymSwitcherBottomSheet extends StatelessWidget {
                         Navigator.push(
                           context,
                           AppRouter.scaleRoute(
-                            const FirstTimeSetupScreen(isAddingAdditionalGym: true),
+                            const RoleSelectionScreen(isAddProfile: true),
                           ),
                         );
                       },
@@ -250,7 +280,7 @@ class GymSwitcherBottomSheet extends StatelessWidget {
                             const Icon(Icons.add, size: 14, color: AppTheme.primary),
                             const SizedBox(width: 4),
                             Text(
-                              'Add New Gym',
+                              'Add Profile',
                               style: GoogleFonts.inter(
                                 fontSize: 12,
                                 fontWeight: FontWeight.bold,
@@ -265,7 +295,7 @@ class GymSwitcherBottomSheet extends StatelessWidget {
                 ),
               ),
               const Divider(),
-              // List of Gyms
+              // List of Profiles
               Expanded(
                 child: ListView.builder(
                   controller: scrollController,
@@ -273,11 +303,29 @@ class GymSwitcherBottomSheet extends StatelessWidget {
                   itemCount: associations.length,
                   itemBuilder: (context, index) {
                     final assoc = associations[index];
-                    final isActive = activeAssoc?.gymId == assoc.gymId;
+                    final isActive = activeAssoc?.gymId == assoc.gymId && activeAssoc?.role == assoc.role;
                     
-                    // Choose unique color from preset list based on index
-                    final avatarColor = avatarColors[index % avatarColors.length];
-                    final firstLetter = (assoc.gymName ?? 'G').trim().toUpperCase().substring(0, 1);
+                    IconData icon;
+                    Color accentColor;
+                    String roleLabel;
+
+                    switch (assoc.role) {
+                      case UserRole.owner:
+                        icon = Icons.business_center_rounded;
+                        accentColor = const Color(0xFF6C3AED); // Violet
+                        roleLabel = 'Gym Owner';
+                        break;
+                      case UserRole.staff:
+                        icon = Icons.badge_rounded;
+                        accentColor = const Color(0xFFF59E0B); // Amber/Orange
+                        roleLabel = 'Gym Staff';
+                        break;
+                      case UserRole.member:
+                        icon = Icons.person_rounded;
+                        accentColor = const Color(0xFF10B981); // Green
+                        roleLabel = 'Gym Member';
+                        break;
+                    }
 
                     return GestureDetector(
                       onTap: () {
@@ -299,27 +347,18 @@ class GymSwitcherBottomSheet extends StatelessWidget {
                         ),
                         child: Row(
                           children: [
-                            // Gym Logo / Icon
+                            // Profile Role Icon Avatar
                             Container(
                               width: 44,
                               height: 44,
                               decoration: BoxDecoration(
-                                color: avatarColor.withOpacity(0.15),
+                                color: accentColor.withOpacity(0.15),
                                 shape: BoxShape.circle,
                               ),
-                              child: Center(
-                                child: Text(
-                                  firstLetter,
-                                  style: GoogleFonts.inter(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                    color: avatarColor,
-                                  ),
-                                ),
-                              ),
+                              child: Icon(icon, color: accentColor, size: 20),
                             ),
                             const SizedBox(width: 16),
-                            // Gym Details
+                            // Profile Details
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -362,10 +401,11 @@ class GymSwitcherBottomSheet extends StatelessWidget {
                                   Row(
                                     children: [
                                       Text(
-                                        'Surat, Gujarat', // Default city/state as placeholder or load dynamic city
+                                        roleLabel,
                                         style: GoogleFonts.inter(
                                           fontSize: 12,
-                                          color: AppTheme.textSecondary,
+                                          fontWeight: FontWeight.w600,
+                                          color: accentColor,
                                         ),
                                       ),
                                       const SizedBox(width: 6),
@@ -375,19 +415,11 @@ class GymSwitcherBottomSheet extends StatelessWidget {
                                         color: AppTheme.textMuted,
                                       ),
                                       const SizedBox(width: 6),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: AppTheme.surfaceGray,
-                                          borderRadius: BorderRadius.circular(4),
-                                        ),
-                                        child: Text(
-                                          'Owner',
-                                          style: GoogleFonts.inter(
-                                            fontSize: 9,
-                                            fontWeight: FontWeight.bold,
-                                            color: AppTheme.textSecondary,
-                                          ),
+                                      Text(
+                                        assoc.gymCode ?? 'MOCK123',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 11,
+                                          color: AppTheme.textMuted,
                                         ),
                                       ),
                                     ],
@@ -398,10 +430,10 @@ class GymSwitcherBottomSheet extends StatelessWidget {
                             if (isActive) ...[
                               const SizedBox(width: 8),
                               const Icon(
-                                Icons.check_circle_rounded,
-                                color: AppTheme.primary,
-                                size: 22,
-                              ),
+                                  Icons.check_circle_rounded,
+                                  color: AppTheme.primary,
+                                  size: 22,
+                                ),
                             ],
                           ],
                         ),
@@ -411,7 +443,7 @@ class GymSwitcherBottomSheet extends StatelessWidget {
                 ),
               ),
               const Divider(),
-              // Manage Gyms option at the bottom
+              // Manage Profiles option at the bottom
               Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: Row(
@@ -420,7 +452,7 @@ class GymSwitcherBottomSheet extends StatelessWidget {
                     const Icon(Icons.settings_outlined, size: 16, color: AppTheme.primary),
                     const SizedBox(width: 6),
                     Text(
-                      'Manage Gyms',
+                      'Manage Profiles',
                       style: GoogleFonts.inter(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,

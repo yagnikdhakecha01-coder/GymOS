@@ -4,48 +4,111 @@ import 'package:provider/provider.dart';
 import '../../core/theme/theme.dart';
 import '../../core/widgets/custom_card.dart';
 import '../members/members_viewmodel.dart';
+import '../members/trial_members_viewmodel.dart';
 import '../staff/staff_viewmodel.dart';
 import '../finance/finance_viewmodel.dart';
 import '../attendance/attendance_viewmodel.dart';
 import 'report_detail_screen.dart';
 import '../../core/theme/responsive.dart';
+import '../../core/services/supabase_service.dart';
+import '../authentication/auth_viewmodel.dart';
 
-class ReportsScreen extends StatelessWidget {
+class ReportsScreen extends StatefulWidget {
   const ReportsScreen({super.key});
+
+  @override
+  State<ReportsScreen> createState() => _ReportsScreenState();
+}
+
+class _ReportsScreenState extends State<ReportsScreen> {
+  bool _isLoading = true;
+  Map<String, dynamic>? _reportStats;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadReportStats();
+  }
+
+  Future<void> _loadReportStats() async {
+    setState(() => _isLoading = true);
+    try {
+      final authVm = Provider.of<AuthViewModel>(context, listen: false);
+      final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
+      if (gymId != null && SupabaseService.isInitialized) {
+        final response = await SupabaseService.client.rpc(
+          'get_all_reports_stats',
+          params: {'p_gym_id': gymId},
+        );
+        if (mounted) {
+          setState(() {
+            _reportStats = Map<String, dynamic>.from(response as Map);
+            _isLoading = false;
+          });
+        }
+      } else {
+        if (mounted) setState(() => _isLoading = false);
+      }
+    } catch (e) {
+      print('Error loading report stats: $e');
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final membersVm = Provider.of<MembersViewModel>(context);
     final staffVm = Provider.of<StaffViewModel>(context);
     final financeVm = Provider.of<FinanceViewModel>(context);
+    final trialsVm = Provider.of<TrialMembersViewModel>(context);
+
+    // Dynamic stats from database (using VM calculations as local fallback)
+    final stats = _reportStats ?? {
+      'revenue_total': financeVm.totalRevenue,
+      'expense_total': financeVm.totalExpense,
+      'pending_payments_total': financeVm.totalPendingPayments,
+      'members_count': membersVm.allMembers.length,
+      'staff_count': staffVm.allStaff.length,
+      'pt_members_count': membersVm.allMembers.where((m) => m.ptMember).length,
+      'trials_count': trialsVm.allTrials.length,
+    };
+
+    final double revenue = (stats['revenue_total'] as num?)?.toDouble() ?? 0.0;
+    final double expense = (stats['expense_total'] as num?)?.toDouble() ?? 0.0;
+    final double profit = revenue - expense;
+    final double pendingPayments = (stats['pending_payments_total'] as num?)?.toDouble() ?? 0.0;
+    final int membersCount = stats['members_count'] as int? ?? 0;
+    final int staffCount = stats['staff_count'] as int? ?? 0;
+    final int ptCount = stats['pt_members_count'] as int? ?? 0;
+    final int trialsCount = stats['trials_count'] as int? ?? 0;
 
     final reports = [
       _ReportItem(
         icon: Icons.trending_up,
         color: const Color(0xFF16A34A),
         title: 'Revenue Report',
-        summary: '₹${financeVm.totalRevenue.toStringAsFixed(0)} total',
+        summary: '₹${revenue.toStringAsFixed(0)} total',
         type: 'revenue',
       ),
       _ReportItem(
         icon: Icons.trending_down,
         color: const Color(0xFFEF4444),
         title: 'Expense Report',
-        summary: '₹${financeVm.totalExpense.toStringAsFixed(0)} total',
+        summary: '₹${expense.toStringAsFixed(0)} total',
         type: 'expense',
       ),
       _ReportItem(
         icon: Icons.payment,
         color: const Color(0xFFF59E0B),
         title: 'Payment Report',
-        summary: '₹${financeVm.totalPendingPayments.toStringAsFixed(0)} pending',
+        summary: '₹${pendingPayments.toStringAsFixed(0)} pending',
         type: 'payment',
       ),
       _ReportItem(
         icon: Icons.card_membership,
         color: const Color(0xFF8B5CF6),
         title: 'Membership Report',
-        summary: '${membersVm.allMembers.length} members',
+        summary: '$membersCount members',
         type: 'membership',
       ),
       _ReportItem(
@@ -59,7 +122,7 @@ class ReportsScreen extends StatelessWidget {
         icon: Icons.people,
         color: const Color(0xFF0EA5E9),
         title: 'Staff Report',
-        summary: '${staffVm.allStaff.length} staff members',
+        summary: '$staffCount staff members',
         type: 'staff',
       ),
       _ReportItem(
@@ -87,8 +150,15 @@ class ReportsScreen extends StatelessWidget {
         icon: Icons.sports_martial_arts,
         color: const Color(0xFFF97316),
         title: 'PT Report',
-        summary: '${membersVm.allMembers.where((m) => m.ptMember).length} PT members',
+        summary: '$ptCount PT members',
         type: 'pt',
+      ),
+      _ReportItem(
+        icon: Icons.assignment_ind_outlined,
+        color: Colors.deepOrange,
+        title: 'Trial Member Report',
+        summary: '$trialsCount trials',
+        type: 'trial',
       ),
     ];
 
@@ -101,63 +171,75 @@ class ReportsScreen extends StatelessWidget {
         ),
         title: Text('Reports', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w600)),
         centerTitle: true,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh, size: 20),
+            onPressed: _loadReportStats,
+          ),
+        ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Summary cards row
-            Row(
-              children: [
-                Expanded(
-                  child: _summaryCard(
-                    'Total Revenue',
-                    '₹${financeVm.totalRevenue.toStringAsFixed(0)}',
-                    Icons.arrow_upward,
-                    AppTheme.success,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _summaryCard(
-                    'Total Expense',
-                    '₹${financeVm.totalExpense.toStringAsFixed(0)}',
-                    Icons.arrow_downward,
-                    AppTheme.danger,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _summaryCard(
-                    'Net Profit',
-                    '₹${financeVm.totalProfit.toStringAsFixed(0)}',
-                    Icons.account_balance_wallet,
-                    AppTheme.primary,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : RefreshIndicator(
+              onRefresh: _loadReportStats,
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Summary cards row
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _summaryCard(
+                            'Total Revenue',
+                            '₹${revenue.toStringAsFixed(0)}',
+                            Icons.arrow_upward,
+                            AppTheme.success,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _summaryCard(
+                            'Total Expense',
+                            '₹${expense.toStringAsFixed(0)}',
+                            Icons.arrow_downward,
+                            AppTheme.danger,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _summaryCard(
+                            'Net Profit',
+                            '₹${profit.toStringAsFixed(0)}',
+                            Icons.account_balance_wallet,
+                            AppTheme.primary,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
 
-            Text('ALL REPORTS', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: AppTheme.textMuted, letterSpacing: 1)),
-            const SizedBox(height: 10),
+                    Text('ALL REPORTS', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: AppTheme.textMuted, letterSpacing: 1)),
+                    const SizedBox(height: 10),
 
-            ResponsiveGrid(
-              crossAxisCountMobile: 2,
-              crossAxisCountTablet: 4,
-              spacing: 10,
-              runSpacing: 10,
-              childAspectRatio: context.selectValue(mobile: 1.35, smallMobile: 1.15, tablet: 1.6),
-              children: List.generate(reports.length, (index) {
-                final report = reports[index];
-                return _reportCard(context, report);
-              }),
+                    ResponsiveGrid(
+                      crossAxisCountMobile: 2,
+                      crossAxisCountTablet: 4,
+                      spacing: 10,
+                      runSpacing: 10,
+                      childAspectRatio: context.selectValue(mobile: 1.35, smallMobile: 1.15, tablet: 1.6),
+                      children: List.generate(reports.length, (index) {
+                        final report = reports[index];
+                        return _reportCard(context, report);
+                      }),
+                    ),
+                    const SizedBox(height: 24),
+                  ],
+                ),
+              ),
             ),
-            const SizedBox(height: 24),
-          ],
-        ),
-      ),
     );
   }
 

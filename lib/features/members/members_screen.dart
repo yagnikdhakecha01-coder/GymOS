@@ -12,6 +12,9 @@ import '../../core/models/member.dart';
 import '../../core/navigation/app_router.dart';
 import 'member_profile_screen.dart';
 import 'add_member_wizard_screen.dart';
+import 'trial_members_viewmodel.dart';
+import 'trial_member_details_screen.dart';
+import '../../core/widgets/add_member_selection_sheet.dart';
 import '../attendance/attendance_viewmodel.dart';
 import '../../core/theme/responsive.dart';
 
@@ -49,21 +52,19 @@ class _MembersScreenState extends State<MembersScreen> {
   }
 
   void _showAddMemberSheet(BuildContext context) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const AddMemberWizardScreen()),
-    );
+    AddMemberSelectionSheet.show(context);
   }
 
   @override
   Widget build(BuildContext context) {
     final membersVm = Provider.of<MembersViewModel>(context);
     final attendanceVm = Provider.of<AttendanceViewModel>(context);
+    final trialsVm = Provider.of<TrialMembersViewModel>(context);
     final allMembers = membersVm.filteredMembers;
     final totalCount = membersVm.allMembers.length;
     final activeCount = membersVm.allMembers.where((m) => m.status == 'Active').length;
     final inactiveCount = membersVm.allMembers.where((m) => m.status == 'Inactive').length;
-    final trialCount = membersVm.allMembers.where((m) => m.status == 'Trial').length;
+    final trialCount = trialsVm.allTrials.length;
 
     final checkInRecords = attendanceVm.attendanceHistory.where((r) => r.status == 'Present').length;
     final totalPending = membersVm.allMembers.fold<double>(0, (sum, m) => sum + m.pendingAmount);
@@ -192,225 +193,303 @@ class _MembersScreenState extends State<MembersScreen> {
                   child: Container(
                     color: AppTheme.background,
                     padding: const EdgeInsets.symmetric(vertical: 8),
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(horizontal: AppTheme.pagePadding),
-                      child: Row(
-                        children: [
-                          _buildMockTab('All ($totalCount)', membersVm.selectedFilter == 'All', () {
-                            membersVm.setFilter('All');
-                          }),
-                          _buildMockTab('Active ($activeCount)', membersVm.selectedFilter == 'Active', () {
-                            membersVm.setFilter('Active');
-                          }),
-                          _buildMockTab('Inactive ($inactiveCount)', membersVm.selectedFilter == 'Inactive', () {
-                            membersVm.setFilter('Inactive');
-                          }),
-                          _buildMockTab('Trial ($trialCount)', membersVm.selectedFilter == 'Trial', () {
-                            membersVm.setFilter('Trial');
-                          }),
-                        ],
-                      ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        _buildMockTab('All ($totalCount)', membersVm.selectedFilter == 'All', () {
+                          membersVm.setFilter('All');
+                        }),
+                        _buildMockTab('Active ($activeCount)', membersVm.selectedFilter == 'Active', () {
+                          membersVm.setFilter('Active');
+                        }),
+                        _buildMockTab('Inactive ($inactiveCount)', membersVm.selectedFilter == 'Inactive', () {
+                          membersVm.setFilter('Inactive');
+                        }),
+                        _buildMockTab('Trial ($trialCount)', membersVm.selectedFilter == 'Trial', () {
+                          membersVm.setFilter('Trial');
+                        }),
+                      ],
                     ),
                   ),
                 ),
               ),
             ),
-            allMembers.isEmpty
-                ? SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 80.0),
-                      child: Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.people_outline_rounded, size: 48, color: AppTheme.textMuted.withOpacity(0.5)),
-                            const SizedBox(height: 12),
-                            Text(
-                              'No Members Found',
-                              style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Members added to this category will appear here.',
-                              style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  )
-                : SliverPadding(
-                    padding: const EdgeInsets.symmetric(horizontal: AppTheme.pagePadding, vertical: 8),
-                    sliver: SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) {
-                          final member = allMembers[index];
-                          final isTrial = member.status == 'Trial';
-                          final bool isPaid = member.paymentStatus.toLowerCase() == 'paid' || member.pendingAmount <= 0;
-                          
-                          String nextDueStr = 'N/A';
-                          final exp = member.extraFields['expiryDate'] as String?;
-                          if (exp != null && exp.isNotEmpty) {
-                            try {
-                              final parsed = DateTime.parse(exp);
-                              nextDueStr = DateFormat('dd MMM yyyy').format(parsed);
-                            } catch (_) {
-                              nextDueStr = exp;
-                            }
-                          }
-
-                          return CustomCard(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            onTap: () {
-                              Navigator.push(context, AppRouter.slideRoute(MemberProfileScreen(member: member)));
-                            },
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    ClipRRect(
-                                      borderRadius: BorderRadius.circular(20),
-                                      child: Container(
-                                        width: 44,
-                                        height: 44,
-                                        color: AppTheme.primaryLight,
-                                        child: Image.network(
-                                          member.avatar.isNotEmpty ? member.avatar : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
-                                          fit: BoxFit.cover,
-                                          errorBuilder: (c, e, s) => Center(child: Text(member.name[0], style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.primary))),
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 14),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            member.name,
-                                            style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
-                                          ),
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            member.phone,
-                                            style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary),
-                                          ),
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            isTrial ? 'Trial Subscription' : 'Next Due: $nextDueStr',
-                                            style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                                      decoration: BoxDecoration(
-                                        color: isPaid ? AppTheme.successLight : const Color(0xFFFEF2F2),
-                                        borderRadius: BorderRadius.circular(10),
-                                        border: Border.all(
-                                          color: isPaid ? AppTheme.successLight : const Color(0xFFFEE2E2),
-                                          width: 0.8,
-                                        ),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(
-                                            isPaid ? Icons.check_circle_outline_rounded : Icons.info_outline_rounded,
-                                            size: 12,
-                                            color: isPaid ? AppTheme.success : const Color(0xFFEF4444),
-                                          ),
-                                          const SizedBox(width: 4),
-                                          Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Text(
-                                                '₹${NumberFormat('#,##,###').format(isPaid ? member.totalReceivedAmount : member.pendingAmount)}',
-                                                style: GoogleFonts.inter(
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.w800,
-                                                  color: isPaid ? AppTheme.success : const Color(0xFFB91C1C),
-                                                ),
-                                              ),
-                                              Text(
-                                                isPaid ? 'Payment Done' : 'Payment Pending',
-                                                style: GoogleFonts.inter(
-                                                  fontSize: 8,
-                                                  fontWeight: FontWeight.w500,
-                                                  color: isPaid ? AppTheme.success.withOpacity(0.8) : const Color(0xFF991B1B),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    const Icon(Icons.chevron_right, color: AppTheme.textMuted, size: 20),
-                                  ],
-                                ),
-                                const SizedBox(height: 12),
-                                const Divider(height: 1, color: Color(0xFFF1F5F9)),
-                                const SizedBox(height: 10),
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(
-                                      'Member Status',
-                                      style: GoogleFonts.inter(
-                                        fontSize: 11,
-                                        color: AppTheme.textSecondary,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                      decoration: BoxDecoration(
-                                        color: member.status == 'Active'
-                                            ? const Color(0xFFE6F4EA)
-                                            : (member.status == 'Pending Activation'
-                                                ? Colors.orange.withOpacity(0.1)
-                                                : Colors.grey.withOpacity(0.1)),
-                                        borderRadius: BorderRadius.circular(20),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(
-                                            member.status == 'Active' ? Icons.check : Icons.circle,
-                                            size: 10,
-                                            color: member.status == 'Active'
-                                                ? const Color(0xFF16A34A)
-                                                : (member.status == 'Pending Activation'
-                                                    ? Colors.orange
-                                                    : Colors.grey),
-                                          ),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            member.status,
-                                            style: GoogleFonts.inter(
-                                              fontSize: 10.5,
-                                              fontWeight: FontWeight.w700,
-                                              color: member.status == 'Active' ? const Color(0xFF15803D) : AppTheme.textSecondary,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                        childCount: allMembers.length,
+            if (membersVm.selectedFilter == 'Trial')
+              if (trialsVm.allTrials.isEmpty)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 80.0),
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.assignment_ind_outlined, size: 48, color: AppTheme.textMuted.withOpacity(0.5)),
+                          const SizedBox(height: 12),
+                          Text(
+                            'No Trials Found',
+                            style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Trial members will appear here.',
+                            style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary),
+                          ),
+                        ],
                       ),
                     ),
                   ),
+                )
+              else
+                SliverPadding(
+                  padding: const EdgeInsets.symmetric(horizontal: AppTheme.pagePadding, vertical: 8),
+                  sliver: SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) {
+                        final trial = trialsVm.allTrials[index];
+                        final status = trial.calculatedStatus;
+                        final startText = DateFormat('dd MMM').format(DateTime.parse(trial.startDate));
+                        final endText = DateFormat('dd MMM yyyy').format(DateTime.parse(trial.endDate));
+
+                        return CustomCard(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => TrialMemberDetailsScreen(trial: trial)),
+                            );
+                          },
+                          child: Row(
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(20),
+                                child: Container(
+                                  width: 44,
+                                  height: 44,
+                                  color: AppTheme.primaryLight,
+                                  child: Image.network(
+                                    trial.avatar.isNotEmpty ? trial.avatar : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (c, e, s) => Center(child: Text(trial.name[0], style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.primary))),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      trial.name,
+                                      style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      trial.phone,
+                                      style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Row(
+                                      children: [
+                                        Icon(Icons.calendar_month_outlined, size: 12, color: AppTheme.textMuted),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          '$startText - $endText (${trial.trialDays} days)',
+                                          style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: status == 'Converted' 
+                                          ? const Color(0xFFEEF2FF)
+                                          : (status == 'Expired' ? const Color(0xFFFEF2F2) : const Color(0xFFE6F4EA)),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Text(
+                                      status,
+                                      style: GoogleFonts.inter(
+                                        fontSize: 9, 
+                                        fontWeight: FontWeight.bold, 
+                                        color: status == 'Converted' 
+                                            ? const Color(0xFF4F46E5) 
+                                            : (status == 'Expired' ? const Color(0xFFEF4444) : const Color(0xFF16A34A))
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    trial.trialType == 'Paid' ? 'Paid' : 'Free',
+                                    style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.textSecondary),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                      childCount: trialsVm.allTrials.length,
+                    ),
+                  ),
+                )
+            else if (allMembers.isEmpty)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 80.0),
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.people_outline_rounded, size: 48, color: AppTheme.textMuted.withOpacity(0.5)),
+                        const SizedBox(height: 12),
+                        Text(
+                          'No Members Found',
+                          style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Members added to this category will appear here.',
+                          style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              )
+            else
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: AppTheme.pagePadding, vertical: 8),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      final member = allMembers[index];
+                      final isTrial = member.status == 'Trial';
+                      final bool isPaid = member.paymentStatus.toLowerCase() == 'paid' || member.pendingAmount <= 0;
+                      
+                      String nextDueStr = 'N/A';
+                      final exp = member.extraFields['expiryDate'] as String?;
+                      if (exp != null && exp.isNotEmpty) {
+                        try {
+                          final parsed = DateTime.parse(exp);
+                          nextDueStr = DateFormat('dd MMM yyyy').format(parsed);
+                        } catch (_) {
+                          nextDueStr = exp;
+                        }
+                      }
+
+                      return CustomCard(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        onTap: () {
+                          Navigator.push(context, AppRouter.slideRoute(MemberProfileScreen(member: member)));
+                        },
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(20),
+                                  child: Container(
+                                    width: 44,
+                                    height: 44,
+                                    color: AppTheme.primaryLight,
+                                    child: Image.network(
+                                      member.avatar.isNotEmpty ? member.avatar : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (c, e, s) => Center(child: Text(member.name[0], style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.primary))),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        member.name,
+                                        style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        member.phone,
+                                        style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        isTrial ? 'Trial Subscription' : 'Next Due: $nextDueStr',
+                                        style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                const Icon(Icons.chevron_right, color: AppTheme.textMuted, size: 20),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                            const SizedBox(height: 10),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'Member Status',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 11,
+                                    color: AppTheme.textSecondary,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: member.status == 'Active'
+                                        ? const Color(0xFFE6F4EA)
+                                        : (member.status == 'Pending Activation'
+                                            ? Colors.orange.withOpacity(0.1)
+                                            : Colors.grey.withOpacity(0.1)),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        member.status == 'Active' ? Icons.check : Icons.circle,
+                                        size: 10,
+                                        color: member.status == 'Active'
+                                            ? const Color(0xFF16A34A)
+                                            : (member.status == 'Pending Activation'
+                                                ? Colors.orange
+                                                : Colors.grey),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        member.status,
+                                        style: GoogleFonts.inter(
+                                          fontSize: 10.5,
+                                          fontWeight: FontWeight.w700,
+                                          color: member.status == 'Active' ? const Color(0xFF15803D) : AppTheme.textSecondary,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                    childCount: allMembers.length,
+                  ),
+                ),
+              ),
           ],
         ),
       ),

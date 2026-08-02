@@ -9,6 +9,7 @@ import '../../more/notifications_screen.dart';
 import '../../../../core/navigation/app_router.dart';
 import '../../authentication/auth_viewmodel.dart';
 import '../../authentication/role_selection_screen.dart';
+import '../../dashboard/gym_switcher_bottom_sheet.dart';
 import '../../../core/repository/gym_repository.dart';
 import '../staff_viewmodel.dart';
 import '../../../core/models/staff.dart';
@@ -240,6 +241,8 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final authVm = Provider.of<AuthViewModel>(context);
+    final gymName = authVm.gymInfo?['name'] ?? 'FitZone Gym';
     final avatarUrl = _currentStaff?.avatar ?? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=150';
     final displayName = _currentStaff?.name ?? 'Staff';
 
@@ -263,9 +266,38 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(
-                            'Staff Dashboard',
-                            style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Staff Dashboard',
+                                style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                              ),
+                              const SizedBox(height: 2),
+                              GestureDetector(
+                                onTap: () {
+                                  GymSwitcherBottomSheet.show(context);
+                                },
+                                child: MouseRegion(
+                                  cursor: SystemMouseCursors.click,
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        'Staff • $gymName',
+                                        style: GoogleFonts.inter(fontSize: 11, color: AppTheme.primary, fontWeight: FontWeight.w600),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      const Icon(
+                                        Icons.arrow_drop_down_rounded,
+                                        size: 16,
+                                        color: AppTheme.primary,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                           Row(
                             children: [

@@ -11,6 +11,7 @@ import 'core/services/supabase_service.dart';
 import 'features/authentication/auth_viewmodel.dart';
 import 'features/authentication/splash_screen.dart';
 import 'features/members/members_viewmodel.dart';
+import 'features/members/trial_members_viewmodel.dart';
 import 'features/staff/staff_viewmodel.dart';
 import 'features/finance/finance_viewmodel.dart';
 import 'features/workout/workout_viewmodel.dart';
@@ -75,6 +76,10 @@ class GymOSApp extends StatelessWidget {
         // Members
         ChangeNotifierProvider(
           create: (_) => MembersViewModel(gymRepository),
+        ),
+        // Trial Members
+        ChangeNotifierProvider(
+          create: (_) => TrialMembersViewModel(gymRepository),
         ),
         // Staff
         ChangeNotifierProvider(

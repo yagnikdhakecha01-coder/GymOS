@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
 import '../../core/theme/theme.dart';
 import '../members/member_profile_screen.dart';
+import '../members/members_viewmodel.dart';
 import '../../core/models/member.dart';
 
 class ExpiringMembershipsScreen extends StatefulWidget {
-  const ExpiringMembershipsScreen({super.key});
+  final int initialTabIndex;
+  const ExpiringMembershipsScreen({super.key, this.initialTabIndex = 0});
 
   @override
   State<ExpiringMembershipsScreen> createState() => _ExpiringMembershipsScreenState();
@@ -17,7 +21,12 @@ class _ExpiringMembershipsScreenState extends State<ExpiringMembershipsScreen> w
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 4, vsync: this, initialIndex: widget.initialTabIndex);
+    _tabController.addListener(() {
+      if (!_tabController.indexIsChanging) {
+        setState(() {});
+      }
+    });
   }
 
   @override
@@ -26,68 +35,62 @@ class _ExpiringMembershipsScreenState extends State<ExpiringMembershipsScreen> w
     super.dispose();
   }
 
-  // Dummy list of expiring members
-  final List<Map<String, dynamic>> _expiringMembers = [
-    {
-      'name': 'Rahul Patel',
-      'plan': 'Gold Plan',
-      'endDate': '29 May 2025',
-      'daysLeft': 15,
-      'avatar': 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&q=80&w=100',
-    },
-    {
-      'name': 'Priya Shah',
-      'plan': 'Silver Plan',
-      'endDate': '27 May 2025',
-      'daysLeft': 13,
-      'avatar': 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=100',
-    },
-    {
-      'name': 'Amit Verma',
-      'plan': 'Platinum Plan',
-      'endDate': '25 May 2025',
-      'daysLeft': 11,
-      'avatar': 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=100',
-    },
-    {
-      'name': 'Neha Joshi',
-      'plan': 'Gold Plan',
-      'endDate': '24 May 2025',
-      'daysLeft': 10,
-      'avatar': 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&q=80&w=100',
-    },
-    {
-      'name': 'Rohan Mehta',
-      'plan': 'Silver Plan',
-      'endDate': '22 May 2025',
-      'daysLeft': 8,
-      'avatar': 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=100',
-    },
-    {
-      'name': 'Siddharth Singh',
-      'plan': 'Gold Plan',
-      'endDate': '21 May 2025',
-      'daysLeft': 7,
-      'avatar': 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=100',
-    },
-    {
-      'name': 'Vivek Kumar',
-      'plan': 'Platinum Plan',
-      'endDate': '20 May 2025',
-      'daysLeft': 6,
-      'avatar': 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&q=80&w=100',
-    },
-    {
-      'name': 'Anjali Kapoor',
-      'plan': 'Silver Plan',
-      'endDate': '19 May 2025',
-      'daysLeft': 5,
-      'avatar': 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=100',
-    },
-  ];
+  int? _getDaysLeft(Member member) {
+    final exp = member.extraFields['expiryDate'] as String?;
+    if (exp == null || exp.isEmpty) return null;
+    try {
+      final parsed = DateTime.parse(exp);
+      final today = DateTime.now();
+      final todayDateOnly = DateTime(today.year, today.month, today.day);
+      final expiryDateOnly = DateTime(parsed.year, parsed.month, parsed.day);
+      return expiryDateOnly.difference(todayDateOnly).inDays;
+    } catch (_) {
+      return null;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final membersVm = Provider.of<MembersViewModel>(context);
+    final allMembers = membersVm.allMembers;
+
+    final expiredMembers = <Member>[];
+    final todayMembers = <Member>[];
+    final sevenDaysMembers = <Member>[];
+    final fifteenDaysMembers = <Member>[];
+
+    for (final member in allMembers) {
+      final daysLeft = _getDaysLeft(member);
+      if (daysLeft == null) continue;
+      if (daysLeft >= -30 && daysLeft < 0) {
+        expiredMembers.add(member);
+      } else if (daysLeft == 0) {
+        todayMembers.add(member);
+      } else if (daysLeft >= 1 && daysLeft <= 7) {
+        sevenDaysMembers.add(member);
+      } else if (daysLeft >= 8 && daysLeft <= 15) {
+        fifteenDaysMembers.add(member);
+      }
+    }
+
+    List<Member> currentList;
+
+    switch (_tabController.index) {
+      case 0:
+        currentList = fifteenDaysMembers;
+        break;
+      case 1:
+        currentList = sevenDaysMembers;
+        break;
+      case 2:
+        currentList = todayMembers;
+        break;
+      case 3:
+      default:
+        currentList = expiredMembers;
+        break;
+    }
+
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
@@ -149,32 +152,84 @@ class _ExpiringMembershipsScreenState extends State<ExpiringMembershipsScreen> w
             child: RichText(
               text: TextSpan(
                 style: GoogleFonts.inter(fontSize: 13, color: AppTheme.textSecondary),
-                children: const [
-                  TextSpan(text: '18 ', style: TextStyle(fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
-                  TextSpan(text: 'Memberships expiring in next 15 days'),
+                children: [
+                  TextSpan(
+                    text: '${currentList.length} ',
+                    style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                  ),
+                  TextSpan(
+                    text: _tabController.index == 0
+                        ? 'Memberships expiring in next 15 days (8-15d)'
+                        : _tabController.index == 1
+                            ? 'Memberships expiring in next 7 days (1-7d)'
+                            : _tabController.index == 2
+                                ? 'Memberships expiring today'
+                                : 'Memberships already expired',
+                  ),
                 ],
               ),
             ),
           ),
           // List View
           Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: _expiringMembers.length,
-              itemBuilder: (context, index) {
-                final memberData = _expiringMembers[index];
-                return _buildMemberCard(memberData);
-              },
-            ),
+            child: currentList.isEmpty
+                ? Center(
+                    child: Text(
+                      'No memberships found',
+                      style: GoogleFonts.inter(color: AppTheme.textSecondary, fontSize: 14),
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    itemCount: currentList.length,
+                    itemBuilder: (context, index) {
+                      final member = currentList[index];
+                      final daysLeft = _getDaysLeft(member) ?? 0;
+                      return _buildMemberCard(member, daysLeft, membersVm);
+                    },
+                  ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildMemberCard(Map<String, dynamic> data) {
-    final int days = data['daysLeft'];
-    final String daysText = '$days Days Left';
+  Widget _buildMemberCard(Member member, int daysLeft, MembersViewModel membersVm) {
+    final plan = membersVm.getMemberPlan(member.membershipPlanId);
+    final planTitle = plan?.title ?? 'No Plan';
+
+    String daysText;
+    Color daysColor;
+    Color daysBgColor;
+
+    if (daysLeft < 0) {
+      daysText = '${daysLeft.abs()} Days Expired';
+      daysColor = Colors.red;
+      daysBgColor = const Color(0xFFFFECEF);
+    } else if (daysLeft == 0) {
+      daysText = 'Expires Today';
+      daysColor = Colors.redAccent;
+      daysBgColor = const Color(0xFFFFECEF);
+    } else if (daysLeft == 1) {
+      daysText = 'Expires Tomorrow';
+      daysColor = Colors.redAccent;
+      daysBgColor = const Color(0xFFFFECEF);
+    } else {
+      daysText = '$daysLeft Days Left';
+      daysColor = Colors.orange;
+      daysBgColor = const Color(0xFFFFF6ED);
+    }
+
+    String formattedExpiry = 'N/A';
+    final exp = member.extraFields['expiryDate'] as String?;
+    if (exp != null && exp.isNotEmpty) {
+      try {
+        final parsed = DateTime.parse(exp);
+        formattedExpiry = DateFormat('dd MMM yyyy').format(parsed);
+      } catch (_) {
+        formattedExpiry = exp;
+      }
+    }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -188,28 +243,10 @@ class _ExpiringMembershipsScreenState extends State<ExpiringMembershipsScreen> w
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
           onTap: () {
-            // Navigate to MemberProfileScreen with a dummy Member model
-            final dummyMember = Member(
-              id: 'M10042',
-              name: data['name'],
-              email: '${data['name'].toString().toLowerCase().replaceAll(' ', '')}@gmail.com',
-              phone: '+91 98765 43210',
-              avatar: data['avatar'],
-              status: 'Active',
-              joinDate: '01 Jan 2026',
-              membershipPlanId: 'p1',
-              assignedWorkoutId: 'w1',
-              assignedDietId: 'd1',
-              medicalDetails: 'Focus on weight loss goal.',
-              ptMember: true,
-              ptTrainer: 't1',
-              notes: 'Prefers morning sessions.',
-              pendingAmount: 0.0,
-            );
             Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => MemberProfileScreen(member: dummyMember),
+                builder: (_) => MemberProfileScreen(member: member),
               ),
             );
           },
@@ -219,7 +256,14 @@ class _ExpiringMembershipsScreenState extends State<ExpiringMembershipsScreen> w
               children: [
                 ClipRRect(
                   borderRadius: BorderRadius.circular(20),
-                  child: Image.network(data['avatar'], width: 40, height: 40, fit: BoxFit.cover),
+                  child: member.avatar.isNotEmpty && member.avatar.startsWith('http')
+                      ? Image.network(member.avatar, width: 40, height: 40, fit: BoxFit.cover)
+                      : Container(
+                          width: 40,
+                          height: 40,
+                          color: AppTheme.primary.withOpacity(0.1),
+                          child: const Icon(Icons.person, color: AppTheme.primary, size: 20),
+                        ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -227,17 +271,17 @@ class _ExpiringMembershipsScreenState extends State<ExpiringMembershipsScreen> w
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        data['name'],
+                        member.name,
                         style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        data['plan'],
+                        planTitle,
                         style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary),
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'Ends on ${data['endDate']}',
+                        'Ends on $formattedExpiry',
                         style: GoogleFonts.inter(fontSize: 10, color: AppTheme.textMuted),
                       ),
                     ],
@@ -249,12 +293,12 @@ class _ExpiringMembershipsScreenState extends State<ExpiringMembershipsScreen> w
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFFFF6ED),
+                        color: daysBgColor,
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
                         daysText,
-                        style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.orange),
+                        style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.bold, color: daysColor),
                       ),
                     ),
                     const SizedBox(width: 6),

@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../core/theme/theme.dart';
 import '../members/members_viewmodel.dart';
+import 'trial_members_viewmodel.dart';
 import '../membership/membership_viewmodel.dart';
 import '../staff/staff_viewmodel.dart';
 import '../workout/workout_viewmodel.dart';
@@ -17,9 +18,27 @@ import '../../core/services/supabase_service.dart';
 import '../../core/models/member.dart';
 import '../../core/models/membership_plan.dart';
 import '../../core/widgets/success_dialog.dart';
+import 'member_add_success_screen.dart';
 
 class AddMemberWizardScreen extends StatefulWidget {
-  const AddMemberWizardScreen({super.key});
+  final String? initialName;
+  final String? initialPhone;
+  final String? initialAvatarUrl;
+  final String? sourceTrialId;
+  final double? trialPaymentAmount;
+  final String? trialStartDate; // yyyy-MM-dd
+  final String? trialStartTime; // ISO string
+
+  const AddMemberWizardScreen({
+    super.key,
+    this.initialName,
+    this.initialPhone,
+    this.initialAvatarUrl,
+    this.sourceTrialId,
+    this.trialPaymentAmount,
+    this.trialStartDate,
+    this.trialStartTime,
+  });
 
   @override
   State<AddMemberWizardScreen> createState() => _AddMemberWizardScreenState();
@@ -34,6 +53,29 @@ class _AddMemberWizardScreenState extends State<AddMemberWizardScreen> {
   String _avatarUrl = '';
   bool _isUploadingPhoto = false;
   double _photoUploadProgress = 0.0;
+
+  bool _useTrialJoinDate = true;
+  bool _adjustTrialPayment = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialName != null) {
+      _nameController.text = widget.initialName!;
+    }
+    if (widget.initialPhone != null) {
+      _phoneController.text = widget.initialPhone!;
+    }
+    if (widget.initialAvatarUrl != null) {
+      _avatarUrl = widget.initialAvatarUrl!;
+    }
+    if (widget.sourceTrialId != null && widget.trialStartDate != null) {
+      _joiningDate = DateTime.tryParse(widget.trialStartDate!);
+    } else {
+      _joiningDate = DateTime.now();
+    }
+    _recalculateExpiry();
+  }
 
   Future<void> _pickAndUploadPhoto(ImageSource source) async {
     try {
@@ -166,6 +208,16 @@ class _AddMemberWizardScreenState extends State<AddMemberWizardScreen> {
     super.dispose();
   }
 
+  double get finalPayable {
+    final fees = double.tryParse(_feesController.text) ?? 0.0;
+    final discount = double.tryParse(_discountController.text) ?? 0.0;
+    double val = fees - discount;
+    if (_adjustTrialPayment && widget.trialPaymentAmount != null) {
+      val = (val - widget.trialPaymentAmount!).clamp(0.0, double.infinity);
+    }
+    return val;
+  }
+
   void _recalculateExpiry() {
     if (_selectedPlan != null && _joiningDate != null) {
       _expiryDate = _joiningDate!.add(Duration(days: _selectedPlan!.durationDays));
@@ -176,10 +228,8 @@ class _AddMemberWizardScreenState extends State<AddMemberWizardScreen> {
   }
 
   void _recalculateRemaining() {
-    final fees = double.tryParse(_feesController.text) ?? 0.0;
-    final discount = double.tryParse(_discountController.text) ?? 0.0;
     final paid = double.tryParse(_paidController.text) ?? 0.0;
-    _remainingController.text = (fees - discount - paid).clamp(0.0, double.infinity).toStringAsFixed(0);
+    _remainingController.text = (finalPayable - paid).clamp(0.0, double.infinity).toStringAsFixed(0);
   }
 
   void _calculateAge() {
@@ -687,6 +737,85 @@ class _AddMemberWizardScreenState extends State<AddMemberWizardScreen> {
       children: [
         _buildStepHeader('Membership', 'Plan & Duration'),
 
+        if (widget.sourceTrialId != null) ...[
+          _fieldLabel('Use Joining Date'),
+          Row(
+            children: [
+              Expanded(
+                child: InkWell(
+                  onTap: () {
+                    setState(() {
+                      _useTrialJoinDate = true;
+                      if (widget.trialStartDate != null) {
+                        _joiningDate = DateTime.tryParse(widget.trialStartDate!);
+                        _recalculateExpiry();
+                      }
+                    });
+                  },
+                  child: Row(
+                    children: [
+                      Radio<bool>(
+                        value: true,
+                        groupValue: _useTrialJoinDate,
+                        activeColor: AppTheme.primary,
+                        onChanged: (val) {
+                          if (val != null) {
+                            setState(() {
+                              _useTrialJoinDate = val;
+                              if (widget.trialStartDate != null) {
+                                _joiningDate = DateTime.tryParse(widget.trialStartDate!);
+                                _recalculateExpiry();
+                              }
+                            });
+                          }
+                        },
+                      ),
+                      Expanded(
+                        child: Text(
+                          'Use Trial Join Date (Recommended)',
+                          style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w500, color: AppTheme.textPrimary),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              Expanded(
+                child: InkWell(
+                  onTap: () {
+                    setState(() {
+                      _useTrialJoinDate = false;
+                    });
+                  },
+                  child: Row(
+                    children: [
+                      Radio<bool>(
+                        value: false,
+                        groupValue: _useTrialJoinDate,
+                        activeColor: AppTheme.primary,
+                        onChanged: (val) {
+                          if (val != null) {
+                            setState(() {
+                              _useTrialJoinDate = val;
+                            });
+                          }
+                        },
+                      ),
+                      Expanded(
+                        child: Text(
+                          'Select Custom Date',
+                          style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w500, color: AppTheme.textPrimary),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+        ],
+
         // Membership Plan
         _fieldLabel('Membership Plan', required: true),
         DropdownButtonFormField<MembershipPlan>(
@@ -717,20 +846,29 @@ class _AddMemberWizardScreenState extends State<AddMemberWizardScreen> {
         _datePicker(
           hint: 'Select date',
           value: _joiningDate,
-          onTap: () async {
-            final picked = await showDatePicker(
-              context: context,
-              initialDate: _joiningDate ?? DateTime.now(),
-              firstDate: DateTime(1900),
-              lastDate: DateTime(2100),
-            );
-            if (picked != null) {
-              setState(() {
-                _joiningDate = picked;
-                _recalculateExpiry();
-              });
-            }
-          },
+          onTap: (widget.sourceTrialId != null && _useTrialJoinDate)
+              ? () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('To choose a custom date, select the "Select Custom Date" option above.'),
+                      duration: Duration(seconds: 2),
+                    ),
+                  );
+                }
+              : () async {
+                  final picked = await showDatePicker(
+                    context: context,
+                    initialDate: _joiningDate ?? DateTime.now(),
+                    firstDate: DateTime(1900),
+                    lastDate: DateTime(2100),
+                  );
+                  if (picked != null) {
+                    setState(() {
+                      _joiningDate = picked;
+                      _recalculateExpiry();
+                    });
+                  }
+                },
         ),
         const SizedBox(height: 16),
 
@@ -809,6 +947,70 @@ class _AddMemberWizardScreenState extends State<AddMemberWizardScreen> {
             ),
           ],
         ),
+        if (widget.trialPaymentAmount != null && widget.trialPaymentAmount! > 0) ...[
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Checkbox(
+                value: _adjustTrialPayment,
+                activeColor: AppTheme.primary,
+                onChanged: (val) {
+                  if (val != null) {
+                    setState(() {
+                      _adjustTrialPayment = val;
+                      _paidController.text = finalPayable.toStringAsFixed(0);
+                      _recalculateRemaining();
+                    });
+                  }
+                },
+              ),
+              Expanded(
+                child: Text(
+                  'Adjust Trial Payment Into Membership (₹${widget.trialPaymentAmount!.toStringAsFixed(0)})',
+                  style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textPrimary),
+                ),
+              ),
+            ],
+          ),
+          if (_adjustTrialPayment) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppTheme.successLight.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(AppTheme.radiusInput),
+                border: Border.all(color: AppTheme.successLight),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Membership Fee:', style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary)),
+                      Text('₹${(double.tryParse(_feesController.text) ?? 0.0).toStringAsFixed(0)}', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Trial Adjusted:', style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary)),
+                      Text('-₹${widget.trialPaymentAmount!.toStringAsFixed(0)}', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.success)),
+                    ],
+                  ),
+                  const Divider(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Final Payable:', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
+                      Text('₹${finalPayable.toStringAsFixed(0)}', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.primary)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
         const SizedBox(height: 16),
 
         // Payment Method
@@ -1442,6 +1644,15 @@ class _AddMemberWizardScreenState extends State<AddMemberWizardScreen> {
     final showDiet = _selectedPlan == null ? true : _selectedPlan!.dietIncluded;
     final showPt = _selectedPlan == null ? true : _selectedPlan!.ptIncluded;
 
+    final paidToday = double.tryParse(_paidController.text) ?? 0.0;
+    final trialPaidAmount = (_adjustTrialPayment && widget.trialPaymentAmount != null) ? widget.trialPaymentAmount! : 0.0;
+    final totalReceived = paidToday + trialPaidAmount;
+
+    String? customCreatedAt;
+    if (widget.sourceTrialId != null && _useTrialJoinDate && widget.trialStartTime != null) {
+      customCreatedAt = widget.trialStartTime;
+    }
+
     final newMember = Member(
       id: id,
       name: _nameController.text.trim(),
@@ -1459,9 +1670,10 @@ class _AddMemberWizardScreenState extends State<AddMemberWizardScreen> {
       notes: _notesController.text,
       pendingAmount: double.tryParse(_remainingController.text) ?? 0.0,
       discountAmount: double.tryParse(_discountController.text) ?? 0.0,
-      totalReceivedAmount: double.tryParse(_paidController.text) ?? 0.0,
+      totalReceivedAmount: totalReceived,
       paymentStatus: (double.tryParse(_remainingController.text) ?? 0.0) <= 0 ? 'Paid' : 'Partial',
       extraFields: extra,
+      createdAt: customCreatedAt,
     );
 
     final vm = Provider.of<MembersViewModel>(context, listen: false);
@@ -1474,11 +1686,25 @@ class _AddMemberWizardScreenState extends State<AddMemberWizardScreen> {
     );
 
     try {
-      await vm.updateMember(newMember, paymentMethod: _paymentMethod.isNotEmpty ? _paymentMethod : 'Cash');
+      await vm.updateMember(
+        newMember, 
+        paymentMethod: _paymentMethod.isNotEmpty ? _paymentMethod : 'Cash',
+        transactionAmount: paidToday,
+      );
 
-      // Generate invitation code in the background
+      // Mark trial as Converted
+      if (widget.sourceTrialId != null) {
+        try {
+          final trialsVm = Provider.of<TrialMembersViewModel>(context, listen: false);
+          await trialsVm.markAsConverted(widget.sourceTrialId!);
+        } catch (e) {
+          print('Error marking trial as converted: $e');
+        }
+      }
+
+      String invitationCode = '';
       try {
-        await vm.generateInvitation(
+        invitationCode = await vm.generateInvitation(
           recordId: id,
           name: newMember.name,
           phone: newMember.phone,
@@ -1489,13 +1715,14 @@ class _AddMemberWizardScreenState extends State<AddMemberWizardScreen> {
 
       if (mounted) {
         Navigator.pop(context); // Pop loading spinner
-        SuccessDialog.show(
+        Navigator.push(
           context,
-          title: 'Member Added!',
-          message: '${newMember.name} has been added successfully.',
-          onDone: () {
-            Navigator.pop(context); // Pop wizard screen
-          },
+          MaterialPageRoute(
+            builder: (_) => MemberAddSuccessScreen(
+              memberName: newMember.name,
+              invitationCode: invitationCode,
+            ),
+          ),
         );
       }
     } catch (e) {

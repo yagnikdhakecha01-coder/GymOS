@@ -12,11 +12,37 @@ class LocalStorageService {
   static const String keyUserRole = 'gymos_user_role';
   static const String keyUserGymInfo = 'gymos_gym_info';
   static const String keyIsLoggedIn = 'gymos_is_logged_in';
+  static const String keyTrialMembers = 'gymos_trial_members';
+  static const String keyAttendanceQueue = 'gymos_attendance_queue';
+  static const String keyCrudQueue = 'gymos_crud_queue';
+  static const String keyAttendanceSettings = 'gymos_attendance_settings';
+  static const String keyGymShifts = 'gymos_gym_shifts';
+  static const String keySalaryAdvances = 'gymos_salary_advances';
+  static const String keySalaryDrafts = 'gymos_salary_drafts';
+  static const String keyLeaveRequests = 'gymos_leave_requests';
+  static const String keyGymShiftSettings = 'gymos_gym_shift_settings';
+  static const String keyGymShiftsList = 'gymos_gym_shifts_list';
+  static const String keyInitialSyncComplete = 'gymos_initial_sync_complete';
+  static const String keyLastSuccessfulSync = 'gymos_last_successful_sync';
+  static const String keyAchievements = 'gymos_achievements';
+  static const String keyGamificationProfile = 'gymos_gamification_profile';
+  static const String keyGoals = 'gymos_fitness_goals_all';
+  static const String keyCustomFields = 'gymos_custom_fields_all';
+  static const String keyRecentActivities = 'gymos_recent_activities_all';
+  static const String keyDisplaySessions = 'gymos_display_sessions_all';
+  static const String keyCorrections = 'gymos_attendance_corrections_all';
+  static const String keyAlerts = 'gymos_attendance_alerts_all';
+  static const String keyManualAttendanceQueue = 'gymos_manual_attendance_queue';
+  static const String keyAttendanceAuditLog = 'gymos_attendance_audit_log';
+  static const String keyOfflineMemberCache = 'gymos_offline_member_cache';
+  static const String keyOfflineStaffCache = 'gymos_offline_staff_cache';
 
   final SharedPreferences _prefs;
 
   LocalStorageService(this._prefs) {
-    _initDemoData();
+    _initDemoData().then((_) {
+      SchemaMigrationManager.checkAndMigrate(this);
+    });
   }
 
   // Helper method to clear all data
@@ -34,6 +60,17 @@ class LocalStorageService {
   // Checks if key exists
   bool hasKey(String key) => _prefs.containsKey(key);
 
+  // Get/Set int
+  int? getInt(String key) => _prefs.getInt(key);
+  Future<bool> setInt(String key, int value) => _prefs.setInt(key, value);
+
+  // Get/Set bool
+  bool? getBool(String key) => _prefs.getBool(key);
+  Future<bool> setBool(String key, bool value) => _prefs.setBool(key, value);
+
+  // Remove key
+  Future<bool> remove(String key) => _prefs.remove(key);
+
   // Save/Get Login status
   bool isLoggedIn() => _prefs.getBool(keyIsLoggedIn) ?? false;
   Future<bool> setLoggedIn(bool value) => _prefs.setBool(keyIsLoggedIn, value);
@@ -50,6 +87,11 @@ class LocalStorageService {
   }
   Future<bool> setGymInfo(Map<String, dynamic> info) =>
       _prefs.setString(keyUserGymInfo, jsonEncode(info));
+
+  // Cache base64 images
+  String? getCachedImage(String key) => _prefs.getString('cached_img_$key');
+  Future<bool> setCachedImage(String key, String base64Data) =>
+      _prefs.setString('cached_img_$key', base64Data);
 
   // Initialize beautiful, production-quality dummy data
   Future<void> _initDemoData({bool force = false}) async {
@@ -481,5 +523,27 @@ class LocalStorageService {
       }
     ];
     await _prefs.setString(keyAttendance, jsonEncode(defaultAttendance));
+  }
+}
+
+class SchemaMigrationManager {
+  static const String keyDbVersion = 'local_db_version';
+  static const int currentVersion = 1;
+
+  static Future<void> checkAndMigrate(LocalStorageService storage) async {
+    final int oldVersion = storage.getInt(keyDbVersion) ?? 1;
+    if (oldVersion < currentVersion) {
+      for (int version = oldVersion + 1; version <= currentVersion; version++) {
+        await _runMigrationStep(storage, version);
+      }
+      await storage.setInt(keyDbVersion, currentVersion);
+    } else if (!storage.hasKey(keyDbVersion)) {
+      await storage.setInt(keyDbVersion, currentVersion);
+    }
+  }
+
+  static Future<void> _runMigrationStep(LocalStorageService storage, int targetVersion) async {
+    print('Executing Local DB Schema Migration: Version ${targetVersion - 1} -> Version $targetVersion');
+    // Future versioned migrations go here
   }
 }

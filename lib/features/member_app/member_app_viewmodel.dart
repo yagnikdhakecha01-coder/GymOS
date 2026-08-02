@@ -302,11 +302,26 @@ class MemberAppViewModel extends ChangeNotifier {
       final user = SupabaseService.client.auth.currentUser;
       if (user == null) return;
 
-      final memberData = await SupabaseService.client
+      final prefs = await SharedPreferences.getInstance();
+      final gymInfoStr = prefs.getString('gymos_gym_info');
+      String? gymId;
+      if (gymInfoStr != null) {
+        try {
+          final gymInfo = jsonDecode(gymInfoStr) as Map<String, dynamic>;
+          gymId = gymInfo['id'];
+        } catch (_) {}
+      }
+
+      var query = SupabaseService.client
           .from('members')
           .select()
-          .eq('user_id', user.id)
-          .maybeSingle();
+          .eq('user_id', user.id);
+      
+      if (gymId != null) {
+        query = query.eq('gym_id', gymId);
+      }
+
+      final memberData = await query.maybeSingle();
 
       if (memberData != null) {
         _memberName = memberData['name'] ?? _memberName;

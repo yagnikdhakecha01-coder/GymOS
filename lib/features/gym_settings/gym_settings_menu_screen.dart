@@ -10,6 +10,7 @@ import '../workout/workout_plans_screen.dart';
 import '../diet/diet_plans_screen.dart';
 import '../membership/membership_plans_screen.dart';
 import '../attendance/owner_settings_screen.dart';
+import 'online_database_screen.dart';
 
 class GymSettingsMenuScreen extends StatelessWidget {
   const GymSettingsMenuScreen({super.key});
@@ -175,6 +176,17 @@ class GymSettingsMenuScreen extends StatelessWidget {
                     title: 'Attendance Settings',
                     subtitle: 'SSID rules, static QR and display links',
                     targetScreen: const OwnerQrSettingsScreen(),
+                  ),
+                  const Divider(height: 1),
+
+                  // 9. Online Database Status
+                  _buildMenuTile(
+                    context,
+                    icon: Icons.cloud_sync_rounded,
+                    color: Colors.blue,
+                    title: 'Online Database',
+                    subtitle: 'View sync status, queue size, and retry operations',
+                    targetScreen: const OnlineDatabaseScreen(),
                   ),
                 ],
               ),

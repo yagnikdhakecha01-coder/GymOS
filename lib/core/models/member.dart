@@ -19,6 +19,7 @@ class Member {
   final double totalReceivedAmount;
   final String paymentStatus;
   final Map<String, dynamic> extraFields; // Stores health history, measurements, custom form values, etc.
+  final String? createdAt; // Database created_at timestamp
 
   Member({
     required this.id,
@@ -41,6 +42,7 @@ class Member {
     this.totalReceivedAmount = 0.0,
     this.paymentStatus = 'Pending',
     this.extraFields = const {},
+    this.createdAt,
   });
 
   factory Member.fromJson(Map<String, dynamic> json) {
@@ -65,6 +67,7 @@ class Member {
       totalReceivedAmount: ((json['total_received_amount'] ?? json['totalReceivedAmount']) as num?)?.toDouble() ?? 0.0,
       paymentStatus: (json['payment_status'] ?? json['paymentStatus']) as String? ?? 'Pending',
       extraFields: (json['extra_fields'] ?? json['extraFields']) as Map<String, dynamic>? ?? const {},
+      createdAt: json['created_at'] as String?,
     );
   }
 
@@ -88,8 +91,9 @@ class Member {
       'pendingAmount': pendingAmount,
       'discountAmount': discountAmount,
       'totalReceivedAmount': totalReceivedAmount,
-      'paymentStatus': paymentStatus,
-      'extraFields': extraFields,
+      'payment_status': paymentStatus,
+      'extra_fields': extraFields,
+      if (createdAt != null) 'created_at': createdAt,
     };
   }
 
@@ -114,6 +118,7 @@ class Member {
     double? totalReceivedAmount,
     String? paymentStatus,
     Map<String, dynamic>? extraFields,
+    String? createdAt,
   }) {
     return Member(
       id: id ?? this.id,
@@ -136,6 +141,7 @@ class Member {
       totalReceivedAmount: totalReceivedAmount ?? this.totalReceivedAmount,
       paymentStatus: paymentStatus ?? this.paymentStatus,
       extraFields: extraFields ?? this.extraFields,
+      createdAt: createdAt ?? this.createdAt,
     );
   }
 }

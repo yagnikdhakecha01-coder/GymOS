@@ -122,17 +122,19 @@ class MembersViewModel extends ChangeNotifier {
   }
 
   // Update
-  Future<void> updateMember(Member member, {String paymentMethod = 'Cash'}) async {
+  Future<void> updateMember(Member member, {String paymentMethod = 'Cash', double? transactionAmount}) async {
     await _repository.saveMember(member);
-    if (member.totalReceivedAmount > 0) {
+    final txAmount = transactionAmount ?? member.totalReceivedAmount;
+    if (txAmount > 0) {
       final tx = FinanceTransaction(
         id: 'tx_${DateTime.now().millisecondsSinceEpoch}',
         title: '${member.name} - Initial Payment',
-        amount: member.totalReceivedAmount,
+        amount: txAmount,
         type: 'Revenue',
         category: 'Membership',
         paymentMethod: paymentMethod,
         date: DateFormat('dd MMM yyyy').format(DateTime.now()),
+        transactionDate: DateTime.now().toIso8601String(),
         notes: 'Automatic Membership Initial Payment',
         referenceId: member.id,
       );
@@ -198,6 +200,7 @@ class MembersViewModel extends ChangeNotifier {
         category: category,
         paymentMethod: paymentMethod,
         date: DateFormat('dd MMM yyyy').format(DateTime.now()),
+        transactionDate: DateTime.now().toIso8601String(),
         notes: notes,
         referenceId: memberId,
       );

@@ -6,6 +6,9 @@ import '../../authentication/auth_viewmodel.dart';
 import '../../members/members_viewmodel.dart';
 import '../../members/member_profile_screen.dart';
 import '../../members/add_member_wizard_screen.dart';
+import '../../members/add_trial_member_screen.dart';
+import '../../members/trial_members_viewmodel.dart';
+import '../../../core/widgets/add_member_selection_sheet.dart';
 import '../receptionist_viewmodel.dart';
 
 class ReceptionistMembersScreen extends StatefulWidget {
@@ -71,13 +74,27 @@ class _ReceptionistMembersScreenState extends State<ReceptionistMembersScreen> w
             IconButton(
               icon: const Icon(Icons.add_circle_outline_rounded, color: AppTheme.primary, size: 24),
               onPressed: () {
-                Navigator.push(
+                AddMemberSelectionSheet.show(
                   context,
-                  MaterialPageRoute(builder: (_) => const AddMemberWizardScreen()),
-                ).then((_) {
-                  vm.logActivity('Member Added', 'members');
-                  membersVm.fetchMembers();
-                });
+                  onNormalSelected: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const AddMemberWizardScreen()),
+                    ).then((_) {
+                      vm.logActivity('Member Added', 'members');
+                      membersVm.fetchMembers();
+                    });
+                  },
+                  onTrialSelected: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const AddTrialMemberScreen()),
+                    ).then((_) {
+                      vm.logActivity('Trial Member Added', 'members');
+                      Provider.of<TrialMembersViewModel>(context, listen: false).fetchTrialMembers();
+                    });
+                  },
+                );
               },
             ),
         ],

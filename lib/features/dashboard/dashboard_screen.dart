@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:convert';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
@@ -10,14 +11,17 @@ import '../../core/widgets/sparkline.dart';
 import '../../core/widgets/sparkline_chart.dart';
 import '../authentication/auth_viewmodel.dart';
 import '../members/members_viewmodel.dart';
+import '../../core/models/member.dart';
 import '../staff/staff_viewmodel.dart';
 import '../finance/finance_viewmodel.dart';
 import '../attendance/attendance_viewmodel.dart';
 import 'alerts_screen.dart';
+import '../gym_settings/online_database_screen.dart';
 import 'expiring_memberships_screen.dart';
 import '../attendance/attendance_screen.dart';
 import '../attendance/owner_scanner_screen.dart';
 import '../members/add_member_wizard_screen.dart';
+import '../../core/widgets/add_member_selection_sheet.dart';
 import '../staff/staff_screen.dart';
 import '../finance/pending_payments_screen.dart';
 import '../finance/finance_screen.dart';
@@ -43,9 +47,22 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  DateTime _selectedDate = DateTime.now();
   GymRepository? _repository;
   bool _showAllActivities = false;
+
+  int? _getDaysLeft(Member member) {
+    final exp = member.extraFields['expiryDate'] as String?;
+    if (exp == null || exp.isEmpty) return null;
+    try {
+      final parsed = DateTime.parse(exp);
+      final today = DateTime.now();
+      final todayDateOnly = DateTime(today.year, today.month, today.day);
+      final expiryDateOnly = DateTime(parsed.year, parsed.month, parsed.day);
+      return expiryDateOnly.difference(todayDateOnly).inDays;
+    } catch (_) {
+      return null;
+    }
+  }
 
   @override
   void initState() {
@@ -57,7 +74,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final authVm = Provider.of<AuthViewModel>(context, listen: false);
       final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
       if (gymId != null) {
-        final formattedDate = DateFormat('yyyy-MM-dd').format(_selectedDate);
+        final formattedDate = DateFormat('yyyy-MM-dd').format(_repository!.selectedDashboardDate);
         _repository?.fetchDashboardStatsFromSupabase(gymId, formattedDate);
       }
     });
@@ -98,15 +115,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final attendancePercent = repo.attendancePercentage;
 
     // Alerts
-    final _dbExpiringToday = repo.expiringTodayCount;
-    final _dbExpiring15Days = repo.expiring15DaysCount;
+    final allMembers = membersVm.allMembers;
+
+    final endingTodayMembers = <Member>[];
+    final expiring15Members = <Member>[];
+    final expired1MonthMembers = <Member>[];
+
+    for (final m in allMembers) {
+      final daysLeft = _getDaysLeft(m);
+      if (daysLeft == null) continue;
+      if (daysLeft == 0) {
+        endingTodayMembers.add(m);
+      } else if (daysLeft >= 1 && daysLeft <= 15) {
+        expiring15Members.add(m);
+      } else if (daysLeft >= -30 && daysLeft < 0) {
+        expired1MonthMembers.add(m);
+      }
+    }
+
+    final _dbExpiringToday = endingTodayMembers.length;
+    final _dbExpiring15Days = expiring15Members.length;
+    final _dbExpired1Month = expired1MonthMembers.length;
+
     final _dbPendingLeaves = repo.pendingLeavesCount;
     final _dbPendingHolidays = repo.pendingHolidaysCount;
-
-    // Expiring Memberships
-    final expiringCount = membersVm.allMembers.where((m) {
-      return false;
-    }).length;
+    final _dbPendingAdvances = repo.pendingAdvancesCount;
 
     return Scaffold(
       backgroundColor: AppTheme.background,
@@ -140,9 +173,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         const SizedBox(height: 1),
                         GestureDetector(
                           onTap: () {
-                            if (authVm.selectedRole?.toLowerCase() == 'owner') {
-                              GymSwitcherBottomSheet.show(context);
-                            }
+                            GymSwitcherBottomSheet.show(context);
                           },
                           child: MouseRegion(
                             cursor: SystemMouseCursors.click,
@@ -153,14 +184,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   'Owner • $gymName',
                                   style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted),
                                 ),
-                                if (authVm.selectedRole?.toLowerCase() == 'owner') ...[
-                                  const SizedBox(width: 4),
-                                  const Icon(
-                                    Icons.arrow_drop_down_rounded,
-                                    size: 16,
-                                    color: AppTheme.textMuted,
-                                  ),
-                                ],
+                                const SizedBox(width: 4),
+                                const Icon(
+                                  Icons.arrow_drop_down_rounded,
+                                  size: 16,
+                                  color: AppTheme.textMuted,
+                                ),
                               ],
                             ),
                           ),
@@ -269,7 +298,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     child: Builder(
                       builder: (context) {
                         final gymLogo = authVm.gymInfo?['logo'] ?? authVm.gymInfo?['logo_url'] ?? '';
-                        if (gymLogo.isNotEmpty && (gymLogo.startsWith('http') || gymLogo.startsWith('https'))) {
+                        final gymId = authVm.gymInfo?['id'];
+                        final cachedBase64 = gymId != null ? authVm.getCachedImage('gym_logo_$gymId') : null;
+
+                        if (cachedBase64 != null) {
+                          return ClipRRect(
+                            borderRadius: BorderRadius.circular(18),
+                            child: Image.memory(
+                              base64Decode(cachedBase64),
+                              width: 36,
+                              height: 36,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => _buildDefaultGymLogo(),
+                            ),
+                          );
+                        } else if (gymLogo.isNotEmpty && (gymLogo.startsWith('http') || gymLogo.startsWith('https'))) {
                           return ClipRRect(
                             borderRadius: BorderRadius.circular(18),
                             child: Image.network(
@@ -302,6 +345,38 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ],
               ),
               const SizedBox(height: 20),
+              if (repo.attendanceQueue.isNotEmpty || repo.crudQueue.isNotEmpty) ...[
+                GestureDetector(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const OnlineDatabaseScreen()),
+                    );
+                  },
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 16),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: AppTheme.danger.withOpacity(0.06),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppTheme.danger.withOpacity(0.2)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.sync_problem_rounded, color: AppTheme.danger, size: 20),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'You have offline data pending sync. Tap to sync.',
+                            style: GoogleFonts.inter(fontSize: 12, color: AppTheme.danger, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        const Icon(Icons.arrow_forward_ios_rounded, color: AppTheme.danger, size: 14),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
 
               // 2. Today's Overview Title & Datepicker
               Row(
@@ -313,19 +388,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   GestureDetector(
                     onTap: () async {
-                      final date = await showDatePicker(
-                        context: context,
-                        initialDate: _selectedDate,
-                        firstDate: DateTime(1900),
-                        lastDate: DateTime(2100),
-                      );
-                      if (date != null) {
-                        setState(() => _selectedDate = date);
-                        final authVm = Provider.of<AuthViewModel>(context, listen: false);
-                        final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
-                        if (gymId != null) {
-                          final formattedDate = DateFormat('yyyy-MM-dd').format(date);
-                          _repository?.fetchDashboardStatsFromSupabase(gymId, formattedDate);
+                      if (repo != null) {
+                        final date = await showDatePicker(
+                          context: context,
+                          initialDate: repo.selectedDashboardDate,
+                          firstDate: DateTime(1900),
+                          lastDate: DateTime(2100),
+                        );
+                        if (date != null) {
+                          repo.setSelectedDashboardDate(date);
                         }
                       }
                     },
@@ -341,7 +412,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           const Icon(Icons.calendar_today_outlined, size: 14, color: AppTheme.textSecondary),
                           const SizedBox(width: 6),
                           Text(
-                            DateFormat('dd MMM, yyyy').format(_selectedDate),
+                            repo != null ? DateFormat('dd MMM, yyyy').format(repo.selectedDashboardDate) : '',
                             style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary, fontWeight: FontWeight.w500),
                           ),
                           const Icon(Icons.arrow_drop_down, size: 16, color: AppTheme.textSecondary),
@@ -430,7 +501,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ],
               ),
               const SizedBox(height: 8),
-              if (_dbExpiringToday == 0 && _dbExpiring15Days == 0 && _dbPendingLeaves == 0 && _dbPendingHolidays == 0)
+              if (_dbExpiringToday == 0 && _dbExpiring15Days == 0 && _dbExpired1Month == 0 && _dbPendingLeaves == 0 && _dbPendingHolidays == 0 && _dbPendingAdvances == 0)
                 Container(
                   padding: const EdgeInsets.symmetric(vertical: 24),
                   decoration: BoxDecoration(
@@ -446,103 +517,117 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                 )
               else ...[
-                // Render database-generated attendance alerts
-                ...repo.alerts.take(5).map((alert) {
-                  IconData alertIcon;
-                  Color alertColor;
-                  Color alertBg;
-                  switch (alert.alertType) {
-                    case 'Late Entry':
-                      alertIcon = Icons.access_time_rounded;
-                      alertColor = Colors.orange;
-                      alertBg = const Color(0xFFFFF6ED);
-                      break;
-                    case 'Early Exit':
-                      alertIcon = Icons.exit_to_app_rounded;
-                      alertColor = Colors.deepOrange;
-                      alertBg = const Color(0xFFFFECEF);
-                      break;
-                    case 'Rejected QR':
-                    case 'Wrong Gym QR':
-                      alertIcon = Icons.qr_code_scanner_rounded;
-                      alertColor = Colors.red;
-                      alertBg = const Color(0xFFFFECEF);
-                      break;
-                    case 'Attendance Correction':
-                      alertIcon = Icons.edit_note_rounded;
-                      alertColor = Colors.blue;
-                      alertBg = const Color(0xFFEFF6FF);
-                      break;
-                    default:
-                      alertIcon = Icons.info_outline_rounded;
-                      alertColor = AppTheme.primary;
-                      alertBg = const Color(0xFFF5F3FF);
+                Builder(
+                  builder: (context) {
+                    final endingTodayAvatars = _getAvatars(repo.dashboardAlertsData['memberships_ending_today']?['avatars']);
+                    final expiring15Avatars = [
+                      ..._getAvatars(repo.dashboardAlertsData['memberships_expiring_1_day']?['avatars']),
+                      ..._getAvatars(repo.dashboardAlertsData['memberships_expiring_3_days']?['avatars']),
+                      ..._getAvatars(repo.dashboardAlertsData['memberships_expiring_7_days']?['avatars']),
+                      ..._getAvatars(repo.dashboardAlertsData['memberships_expiring_15_days']?['avatars']),
+                    ];
+                    final expired1MonthAvatars = expired1MonthMembers.map((m) => m.avatar).where((a) => a.isNotEmpty && a.startsWith('http')).take(3).toList();
+                    final leaveAvatars = _getAvatars(repo.dashboardAlertsData['staff_leave_requests']?['avatars']);
+                    final holidayAvatars = _getAvatars(repo.dashboardAlertsData['holiday_requests']?['avatars']);
+                    final advanceAvatars = _getAvatars(repo.dashboardAlertsData['staff_advance_requests']?['avatars']);
+
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (_dbExpired1Month > 0)
+                          _buildAlertItem(
+                            Icons.dangerous_outlined,
+                            Colors.red,
+                            const Color(0xFFFFECEF),
+                            '$_dbExpired1Month Memberships',
+                            'expired. Renewal follow-up recommended',
+                            avatars: expired1MonthAvatars,
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (_) => const ExpiringMembershipsScreen(initialTabIndex: 3)),
+                              );
+                            },
+                          ),
+                        if (_dbExpiringToday > 0)
+                          _buildAlertItem(
+                            Icons.hourglass_empty,
+                            Colors.red,
+                            const Color(0xFFFFECEF),
+                            '$_dbExpiringToday Memberships',
+                            'ending today. Take action immediately',
+                            avatars: endingTodayAvatars,
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (_) => const ExpiringMembershipsScreen(initialTabIndex: 2)),
+                              );
+                            },
+                          ),
+                        if (_dbExpiring15Days > 0)
+                          _buildAlertItem(
+                            Icons.calendar_today_rounded,
+                            Colors.orange,
+                            const Color(0xFFFFF6ED),
+                            '$_dbExpiring15Days Memberships',
+                            'expiring in 15 days. Follow-up recommended',
+                            avatars: expiring15Avatars,
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (_) => const ExpiringMembershipsScreen(initialTabIndex: 0)),
+                              );
+                            },
+                          ),
+                        if (_dbPendingLeaves > 0)
+                          _buildAlertItem(
+                            Icons.description_outlined,
+                            Colors.blue,
+                            const Color(0xFFEFF6FF),
+                            '$_dbPendingLeaves Staff Leave Requests',
+                            'awaiting approval',
+                            avatars: leaveAvatars,
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (_) => const AlertsScreen()),
+                              );
+                            },
+                          ),
+                        if (_dbPendingHolidays > 0)
+                          _buildAlertItem(
+                            Icons.beach_access_outlined,
+                            Colors.purple,
+                            const Color(0xFFFAF5FF),
+                            '$_dbPendingHolidays Holiday Requests',
+                            'from staff',
+                            avatars: holidayAvatars,
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (_) => const AlertsScreen()),
+                              );
+                            },
+                          ),
+                        if (_dbPendingAdvances > 0)
+                          _buildAlertItem(
+                            Icons.account_balance_wallet_outlined,
+                            Colors.deepPurple,
+                            const Color(0xFFF5F3FF),
+                            '$_dbPendingAdvances Staff Advance Requests',
+                            'awaiting approval',
+                            avatars: advanceAvatars,
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (_) => const AlertsScreen()),
+                              );
+                            },
+                          ),
+                      ],
+                    );
                   }
-                  return _buildAlertItem(
-                    alertIcon,
-                    alertColor,
-                    alertBg,
-                    alert.alertType,
-                    ': ${alert.message}',
-                    onTap: () {},
-                  );
-                }),
-                if (_dbExpiringToday > 0)
-                  _buildAlertItem(
-                    Icons.hourglass_empty,
-                    Colors.red,
-                    const Color(0xFFFFECEF),
-                    '$_dbExpiringToday Memberships',
-                    'ending today. Take action immediately',
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const ExpiringMembershipsScreen()),
-                      );
-                    },
-                  ),
-                if (_dbExpiring15Days > 0)
-                  _buildAlertItem(
-                    Icons.calendar_today_rounded,
-                    Colors.orange,
-                    const Color(0xFFFFF6ED),
-                    '$_dbExpiring15Days Memberships',
-                    'expiring in 15 days. Follow-up recommended',
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const ExpiringMembershipsScreen()),
-                      );
-                    },
-                  ),
-                if (_dbPendingLeaves > 0)
-                  _buildAlertItem(
-                    Icons.description_outlined,
-                    Colors.blue,
-                    const Color(0xFFEFF6FF),
-                    '$_dbPendingLeaves Staff Leave Requests',
-                    'awaiting approval',
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const AlertsScreen()),
-                      );
-                    },
-                  ),
-                if (_dbPendingHolidays > 0)
-                  _buildAlertItem(
-                    Icons.beach_access_outlined,
-                    Colors.purple,
-                    const Color(0xFFFAF5FF),
-                    '$_dbPendingHolidays Holiday Requests',
-                    'from staff',
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const AlertsScreen()),
-                      );
-                    },
-                  ),
+                ),
               ],
               const SizedBox(height: 20),
 
@@ -560,10 +645,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     Icons.person_add_alt_1_outlined,
                     'Add Member',
                     onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const AddMemberWizardScreen()),
-                      );
+                      AddMemberSelectionSheet.show(context);
                     },
                   ),
                   _buildQuickActionBtn(
@@ -917,6 +999,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  List<String> _getAvatars(dynamic avatarsData) {
+    if (avatarsData == null) return [];
+    if (avatarsData is List) {
+      return avatarsData.map((e) => e.toString()).where((e) => e.isNotEmpty).toList();
+    }
+    return [];
+  }
+
   Widget _buildAlertItem(IconData icon, Color color, Color bgColor, String boldText, String text, {List<String>? avatars, String? badgeText, VoidCallback? onTap}) {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -961,7 +1051,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ],
                   ),
                 ),
-                if (avatars != null) ...[
+                if (avatars != null && avatars.isNotEmpty) ...[
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -974,7 +1064,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           ),
                           child: CircleAvatar(
                             radius: 8,
-                            backgroundImage: NetworkImage(url),
+                            backgroundImage: NetworkImage(
+                              url.isNotEmpty 
+                                  ? url 
+                                  : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=100'
+                            ),
                           ),
                         ),
                       )),

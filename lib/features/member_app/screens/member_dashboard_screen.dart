@@ -8,6 +8,7 @@ import 'member_training_screen.dart';
 import 'member_diet_screen.dart';
 
 import 'member_notifications_screen.dart';
+import '../../dashboard/gym_switcher_bottom_sheet.dart';
 
 class MemberDashboardScreen extends StatefulWidget {
   const MemberDashboardScreen({super.key});
@@ -117,6 +118,30 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen>
                                     ),
                                   ),
                                 ],
+                              ),
+                              const SizedBox(height: 4),
+                              GestureDetector(
+                                onTap: () {
+                                  GymSwitcherBottomSheet.show(context);
+                                },
+                                child: MouseRegion(
+                                  cursor: SystemMouseCursors.click,
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        'Member • ${vm.gymName}',
+                                        style: GoogleFonts.inter(fontSize: 11, color: AppTheme.primary, fontWeight: FontWeight.w600),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      const Icon(
+                                        Icons.arrow_drop_down_rounded,
+                                        size: 16,
+                                        color: AppTheme.primary,
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ),
                             ],
                           ),

@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../core/theme/theme.dart';
 import '../../../core/widgets/custom_button.dart';
+import 'package:provider/provider.dart';
+import '../../../core/repository/gym_repository.dart';
+import '../../authentication/auth_viewmodel.dart';
+import '../../../core/models/member.dart';
 
 class NewRequestScreen extends StatefulWidget {
   const NewRequestScreen({super.key});
@@ -155,11 +159,71 @@ class _NewRequestScreenState extends State<NewRequestScreen> {
               CustomButton(
                 text: 'Submit Request',
                 color: AppTheme.primary,
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Request submitted successfully!'), backgroundColor: AppTheme.success),
-                  );
-                  Navigator.pop(context);
+                onPressed: () async {
+                  final authVm = Provider.of<AuthViewModel>(context, listen: false);
+                  final repo = Provider.of<GymRepository>(context, listen: false);
+                  final profileUserId = authVm.currentProfile?.id ?? authVm.currentUser?.id;
+
+                  if (profileUserId == null) return;
+                  final matchingStaff = repo.getStaff().where((s) => s.userId == profileUserId).toList();
+                  final staff = matchingStaff.isNotEmpty ? matchingStaff.first : null;
+
+                  if (staff == null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Staff profile not found.'), backgroundColor: AppTheme.danger),
+                    );
+                    return;
+                  }
+
+                  final gymId = staff.gymId;
+                  final staffId = staff.id;
+                  final reason = _reasonController.text.trim();
+                  final countVal = double.tryParse(_amountController.text) ?? 1.0;
+
+                  if (reason.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Please enter a reason.'), backgroundColor: AppTheme.danger),
+                    );
+                    return;
+                  }
+
+                  try {
+                    if (_selectedType == 'Advance Salary') {
+                      await repo.saveSalaryAdvanceOffline(
+                        gymId: gymId,
+                        staffId: staffId,
+                        amount: countVal,
+                        reason: reason,
+                        date: DateTime.now().toIso8601String(),
+                        status: 'Pending', // Sent as pending request!
+                      );
+                    } else {
+                      // Holiday/Leave Request
+                      final start = DateTime.now();
+                      final end = start.add(Duration(days: countVal.toInt() - 1));
+                      await repo.createLeaveRequestOffline(
+                        gymId: gymId,
+                        staffId: staffId,
+                        startDate: start.toIso8601String(),
+                        endDate: end.toIso8601String(),
+                        reason: reason,
+                        leaveType: 'Casual', // Default leave type
+                      );
+                    }
+
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Request submitted successfully!'), backgroundColor: AppTheme.success),
+                      );
+                      Navigator.pop(context, true);
+                    }
+                  } catch (e) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Failed to submit request: $e'), backgroundColor: AppTheme.danger),
+                      );
+                    }
+                  }
                 },
               ),
               const SizedBox(height: 20),
