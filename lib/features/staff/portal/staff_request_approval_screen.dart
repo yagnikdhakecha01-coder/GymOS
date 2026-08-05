@@ -346,6 +346,8 @@ class _StaffRequestApprovalScreenState extends State<StaffRequestApprovalScreen>
     setState(() => _isLoading = true);
     try {
       await vm.updateLeaveStatus(id, status);
+      final repo = Provider.of<GymRepository>(context, listen: false);
+      repo.triggerBackgroundSync();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Leave request $status successfully!'), backgroundColor: AppTheme.success),
@@ -366,6 +368,8 @@ class _StaffRequestApprovalScreenState extends State<StaffRequestApprovalScreen>
     setState(() => _isLoading = true);
     try {
       await vm.updateSalaryAdvanceStatus(id, status);
+      final repo = Provider.of<GymRepository>(context, listen: false);
+      repo.triggerBackgroundSync();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Advance request $status successfully!'), backgroundColor: AppTheme.success),

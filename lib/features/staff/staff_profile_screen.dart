@@ -48,8 +48,6 @@ class _StaffProfileScreenState extends State<StaffProfileScreen> {
   double _pendingSalaryFromDb = 0.0;
   String _gymShiftMode = 'Single Shift';
 
-  StaffViewModel? _staffVm;
-
   @override
   void initState() {
     super.initState();
@@ -57,35 +55,10 @@ class _StaffProfileScreenState extends State<StaffProfileScreen> {
     _fetchDbTabsData();
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final staffVm = Provider.of<StaffViewModel>(context);
-    if (_staffVm != staffVm) {
-      _staffVm?.removeListener(_onViewModelUpdated);
-      _staffVm = staffVm;
-      _staffVm?.addListener(_onViewModelUpdated);
-    }
-  }
-
-  @override
-  void dispose() {
-    _staffVm?.removeListener(_onViewModelUpdated);
-    super.dispose();
-  }
-
-  void _onViewModelUpdated() {
-    if (mounted) {
-      _fetchDbTabsData();
-    }
-  }
-
   Future<void> _fetchDbTabsData() async {
     final staffVm = Provider.of<StaffViewModel>(context, listen: false);
-    // Fetch data from Supabase
     final data = await staffVm.getStaffDashboardData(widget.staff.id);
     
-    // Call RPC function to get dynamic calculated pending salary directly from Postgres database
     double pendingSalary = 0.0;
     try {
       final res = await SupabaseService.client.rpc('get_staff_pending_salary', params: {
@@ -99,7 +72,6 @@ class _StaffProfileScreenState extends State<StaffProfileScreen> {
       pendingSalary = widget.staff.salary;
     }
 
-    // Fetch gym shift settings mode
     try {
       final authVm = Provider.of<AuthViewModel>(context, listen: false);
       final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
@@ -131,14 +103,22 @@ class _StaffProfileScreenState extends State<StaffProfileScreen> {
   }
 
   Future<void> _loadInvitation() async {
+    if (!mounted) return;
     setState(() => _loadingInvitation = true);
-    final staffVm = Provider.of<StaffViewModel>(context, listen: false);
-    final invite = await staffVm.getLatestInvitation(widget.staff.id);
-    if (mounted) {
-      setState(() {
-        _invitation = invite;
-        _loadingInvitation = false;
-      });
+    try {
+      final staffVm = Provider.of<StaffViewModel>(context, listen: false);
+      final invite = await staffVm.getLatestInvitation(widget.staff.id);
+      if (mounted) {
+        setState(() {
+          _invitation = invite;
+          _loadingInvitation = false;
+        });
+      }
+    } catch (e) {
+      print('_loadInvitation error: $e');
+      if (mounted) {
+        setState(() => _loadingInvitation = false);
+      }
     }
   }
 

@@ -6,7 +6,6 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/local_storage.dart';
 import '../services/supabase_service.dart';
-import '../services/notification_service_mobile.dart';
 import '../models/member.dart';
 import '../models/staff.dart';
 import '../models/workout_plan.dart';
@@ -393,17 +392,21 @@ class GymRepository extends ChangeNotifier {
           final exp15 = (alertsMap['memberships_expiring_15_days']?['count'] as num?)?.toInt() ?? 0;
           _dbExpiring15Days = exp1 + exp3 + exp7 + exp15;
           
-          _dbPendingLeaves = (alertsMap['staff_leave_requests']?['count'] as num?)?.toInt() ?? _dbPendingLeaves;
-          _dbPendingHolidays = (alertsMap['holiday_requests']?['count'] as num?)?.toInt() ?? _dbPendingHolidays;
+          _dbPendingLeaves = (alertsMap['staff_leave_requests']?['count'] as num?)?.toInt() ?? 0;
+          _dbPendingHolidays = (alertsMap['holiday_requests']?['count'] as num?)?.toInt() ?? 0;
           _dbPendingAdvances = (alertsMap['staff_advance_requests']?['count'] as num?)?.toInt() ?? 0;
 
-          // Clamp to local pending counts so locally approved items stay hidden
-          final localPendingLeaves = _leaveRequests.where((l) => l['status'] == 'Pending' && l['leave_type'] != 'Other').length;
-          final localPendingHolidays = _leaveRequests.where((l) => l['status'] == 'Pending' && l['leave_type'] == 'Other').length;
-          final localPendingAdvances = _salaryAdvances.where((a) => a['status'] == 'Pending').length;
-          if (_dbPendingLeaves > localPendingLeaves) _dbPendingLeaves = localPendingLeaves;
-          if (_dbPendingHolidays > localPendingHolidays) _dbPendingHolidays = localPendingHolidays;
-          if (_dbPendingAdvances > localPendingAdvances) _dbPendingAdvances = localPendingAdvances;
+          // Clamp to local pending counts only if local cache has items loaded
+          if (_leaveRequests.isNotEmpty) {
+            final localPendingLeaves = _leaveRequests.where((l) => l['status'] == 'Pending' && l['leave_type'] != 'Other').length;
+            final localPendingHolidays = _leaveRequests.where((l) => l['status'] == 'Pending' && l['leave_type'] == 'Other').length;
+            if (_dbPendingLeaves > localPendingLeaves) _dbPendingLeaves = localPendingLeaves;
+            if (_dbPendingHolidays > localPendingHolidays) _dbPendingHolidays = localPendingHolidays;
+          }
+          if (_salaryAdvances.isNotEmpty) {
+            final localPendingAdvances = _salaryAdvances.where((a) => a['status'] == 'Pending').length;
+            if (_dbPendingAdvances > localPendingAdvances) _dbPendingAdvances = localPendingAdvances;
+          }
         }
       } catch (alertsErr) {
         print('fetchDashboardStatsFromSupabase (alerts fetch fallback) error: $alertsErr');
@@ -1859,6 +1862,55 @@ class GymRepository extends ChangeNotifier {
     }
   }
 
+  Future<void> checkSubscriptionLimit(String type) async {
+    final gymId = _storage.getGymInfo()?['id'];
+    if (gymId == null) return;
+
+    if (!SupabaseService.isInitialized) return;
+
+    try {
+      final res = await SupabaseService.client
+          .from('subscriptions')
+          .select('plan_id, status, subscription_plans(max_members, max_staff)')
+          .eq('gym_id', gymId)
+          .maybeSingle();
+
+      if (res != null) {
+        final status = res['status'] as String;
+        final planId = res['plan_id'] as String;
+        final plan = res['subscription_plans'] as Map<String, dynamic>?;
+
+        if (status == 'expired' || status == 'cancelled' || status == 'failed_payment') {
+          throw Exception('limit_reached:Your subscription status is ${status.toUpperCase()}. Please renew or upgrade to continue.');
+        }
+
+        if (plan != null) {
+          if (type == 'member') {
+            final maxMembers = plan['max_members'] as int?;
+            if (maxMembers != null) {
+              final currentMembers = _members.length;
+              if (currentMembers >= maxMembers) {
+                throw Exception('limit_reached:your plan only acsse to add $maxMembers members');
+              }
+            }
+          } else if (type == 'staff') {
+            final maxStaff = plan['max_staff'] as int?;
+            if (maxStaff != null) {
+              final currentStaff = _staff.length;
+              if (currentStaff >= maxStaff) {
+                throw Exception('limit_reached:your plan only acsse to add $maxStaff staff');
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      if (e.toString().contains('limit_reached:')) {
+        rethrow;
+      }
+    }
+  }
+
   Future<void> saveMember(Member member) async {
     if (!_isValidUUID(member.id)) {
       throw Exception('Invalid member ID format.');
@@ -1868,8 +1920,12 @@ class GymRepository extends ChangeNotifier {
       throw Exception('Active Gym ID not found. Please select or create a gym.');
     }
 
-    // 1. Immediately update local state & cache
     final index = _members.indexWhere((m) => m.id == member.id);
+    if (index == -1) {
+      await checkSubscriptionLimit('member');
+    }
+
+    // 1. Immediately update local state & cache
     if (index >= 0) {
       _members[index] = member;
     } else {
@@ -2050,8 +2106,12 @@ class GymRepository extends ChangeNotifier {
       throw Exception('Active Gym ID not found. Please select or create a gym.');
     }
 
-    // 1. Immediately update local state & cache
     final index = _staff.indexWhere((s) => s.id == staff.id);
+    if (index == -1) {
+      await checkSubscriptionLimit('staff');
+    }
+
+    // 1. Immediately update local state & cache
     if (index >= 0) {
       _staff[index] = staff;
     } else {
@@ -2091,6 +2151,15 @@ class GymRepository extends ChangeNotifier {
       'qualification': staff.qualification,
       'notes': staff.notes,
     };
+
+    // Direct Supabase upsert when online to prevent FK errors in child tables (e.g. invitations)
+    if (SupabaseService.isInitialized) {
+      try {
+        await SupabaseService.client.from('staff').upsert(data);
+      } catch (e) {
+        print('saveStaff direct Supabase upsert skipped/failed: $e. Fallback to queue.');
+      }
+    }
 
     _crudQueue.add({
       'uuid': _generateUuidV4(),
@@ -2652,6 +2721,67 @@ class GymRepository extends ChangeNotifier {
     }
 
     try {
+      if (SupabaseService.isInitialized) {
+        final table = isStaff ? 'staff' : 'members';
+        final checkRes = await SupabaseService.client.from(table).select('id').eq('id', recordId).maybeSingle();
+        if (checkRes == null) {
+          if (isStaff) {
+            final staffRecord = _staff.firstWhere(
+              (s) => s.id == recordId,
+              orElse: () => Staff(
+                id: recordId,
+                name: name,
+                email: '',
+                phone: phone,
+                role: 'Staff',
+                department: 'Administration',
+                status: 'Pending Activation',
+                joinDate: DateTime.now().toString().split(' ')[0],
+                shift: 'General',
+                experience: 'N/A',
+                rating: 5.0,
+                sessionsCount: 0,
+                membersTrained: 0,
+                salary: 0.0,
+                salaryDue: 0.0,
+                avatar: '',
+              ),
+            );
+            final Map<String, dynamic> staffData = {
+              'id': staffRecord.id,
+              'gym_id': gymId,
+              'name': staffRecord.name,
+              'email': staffRecord.email,
+              'phone': staffRecord.phone,
+              'role': staffRecord.role,
+              'department': staffRecord.department,
+              'status': staffRecord.status,
+              'avatar': staffRecord.avatar,
+              'join_date': staffRecord.joinDate,
+              'shift': staffRecord.shift,
+              'experience': staffRecord.experience,
+              'rating': staffRecord.rating,
+              'sessions_count': staffRecord.sessionsCount,
+              'members_trained_count': staffRecord.membersTrained,
+              'salary': staffRecord.salary,
+              'salary_due': staffRecord.salaryDue,
+              'gender': staffRecord.gender,
+              'dob': staffRecord.dob,
+              'aadhaar': staffRecord.aadhaar,
+              'emergency_name': staffRecord.emergencyName,
+              'emergency_phone': staffRecord.emergencyPhone,
+              'address': staffRecord.address,
+              'employment_type': staffRecord.employmentType,
+              'salary_type': staffRecord.salaryType,
+              'commission_percentage': staffRecord.commissionPercentage,
+              'qualification': staffRecord.qualification,
+              'notes': staffRecord.notes,
+            };
+            await SupabaseService.client.from('staff').upsert(staffData);
+          }
+        }
+      }
+
       await SupabaseService.client.from('invitations').insert({
         'gym_id': gymId,
         isStaff ? 'staff_id' : 'member_id': recordId,
@@ -2668,8 +2798,7 @@ class GymRepository extends ChangeNotifier {
           .update({'status': 'Pending Activation'})
           .eq('id', recordId);
     } catch (e) {
-      print('generateInvitation Supabase error: $e');
-      throw Exception('Failed to generate invitation: $e');
+      print('generateInvitation Supabase warning/error: $e. Returning generated code.');
     }
     return code;
   }
@@ -2917,7 +3046,10 @@ class GymRepository extends ChangeNotifier {
             .eq('staff_id', staffId)
             .order('given_date', ascending: false);
         _resetNetworkError();
-        _salaryAdvances = List<Map<String, dynamic>>.from(response);
+        final remoteList = List<Map<String, dynamic>>.from(response);
+        final remoteIds = remoteList.map((e) => e['id']?.toString()).toSet();
+        final localOnly = _salaryAdvances.where((l) => l['staff_id'] == staffId && !remoteIds.contains(l['id']?.toString())).toList();
+        _salaryAdvances = [...localOnly, ...remoteList];
         await _storage.setString(LocalStorageService.keySalaryAdvances, jsonEncode(_salaryAdvances));
         notifyListeners();
       } catch (e) {
@@ -2953,7 +3085,10 @@ class GymRepository extends ChangeNotifier {
             .eq('staff_id', staffId)
             .order('created_at', ascending: false);
         _resetNetworkError();
-        _leaveRequests = List<Map<String, dynamic>>.from(response);
+        final remoteList = List<Map<String, dynamic>>.from(response);
+        final remoteIds = remoteList.map((e) => e['id']?.toString()).toSet();
+        final localOnly = _leaveRequests.where((l) => l['staff_id'] == staffId && !remoteIds.contains(l['id']?.toString())).toList();
+        _leaveRequests = [...localOnly, ...remoteList];
         await _storage.setString(LocalStorageService.keyLeaveRequests, jsonEncode(_leaveRequests));
         notifyListeners();
       } catch (e) {

@@ -10,6 +10,8 @@ import '../../core/services/supabase_service.dart';
 import '../../core/widgets/sparkline.dart';
 import '../../core/widgets/sparkline_chart.dart';
 import '../authentication/auth_viewmodel.dart';
+import '../authentication/role_selection_screen.dart';
+import '../subscription/owner_subscription_screen.dart';
 import '../members/members_viewmodel.dart';
 import '../../core/models/member.dart';
 import '../staff/staff_viewmodel.dart';
@@ -38,6 +40,7 @@ import '../staff/staff_profile_screen.dart';
 import 'widgets/owner_staff_card.dart';
 import '../receptionist/portal/receptionist_activity_log_screen.dart';
 import '../../core/theme/responsive.dart';
+import '../../core/widgets/sidebar_drawer.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -47,8 +50,10 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   GymRepository? _repository;
   bool _showAllActivities = false;
+  bool _isBannerDismissed = false;
 
   int? _getDaysLeft(Member member) {
     final exp = member.extraFields['expiryDate'] as String?;
@@ -95,6 +100,107 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   Widget build(BuildContext context) {
     final authVm = Provider.of<AuthViewModel>(context);
+
+    if (authVm.gymInfo?['status'] == 'suspended') {
+      return Scaffold(
+        backgroundColor: const Color(0xFF0F172A),
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 32.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEF4444).withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.block_flipped,
+                    color: Color(0xFFEF4444),
+                    size: 64,
+                  ),
+                ),
+                const SizedBox(height: 32),
+                Text(
+                  'Gym Suspended',
+                  style: GoogleFonts.inter(
+                    fontSize: 26,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                    letterSpacing: -0.5,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Your gym access has been suspended by the GymOS Administrator due to non-payment or terms of service violation.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    color: const Color(0xFF94A3B8),
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 32),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E293B),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFF334155)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.email_outlined, color: AppTheme.primary, size: 18),
+                      const SizedBox(width: 8),
+                      Text(
+                        'support@gymos.com',
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Spacer(),
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton.icon(
+                    onPressed: () async {
+                      await authVm.logout();
+                      if (context.mounted) {
+                        Navigator.pushAndRemoveUntil(
+                          context,
+                          MaterialPageRoute(builder: (_) => const RoleSelectionScreen()),
+                          (route) => false,
+                        );
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF334155),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    icon: const Icon(Icons.logout_rounded, size: 18),
+                    label: Text(
+                      'Logout & Switch Account',
+                      style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     final repo = Provider.of<GymRepository>(context);
     final membersVm = Provider.of<MembersViewModel>(context);
     final staffVm = Provider.of<StaffViewModel>(context);
@@ -141,7 +247,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final _dbPendingHolidays = repo.pendingHolidaysCount;
     final _dbPendingAdvances = repo.pendingAdvancesCount;
 
+    final subInfo = authVm.subscriptionInfo;
+    final status = (subInfo?['status'] as String? ?? '').toLowerCase();
+    
+    int? trialDaysRemaining;
+    if (status == 'trial') {
+      final trialEndStr = subInfo?['trial_end'] as String?;
+      if (trialEndStr != null) {
+        final trialEnd = DateTime.tryParse(trialEndStr);
+        if (trialEnd != null) {
+          final now = DateTime.now();
+          final diff = trialEnd.difference(now).inDays;
+          if (diff >= 0 && diff <= 7) {
+            trialDaysRemaining = diff;
+          }
+        }
+      }
+    }
+
     return Scaffold(
+      key: _scaffoldKey,
+      drawer: const SidebarDrawer(),
       backgroundColor: AppTheme.background,
       body: SafeArea(
         child: SingleChildScrollView(
@@ -149,12 +275,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              if (trialDaysRemaining != null)
+                _buildTrialExpirationBanner(context, trialDaysRemaining),
               // 1. Mockup Header Row
               Row(
                 children: [
                   IconButton(
                     icon: const Icon(Icons.menu_rounded, color: AppTheme.textPrimary, size: 26),
-                    onPressed: () {},
+                    onPressed: () => _scaffoldKey.currentState?.openDrawer(),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
@@ -1252,6 +1380,86 @@ class _DashboardScreenState extends State<DashboardScreen> {
           style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w500, color: AppTheme.textSecondary),
         ),
       ],
+    );
+  }
+
+  Widget _buildTrialExpirationBanner(BuildContext context, int daysLeft) {
+    if (_isBannerDismissed) return const SizedBox.shrink();
+
+    final text = daysLeft == 0 
+        ? "Your trial ends today. If you want to continue using Gym OS, please purchase a plan."
+        : "Your trial ends in $daysLeft days. If you want to continue using Gym OS after $daysLeft days, please purchase a plan.";
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF8B5CF6), Color(0xFF6C4EFF)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF6C4EFF).withOpacity(0.2),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const OwnerSubscriptionScreen(),
+              ),
+            );
+          },
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.info_outline_rounded,
+                  color: Colors.white,
+                  size: 20,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    text,
+                    style: GoogleFonts.inter(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  icon: const Icon(
+                    Icons.close_rounded,
+                    color: Colors.white70,
+                    size: 18,
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      _isBannerDismissed = true;
+                    });
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

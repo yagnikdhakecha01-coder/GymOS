@@ -20,6 +20,8 @@ import 'backup_restore_screen.dart';
 import '../receptionist/portal/receptionist_activity_log_screen.dart';
 import '../dashboard/gym_switcher_bottom_sheet.dart';
 
+import '../subscription/owner_subscription_screen.dart';
+
 class MoreScreen extends StatelessWidget {
   const MoreScreen({super.key});
 
@@ -168,6 +170,21 @@ class MoreScreen extends StatelessWidget {
                     },
                   ),
                   const Divider(height: 1),
+
+                  // Subscription & Billing (Owner only)
+                  if (authVm.selectedRole?.toLowerCase() == 'owner') ...[
+                    _buildSettingTile(
+                      context,
+                      icon: Icons.card_membership_rounded,
+                      color: AppTheme.primary,
+                      title: 'Subscription & Billing',
+                      subtitle: 'Manage your GymOS plan, usage, invoices',
+                      onTap: () {
+                        Navigator.push(context, AppRouter.slideRoute(const OwnerSubscriptionScreen()));
+                      },
+                    ),
+                    const Divider(height: 1),
+                  ],
 
                   // Switch Profile Item
                   _buildSettingTile(

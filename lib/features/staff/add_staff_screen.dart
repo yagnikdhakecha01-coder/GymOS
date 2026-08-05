@@ -11,6 +11,10 @@ import '../../core/models/staff.dart';
 import 'staff_viewmodel.dart';
 import 'staff_success_dialog.dart';
 import '../authentication/auth_viewmodel.dart';
+import '../subscription/owner_subscription_screen.dart';
+import '../../core/navigation/app_router.dart';
+import '../../core/repository/gym_repository.dart';
+import '../subscription/subscription_limit_screen.dart';
 
 class AddStaffScreen extends StatefulWidget {
   const AddStaffScreen({super.key});
@@ -377,8 +381,70 @@ class _AddStaffScreenState extends State<AddStaffScreen> {
     return '${hexStr(8)}-${hexStr(4)}-4${hexStr(3)}-$y${hexStr(3)}-${hexStr(12)}';
   }
 
+  void _showUpgradeDialog(BuildContext context, String message) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.star_rounded, color: AppTheme.warning, size: 24),
+            const SizedBox(width: 10),
+            Text(
+              'Upgrade Subscription',
+              style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 18),
+            ),
+          ],
+        ),
+        content: Text(
+          message,
+          style: GoogleFonts.inter(fontSize: 14, color: AppTheme.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.inter(color: AppTheme.textMuted, fontWeight: FontWeight.w600),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              Navigator.push(context, AppRouter.slideRoute(const OwnerSubscriptionScreen()));
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primary),
+            child: Text(
+              'Upgrade Now',
+              style: GoogleFonts.inter(fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // --- Save Staff logic ---
   Future<void> _handleSaveStaff() async {
+    // Check subscription limits first
+    try {
+      final gymRepo = Provider.of<GymRepository>(context, listen: false);
+      await gymRepo.checkSubscriptionLimit('staff');
+    } catch (e) {
+      if (e.toString().contains('limit_reached:')) {
+        final message = e.toString().split('limit_reached:')[1];
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => SubscriptionLimitScreen(
+              limitType: 'staff',
+              message: message,
+            ),
+          ),
+        );
+        return;
+      }
+    }
+
     setState(() => _isLoading = true);
     final staffVm = Provider.of<StaffViewModel>(context, listen: false);
 

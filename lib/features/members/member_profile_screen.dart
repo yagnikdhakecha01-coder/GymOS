@@ -729,12 +729,29 @@ Thank you.''';
     final double pendingAmount = member.pendingAmount;
     final int percentPaid = finalAmount > 0 ? ((alreadyReceived / finalAmount) * 100).toInt() : 0;
 
-    // Optional health info helper
-    final dob = member.extraFields['dob'] ?? '15 Aug 1998 (26 Yrs)';
-    final gender = member.extraFields['gender'] ?? 'Male';
-    final height = member.extraFields['height'] ?? '175 cm';
-    final weight = member.extraFields['weight'] ?? '72 kg';
-    final bloodGroup = member.extraFields['blood_group'] ?? member.extraFields['bloodGroup'] ?? 'O+';
+    // Health & Measurements extraction
+    final Map<String, dynamic> extra = member.extraFields;
+    final Map<String, dynamic> measurements = (extra['measurements'] is Map<String, dynamic>)
+        ? extra['measurements'] as Map<String, dynamic>
+        : {};
+
+    final String dob = (extra['dob']?.toString().isNotEmpty == true) ? extra['dob'].toString().split('T')[0] : '—';
+    final String gender = extra['gender']?.toString() ?? '—';
+    final String bloodGroup = extra['bloodGroup']?.toString() ?? extra['blood_group']?.toString() ?? '—';
+
+    final String hVal = measurements['height']?.toString() ?? extra['height']?.toString() ?? '';
+    final String wVal = measurements['weight']?.toString() ?? extra['weight']?.toString() ?? '';
+    final String cVal = measurements['chest']?.toString() ?? extra['chest']?.toString() ?? '';
+    final String waVal = measurements['waist']?.toString() ?? extra['waist']?.toString() ?? '';
+    final String bVal = measurements['biceps']?.toString() ?? extra['biceps']?.toString() ?? '';
+    final String hpVal = measurements['hip']?.toString() ?? extra['hip']?.toString() ?? '';
+
+    final String height = hVal.isNotEmpty ? '$hVal cm' : '—';
+    final String weight = wVal.isNotEmpty ? '$wVal kg' : '—';
+    final String chest = cVal.isNotEmpty ? '$cVal in' : '—';
+    final String waist = waVal.isNotEmpty ? '$waVal in' : '—';
+    final String biceps = bVal.isNotEmpty ? '$bVal in' : '—';
+    final String hip = hpVal.isNotEmpty ? '$hpVal in' : '—';
 
     final hasInvitation = _invitation != null;
     final isActivated = hasInvitation && (_invitation!['code_used'] == true);
@@ -1007,6 +1024,37 @@ Thank you.''';
               _buildRowInfo(Icons.email_outlined, 'Email', member.email),
               const Divider(height: 1),
               _buildRowInfo(Icons.location_on_outlined, 'Address', member.extraFields['address'] ?? 'Indore, Madhya Pradesh'),
+            ],
+          ),
+        ),
+        const SizedBox(height: 24),
+
+        // 5. Body Measurements Section
+        Text('BODY MEASUREMENTS', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textSecondary, letterSpacing: 0.5)),
+        const SizedBox(height: 10),
+        CustomCard(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Expanded(child: _buildMeasurementTile(Icons.height_rounded, 'Height', height)),
+                  const SizedBox(width: 12),
+                  Expanded(child: _buildMeasurementTile(Icons.monitor_weight_outlined, 'Weight', weight)),
+                  const SizedBox(width: 12),
+                  Expanded(child: _buildMeasurementTile(Icons.fitness_center_rounded, 'Chest', chest)),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(child: _buildMeasurementTile(Icons.straighten_rounded, 'Waist', waist)),
+                  const SizedBox(width: 12),
+                  Expanded(child: _buildMeasurementTile(Icons.accessibility_new_rounded, 'Biceps', biceps)),
+                  const SizedBox(width: 12),
+                  Expanded(child: _buildMeasurementTile(Icons.attribution_rounded, 'Hip', hip)),
+                ],
+              ),
             ],
           ),
         ),
@@ -1504,6 +1552,41 @@ Thank you.''';
             BottomNavigationBarItem(icon: Icon(Icons.more_horiz_rounded), label: 'More'),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildMeasurementTile(IconData icon, String label, String value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceGray.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppTheme.border.withOpacity(0.5)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 14, color: AppTheme.primary),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  label,
+                  style: GoogleFonts.inter(fontSize: 10, color: AppTheme.textSecondary, fontWeight: FontWeight.w500),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+          ),
+        ],
       ),
     );
   }

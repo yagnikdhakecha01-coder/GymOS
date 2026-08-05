@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../core/theme/theme.dart';
 import 'attendance_viewmodel.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'owner_success_screen.dart';
 
 class OwnerQRScannerScreen extends StatefulWidget {
@@ -40,11 +41,30 @@ class _OwnerQRScannerScreenState extends State<OwnerQRScannerScreen>
       CurvedAnimation(parent: _animController, curve: Curves.easeInOut),
     );
 
-    Future.delayed(const Duration(milliseconds: 500), () {
-      if (mounted) {
-        setState(() => _showScanner = true);
+    _requestCameraPermission();
+  }
+
+  Future<void> _requestCameraPermission() async {
+    try {
+      var status = await Permission.camera.status;
+      if (!status.isGranted) {
+        status = await Permission.camera.request();
       }
-    });
+      if (status.isGranted) {
+        // Small delay to let camera hardware initialize in release builds
+        await Future.delayed(const Duration(milliseconds: 300));
+        try {
+          await _scannerController.start();
+        } catch (e) {
+          print('Scanner controller start error: $e');
+        }
+      }
+    } catch (e) {
+      print('Camera permission check error: $e');
+    }
+    if (mounted) {
+      setState(() => _showScanner = true);
+    }
   }
 
   @override

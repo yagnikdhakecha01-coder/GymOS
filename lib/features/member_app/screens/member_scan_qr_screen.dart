@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../../core/theme/theme.dart';
 import '../member_app_viewmodel.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'member_check_in_success.dart';
 import 'member_check_in_failure.dart';
 import '../../../core/repository/gym_repository.dart';
@@ -29,6 +30,26 @@ class _MemberScanQRScreenState extends State<MemberScanQRScreen>
       vsync: this,
       duration: const Duration(seconds: 2),
     )..repeat(reverse: true);
+    _requestCameraPermission();
+  }
+
+  Future<void> _requestCameraPermission() async {
+    try {
+      var status = await Permission.camera.status;
+      if (!status.isGranted) {
+        status = await Permission.camera.request();
+      }
+      if (status.isGranted) {
+        await Future.delayed(const Duration(milliseconds: 300));
+        try {
+          await _scannerController.start();
+        } catch (e) {
+          print('Scanner controller start error: $e');
+        }
+      }
+    } catch (e) {
+      print('Camera permission error: $e');
+    }
   }
 
   @override

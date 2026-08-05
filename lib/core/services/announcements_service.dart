@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'supabase_service.dart';
 
 class Announcement {
   final String id;
@@ -22,13 +23,13 @@ class Announcement {
 
   factory Announcement.fromJson(Map<String, dynamic> json) {
     return Announcement(
-      id: json['id'] as String? ?? '',
-      title: json['title'] as String? ?? '',
-      message: json['message'] as String? ?? '',
-      image: json['image'] as String? ?? '',
-      audience: json['audience'] as String? ?? 'All Members',
-      date: json['date'] as String? ?? '',
-      status: json['status'] as String? ?? 'Sent',
+      id: json['id']?.toString() ?? '',
+      title: json['title']?.toString() ?? '',
+      message: json['message']?.toString() ?? json['body']?.toString() ?? '',
+      image: json['image']?.toString() ?? '',
+      audience: json['audience']?.toString() ?? json['target_role']?.toString() ?? 'All Members',
+      date: json['date']?.toString() ?? json['created_at']?.toString() ?? '',
+      status: json['status']?.toString() ?? 'Sent',
     );
   }
 
@@ -48,42 +49,83 @@ class Announcement {
 class AnnouncementsService {
   static const String _keyAnnouncements = 'gymos_announcements';
 
-  static final List<Announcement> _defaultAnnouncements = [
-    Announcement(
-      id: '1',
-      title: 'Independence Day Timing Update 🇮🇳',
-      message: 'On 15th August, the gym will be open only in the morning shift from 6:00 AM to 12:00 PM. Evening shift will remain closed.',
-      image: 'https://images.unsplash.com/photo-1532375810709-75b1da00537c?auto=format&fit=crop&q=80&w=600',
-      audience: 'All Members',
-      date: '12 Aug 2026',
-      status: 'Sent',
-    ),
-    Announcement(
-      id: '2',
-      title: 'New Strength Equipment Arrived! 🏋️',
-      message: 'We have added two new squat racks and a hack squat machine in the strength section. Come check them out!',
-      image: '',
-      audience: 'All Members',
-      date: '10 Aug 2026',
-      status: 'Sent',
-    ),
-  ];
+  static Future<List<Announcement>> getAnnouncements({String? gymId}) async {
+    List<Announcement> announcements = [];
 
-  static Future<List<Announcement>> getAnnouncements() async {
+    if (SupabaseService.isInitialized) {
+      try {
+        final List dbRes = (gymId != null && gymId.isNotEmpty)
+            ? await SupabaseService.client
+                .from('announcements')
+                .select()
+                .eq('gym_id', gymId)
+                .order('created_at', ascending: false)
+            : await SupabaseService.client
+                .from('announcements')
+                .select()
+                .order('created_at', ascending: false);
+
+        if (dbRes.isNotEmpty) {
+          announcements = dbRes.map((e) => Announcement.fromJson(e)).toList();
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString(_keyAnnouncements, jsonEncode(announcements.map((e) => e.toJson()).toList()));
+          return announcements;
+        }
+
+        // Also check public.notifications table
+        final List notifRes = (gymId != null && gymId.isNotEmpty)
+            ? await SupabaseService.client
+                .from('notifications')
+                .select()
+                .eq('gym_id', gymId)
+                .order('created_at', ascending: false)
+            : await SupabaseService.client
+                .from('notifications')
+                .select()
+                .order('created_at', ascending: false);
+
+        if (notifRes.isNotEmpty) {
+          announcements = notifRes.map((e) => Announcement.fromJson(e)).toList();
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString(_keyAnnouncements, jsonEncode(announcements.map((e) => e.toJson()).toList()));
+          return announcements;
+        }
+      } catch (e) {
+        print('AnnouncementsService fetch error: $e');
+      }
+    }
+
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_keyAnnouncements);
-    if (raw == null) {
-      return _defaultAnnouncements;
+    if (raw != null) {
+      final List decoded = jsonDecode(raw);
+      return decoded.map((e) => Announcement.fromJson(e)).toList();
     }
-    final List decoded = jsonDecode(raw);
-    return decoded.map((e) => Announcement.fromJson(e)).toList();
+
+    // Return clean empty list by default - NO FAKE HARDCODED ANNOUNCEMENTS!
+    return [];
   }
 
-  static Future<void> addAnnouncement(Announcement ann) async {
+  static Future<void> addAnnouncement(Announcement ann, {String? gymId}) async {
     final prefs = await SharedPreferences.getInstance();
-    final current = await getAnnouncements();
+    final current = await getAnnouncements(gymId: gymId);
     current.insert(0, ann);
     await prefs.setString(_keyAnnouncements, jsonEncode(current.map((e) => e.toJson()).toList()));
+
+    if (SupabaseService.isInitialized && gymId != null && gymId.isNotEmpty) {
+      try {
+        await SupabaseService.client.from('announcements').insert({
+          'gym_id': gymId,
+          'title': ann.title,
+          'message': ann.message,
+          'image': ann.image,
+          'audience': ann.audience,
+          'status': ann.status,
+        });
+      } catch (e) {
+        print('Error inserting announcement to Supabase: $e');
+      }
+    }
   }
 
   static Future<void> deleteAnnouncement(String id) async {
@@ -91,5 +133,11 @@ class AnnouncementsService {
     final current = await getAnnouncements();
     current.removeWhere((e) => e.id == id);
     await prefs.setString(_keyAnnouncements, jsonEncode(current.map((e) => e.toJson()).toList()));
+
+    if (SupabaseService.isInitialized) {
+      try {
+        await SupabaseService.client.from('announcements').delete().eq('id', id);
+      } catch (_) {}
+    }
   }
 }

@@ -16,6 +16,7 @@ import 'widgets/receptionist_restricted_widget.dart';
 import '../../../core/theme/responsive.dart';
 import 'receptionist_activity_log_screen.dart';
 import '../../dashboard/gym_switcher_bottom_sheet.dart';
+import '../../../core/widgets/sidebar_drawer.dart';
 
 class ReceptionistDashboardScreen extends StatefulWidget {
   const ReceptionistDashboardScreen({super.key});
@@ -25,6 +26,8 @@ class ReceptionistDashboardScreen extends StatefulWidget {
 }
 
 class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScreen> {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+
   @override
   Widget build(BuildContext context) {
     final authVm = Provider.of<AuthViewModel>(context);
@@ -34,6 +37,8 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
     final gymName = authVm.gymInfo?['name'] ?? 'FitZone Gym';
 
     return Scaffold(
+      key: _scaffoldKey,
+      drawer: const SidebarDrawer(),
       backgroundColor: AppTheme.background,
       body: SafeArea(
         child: RefreshIndicator(
@@ -49,6 +54,11 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
                 // 1. Header Section
                 Row(
                   children: [
+                    IconButton(
+                      icon: const Icon(Icons.menu_rounded, color: AppTheme.textPrimary, size: 26),
+                      onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+                    ),
+                    const SizedBox(width: 8),
                     CircleAvatar(
                       radius: 20,
                       backgroundImage: NetworkImage(staff?.avatar ?? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200'),

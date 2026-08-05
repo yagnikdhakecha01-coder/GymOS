@@ -76,65 +76,89 @@ class _PaySalaryScreenState extends State<PaySalaryScreen> {
       final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'] ?? '';
       final staffVm = Provider.of<StaffViewModel>(context, listen: false);
 
-      final draft = await staffVm.getOrCreateSalaryDraft(gymId, widget.staff.id, widget.selectedMonth);
-      if (draft != null) {
-        // Run all queries in parallel to avoid sequential network delays
-        final results = await Future.wait([
-          staffVm.fetchSalaryAdjustments(draft.id),
-          staffVm.fetchStaffCommissions(widget.staff.id),
-          staffVm.fetchStaffSalaryMonthLeaveDetails(widget.staff.id, widget.selectedMonth),
-          staffVm.fetchSalaryAdvances(widget.staff.id),
-        ]);
+      SalaryDraft? draft = await staffVm.getOrCreateSalaryDraft(gymId, widget.staff.id, widget.selectedMonth);
+      draft ??= SalaryDraft(
+        id: 'draft_${widget.staff.id}_${widget.selectedMonth.replaceAll(' ', '_')}',
+        gymId: gymId,
+        staffId: widget.staff.id,
+        salaryMonth: widget.selectedMonth,
+        baseSalary: widget.staff.salary,
+        commissionAmount: 0.0,
+        advanceDeduction: 0.0,
+        otherAdditions: 0.0,
+        otherDeductions: 0.0,
+        netSalary: widget.staff.salary,
+        status: 'Draft',
+      );
 
-        if (mounted) {
-          setState(() {
-            _draft = draft;
-            _dbAdjustments = results[0] as List<SalaryAdjustment>;
-            _commissions = results[1] as List<Map<String, dynamic>>;
-            final leaveDetails = results[2] as Map<String, dynamic>?;
-            _leaveDetails = leaveDetails;
+      final SalaryDraft validDraft = draft;
 
-            // Load leaves from local repository to include newly approved ones instantly!
-            final localLeaves = gymRepository.leaveRequests.where((l) {
-              final isOwn = l['staff_id'] == widget.staff.id;
-              final isApproved = l['status'] == 'Approved';
-              if (!isOwn || !isApproved) return false;
-              try {
-                final start = DateTime.tryParse(l['start_date'] ?? '');
-                final end = DateTime.tryParse(l['end_date'] ?? '');
-                if (start == null || end == null) return false;
-                final startMonth = DateFormat('MMMM yyyy').format(start);
-                final endMonth = DateFormat('MMMM yyyy').format(end);
-                return startMonth == widget.selectedMonth || endMonth == widget.selectedMonth;
-              } catch (_) {
-                return false;
-              }
-            }).toList();
+      final results = await Future.wait([
+        staffVm.fetchSalaryAdjustments(validDraft.id).catchError((_) => <SalaryAdjustment>[]),
+        staffVm.fetchStaffCommissions(widget.staff.id).catchError((_) => <Map<String, dynamic>>[]),
+        staffVm.fetchStaffSalaryMonthLeaveDetails(widget.staff.id, widget.selectedMonth).catchError((_) => null),
+        staffVm.fetchSalaryAdvances(widget.staff.id).catchError((_) => <Map<String, dynamic>>[]),
+      ]);
 
-            _leaves = List<Map<String, dynamic>>.from(localLeaves);
-            _attendanceLogs = List<Map<String, dynamic>>.from(leaveDetails?['attendance_logs'] ?? []);
+      if (mounted) {
+        setState(() {
+          _draft = validDraft;
+          _dbAdjustments = results[0] as List<SalaryAdjustment>;
+          _commissions = results[1] as List<Map<String, dynamic>>;
+          final leaveDetails = results[2] as Map<String, dynamic>?;
+          _leaveDetails = leaveDetails;
 
-            // Load advances from local repository to include newly approved ones instantly!
-            final localAdvances = gymRepository.salaryAdvances.where((a) {
-              final isOwn = a['staff_id'] == widget.staff.id;
-              final isApproved = a['status'] == 'Approved';
-              final isMonth = a['salary_month'] == widget.selectedMonth;
-              return isOwn && isApproved && isMonth;
-            }).toList();
+          // Load leaves from local repository to include newly approved ones instantly!
+          final localLeaves = gymRepository.leaveRequests.where((l) {
+            final isOwn = l['staff_id'] == widget.staff.id;
+            final isApproved = l['status'] == 'Approved';
+            if (!isOwn || !isApproved) return false;
+            try {
+              final start = DateTime.tryParse(l['start_date'] ?? '');
+              final end = DateTime.tryParse(l['end_date'] ?? '');
+              if (start == null || end == null) return false;
+              final startMonth = DateFormat('MMMM yyyy').format(start);
+              final endMonth = DateFormat('MMMM yyyy').format(end);
+              return startMonth == widget.selectedMonth || endMonth == widget.selectedMonth;
+            } catch (_) {
+              return false;
+            }
+          }).toList();
 
-            _advances = List<Map<String, dynamic>>.from(localAdvances);
-            _isLoading = false;
-          });
-        }
-      } else {
-        if (mounted) {
-          setState(() => _isLoading = false);
-        }
+          _leaves = List<Map<String, dynamic>>.from(localLeaves);
+          _attendanceLogs = List<Map<String, dynamic>>.from(leaveDetails?['attendance_logs'] ?? []);
+
+          // Load advances from local repository to include newly approved ones instantly!
+          final localAdvances = gymRepository.salaryAdvances.where((a) {
+            final isOwn = a['staff_id'] == widget.staff.id;
+            final isApproved = a['status'] == 'Approved';
+            final isMonth = a['salary_month'] == widget.selectedMonth;
+            return isOwn && isApproved && isMonth;
+          }).toList();
+
+          _advances = List<Map<String, dynamic>>.from(localAdvances);
+          _isLoading = false;
+        });
       }
     } catch (e) {
       print('Error loading draft details in background: $e');
       if (mounted) {
-        setState(() => _isLoading = false);
+        setState(() {
+          _draft ??= SalaryDraft(
+            id: 'draft_${widget.staff.id}_${widget.selectedMonth.replaceAll(' ', '_')}',
+            gymId: '',
+            staffId: widget.staff.id,
+            salaryMonth: widget.selectedMonth,
+            baseSalary: widget.staff.salary,
+            commissionAmount: 0.0,
+            advanceDeduction: 0.0,
+            otherAdditions: 0.0,
+            otherDeductions: 0.0,
+            netSalary: widget.staff.salary,
+            status: 'Draft',
+          );
+          _isLoading = false;
+        });
       }
     }
   }

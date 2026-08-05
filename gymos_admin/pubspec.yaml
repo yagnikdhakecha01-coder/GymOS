@@ -1,0 +1,57 @@
+name: gymos_admin
+description: "Gym OS Super Admin Panel - Company Management Console"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State Management
+  provider: ^6.1.5+1
+
+  # Supabase
+  supabase_flutter: ^2.8.0
+
+  # Typography
+  google_fonts: ^8.2.0
+
+  # Date/Number Formatting
+  intl: ^0.20.3
+
+  # Charts
+  fl_chart: ^0.70.2
+
+  # Data Tables
+  data_table_2: ^2.5.15
+
+  # Export
+  csv: ^6.0.0
+
+  # Animations
+  flutter_staggered_animations: ^1.1.1
+
+  # Loading
+  shimmer: ^3.0.0
+
+  # URL
+  url_launcher: ^6.2.5
+
+  # Icons
+  cupertino_icons: ^1.0.8
+
+  # Image Picker
+  image_picker: ^1.1.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - .env

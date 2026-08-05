@@ -57,14 +57,13 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
 
       if (data['staff_leave_requests'] != null) {
         final rpcCount = (data['staff_leave_requests']['count'] as num?)?.toInt() ?? 0;
-        // Use whichever is smaller: the locally counted pending or the RPC count
         data['staff_leave_requests'] = Map<String, dynamic>.from(data['staff_leave_requests']);
-        data['staff_leave_requests']['count'] = rpcCount < pendingLeaves ? rpcCount : pendingLeaves;
+        data['staff_leave_requests']['count'] = repo.leaveRequests.isNotEmpty ? (rpcCount < pendingLeaves ? rpcCount : pendingLeaves) : rpcCount;
       }
       if (data['staff_advance_requests'] != null) {
         final rpcCount = (data['staff_advance_requests']['count'] as num?)?.toInt() ?? 0;
         data['staff_advance_requests'] = Map<String, dynamic>.from(data['staff_advance_requests']);
-        data['staff_advance_requests']['count'] = rpcCount < pendingAdvances ? rpcCount : pendingAdvances;
+        data['staff_advance_requests']['count'] = repo.salaryAdvances.isNotEmpty ? (rpcCount < pendingAdvances ? rpcCount : pendingAdvances) : rpcCount;
       }
 
       return data;

@@ -29,6 +29,10 @@ class AuthViewModel extends ChangeNotifier {
 
   int _unreadNotificationsCount = 0;
 
+  Map<String, dynamic>? _subscriptionInfo;
+  bool _isSubscriptionExpired = false;
+  bool _isOffline = false;
+
   AuthViewModel(this._storage, this._gymRepository) {
     try {
       _isLoggedIn = SupabaseService.client.auth.currentSession != null;
@@ -50,6 +54,9 @@ class AuthViewModel extends ChangeNotifier {
   User? get currentUser => _authService.currentUser;
   List<UserGymAssociation> get userAssociations => _userAssociations;
   UserGymAssociation? get activeAssociation => _activeAssociation;
+  Map<String, dynamic>? get subscriptionInfo => _subscriptionInfo;
+  bool get isSubscriptionExpired => _isSubscriptionExpired;
+  bool get isOffline => _isOffline;
 
   void clearUnreadNotifications() {
     _unreadNotificationsCount = 0;
@@ -161,12 +168,41 @@ class AuthViewModel extends ChangeNotifier {
             }
           }
 
-          final info = {
+          Map<String, dynamic> info = {
             'id': assoc.gymId,
             'name': assoc.gymName ?? 'FitZone Gym',
             'gym_code': assoc.gymCode ?? 'MOCK123',
             'owner': profile.email,
+            'status': 'active',
+            'is_locked': false,
           };
+          try {
+            final gymData = await SupabaseService.client
+                .from('gyms')
+                .select()
+                .eq('id', assoc.gymId)
+                .maybeSingle();
+            if (gymData != null) {
+              info = {
+                'id': gymData['id'],
+                'name': gymData['name'],
+                'logo': gymData['logo_url'] ?? '',
+                'logo_url': gymData['logo_url'] ?? '',
+                'gym_code': gymData['gym_code'],
+                'owner': profile.email,
+                'email': gymData['email'] ?? profile.email,
+                'phone': gymData['phone_number'] ?? '',
+                'address': gymData['address'] ?? '',
+                'city': gymData['city'] ?? '',
+                'state': gymData['state'] ?? '',
+                'country': gymData['country'] ?? '',
+                'pin_code': gymData['pin_code'] ?? '',
+                'gym_type': gymData['gym_type'] ?? '',
+                'status': gymData['status'] ?? 'active',
+                'is_locked': gymData['is_locked'] ?? false,
+              };
+            }
+          } catch (_) {}
           _gymInfo = info;
           await _storage.setGymInfo(info);
         } else {
@@ -175,6 +211,7 @@ class AuthViewModel extends ChangeNotifier {
           _activeAssociation = null;
         }
       }
+      await fetchSubscriptionStatus();
       notifyListeners();
     } finally {
       _setLoading(false);
@@ -218,6 +255,8 @@ class AuthViewModel extends ChangeNotifier {
           'country': gymData['country'] ?? '',
           'pin_code': gymData['pin_code'] ?? '',
           'gym_type': gymData['gym_type'] ?? '',
+          'status': gymData['status'] ?? 'active',
+          'is_locked': gymData['is_locked'] ?? false,
         };
         _gymInfo = info;
         await _storage.setGymInfo(info);
@@ -263,6 +302,7 @@ class AuthViewModel extends ChangeNotifier {
     await _gymRepository.reloadForActiveGym();
     _gymRepository.syncAllFromSupabase();
 
+    await fetchSubscriptionStatus();
     notifyListeners();
   }
 
@@ -286,6 +326,38 @@ class AuthViewModel extends ChangeNotifier {
       
       String gymId = 'mock_gym_${DateTime.now().millisecondsSinceEpoch}';
       if (SupabaseService.client != null) {
+        // Count how many gyms this owner already owns
+        final currentGymsRes = await SupabaseService.client
+            .from('user_gym_associations')
+            .select('gym_id')
+            .eq('user_id', uid)
+            .eq('role', 'owner');
+        final currentGymsCount = (currentGymsRes as List).length;
+
+        // Query the owner's active plan limits from their existing subscriptions
+        int maxGymsLimit = 1;
+        String planName = 'Trial';
+
+        if (currentGymsCount > 0) {
+          final existingGymId = currentGymsRes.first['gym_id'];
+          final subRes = await SupabaseService.client
+              .from('subscriptions')
+              .select('plan_id, subscription_plans(max_gyms, name)')
+              .eq('gym_id', existingGymId)
+              .maybeSingle();
+          if (subRes != null) {
+            final plan = subRes['subscription_plans'] as Map<String, dynamic>?;
+            if (plan != null) {
+              maxGymsLimit = plan['max_gyms'] as int? ?? 1;
+              planName = plan['name']?.toString() ?? 'Trial';
+            }
+          }
+        }
+
+        if (currentGymsCount >= maxGymsLimit) {
+          throw Exception('limit_reached:Your current $planName Plan only allows up to $maxGymsLimit Gym(s). Upgrade to Business Plan to manage multiple gyms.');
+        }
+
         final gymData = await SupabaseService.client
             .from('gyms')
             .insert({
@@ -378,21 +450,20 @@ class AuthViewModel extends ChangeNotifier {
           queryParams: {'prompt': 'select_account'},
         );
       } else {
-        // Native Google Sign-In for Android & iOS
+        // Pure Native In-App Google Sign-In for Android & iOS (No Chrome Browser Redirection)
         final GoogleSignIn googleSignIn = GoogleSignIn(
           serverClientId: '225633708172-7st3l0u84rl22ccnaphap3dfpooai0o6.apps.googleusercontent.com',
           scopes: ['email', 'profile'],
         );
 
-        // Force clearing the previously cached Google account session to prompt the account picker list
+        // Reset previous Google session state to ensure account picker prompt pops up natively in-app
         try {
           await googleSignIn.signOut();
-          await googleSignIn.disconnect();
         } catch (_) {}
 
         final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
         if (googleUser == null) {
-          // User cancelled flow
+          // User cancelled native prompt
           return;
         }
 
@@ -401,17 +472,32 @@ class AuthViewModel extends ChangeNotifier {
         final String? accessToken = googleAuth.accessToken;
 
         if (idToken == null) {
-          throw Exception('Failed to obtain Google ID Token.');
+          throw Exception('Google Sign-in failed: Could not obtain Google ID Token.');
         }
 
-        await SupabaseService.client.auth.signInWithIdToken(
-          provider: OAuthProvider.google,
-          idToken: idToken,
-          accessToken: accessToken,
-        );
+        // Authenticate directly with Supabase using native ID Token (Pure In-App Flow)
+        try {
+          await SupabaseService.client.auth.signInWithIdToken(
+            provider: OAuthProvider.google,
+            idToken: idToken,
+          );
+        } catch (tokenErr) {
+          print('signInWithIdToken with idToken only failed: $tokenErr. Retrying with accessToken...');
+          await SupabaseService.client.auth.signInWithIdToken(
+            provider: OAuthProvider.google,
+            idToken: idToken,
+            accessToken: accessToken,
+          );
+        }
 
         await loadCurrentProfile();
       }
+    } on AuthException catch (ae) {
+      print('signInWithGoogle AuthException: $ae');
+      if (ae.statusCode == '400' || ae.message.contains('Internal Server Error')) {
+        throw Exception('Google Auth Configuration Error (400): Please check Google Client ID & SHA-1 in Supabase Dashboard.');
+      }
+      throw Exception('Google Sign-in failed: ${ae.message}');
     } on PlatformException catch (pe) {
       String msg = 'Google Sign-in failed.';
       if (pe.code == 'sign_in_canceled' || pe.code == '12501') {
@@ -468,6 +554,8 @@ class AuthViewModel extends ChangeNotifier {
             'name': gymData['name'],
             'gym_code': gymData['gym_code'],
             'owner': profile.email,
+            'status': gymData['status'] ?? 'active',
+            'is_locked': gymData['is_locked'] ?? false,
           };
           _gymInfo = info;
           await _storage.setGymInfo(info);
@@ -482,6 +570,7 @@ class AuthViewModel extends ChangeNotifier {
           await _storage.setGymInfo(info);
         }
       }
+      await fetchSubscriptionStatus();
       notifyListeners();
     } finally {
       _setLoading(false);
@@ -607,6 +696,8 @@ class AuthViewModel extends ChangeNotifier {
               'country': gymData['country'] ?? '',
               'pin_code': gymData['pin_code'] ?? '',
               'gym_type': gymData['gym_type'] ?? '',
+              'status': gymData['status'] ?? 'active',
+              'is_locked': gymData['is_locked'] ?? false,
             };
             _gymInfo = info;
             await _storage.setGymInfo(info);
@@ -641,6 +732,7 @@ class AuthViewModel extends ChangeNotifier {
         _gymInfo = null;
       }
     }
+    await fetchSubscriptionStatus();
     notifyListeners();
   }
 
@@ -720,6 +812,8 @@ class AuthViewModel extends ChangeNotifier {
             'country': gymData['country'] ?? gymCountry,
             'pin_code': gymData['pin_code'] ?? gymPinCode,
             'gym_type': gymData['gym_type'] ?? gymType,
+            'status': gymData['status'] ?? 'active',
+            'is_locked': gymData['is_locked'] ?? false,
           };
         } catch (_) {
           info = {
@@ -760,6 +854,7 @@ class AuthViewModel extends ChangeNotifier {
       
       _gymInfo = info;
       await _storage.setGymInfo(info);
+      await fetchSubscriptionStatus();
       notifyListeners();
     } finally {
       _setLoading(false);
@@ -793,6 +888,41 @@ class AuthViewModel extends ChangeNotifier {
       return result;
     } finally {
       _setLoading(false);
+    }
+  }
+
+  Future<void> fetchSubscriptionStatus() async {
+    final gymId = activeAssociation?.gymId ?? gymInfo?['id'];
+    if (gymId == null || !SupabaseService.isInitialized) {
+      _isOffline = false;
+      _isSubscriptionExpired = false;
+      _subscriptionInfo = null;
+      notifyListeners();
+      return;
+    }
+    
+    try {
+      final res = await SupabaseService.client
+          .rpc('get_gym_subscription_info', params: {'p_gym_id': gymId})
+          .maybeSingle();
+      
+      _isOffline = false;
+      if (res != null) {
+        _subscriptionInfo = res;
+        _isSubscriptionExpired = res['is_expired'] == true || res['is_locked'] == true;
+      } else {
+        _isSubscriptionExpired = false;
+        _subscriptionInfo = null;
+      }
+      notifyListeners();
+    } catch (e) {
+      print('Error fetching subscription status: $e');
+      final errStr = e.toString();
+      if (errStr.contains('SocketException') || errStr.contains('ClientException') || errStr.contains('Failed host lookup') || errStr.contains('connection failed')) {
+        _isOffline = true;
+        _isSubscriptionExpired = true; // Lock the app when offline as requested
+        notifyListeners();
+      }
     }
   }
 }

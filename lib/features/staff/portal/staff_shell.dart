@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../../core/theme/theme.dart';
+import '../../authentication/auth_viewmodel.dart';
 import 'staff_dashboard_screen.dart';
 import 'staff_clients_screen.dart';
 import '../portal/staff_more_screen.dart';
@@ -26,6 +28,59 @@ class _StaffShellState extends State<StaffShell> {
 
   @override
   Widget build(BuildContext context) {
+    final authVm = Provider.of<AuthViewModel>(context);
+    final isLockedByAdmin = authVm.gymInfo?['is_locked'] == true;
+    final isExpired = authVm.isSubscriptionExpired || isLockedByAdmin;
+
+    if (isExpired) {
+      return Scaffold(
+        backgroundColor: Colors.white,
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEF4444).withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.lock_outline_rounded,
+                    color: Color(0xFFEF4444),
+                    size: 48,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Text(
+                  isLockedByAdmin ? 'Gym Locked by Admin' : 'Gym Access Expired',
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF1E293B),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  isLockedByAdmin
+                      ? 'This gym account has been locked by the administrator. Please contact support.'
+                      : 'This gym\'s active subscription has expired. Please contact the gym owner.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF64748B),
+                    height: 1.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       body: IndexedStack(
         index: _currentIndex,

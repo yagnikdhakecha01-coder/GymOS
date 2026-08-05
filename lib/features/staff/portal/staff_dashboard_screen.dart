@@ -15,6 +15,7 @@ import '../staff_viewmodel.dart';
 import '../../../core/models/staff.dart';
 import '../../../core/services/supabase_service.dart';
 import '../../../core/theme/responsive.dart';
+import '../../../core/widgets/sidebar_drawer.dart';
 
 class StaffDashboardScreen extends StatefulWidget {
   const StaffDashboardScreen({super.key});
@@ -24,6 +25,7 @@ class StaffDashboardScreen extends StatefulWidget {
 }
 
 class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   List<Announcement> _announcements = [];
   bool _isLoadingAnnouncements = true;
 
@@ -91,14 +93,23 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
 
   Future<void> _loadAnnouncements() async {
     try {
-      final data = await AnnouncementsService.getAnnouncements();
-      final filtered = data.where((e) => e.status == 'Sent' && (e.audience == 'All Staff' || e.audience == 'All Members')).toList();
-      setState(() {
-        _announcements = filtered;
-        _isLoadingAnnouncements = false;
-      });
+      final repo = Provider.of<GymRepository>(context, listen: false);
+      final gymId = repo.storage.getGymInfo()?['id'];
+      final data = await AnnouncementsService.getAnnouncements(gymId: gymId);
+      final filtered = data.where((e) {
+        final aud = e.audience.toLowerCase();
+        final st = e.status.toLowerCase();
+        return (st == 'sent' || st.isEmpty) && 
+               (aud.contains('staff') || aud.contains('member') || aud.contains('everyone') || aud == 'all');
+      }).toList();
+      if (mounted) {
+        setState(() {
+          _announcements = filtered;
+          _isLoadingAnnouncements = false;
+        });
+      }
     } catch (_) {
-      setState(() => _isLoadingAnnouncements = false);
+      if (mounted) setState(() => _isLoadingAnnouncements = false);
     }
   }
 
@@ -247,6 +258,8 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
     final displayName = _currentStaff?.name ?? 'Staff';
 
     return Scaffold(
+      key: _scaffoldKey,
+      drawer: const SidebarDrawer(),
       backgroundColor: AppTheme.background,
       body: SafeArea(
         child: _isLoadingDashboard
@@ -266,36 +279,45 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                          Row(
                             children: [
-                              Text(
-                                'Staff Dashboard',
-                                style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                              IconButton(
+                                icon: const Icon(Icons.menu_rounded, color: AppTheme.textPrimary, size: 26),
+                                onPressed: () => _scaffoldKey.currentState?.openDrawer(),
                               ),
-                              const SizedBox(height: 2),
-                              GestureDetector(
-                                onTap: () {
-                                  GymSwitcherBottomSheet.show(context);
-                                },
-                                child: MouseRegion(
-                                  cursor: SystemMouseCursors.click,
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text(
-                                        'Staff • $gymName',
-                                        style: GoogleFonts.inter(fontSize: 11, color: AppTheme.primary, fontWeight: FontWeight.w600),
-                                      ),
-                                      const SizedBox(width: 4),
-                                      const Icon(
-                                        Icons.arrow_drop_down_rounded,
-                                        size: 16,
-                                        color: AppTheme.primary,
-                                      ),
-                                    ],
+                              const SizedBox(width: 8),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Staff Dashboard',
+                                    style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
                                   ),
-                                ),
+                                  const SizedBox(height: 2),
+                                  GestureDetector(
+                                    onTap: () {
+                                      GymSwitcherBottomSheet.show(context);
+                                    },
+                                    child: MouseRegion(
+                                      cursor: SystemMouseCursors.click,
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            'Staff • $gymName',
+                                            style: GoogleFonts.inter(fontSize: 11, color: AppTheme.primary, fontWeight: FontWeight.w600),
+                                          ),
+                                          const SizedBox(width: 4),
+                                          const Icon(
+                                            Icons.arrow_drop_down_rounded,
+                                            size: 16,
+                                            color: AppTheme.primary,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),

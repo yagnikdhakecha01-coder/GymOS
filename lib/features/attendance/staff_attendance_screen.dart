@@ -3,12 +3,12 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../../core/theme/theme.dart';
 import '../../core/widgets/custom_card.dart';
 import '../../core/widgets/custom_button.dart';
 import '../../core/repository/gym_repository.dart';
 import '../authentication/auth_viewmodel.dart';
-import '../../core/models/attendance.dart';
 import '../../core/services/supabase_service.dart';
 
 class StaffAttendanceScreen extends StatefulWidget {
@@ -71,6 +71,13 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
 
   void _onRepoUpdated() {
     if (mounted) {
+      if (_currentState == AttendanceState.scanningCheckIn ||
+          _currentState == AttendanceState.scanningCheckOut ||
+          _currentState == AttendanceState.checkInSuccess ||
+          _currentState == AttendanceState.checkOutSuccess ||
+          _currentState == AttendanceState.scanFailure) {
+        return;
+      }
       _checkCurrentStatus();
     }
   }
@@ -141,6 +148,13 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
   }
 
   Future<void> _checkCurrentStatus() async {
+    if (_currentState == AttendanceState.scanningCheckIn ||
+        _currentState == AttendanceState.scanningCheckOut ||
+        _currentState == AttendanceState.checkInSuccess ||
+        _currentState == AttendanceState.checkOutSuccess ||
+        _currentState == AttendanceState.scanFailure) {
+      return;
+    }
     try {
       final authVm = Provider.of<AuthViewModel>(context, listen: false);
       final repo = Provider.of<GymRepository>(context, listen: false);
@@ -152,13 +166,19 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
         print('[StaffAttendance] RPC returned details: $details');
         print('[StaffAttendance] assigned_shift = ${details?['assigned_shift']}');
         if (details != null && mounted) {
+          if (_currentState == AttendanceState.scanningCheckIn ||
+              _currentState == AttendanceState.scanningCheckOut ||
+              _currentState == AttendanceState.checkInSuccess ||
+              _currentState == AttendanceState.checkOutSuccess ||
+              _currentState == AttendanceState.scanFailure) {
+            return;
+          }
           setState(() {
             _todayDetails = details;
             _shiftHours = details['assigned_shift'] ?? 'Single Shift';
             _successWorkingHours = details['working_hours_today'] ?? '0h 00m';
             
             final bool isCheckedIn = details['is_checked_in'] == true || details['can_check_out'] == true;
-            final String assignedShift = details['assigned_shift'] ?? 'Single Shift';
             final bool isFullyCompleted = details['is_attendance_completed'] == true;
 
             if (isCheckedIn) {
@@ -198,7 +218,21 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
     if (!mounted) return;
 
     if (result['success'] == true) {
+      final isAlreadyMarked = result['already_marked'] == true;
       final actionStr = (result['action'] as String?)?.toLowerCase() ?? '';
+      
+      if (isAlreadyMarked && (actionStr == 'completed' || (result['message'] as String?)?.contains('already') == true)) {
+        setState(() {
+          _errorText = null;
+          _failureMessage = result['message'] ?? 'Attendance already completed for today.';
+          _currentState = AttendanceState.scanFailure;
+          _isScanCompleted = false;
+          _scanCompletedSync = false;
+        });
+        await gymRepo.fetchAttendanceLogsFromSupabase();
+        return;
+      }
+
       final isCheckInAction = actionStr.contains('check in') || actionStr.contains('check_in') || isCheckIn;
       final checkInTime = result['check_in'] ?? result['checkInTime'] ?? DateFormat('hh:mm a').format(DateTime.now());
       final checkOutTime = result['check_out'] ?? result['checkOutTime'] ?? DateFormat('hh:mm a').format(DateTime.now());
@@ -383,11 +417,27 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
               CustomButton(
                 text: 'Check In',
                 color: AppTheme.primary,
-                onPressed: () {
-                  setState(() {
-                    _errorText = null;
-                    _currentState = AttendanceState.scanningCheckIn;
-                  });
+                onPressed: () async {
+                  var status = await Permission.camera.status;
+                  if (!status.isGranted) {
+                    status = await Permission.camera.request();
+                  }
+                  if (status.isGranted) {
+                    if (mounted) {
+                      setState(() {
+                        _errorText = null;
+                        _isScanCompleted = false;
+                        _scanCompletedSync = false;
+                        _currentState = AttendanceState.scanningCheckIn;
+                      });
+                    }
+                  } else {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Camera permission is required to scan QR code.')),
+                      );
+                    }
+                  }
                 },
               ),
               const SizedBox(height: 20),
@@ -606,6 +656,7 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
                           setState(() {
                             _currentState = isCheckIn ? AttendanceState.notCheckedIn : AttendanceState.checkedIn;
                           });
+                          _checkCurrentStatus();
                         },
                       ),
                       Text(
@@ -909,11 +960,27 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
               CustomButton(
                 text: 'Check Out',
                 color: AppTheme.primary,
-                onPressed: () {
-                  setState(() {
-                    _errorText = null;
-                    _currentState = AttendanceState.scanningCheckOut;
-                  });
+                onPressed: () async {
+                  var status = await Permission.camera.status;
+                  if (!status.isGranted) {
+                    status = await Permission.camera.request();
+                  }
+                  if (status.isGranted) {
+                    if (mounted) {
+                      setState(() {
+                        _errorText = null;
+                        _isScanCompleted = false;
+                        _scanCompletedSync = false;
+                        _currentState = AttendanceState.scanningCheckOut;
+                      });
+                    }
+                  } else {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Camera permission is required to scan QR code.')),
+                      );
+                    }
+                  }
                 },
               ),
               const SizedBox(height: 16),

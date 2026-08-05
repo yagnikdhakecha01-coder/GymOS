@@ -101,10 +101,11 @@ class _StaffRequestsScreenState extends State<StaffRequestsScreen> {
                   if (_advances.isEmpty)
                     _buildEmptyCard('No advance salary requests found.')
                   else
-                    ..._advances.take(3).map((a) {
-                      final amt = (a['advance_amount'] as num?)?.toDouble() ?? 0.0;
-                      final dateStr = a['given_date'] != null
-                          ? DateFormat('dd MMM yyyy').format(DateTime.parse(a['given_date']))
+                    ..._advances.take(5).map((a) {
+                      final amt = (a['advance_amount'] as num?)?.toDouble() ?? (a['amount'] as num?)?.toDouble() ?? 0.0;
+                      final rawDate = a['given_date'] ?? a['givenOn'];
+                      final dateStr = rawDate != null
+                          ? (DateTime.tryParse(rawDate) != null ? DateFormat('dd MMM yyyy').format(DateTime.parse(rawDate)) : rawDate.toString())
                           : 'Unknown Date';
                       return CustomCard(
                         margin: const EdgeInsets.only(bottom: 8),
@@ -127,9 +128,18 @@ class _StaffRequestsScreenState extends State<StaffRequestsScreen> {
                                   ),
                                   const SizedBox(height: 3),
                                   Text(
-                                    'For ${a['salary_month'] ?? 'Current Month'} ($dateStr)',
+                                    'Date: $dateStr',
                                     style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary),
                                   ),
+                                  if (a['reason'] != null && a['reason'].toString().isNotEmpty) ...[
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'Reason: ${a['reason']}',
+                                      style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),
@@ -146,15 +156,17 @@ class _StaffRequestsScreenState extends State<StaffRequestsScreen> {
                   if (_leaves.isEmpty)
                     _buildEmptyCard('No leave requests found.')
                   else
-                    ..._leaves.take(3).map((l) {
-                      final start = DateTime.tryParse(l['start_date'] ?? '');
-                      final end = DateTime.tryParse(l['end_date'] ?? '');
+                    ..._leaves.take(5).map((l) {
+                      final rawStart = l['start_date'] ?? l['from'];
+                      final rawEnd = l['end_date'] ?? l['to'];
+                      final start = rawStart != null ? DateTime.tryParse(rawStart) : null;
+                      final end = rawEnd != null ? DateTime.tryParse(rawEnd) : null;
                       final dateStr = (start != null && end != null)
                           ? '${DateFormat('dd MMM').format(start)} - ${DateFormat('dd MMM yyyy').format(end)}'
-                          : 'Unknown Date';
+                          : (rawStart != null ? rawStart.toString() : 'Unknown Date');
                       final totalDays = (start != null && end != null)
                           ? end.difference(start).inDays + 1
-                          : 1;
+                          : (l['days'] != null ? (l['days'] as num).toInt() : 1);
 
                       return CustomCard(
                         margin: const EdgeInsets.only(bottom: 8),
@@ -172,7 +184,7 @@ class _StaffRequestsScreenState extends State<StaffRequestsScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    '$totalDays Days (${l['leave_type'] ?? 'Leave'})',
+                                    '$totalDays ${totalDays == 1 ? 'Day' : 'Days'} (${l['leave_type'] ?? l['type'] ?? 'Leave'})',
                                     style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
                                   ),
                                   const SizedBox(height: 3),
@@ -180,6 +192,15 @@ class _StaffRequestsScreenState extends State<StaffRequestsScreen> {
                                     dateStr,
                                     style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary),
                                   ),
+                                  if (l['reason'] != null && l['reason'].toString().isNotEmpty) ...[
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'Reason: ${l['reason']}',
+                                      style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),

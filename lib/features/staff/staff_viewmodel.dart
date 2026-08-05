@@ -381,9 +381,12 @@ class StaffViewModel extends ChangeNotifier {
 
       return {
         'id': l['id'],
+        'start_date': l['start_date'],
+        'end_date': l['end_date'],
         'from': DateFormat('dd MMM yyyy').format(start),
         'to': DateFormat('dd MMM yyyy').format(end),
         'days': diffDays,
+        'leave_type': l['leave_type'] ?? 'Casual',
         'type': '${l['leave_type'] ?? 'Casual'} Leave',
         'reason': l['reason'] ?? 'N/A',
         'status': l['status'] ?? 'Pending',
@@ -404,10 +407,14 @@ class StaffViewModel extends ChangeNotifier {
     final advList = advances.map((adv) {
       final reqDate = DateTime.tryParse(adv['given_date']?.toString() ?? '') ?? DateTime.now();
       return {
+        'id': adv['id'],
+        'advance_amount': (adv['advance_amount'] as num?)?.toDouble() ?? 0.0,
         'amount': (adv['advance_amount'] as num?)?.toDouble() ?? 0.0,
+        'given_date': adv['given_date'],
         'givenOn': DateFormat('dd MMM yyyy').format(reqDate),
+        'salary_month': adv['salary_month'] ?? 'Current Month',
         'reason': adv['reason'] ?? 'Personal',
-        'status': adv['status'] ?? 'Approved',
+        'status': adv['status'] ?? 'Pending',
       };
     }).toList();
 
@@ -454,8 +461,9 @@ class StaffViewModel extends ChangeNotifier {
     }).toList();
 
     return {
-      'leaveRequests': mappedLeaves.where((l) => l['status'] == 'Pending').toList(),
+      'leaveRequests': mappedLeaves,
       'leaveHistory': leaveHist,
+      'advances': advList,
       'advance': advList,
       'salaryHistory': salHist,
       'attendance': attList,

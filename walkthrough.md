@@ -22,19 +22,40 @@ The premium 4-step wizard onboarding experience specifically for new Gym Owners 
 - Added columns to `gyms` in [supabase_schema.sql](file:///c:/Users/jigar/OneDrive/Documents/GYMOS%20V1%20UI/supabase_schema.sql): `logo_url`, `gym_type`, `phone_number`, `email`, `address`, `city`, `state`, `country`, `pin_code`.
 - Added columns to `profiles` in [supabase_schema.sql](file:///c:/Users/jigar/OneDrive/Documents/GYMOS%20V1%20UI/supabase_schema.sql): `full_name`, `phone_number`, `photo_url`, `dob`, `experience`, `setup_completed`.
 
-### 📦 User Profile Model Updates
-- Updated [user_profile.dart](file:///c:/Users/jigar/OneDrive/Documents/GYMOS%20V1%20UI/lib/core/models/user_profile.dart) to contain all owner onboarding fields.
-- Modified serialization/deserialization logic (`fromJson` and `toJson`) to support these fields.
+### 2. Client App Improvements
+* **[main_navigation_holder.dart](file:///c:/Users/jigar/OneDrive/Documents/GYMOS%20V1%20UI/lib/features/dashboard/main_navigation_holder.dart)**:
+  * Added a background checker running every 10 seconds checking if the gym status is `'suspended'`.
+  * Updated `initState` to check the gym status immediately on startup (wrapped in `WidgetsBinding.instance.addPostFrameCallback`) so that a suspended gym is immediately blocked without waiting for the background timer.
+  * If suspended, renders a full-screen **Access Suspended blocker** blocking all other dashboards (Home, Members, Finance, Staff, More).
+  * Suspended UI lets owners submit support tickets and displays a live list of previously raised support tickets with real-time status.
+* **[auth_viewmodel.dart](file:///c:/Users/jigar/OneDrive/Documents/GYMOS%20V1%20UI/lib/features/authentication/auth_viewmodel.dart)**:
+  * Fixed a bug where the `'status'` field was omitted when fetching gym details and saving them in the `gymInfo` cache/state during login, setup completed, profile loading, and owner onboarding.
+  * This guarantees the client app always has access to the live/cached suspension status.
+* **[subscription_limit_screen.dart](file:///c:/Users/jigar/OneDrive/Documents/GYMOS%20V1%20UI/lib/features/subscription/subscription_limit_screen.dart)**: Created a premium full-screen layout displaying plan limit warnings with direct navigation to the plans page.
+* **[add_member_wizard_screen.dart](file:///c:/Users/jigar/OneDrive/Documents/GYMOS%20V1%20UI/lib/features/members/add_member_wizard_screen.dart)**: Replaced popup dialogs with pushing `SubscriptionLimitScreen` on member limits exceeded.
+* **[add_staff_screen.dart](file:///c:/Users/jigar/OneDrive/Documents/GYMOS%20V1%20UI/lib/features/staff/add_staff_screen.dart)**: Replaced popup dialogs with pushing `SubscriptionLimitScreen` on staff limits exceeded.
+* **[gym_repository.dart](file:///c:/Users/jigar/OneDrive/Documents/GYMOS%20V1%20UI/lib/core/repository/gym_repository.dart)**: Implemented repository-level check subscription validation inside `saveMember` and `saveStaff` to prevent any local list updates or background sync inserts when plan limit is exceeded.
 
-### 🔌 Service & ViewModel Integration
-- Built `completeOwnerSetup()` in [auth_service.dart](file:///c:/Users/jigar/OneDrive/Documents/GYMOS%20V1%20UI/lib/core/services/auth_service.dart) to create the gym record and owner profile record in Supabase (with offline/mock fallbacks).
-- Updated [auth_viewmodel.dart](file:///c:/Users/jigar/OneDrive/Documents/GYMOS%20V1%20UI/lib/features/authentication/auth_viewmodel.dart):
-  - Exposed `completeOwnerOnboarding()` to wrap the setup database execution and store details in local storage.
-  - Implemented boot-up fallback inside `loadCurrentProfile()`: if the DB is offline/mock mode but local storage shows the owner is logged in, the setup completion status is preserved.
+### 3. Admin Panel Adjustments
+* **[gyms_screen.dart](file:///c:/Users/jigar/OneDrive/Documents/GYMOS%20V1%20UI/gymos_admin/lib/features/gyms/gyms_screen.dart)**:
+  * Modified the actions popup to evaluate gym suspension checks case-insensitively. This fixes the bug where "Suspend" was shown instead of "Unsuspend" due to casing differences (e.g. `'Suspended'` in database).
+  * Added query updates to sync changes from `gyms` to the `subscriptions` table when:
+    * Changing plans (updates `plan_id` and sets status to `'trial'` or `'active'`).
+    * Suspending a gym (sets subscription status to `'failed_payment'` to engage database trigger block).
+    * Unsuspending a gym (restores subscription status to `'active'` or `'trial'`).
+    * Activating a gym (sets subscription status to `'active'` and aligns the subscription expiration).
+    * Disabling a gym (sets subscription status to `'cancelled'`).
+* **[status_badge.dart](file:///c:/Users/jigar/OneDrive/Documents/GYMOS%20V1%20UI/gymos_admin/lib/core/widgets/status_badge.dart)**:
+  * Updated `AdminStatusBadge.fromGymStatus` to match the status string case-insensitively using `status.toLowerCase()`.
+* **[support_screen.dart](file:///c:/Users/jigar/OneDrive/Documents/GYMOS%20V1%20UI/gymos_admin/lib/features/support/support_screen.dart)**:
+  * Replaced mock tickets list with a dynamic Supabase database query loading actual tickets raised by suspended gym owners.
+  * Clicking "Respond" opens status updates dialog (In Progress / Resolved).
+  * Clicking "Close" updates the ticket status to Closed in the database.
 
-### 🧭 Redirection & Login Safeguards
-- Updated the splash screen routing in [splash_screen.dart](file:///c:/Users/jigar/OneDrive/Documents/GYMOS%20V1%20UI/lib/features/authentication/splash_screen.dart) to inspect `profile.setupCompleted`. Completed setup opens the dashboard, whereas incomplete setup opens the setup wizard.
-- Configured the same check inside [login_screen.dart](file:///c:/Users/jigar/OneDrive/Documents/GYMOS%20V1%20UI/lib/features/authentication/login_screen.dart) after successful authentication.
+## Verification Results
+* Both client and admin panel packages compile cleanly with no errors (`flutter analyze` validated).
+* Added immediate startup sync to block access instantly upon launching the app when a gym has been marked as suspended.
+* Synchronized all plan changes and suspension state updates directly to the Supabase `subscriptions` table so that limits are correctly enforced on client apps.
 
 ### 🎨 Apple-Inspired 4-Step Setup Wizard UI
 Replaced [first_time_setup_screen.dart](file:///c:/Users/jigar/OneDrive/Documents/GYMOS%20V1%20UI/lib/features/authentication/first_time_setup_screen.dart) with a premium white-themed experience matching Material 3 specifications:

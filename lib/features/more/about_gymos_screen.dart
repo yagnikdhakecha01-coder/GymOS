@@ -1,10 +1,175 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme/theme.dart';
 import '../../core/widgets/custom_card.dart';
+import '../../core/config/app_config.dart';
+import '../../core/services/version_check_service.dart';
 
-class AboutGymOSScreen extends StatelessWidget {
+class AboutGymOSScreen extends StatefulWidget {
   const AboutGymOSScreen({super.key});
+
+  @override
+  State<AboutGymOSScreen> createState() => _AboutGymOSScreenState();
+}
+
+class _AboutGymOSScreenState extends State<AboutGymOSScreen> {
+  bool _isChecking = false;
+  VersionCheckResult? _checkResult;
+
+  Future<void> _checkUpdate() async {
+    setState(() {
+      _isChecking = true;
+      _checkResult = null;
+    });
+
+    // Add a slight artificial delay for premium loading experience
+    await Future.delayed(const Duration(milliseconds: 800));
+
+    try {
+      final result = await VersionCheckService.checkVersion();
+      setState(() {
+        _checkResult = result;
+        _isChecking = false;
+      });
+
+      if (mounted) {
+        if (result.isUpdateAvailable) {
+          _showUpdateDetailsBottomSheet(result);
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
+                  const SizedBox(width: 8),
+                  Text(
+                    'You are on the latest version!',
+                    style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 13),
+                  ),
+                ],
+              ),
+              backgroundColor: AppTheme.success,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      setState(() => _isChecking = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to check for updates: ${e.toString()}'),
+            backgroundColor: AppTheme.danger,
+          ),
+        );
+      }
+    }
+  }
+
+  void _showUpdateDetailsBottomSheet(VersionCheckResult result) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E293B),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primary.withOpacity(0.15),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.system_update_rounded, color: AppTheme.primary, size: 24),
+                  ),
+                  const SizedBox(width: 12),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'New Update Available',
+                        style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'v${result.latestVersion} (Build ${result.latestBuildNumber})',
+                        style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF94A3B8)),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              if (result.releaseNotes.isNotEmpty) ...[
+                Text(
+                  'Release Notes:',
+                  style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  width: double.infinity,
+                  constraints: const BoxConstraints(maxHeight: 150),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0F172A),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFF334155)),
+                  ),
+                  child: SingleChildScrollView(
+                    child: Text(
+                      result.releaseNotes,
+                      style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF94A3B8), height: 1.4),
+                    ),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    _launchStoreUrl(result.downloadUrl);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  child: Text(
+                    'Update Now',
+                    style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _launchStoreUrl(String url) async {
+    if (url.isEmpty) return;
+    final uri = Uri.tryParse(url);
+    if (uri != null) {
+      try {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } catch (_) {}
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -13,6 +178,7 @@ class AboutGymOSScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('About GymOS'),
         centerTitle: false,
+        backgroundColor: Colors.white,
       ),
       body: SafeArea(
         child: Padding(
@@ -35,10 +201,36 @@ class AboutGymOSScreen extends StatelessWidget {
                 'GymOS',
                 style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 6),
               Text(
-                'Version 1.2.0 (Build 26)',
+                'Version ${AppConfig.appVersion} (Build ${AppConfig.buildNumber})',
                 style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary),
+              ),
+              const SizedBox(height: 24),
+              // Check Update Button
+              SizedBox(
+                width: 180,
+                height: 40,
+                child: OutlinedButton(
+                  onPressed: _isChecking ? null : _checkUpdate,
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: AppTheme.primary),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                  ),
+                  child: _isChecking
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primary),
+                          ),
+                        )
+                      : Text(
+                          'Check for Updates',
+                          style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.primary),
+                        ),
+                ),
               ),
               const Spacer(flex: 1),
 

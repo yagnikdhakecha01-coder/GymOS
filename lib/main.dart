@@ -22,16 +22,27 @@ import 'features/member_app/member_app_viewmodel.dart';
 import 'features/gym_settings/gym_settings_viewmodel.dart';
 import 'core/services/notification_service.dart';
 import 'core/services/alerts_notification_engine.dart';
+import 'core/services/version_check_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize Supabase (will gracefully skip if credentials are not set yet)
-  await SupabaseService.initialize();
+  // Initialize Supabase safely
+  try {
+    await SupabaseService.initialize();
+  } catch (e, stack) {
+    debugPrint('Supabase initialization error: $e');
+    debugPrint(stack.toString());
+  }
 
-  // Initialize Notification Service and request permissions on first launch
-  await NotificationService.initialize();
-  await NotificationService.requestPermissions();
+  // Initialize Notification Service safely
+  try {
+    await NotificationService.initialize();
+    await NotificationService.requestPermissions();
+  } catch (e, stack) {
+    debugPrint('Notification initialization error: $e');
+    debugPrint(stack.toString());
+  }
 
   // Set system UI overlay style for premium iOS-like status bar
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
@@ -41,15 +52,54 @@ void main() async {
     systemNavigationBarIconBrightness: Brightness.dark,
   ));
 
-  // Initialize shared preferences for local storage
-  final prefs = await SharedPreferences.getInstance();
-  final localStorageService = LocalStorageService(prefs);
-  final gymRepository = GymRepository(localStorageService);
+  // Initialize shared preferences and repository
+  LocalStorageService? localStorageService;
+  GymRepository? gymRepository;
 
-  runApp(GymOSApp(
-    localStorageService: localStorageService,
-    gymRepository: gymRepository,
-  ));
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    localStorageService = LocalStorageService(prefs);
+    gymRepository = GymRepository(localStorageService);
+  } catch (e, stack) {
+    debugPrint('LocalStorage/Repository initialization error: $e');
+    debugPrint(stack.toString());
+  }
+
+  if (localStorageService != null && gymRepository != null) {
+    runApp(GymOSApp(
+      localStorageService: localStorageService,
+      gymRepository: gymRepository,
+    ));
+  } else {
+    runApp(MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: Scaffold(
+        backgroundColor: const Color(0xFF0F172A),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.error_outline, color: Colors.redAccent, size: 64),
+                const SizedBox(height: 16),
+                const Text(
+                  'Initialization Failed',
+                  style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Failed to initialize local storage. Please clear app data or contact support.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey, fontSize: 14),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ));
+  }
 }
 
 class GymOSApp extends StatelessWidget {
@@ -126,6 +176,7 @@ class GymOSApp extends StatelessWidget {
         builder: (context, child) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             AlertsNotificationEngine.start(context);
+            VersionCheckEngine.start(context);
           });
           return child!;
         },
