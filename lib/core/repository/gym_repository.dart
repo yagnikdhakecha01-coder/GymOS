@@ -4128,6 +4128,35 @@ class GymRepository extends ChangeNotifier {
     required String paymentMode,
     required String notes,
   }) async {
+    final index = _salaryDrafts.indexWhere((d) => d['id'] == draftId);
+    if (index >= 0) {
+      final updatedDraft = Map<String, dynamic>.from(_salaryDrafts[index]);
+      updatedDraft['status'] = 'Paid';
+      _salaryDrafts[index] = updatedDraft;
+      await _storage.setString(LocalStorageService.keySalaryDrafts, jsonEncode(_salaryDrafts));
+      notifyListeners();
+    }
+
+    if (SupabaseService.isInitialized) {
+      try {
+        await SupabaseService.client.rpc('pay_salary_draft', params: {
+          'p_draft_id': draftId,
+          'p_payment_mode': paymentMode,
+          'p_notes': notes,
+        });
+        _resetNetworkError();
+        final gymId = _storage.getGymInfo()?['id'];
+        if (gymId != null) {
+          await fetchStaffFromSupabase();
+          await fetchSalaryDraftsFromSupabase(gymId);
+        }
+        triggerBackgroundSync();
+        return;
+      } catch (e) {
+        print('Direct pay_salary_draft error: $e');
+      }
+    }
+
     await paySalaryDraftOffline(
       draftId: draftId,
       paymentMode: paymentMode,
