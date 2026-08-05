@@ -90,13 +90,25 @@ class _StaffProfileScreenState extends State<StaffProfileScreen> {
       print('Error fetching gym shift mode: $e');
     }
 
+    final salaryHist = data['salaryHistory'] as List? ?? [];
+    final currentMonthStr = DateFormat('MMMM yyyy').format(DateTime.now());
+    final isCurrentMonthPaid = salaryHist.any((s) {
+      final month = (s['salary_month'] ?? s['month'] ?? '').toString().trim().toLowerCase();
+      final status = (s['status'] ?? '').toString().toLowerCase();
+      return month == currentMonthStr.toLowerCase() && status == 'paid';
+    });
+
+    if (isCurrentMonthPaid) {
+      pendingSalary = 0.0;
+    }
+
     if (mounted) {
       setState(() {
         _attendanceRecords = data['attendance'] ?? [];
         _advanceSalaryRecords = data['advance'] ?? [];
         _leaveRequests = data['leaveRequests'] ?? [];
         _leaveHistory = data['leaveHistory'] ?? [];
-        _salaryHistory = data['salaryHistory'] ?? [];
+        _salaryHistory = List<Map<String, dynamic>>.from(salaryHist);
         _pendingSalaryFromDb = pendingSalary;
       });
     }

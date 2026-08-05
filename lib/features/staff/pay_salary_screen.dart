@@ -91,7 +91,51 @@ class _PaySalaryScreenState extends State<PaySalaryScreen> {
         status: 'Draft',
       );
 
-      final SalaryDraft validDraft = draft;
+      bool isPaidSalaryMonth = (draft?.status.toLowerCase() == 'paid') || gymRepository.salaryDrafts.any((d) {
+        final sid = d['staff_id'] ?? '';
+        final month = d['salary_month'] ?? '';
+        final status = (d['status'] ?? '').toString().toLowerCase();
+        return sid == widget.staff.id && month == widget.selectedMonth && status == 'paid';
+      });
+
+      if (!isPaidSalaryMonth && SupabaseService.isInitialized) {
+        try {
+          final dbCheck = await SupabaseService.client
+              .from('salary_drafts')
+              .select('id, status')
+              .eq('staff_id', widget.staff.id)
+              .eq('salary_month', widget.selectedMonth)
+              .maybeSingle();
+          if (dbCheck != null && (dbCheck['status']?.toString().toLowerCase() == 'paid')) {
+            isPaidSalaryMonth = true;
+          } else {
+            final expCheck = await SupabaseService.client
+                .from('expenses')
+                .select('id')
+                .eq('gym_id', gymId)
+                .eq('category', 'Salaries')
+                .ilike('title', '%${widget.staff.name}%')
+                .maybeSingle();
+            if (expCheck != null) {
+              isPaidSalaryMonth = true;
+            }
+          }
+        } catch (_) {}
+      }
+
+      final SalaryDraft validDraft = isPaidSalaryMonth ? (draft ?? SalaryDraft(
+        id: 'draft_${widget.staff.id}_${widget.selectedMonth.replaceAll(' ', '_')}',
+        gymId: gymId,
+        staffId: widget.staff.id,
+        salaryMonth: widget.selectedMonth,
+        baseSalary: widget.staff.salary,
+        commissionAmount: 0.0,
+        advanceDeduction: 0.0,
+        otherAdditions: 0.0,
+        otherDeductions: 0.0,
+        netSalary: widget.staff.salary,
+        status: 'Paid',
+      )).copyWith(status: 'Paid') : draft!;
 
       final results = await Future.wait([
         staffVm.fetchSalaryAdjustments(validDraft.id).catchError((_) => <SalaryAdjustment>[]),

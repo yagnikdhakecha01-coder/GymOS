@@ -40,4 +40,32 @@ class SalaryDraft {
       status: json['status'] as String? ?? 'Draft',
     );
   }
+
+  SalaryDraft copyWith({
+    String? id,
+    String? gymId,
+    String? staffId,
+    String? salaryMonth,
+    double? baseSalary,
+    double? commissionAmount,
+    double? advanceDeduction,
+    double? otherAdditions,
+    double? otherDeductions,
+    double? netSalary,
+    String? status,
+  }) {
+    return SalaryDraft(
+      id: id ?? this.id,
+      gymId: gymId ?? this.gymId,
+      staffId: staffId ?? this.staffId,
+      salaryMonth: salaryMonth ?? this.salaryMonth,
+      baseSalary: baseSalary ?? this.baseSalary,
+      commissionAmount: commissionAmount ?? this.commissionAmount,
+      advanceDeduction: advanceDeduction ?? this.advanceDeduction,
+      otherAdditions: otherAdditions ?? this.otherAdditions,
+      otherDeductions: otherDeductions ?? this.otherDeductions,
+      netSalary: netSalary ?? this.netSalary,
+      status: status ?? this.status,
+    );
+  }
 }

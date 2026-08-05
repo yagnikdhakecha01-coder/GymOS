@@ -499,3 +499,53 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 GRANT EXECUTE ON FUNCTION public.pay_salary_draft(UUID, TEXT, TEXT) TO anon, authenticated, service_role;
+
+
+-- 7. FIX RPC: get_staff_pending_salary
+DROP FUNCTION IF EXISTS public.get_staff_pending_salary(UUID);
+
+CREATE OR REPLACE FUNCTION public.get_staff_pending_salary(p_staff_id UUID)
+RETURNS NUMERIC AS $$
+DECLARE
+    v_curr_month TEXT := to_char(CURRENT_DATE, 'FMMonth YYYY');
+    v_base_salary NUMERIC(12,2) := 0.0;
+    v_is_paid BOOLEAN := FALSE;
+    s_name TEXT;
+BEGIN
+    SELECT name, COALESCE(salary, 0.0) INTO s_name, v_base_salary
+    FROM public.staff
+    WHERE id = p_staff_id;
+
+    IF s_name IS NULL THEN
+        RETURN 0.0;
+    END IF;
+
+    IF EXISTS (
+        SELECT 1 FROM public.salary_drafts
+        WHERE staff_id = p_staff_id
+          AND trim(salary_month) = trim(v_curr_month)
+          AND status = 'Paid'::public.draft_status
+    ) OR EXISTS (
+        SELECT 1 FROM public.expenses
+        WHERE category = 'Salaries'
+          AND title LIKE '%' || s_name || '%'
+          AND to_char(date, 'FMMonth YYYY') = trim(v_curr_month)
+    ) OR EXISTS (
+        SELECT 1 FROM public.transactions
+        WHERE category = 'Salaries'
+          AND type = 'Expense'
+          AND title LIKE '%' || s_name || '%'
+          AND to_char(date, 'FMMonth YYYY') = trim(v_curr_month)
+    ) THEN
+        v_is_paid := TRUE;
+    END IF;
+
+    IF v_is_paid THEN
+        RETURN 0.0;
+    ELSE
+        RETURN v_base_salary;
+    END IF;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+GRANT EXECUTE ON FUNCTION public.get_staff_pending_salary(UUID) TO anon, authenticated, service_role;
