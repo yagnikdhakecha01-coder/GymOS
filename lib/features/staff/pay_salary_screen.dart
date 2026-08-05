@@ -178,7 +178,7 @@ class _PaySalaryScreenState extends State<PaySalaryScreen> {
   
   double get _advanceDeduction {
     // If draft is already Paid, use the locked advance deduction from the draft
-    if (_draft != null && (_draft!.status == 'Paid' || _draft!.status == 'paid')) {
+    if (_isPaid) {
       return _draft!.advanceDeduction;
     }
     double listSum = 0.0;
@@ -211,9 +211,9 @@ class _PaySalaryScreenState extends State<PaySalaryScreen> {
 
   double get _totalGrossSalary => _fixedSalary + _commission + _netAdjustment;
 
-  double get _totalPayable => _draft != null && _draft!.status == 'Paid'
-      ? _draft!.netSalary
-      : _totalGrossSalary - _advanceDeduction;
+  double get _totalPayable => _isPaid
+      ? 0.0
+      : (_totalGrossSalary - _advanceDeduction > 0 ? _totalGrossSalary - _advanceDeduction : 0.0);
 
   void _addAdjustmentDialog() {
     final reasonCtrl = TextEditingController();
@@ -474,6 +474,31 @@ class _PaySalaryScreenState extends State<PaySalaryScreen> {
             ),
             const SizedBox(height: 12),
 
+            if (_isPaid) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE6FDF4),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFA7F3D0)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.check_circle_rounded, color: Color(0xFF10B981), size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Salary for ${widget.selectedMonth} has been paid. New advances will be deducted from next month\'s salary.',
+                        style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: const Color(0xFF047857)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
             // 2. Summary Grid (Calculations Overview Card)
             Container(
               padding: const EdgeInsets.all(16),
@@ -503,8 +528,8 @@ class _PaySalaryScreenState extends State<PaySalaryScreen> {
                       const Text('=', style: TextStyle(fontSize: 16, color: AppTheme.textSecondary)),
                       _summaryBlock(
                         _advanceDeduction > 0 ? 'Gross Salary' : 'Pending Payable', 
-                        '₹${NumberFormat('#,##,###').format(_totalGrossSalary)}', 
-                        AppTheme.primary, 
+                        _isPaid ? '₹0' : '₹${NumberFormat('#,##,###').format(_totalGrossSalary)}', 
+                        _isPaid ? Colors.green : AppTheme.primary, 
                         isBold: true
                       ),
                     ],
@@ -518,7 +543,7 @@ class _PaySalaryScreenState extends State<PaySalaryScreen> {
                         const Text('-', style: TextStyle(fontSize: 16, color: Colors.red, fontWeight: FontWeight.bold)),
                         _summaryBlock('Advance Taken', '₹${NumberFormat('#,##,###').format(_advanceDeduction)}', Colors.red, isBold: true),
                         const Text('=', style: TextStyle(fontSize: 16, color: AppTheme.textSecondary)),
-                        _summaryBlock('Pending Payable', '₹${NumberFormat('#,##,###').format(_totalPayable)}', AppTheme.primary, isBold: true),
+                        _summaryBlock('Pending Payable', _isPaid ? '₹0' : '₹${NumberFormat('#,##,###').format(_totalPayable)}', _isPaid ? Colors.green : AppTheme.primary, isBold: true),
                       ],
                     ),
                   ],
