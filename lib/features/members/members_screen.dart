@@ -55,6 +55,61 @@ class _MembersScreenState extends State<MembersScreen> {
     AddMemberSelectionSheet.show(context);
   }
 
+  Widget _buildMemberPaymentBadge(Member member) {
+    final double pending = member.pendingAmount;
+    final bool isPaid = pending <= 0 || member.paymentStatus.toLowerCase() == 'paid';
+    final Color badgeBg = isPaid ? const Color(0xFFE6FDF4) : const Color(0xFFFFF0F0);
+    final Color badgeBorder = isPaid ? const Color(0xFFA7F3D0) : const Color(0xFFFFD4D4);
+    final Color iconColor = isPaid ? const Color(0xFF10B981) : const Color(0xFFDC2626);
+    final Color amountColor = isPaid ? const Color(0xFF047857) : const Color(0xFFDC2626);
+    final Color labelColor = isPaid ? const Color(0xFF059669) : const Color(0xFFEF4444);
+    final String labelText = isPaid ? 'Fees Paid' : 'Fees Pending';
+    final IconData badgeIcon = isPaid ? Icons.check_circle_outline : Icons.account_balance_wallet_outlined;
+    final String formattedAmount = isPaid ? 'Done' : '₹${NumberFormat('#,##,###').format(pending.abs())}';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: badgeBg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: badgeBorder, width: 0.8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            badgeIcon,
+            size: 12,
+            color: iconColor,
+          ),
+          const SizedBox(width: 4),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                formattedAmount,
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: amountColor,
+                ),
+              ),
+              Text(
+                labelText,
+                style: GoogleFonts.inter(
+                  fontSize: 8,
+                  fontWeight: FontWeight.w500,
+                  color: labelColor,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final membersVm = Provider.of<MembersViewModel>(context);
@@ -429,6 +484,10 @@ class _MembersScreenState extends State<MembersScreen> {
                                   ),
                                 ),
                                 const SizedBox(width: 8),
+                                if (!isTrial) ...[
+                                  _buildMemberPaymentBadge(member),
+                                  const SizedBox(width: 6),
+                                ],
                                 const Icon(Icons.chevron_right, color: AppTheme.textMuted, size: 20),
                               ],
                             ),
