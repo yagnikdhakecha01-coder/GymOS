@@ -1,5 +1,5 @@
 -- ====================================================================
--- GYMOS: RLS POLICIES & AUTOMATIC TRIGGERS FOR REQUEST APPROVALS
+-- GYMOS: FIXED RLS POLICIES & AUTOMATIC TRIGGERS FOR REQUEST APPROVALS
 -- ====================================================================
 
 -- 1. Permissive RLS Policies for leave_requests and salary_advance_ledger
@@ -106,13 +106,15 @@ CREATE OR REPLACE FUNCTION public.fn_on_advance_ledger_created()
 RETURNS TRIGGER AS $$
 DECLARE
     s_name TEXT;
+    v_title TEXT;
 BEGIN
     IF (NEW.status IN ('Approved'::public.advance_status, 'Given'::public.advance_status)) AND 
        (TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND OLD.status NOT IN ('Approved'::public.advance_status, 'Given'::public.advance_status))) THEN
        
         SELECT name INTO s_name FROM public.staff WHERE id = NEW.staff_id;
+        v_title := COALESCE('Salary Advance - ' || s_name, 'Salary Advance');
 
-        -- Record Expense entry in public.expenses table
+        -- 1. Record Expense entry in public.expenses table
         IF NOT EXISTS (
             SELECT 1 FROM public.expenses 
             WHERE gym_id = NEW.gym_id 
@@ -122,22 +124,22 @@ BEGIN
         ) THEN
             INSERT INTO public.expenses (
                 gym_id,
+                title,
                 category,
                 amount,
                 date,
-                payment_method,
                 notes
             ) VALUES (
                 NEW.gym_id,
+                v_title,
                 'Salary Advance',
                 NEW.advance_amount,
                 NEW.given_date,
-                'Cash',
                 COALESCE('Salary advance to ' || s_name || ' (' || NEW.reason || ')', 'Salary advance')
             );
         END IF;
 
-        -- Record Transaction entry in public.transactions table
+        -- 2. Record Transaction entry in public.transactions table
         IF NOT EXISTS (
             SELECT 1 FROM public.transactions 
             WHERE gym_id = NEW.gym_id 
@@ -149,19 +151,17 @@ BEGIN
             INSERT INTO public.transactions (
                 gym_id,
                 type,
+                title,
                 category,
                 amount,
-                date,
-                description,
-                payment_mode
+                date
             ) VALUES (
                 NEW.gym_id,
                 'Expense',
+                v_title,
                 'Salary Advance',
                 NEW.advance_amount,
-                NEW.given_date,
-                COALESCE('Salary advance to ' || s_name || ' (' || NEW.reason || ')', 'Salary advance'),
-                'Cash'::public.payment_mode
+                NEW.given_date
             );
         END IF;
 
