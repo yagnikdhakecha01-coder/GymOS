@@ -3852,6 +3852,7 @@ class GymRepository extends ChangeNotifier {
   }
 
   Future<void> fetchTodayAttendanceDetails(String userId, String gymId) async {
+    _loadTodayDetailsFromStorage();
     if (!SupabaseService.isInitialized) return;
 
     // Try RPC first (which calculates all shift statuses and hours in the database backend)

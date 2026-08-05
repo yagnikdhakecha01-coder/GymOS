@@ -280,9 +280,32 @@ class MemberAppViewModel extends ChangeNotifier {
       _checkInTime = prefs.getString('member_check_in_time') ?? '07:32 AM';
       _checkInDate = prefs.getString('member_check_in_date') ?? '15 May 2026';
     }
+
+    // Load cached workout plan, diet plan & attendance history for instant UI rendering
+    _assignedWorkoutTitle = prefs.getString('member_cached_workout_title') ?? _assignedWorkoutTitle;
+    _todayMuscleGroup = prefs.getString('member_cached_today_muscle') ?? _todayMuscleGroup;
+    _assignedDietTitle = prefs.getString('member_cached_diet_title') ?? _assignedDietTitle;
+
+    final cachedDaysStr = prefs.getString('member_cached_attendance_days');
+    if (cachedDaysStr != null) {
+      try {
+        final List decoded = jsonDecode(cachedDaysStr);
+        _attendedDaysOfCurrentMonth = decoded.map((e) => (e as num).toInt()).toList();
+        _presentDays = _attendedDaysOfCurrentMonth.length;
+        final lastDay = DateTime(DateTime.now().year, DateTime.now().month + 1, 0).day;
+        int totalGymDays = 0;
+        for (int i = 1; i <= lastDay; i++) {
+          if (DateTime(DateTime.now().year, DateTime.now().month, i).weekday != DateTime.sunday) {
+            totalGymDays++;
+          }
+        }
+        _attendancePercentage = totalGymDays > 0 ? ((_presentDays / totalGymDays) * 100).round() : 0;
+      } catch (_) {}
+    }
+
     _generateCurrentWeek();
-    await loadMemberDataFromSupabase();
     notifyListeners();
+    await loadMemberDataFromSupabase();
   }
 
   void _generateCurrentWeek() {
@@ -297,12 +320,12 @@ class MemberAppViewModel extends ChangeNotifier {
   }
 
   Future<void> loadMemberDataFromSupabase() async {
+    final prefs = await SharedPreferences.getInstance();
     try {
       if (SupabaseService.client == null) return;
       final user = SupabaseService.client.auth.currentUser;
       if (user == null) return;
 
-      final prefs = await SharedPreferences.getInstance();
       final gymInfoStr = prefs.getString('gymos_gym_info');
       String? gymId;
       if (gymInfoStr != null) {
@@ -353,14 +376,13 @@ class MemberAppViewModel extends ChangeNotifier {
               } else {
                 _todayMuscleGroup = 'Rest Day';
               }
+              await prefs.setString('member_cached_workout_title', _assignedWorkoutTitle);
+              await prefs.setString('member_cached_today_muscle', _todayMuscleGroup);
             } else {
               _assignedWorkoutTitle = '';
               _todayMuscleGroup = 'Rest Day';
             }
-          } catch (_) {
-            _assignedWorkoutTitle = '';
-            _todayMuscleGroup = 'Rest Day';
-          }
+          } catch (_) {}
         } else {
           _assignedWorkoutTitle = '';
           _todayMuscleGroup = 'Rest Day';
@@ -374,9 +396,8 @@ class MemberAppViewModel extends ChangeNotifier {
                 .eq('id', _assignedDietId)
                 .maybeSingle();
             _assignedDietTitle = dData?['title'] ?? '';
-          } catch (_) {
-            _assignedDietTitle = '';
-          }
+            await prefs.setString('member_cached_diet_title', _assignedDietTitle);
+          } catch (_) {}
         } else {
           _assignedDietTitle = '';
         }
@@ -394,7 +415,6 @@ class MemberAppViewModel extends ChangeNotifier {
         }
 
         // Keep local storage synchronized for roles and gym ID so GymRepository works correctly
-        final prefs = await SharedPreferences.getInstance();
         await prefs.setString('gymos_user_role', 'member');
         if (gymId != null) {
           await prefs.setString('gymos_gym_info', jsonEncode({
@@ -533,6 +553,7 @@ class MemberAppViewModel extends ChangeNotifier {
           }
           _attendedDaysOfCurrentMonth = attendedDays.toList();
           _presentDays = _attendedDaysOfCurrentMonth.length;
+          await prefs.setString('member_cached_attendance_days', jsonEncode(_attendedDaysOfCurrentMonth));
 
           // Calculate attendance percentage based on total operational days (excluding Sundays) in current month
           int totalGymDays = 0;
