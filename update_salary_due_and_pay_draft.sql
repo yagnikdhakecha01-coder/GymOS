@@ -3,6 +3,8 @@
 -- ====================================================================
 
 -- 1. FIX RPC: get_total_salary_due
+DROP FUNCTION IF EXISTS public.get_total_salary_due(UUID);
+
 CREATE OR REPLACE FUNCTION public.get_total_salary_due(p_gym_id UUID)
 RETURNS NUMERIC AS $$
 DECLARE
@@ -198,6 +200,8 @@ EXECUTE FUNCTION public.fn_assign_advance_salary_month();
 
 
 -- 4. FIX RPC: get_or_create_salary_draft
+DROP FUNCTION IF EXISTS public.get_or_create_salary_draft(UUID, UUID, TEXT);
+
 CREATE OR REPLACE FUNCTION public.get_or_create_salary_draft(
     p_gym_id UUID,
     p_staff_id UUID,
@@ -354,6 +358,8 @@ EXECUTE FUNCTION public.fn_calculate_salary_draft_totals();
 
 
 -- 6. FIX RPC: pay_salary_draft
+DROP FUNCTION IF EXISTS public.pay_salary_draft(UUID, TEXT, TEXT);
+
 CREATE OR REPLACE FUNCTION public.pay_salary_draft(
     p_draft_id UUID,
     p_payment_mode TEXT DEFAULT 'Cash',
