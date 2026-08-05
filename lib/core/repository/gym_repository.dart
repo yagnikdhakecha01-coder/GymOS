@@ -3225,6 +3225,8 @@ class GymRepository extends ChangeNotifier {
     required String endDate,
     required String reason,
     required String leaveType,
+    bool isHalfDay = false,
+    String? halfDayShift,
   }) async {
     final uuid = _generateUuidV4();
     final Map<String, dynamic> item = {
@@ -3235,6 +3237,8 @@ class GymRepository extends ChangeNotifier {
       'end_date': endDate,
       'reason': reason,
       'leave_type': leaveType,
+      'is_half_day': isHalfDay,
+      if (halfDayShift != null) 'half_day_shift': halfDayShift,
       'status': 'Pending',
       'created_at': DateTime.now().toIso8601String(),
     };

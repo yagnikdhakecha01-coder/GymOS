@@ -350,70 +350,96 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _buildErrorBanner(),
-            CustomCard(
-              padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
-              child: Column(
-                children: [
-                  Text(
-                    "Today's Status",
-                    style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary, fontWeight: FontWeight.w500),
-                  ),
-                  const SizedBox(height: 12),
-                  const CircleAvatar(
-                    radius: 28,
-                    backgroundColor: Color(0xFFFFF1F2),
-                    child: Icon(Icons.calendar_today_rounded, color: Colors.red, size: 24),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Not Checked In',
-                    style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.red),
-                  ),
-                  const SizedBox(height: 24),
-                  const Divider(height: 1, color: Color(0xFFF3F4F6)),
-                  const SizedBox(height: 16),
-                  Row(
+              if (_todayDetails?['is_on_leave'] == true || _todayDetails?['first_shift_status'] == 'Leave') ...[
+                CustomCard(
+                  padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 20),
+                  child: Column(
                     children: [
-                      Expanded(
-                        child: Column(
-                          children: [
-                            const Icon(Icons.schedule_rounded, color: AppTheme.textMuted, size: 18),
-                            const SizedBox(height: 6),
-                            Text(
-                              'Today\'s Shift',
-                              style: GoogleFonts.inter(fontSize: 10, color: AppTheme.textMuted),
-                            ),
-                            Text(
-                              _shiftHours,
-                              style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
-                            ),
-                          ],
-                        ),
+                      const CircleAvatar(
+                        radius: 32,
+                        backgroundColor: Color(0xFFFEF3C7),
+                        child: Icon(Icons.beach_access_rounded, color: Colors.orange, size: 32),
                       ),
-                      Container(width: 1, height: 40, color: const Color(0xFFE5E7EB)),
-                      Expanded(
-                        child: Column(
-                          children: [
-                            const Icon(Icons.hourglass_empty_rounded, color: AppTheme.textMuted, size: 18),
-                            const SizedBox(height: 6),
-                            Text(
-                              'Working Hours',
-                              style: GoogleFonts.inter(fontSize: 10, color: AppTheme.textMuted),
-                            ),
-                            Text(
-                              '0h 00m',
-                              style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
-                            ),
-                          ],
-                        ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'On Leave Today',
+                        style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.orange),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        _todayDetails?['leave_reason'] ?? 'Your leave request has been approved for today.',
+                        style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary),
+                        textAlign: TextAlign.center,
                       ),
                     ],
                   ),
-                ],
-              ),
-            ),
-            _buildShiftStatusSection(_todayDetails),
-            if (_todayDetails == null || _todayDetails?['can_check_in'] == true) ...[
+                ),
+              ] else ...[
+                CustomCard(
+                  padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+                  child: Column(
+                    children: [
+                      Text(
+                        "Today's Status",
+                        style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary, fontWeight: FontWeight.w500),
+                      ),
+                      const SizedBox(height: 12),
+                      const CircleAvatar(
+                        radius: 28,
+                        backgroundColor: Color(0xFFFFF1F2),
+                        child: Icon(Icons.calendar_today_rounded, color: Colors.red, size: 24),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Not Checked In',
+                        style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.red),
+                      ),
+                      const SizedBox(height: 24),
+                      const Divider(height: 1, color: Color(0xFFF3F4F6)),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              children: [
+                                const Icon(Icons.schedule_rounded, color: AppTheme.textMuted, size: 18),
+                                const SizedBox(height: 6),
+                                Text(
+                                  'Today\'s Shift',
+                                  style: GoogleFonts.inter(fontSize: 10, color: AppTheme.textMuted),
+                                ),
+                                Text(
+                                  _shiftHours,
+                                  style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Container(width: 1, height: 40, color: const Color(0xFFE5E7EB)),
+                          Expanded(
+                            child: Column(
+                              children: [
+                                const Icon(Icons.hourglass_empty_rounded, color: AppTheme.textMuted, size: 18),
+                                const SizedBox(height: 6),
+                                Text(
+                                  'Working Hours',
+                                  style: GoogleFonts.inter(fontSize: 10, color: AppTheme.textMuted),
+                                ),
+                                Text(
+                                  '0h 00m',
+                                  style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              _buildShiftStatusSection(_todayDetails),
+              if (_todayDetails?['is_on_leave'] != true && (_todayDetails == null || _todayDetails?['can_check_in'] == true)) ...[
               CustomButton(
                 text: 'Check In',
                 color: AppTheme.primary,

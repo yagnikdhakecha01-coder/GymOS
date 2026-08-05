@@ -23,6 +23,8 @@ class _NewRequestScreenState extends State<NewRequestScreen> {
   DateTime? _startDate;
   DateTime? _endDate;
   String _leaveType = 'Casual';
+  bool _isHalfDay = false;
+  String _halfDayShift = 'Morning';
 
   @override
   void dispose() {
@@ -317,9 +319,95 @@ class _NewRequestScreenState extends State<NewRequestScreen> {
                 ],
                 const SizedBox(height: 16),
 
-                // STEP 3: Leave Type
+                // STEP 3: Leave Duration & Type
+                if (computedDays == 1) ...[
+                  Text(
+                    '3. Leave Duration',
+                    style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.textPrimary),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () => setState(() => _isHalfDay = false),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            decoration: BoxDecoration(
+                              color: !_isHalfDay ? AppTheme.primary : const Color(0xFFF3F4F6),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              'Full Day',
+                              textAlign: TextAlign.center,
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: !_isHalfDay ? Colors.white : AppTheme.textSecondary,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () => setState(() => _isHalfDay = true),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            decoration: BoxDecoration(
+                              color: _isHalfDay ? AppTheme.primary : const Color(0xFFF3F4F6),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              'Half Day',
+                              textAlign: TextAlign.center,
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: _isHalfDay ? Colors.white : AppTheme.textSecondary,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (_isHalfDay) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      'Select Half Day Shift',
+                      style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.textPrimary),
+                    ),
+                    const SizedBox(height: 8),
+                    Consumer<GymRepository>(
+                      builder: (context, repo, child) {
+                        final assignedShift = repo.todayAttendanceDetails?['assigned_shift']?.toString() ?? '';
+                        final isTwoShifts = assignedShift == 'Two Shifts' || assignedShift == 'Both Shifts';
+                        final options = isTwoShifts ? ['Morning', 'Evening'] : ['First Half', 'Second Half'];
+                        if (!options.contains(_halfDayShift)) {
+                          _halfDayShift = options.first;
+                        }
+                        return DropdownButtonFormField<String>(
+                          value: _halfDayShift,
+                          decoration: const InputDecoration(
+                            contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          ),
+                          items: options
+                              .map((shift) => DropdownMenuItem(value: shift, child: Text('$shift Leave')))
+                              .toList(),
+                          onChanged: (val) {
+                            if (val != null) setState(() => _halfDayShift = val);
+                          },
+                        );
+                      },
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                ],
+
                 Text(
-                  '3. Leave Type',
+                  '4. Leave Type',
                   style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.textPrimary),
                 ),
                 const SizedBox(height: 8),
@@ -424,6 +512,8 @@ class _NewRequestScreenState extends State<NewRequestScreen> {
                         endDate: _endDate!.toIso8601String(),
                         reason: reason,
                         leaveType: _leaveType,
+                        isHalfDay: daysInput == 1 && _isHalfDay,
+                        halfDayShift: (daysInput == 1 && _isHalfDay) ? _halfDayShift : null,
                       );
                     }
 
