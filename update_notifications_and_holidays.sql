@@ -2,16 +2,29 @@
 -- GYMOS: PUSH NOTIFICATIONS, OWNER BROADCAST & HOLIDAY MANAGEMENT SQL
 -- ====================================================================
 
--- 1. HOLIDAYS TABLE
+-- 1. HOLIDAYS TABLE ENHANCEMENTS
 CREATE TABLE IF NOT EXISTS public.holidays (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     gym_id UUID NOT NULL REFERENCES public.gyms(id) ON DELETE CASCADE,
-    holiday_date DATE NOT NULL,
-    title TEXT NOT NULL,
+    holiday_date DATE,
+    date DATE,
+    title TEXT,
+    name TEXT,
     description TEXT DEFAULT '',
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    CONSTRAINT unique_gym_holiday_date UNIQUE (gym_id, holiday_date)
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Ensure all column variants exist on existing table
+ALTER TABLE public.holidays ADD COLUMN IF NOT EXISTS holiday_date DATE;
+ALTER TABLE public.holidays ADD COLUMN IF NOT EXISTS date DATE;
+ALTER TABLE public.holidays ADD COLUMN IF NOT EXISTS title TEXT;
+ALTER TABLE public.holidays ADD COLUMN IF NOT EXISTS name TEXT;
+
+-- Backfill values between column variants
+UPDATE public.holidays SET holiday_date = date WHERE holiday_date IS NULL AND date IS NOT NULL;
+UPDATE public.holidays SET date = holiday_date WHERE date IS NULL AND holiday_date IS NOT NULL;
+UPDATE public.holidays SET title = name WHERE title IS NULL AND name IS NOT NULL;
+UPDATE public.holidays SET name = title WHERE name IS NULL AND title IS NOT NULL;
 
 ALTER TABLE public.holidays ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS holidays_isolation_policy ON public.holidays;
@@ -44,7 +57,18 @@ RETURNS TRIGGER AS $$
 DECLARE
     r_staff RECORD;
     r_member RECORD;
+    v_hdate DATE;
+    v_htitle TEXT;
 BEGIN
+    v_hdate := COALESCE(NEW.holiday_date, NEW.date, CURRENT_DATE);
+    v_htitle := COALESCE(NEW.title, NEW.name, 'Gym Holiday');
+
+    -- Keep column variants synced
+    NEW.holiday_date := v_hdate;
+    NEW.date := v_hdate;
+    NEW.title := v_htitle;
+    NEW.name := v_htitle;
+
     -- Insert notification for the holiday
     INSERT INTO public.notifications (
         gym_id,
@@ -55,8 +79,8 @@ BEGIN
     ) VALUES (
         NEW.gym_id,
         'All',
-        '🎉 Holiday Declared: ' || NEW.title,
-        'Gym will remain closed on ' || to_char(NEW.holiday_date, 'DD Mon YYYY') || '. Reason: ' || COALESCE(NEW.description, NEW.title),
+        '🎉 Holiday Declared: ' || v_htitle,
+        'Gym will remain closed on ' || to_char(v_hdate, 'DD Mon YYYY') || '. Reason: ' || COALESCE(NEW.description, v_htitle),
         'holiday'
     );
 
@@ -73,8 +97,8 @@ BEGIN
             NEW.gym_id,
             COALESCE(r_staff.user_id, r_staff.id),
             'Staff',
-            NEW.holiday_date::TIMESTAMPTZ,
-            NEW.holiday_date::TIMESTAMPTZ,
+            v_hdate::TIMESTAMPTZ,
+            v_hdate::TIMESTAMPTZ,
             'Holiday'
         )
         ON CONFLICT DO NOTHING;
@@ -93,8 +117,8 @@ BEGIN
             NEW.gym_id,
             r_member.id,
             'Member',
-            NEW.holiday_date::TIMESTAMPTZ,
-            NEW.holiday_date::TIMESTAMPTZ,
+            v_hdate::TIMESTAMPTZ,
+            v_hdate::TIMESTAMPTZ,
             'Holiday'
         )
         ON CONFLICT DO NOTHING;
@@ -106,7 +130,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 DROP TRIGGER IF EXISTS trg_on_holiday_declared ON public.holidays;
 CREATE TRIGGER trg_on_holiday_declared
-AFTER INSERT ON public.holidays
+BEFORE INSERT ON public.holidays
 FOR EACH ROW
 EXECUTE FUNCTION public.fn_on_holiday_declared();
 
@@ -233,7 +257,6 @@ BEGIN
           AND mm.status = 'Active'
           AND mm.end_date = (CURRENT_DATE + INTERVAL '15 days')
     LOOP
-        -- Check if notification already sent today for 15 days expiry
         IF NOT EXISTS (
             SELECT 1 FROM public.notifications 
             WHERE user_id = r_exp.member_id 

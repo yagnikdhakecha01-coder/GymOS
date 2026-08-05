@@ -34,7 +34,7 @@ class _HolidaysScreenState extends State<HolidaysScreen> {
             .from('holidays')
             .select()
             .eq('gym_id', gymId)
-            .order('holiday_date', ascending: false);
+            .order('created_at', ascending: false);
 
         if (mounted) {
           setState(() {
@@ -55,6 +55,7 @@ class _HolidaysScreenState extends State<HolidaysScreen> {
     final titleController = TextEditingController();
     final descController = TextEditingController();
     DateTime selectedDate = DateTime.now();
+    bool isSubmitting = false;
 
     showModalBottomSheet(
       context: context,
@@ -78,7 +79,7 @@ class _HolidaysScreenState extends State<HolidaysScreen> {
                   Text('Select Holiday Date *', style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 6),
                   InkWell(
-                    onTap: () async {
+                    onTap: isSubmitting ? null : () async {
                       final picked = await showDatePicker(
                         context: ctx,
                         initialDate: selectedDate,
@@ -112,6 +113,7 @@ class _HolidaysScreenState extends State<HolidaysScreen> {
                   const SizedBox(height: 6),
                   TextFormField(
                     controller: titleController,
+                    enabled: !isSubmitting,
                     decoration: const InputDecoration(hintText: 'e.g. Diwali Celebration / Holi'),
                   ),
                   const SizedBox(height: 14),
@@ -121,15 +123,17 @@ class _HolidaysScreenState extends State<HolidaysScreen> {
                   const SizedBox(height: 6),
                   TextFormField(
                     controller: descController,
+                    enabled: !isSubmitting,
                     maxLines: 2,
                     decoration: const InputDecoration(hintText: 'e.g. Gym will remain completely closed for all shifts'),
                   ),
                   const SizedBox(height: 20),
 
                   CustomButton(
-                    text: 'Declare Holiday & Notify All',
+                    text: isSubmitting ? 'Declaring Holiday...' : 'Declare Holiday & Notify All',
+                    isLoading: isSubmitting,
                     icon: Icons.campaign_rounded,
-                    onPressed: () async {
+                    onPressed: isSubmitting ? () {} : () async {
                       final title = titleController.text.trim();
                       if (title.isEmpty) {
                         ScaffoldMessenger.of(ctx).showSnackBar(
@@ -138,26 +142,55 @@ class _HolidaysScreenState extends State<HolidaysScreen> {
                         return;
                       }
 
+                      setSheetState(() => isSubmitting = true);
+
                       try {
                         final authVm = Provider.of<AuthViewModel>(context, listen: false);
                         final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
 
                         if (gymId != null && SupabaseService.isInitialized) {
-                          await SupabaseService.client.from('holidays').insert({
-                            'gym_id': gymId,
-                            'holiday_date': DateFormat('yyyy-MM-dd').format(selectedDate),
-                            'title': title,
-                            'description': descController.text.trim(),
-                          });
+                          final formattedDate = DateFormat('yyyy-MM-dd').format(selectedDate);
+                          final desc = descController.text.trim();
+
+                          // Try inserting both date/name and holiday_date/title for 100% compatibility with any DB schema
+                          try {
+                            await SupabaseService.client.from('holidays').insert({
+                              'gym_id': gymId,
+                              'holiday_date': formattedDate,
+                              'date': formattedDate,
+                              'title': title,
+                              'name': title,
+                              'description': desc,
+                            });
+                          } catch (_) {
+                            try {
+                              await SupabaseService.client.from('holidays').insert({
+                                'gym_id': gymId,
+                                'date': formattedDate,
+                                'name': title,
+                                'description': desc,
+                              });
+                            } catch (e2) {
+                              await SupabaseService.client.from('holidays').insert({
+                                'gym_id': gymId,
+                                'holiday_date': formattedDate,
+                                'title': title,
+                                'description': desc,
+                              });
+                            }
+                          }
                         }
 
-                        Navigator.pop(ctx);
+                        if (Navigator.canPop(ctx)) {
+                          Navigator.pop(ctx);
+                        }
                         _loadHolidays();
 
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(content: Text('🎉 Gym Holiday declared successfully! All members & staff notified.'), backgroundColor: AppTheme.success),
                         );
                       } catch (e) {
+                        setSheetState(() => isSubmitting = false);
                         ScaffoldMessenger.of(ctx).showSnackBar(
                           SnackBar(content: Text('Error declaring holiday: $e'), backgroundColor: AppTheme.danger),
                         );
@@ -212,9 +245,9 @@ class _HolidaysScreenState extends State<HolidaysScreen> {
                     itemCount: _holidays.length,
                     itemBuilder: (context, index) {
                       final item = _holidays[index];
-                      final title = item['title']?.toString() ?? 'Gym Holiday';
+                      final title = item['title']?.toString() ?? item['name']?.toString() ?? 'Gym Holiday';
                       final desc = item['description']?.toString() ?? '';
-                      final dateStr = item['holiday_date']?.toString() ?? '';
+                      final dateStr = item['holiday_date']?.toString() ?? item['date']?.toString() ?? '';
                       DateTime? parsedDate = DateTime.tryParse(dateStr);
                       final formattedDate = parsedDate != null ? DateFormat('EEEE, dd MMMM yyyy').format(parsedDate) : dateStr;
 
