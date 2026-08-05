@@ -3097,6 +3097,48 @@ class GymRepository extends ChangeNotifier {
     }
   }
 
+  Future<void> fetchGymLeaveRequestsFromSupabase(String gymId) async {
+    if (SupabaseService.isInitialized) {
+      try {
+        final List response = await SupabaseService.client
+            .from('leave_requests')
+            .select()
+            .eq('gym_id', gymId)
+            .order('created_at', ascending: false);
+        _resetNetworkError();
+        final remoteList = List<Map<String, dynamic>>.from(response);
+        final remoteIds = remoteList.map((e) => e['id']?.toString()).toSet();
+        final localOnly = _leaveRequests.where((l) => l['gym_id'] == gymId && !remoteIds.contains(l['id']?.toString())).toList();
+        _leaveRequests = [...localOnly, ...remoteList];
+        await _storage.setString(LocalStorageService.keyLeaveRequests, jsonEncode(_leaveRequests));
+        notifyListeners();
+      } catch (e) {
+        print('fetchGymLeaveRequestsFromSupabase error: $e');
+      }
+    }
+  }
+
+  Future<void> fetchGymSalaryAdvancesFromSupabase(String gymId) async {
+    if (SupabaseService.isInitialized) {
+      try {
+        final List response = await SupabaseService.client
+            .from('salary_advance_ledger')
+            .select()
+            .eq('gym_id', gymId)
+            .order('given_date', ascending: false);
+        _resetNetworkError();
+        final remoteList = List<Map<String, dynamic>>.from(response);
+        final remoteIds = remoteList.map((e) => e['id']?.toString()).toSet();
+        final localOnly = _salaryAdvances.where((l) => l['gym_id'] == gymId && !remoteIds.contains(l['id']?.toString())).toList();
+        _salaryAdvances = [...localOnly, ...remoteList];
+        await _storage.setString(LocalStorageService.keySalaryAdvances, jsonEncode(_salaryAdvances));
+        notifyListeners();
+      } catch (e) {
+        print('fetchGymSalaryAdvancesFromSupabase error: $e');
+      }
+    }
+  }
+
   // --- Offline Creators & Updates ---
   Future<void> saveSalaryAdvanceOffline({
     required String gymId,
