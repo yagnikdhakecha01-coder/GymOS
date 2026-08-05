@@ -746,12 +746,14 @@ class GymRepository extends ChangeNotifier {
 
         // Auto-heal corrupt queue entries that violate non-null database constraints
         if (table == 'leave_requests' || table == 'salary_advance_ledger' || table == 'finance_transactions' || table == 'member_memberships' || table == 'members') {
-          final gymId = payload['gym_id'] ?? payload['gymId'];
-          if (gymId == null || gymId.toString().isEmpty) {
-            print('Auto-Heal: Removing corrupt queue entry $uuid for table $table due to missing gym_id.');
-            _crudQueue.removeWhere((q) => q['uuid'] == uuid);
-            await _saveQueuesToStorage();
-            continue;
+          if (action != 'update') {
+            final gymId = payload['gym_id'] ?? payload['gymId'];
+            if (gymId == null || gymId.toString().isEmpty) {
+              print('Auto-Heal: Removing corrupt queue entry $uuid for table $table due to missing gym_id.');
+              _crudQueue.removeWhere((q) => q['uuid'] == uuid);
+              await _saveQueuesToStorage();
+              continue;
+            }
           }
         }
 
@@ -783,7 +785,11 @@ class GymRepository extends ChangeNotifier {
               'save_gym_operating_hours',
               params: payload,
             );
-          } else if (action == 'insert' || action == 'update') {
+          } else if (action == 'update') {
+            final id = payload['id'] as String;
+            final updateData = Map<String, dynamic>.from(payload)..remove('id')..remove('uuid');
+            await SupabaseService.client.from(table).update(updateData).eq('id', id);
+          } else if (action == 'insert') {
             await SupabaseService.client.from(table).upsert(payload);
           } else if (action == 'delete') {
             final id = payload['id'] as String;
@@ -3254,11 +3260,13 @@ class GymRepository extends ChangeNotifier {
     required String requestId,
     required String status,
   }) async {
+    String? gymId;
     final index = _leaveRequests.indexWhere((l) => l['id'] == requestId);
     if (index >= 0) {
       final updated = Map<String, dynamic>.from(_leaveRequests[index]);
       updated['status'] = status;
       _leaveRequests[index] = updated;
+      gymId = updated['gym_id'];
       await _storage.setString(LocalStorageService.keyLeaveRequests, jsonEncode(_leaveRequests));
       
       // Update local dashboard alerts count
@@ -3273,6 +3281,19 @@ class GymRepository extends ChangeNotifier {
       notifyListeners();
     }
 
+    if (SupabaseService.isInitialized) {
+      try {
+        await SupabaseService.client
+            .from('leave_requests')
+            .update({'status': status})
+            .eq('id', requestId);
+        _resetNetworkError();
+        return;
+      } catch (e) {
+        print('Direct leave status update error: $e');
+      }
+    }
+
     _crudQueue.add({
       'uuid': _generateUuidV4(),
       'table': 'leave_requests',
@@ -3280,6 +3301,7 @@ class GymRepository extends ChangeNotifier {
       'payload': {
         'id': requestId,
         'status': status,
+        if (gymId != null) 'gym_id': gymId,
       },
       'created_at': DateTime.now().toIso8601String(),
       'retry_count': 0,
@@ -3293,11 +3315,13 @@ class GymRepository extends ChangeNotifier {
     required String requestId,
     required String status,
   }) async {
+    String? gymId;
     final index = _salaryAdvances.indexWhere((a) => a['id'] == requestId);
     if (index >= 0) {
       final updated = Map<String, dynamic>.from(_salaryAdvances[index]);
       updated['status'] = status;
       _salaryAdvances[index] = updated;
+      gymId = updated['gym_id'];
       await _storage.setString(LocalStorageService.keySalaryAdvances, jsonEncode(_salaryAdvances));
       
       // Update local dashboard alerts count
@@ -3312,6 +3336,19 @@ class GymRepository extends ChangeNotifier {
       notifyListeners();
     }
 
+    if (SupabaseService.isInitialized) {
+      try {
+        await SupabaseService.client
+            .from('salary_advance_ledger')
+            .update({'status': status})
+            .eq('id', requestId);
+        _resetNetworkError();
+        return;
+      } catch (e) {
+        print('Direct advance status update error: $e');
+      }
+    }
+
     _crudQueue.add({
       'uuid': _generateUuidV4(),
       'table': 'salary_advance_ledger',
@@ -3319,6 +3356,7 @@ class GymRepository extends ChangeNotifier {
       'payload': {
         'id': requestId,
         'status': status,
+        if (gymId != null) 'gym_id': gymId,
       },
       'created_at': DateTime.now().toIso8601String(),
       'retry_count': 0,
