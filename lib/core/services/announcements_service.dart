@@ -122,6 +122,19 @@ class AnnouncementsService {
           'audience': ann.audience,
           'status': ann.status,
         });
+
+        final String targetRole = ann.audience.toLowerCase().contains('staff') && (ann.audience.toLowerCase().contains('member') || ann.audience.toLowerCase().contains('both'))
+            ? 'All'
+            : (ann.audience.toLowerCase().contains('staff') ? 'Staff' : (ann.audience.toLowerCase().contains('member') ? 'Member' : 'All'));
+
+        await SupabaseService.client.from('notifications').insert({
+          'gym_id': gymId,
+          'target_role': targetRole,
+          'title': ann.title,
+          'body': ann.message,
+          'type': 'announcement',
+          'is_read': false,
+        });
       } catch (e) {
         print('Error inserting announcement to Supabase: $e');
       }

@@ -42,7 +42,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         
         if (mounted) {
           setState(() {
-            _notifications = List<Map<String, dynamic>>.from(res ?? []);
+            _notifications = List<Map<String, dynamic>>.from(res);
             _isLoading = false;
           });
         }
@@ -73,18 +73,47 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     return AppTheme.primary;
   }
 
-  void _markAllRead() {
-    try {
-      Provider.of<AuthViewModel>(context, listen: false).clearUnreadNotifications();
-    } catch (_) {}
+  Future<void> _markAllRead() async {
+    final authVm = Provider.of<AuthViewModel>(context, listen: false);
+    final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
+    authVm.clearUnreadNotifications();
+    if (gymId != null && SupabaseService.isInitialized) {
+      try {
+        await SupabaseService.client.from('notifications').update({'is_read': true}).eq('gym_id', gymId);
+      } catch (_) {}
+    }
+    if (mounted) {
+      setState(() {
+        for (var n in _notifications) {
+          n['is_read'] = true;
+        }
+      });
+    }
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('✅ All notifications marked as read'), backgroundColor: AppTheme.success),
     );
   }
 
-  void _showNotificationDetail(Map<String, dynamic> item) {
+  Future<void> _showNotificationDetail(Map<String, dynamic> item) async {
+    final notifId = item['id'];
+    final bool wasUnread = item['is_read'] != true;
+
+    if (wasUnread) {
+      item['is_read'] = true;
+      final authVm = Provider.of<AuthViewModel>(context, listen: false);
+      if (authVm.unreadNotificationsCount > 0) {
+        authVm.setUnreadNotificationsCount(authVm.unreadNotificationsCount - 1);
+      }
+      if (notifId != null && SupabaseService.isInitialized) {
+        try {
+          await SupabaseService.client.from('notifications').update({'is_read': true}).eq('id', notifId);
+        } catch (_) {}
+      }
+      if (mounted) setState(() {});
+    }
+
     final title = item['title']?.toString() ?? 'Notification';
-    final body = item['body']?.toString() ?? '';
+    final body = item['body']?.toString() ?? item['message']?.toString() ?? '';
     final created = DateTime.tryParse(item['created_at']?.toString() ?? '') ?? DateTime.now();
     final time = DateFormat('dd MMM yyyy, hh:mm a').format(created);
     final icon = _getIconForTitle(title);

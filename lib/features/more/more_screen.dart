@@ -12,6 +12,7 @@ import '../membership/membership_plans_screen.dart';
 import '../gym_settings/gym_settings_menu_screen.dart';
 import 'reports_screen.dart';
 import '../members/trial_members_screen.dart';
+import 'holidays_screen.dart';
 import 'notifications_screen.dart';
 import 'settings_screen.dart';
 import 'help_support_screen.dart';
@@ -221,6 +222,19 @@ class MoreScreen extends StatelessWidget {
                     subtitle: 'Manage free and paid member trials',
                     onTap: () {
                       Navigator.push(context, AppRouter.slideRoute(const TrialMembersScreen()));
+                    },
+                  ),
+                  const Divider(height: 1),
+
+                  // Gym Holidays
+                  _buildSettingTile(
+                    context,
+                    icon: Icons.event_busy_rounded,
+                    color: Colors.purple,
+                    title: 'Gym Holidays',
+                    subtitle: 'Declare holidays, notify all members & staff',
+                    onTap: () {
+                      Navigator.push(context, AppRouter.slideRoute(const HolidaysScreen()));
                     },
                   ),
                   const Divider(height: 1),

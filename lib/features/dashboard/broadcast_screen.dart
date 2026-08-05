@@ -6,6 +6,9 @@ import '../../core/widgets/custom_card.dart';
 import '../../core/widgets/custom_button.dart';
 import '../../core/widgets/status_badge.dart';
 import '../../core/services/announcements_service.dart';
+import '../../core/services/notification_service.dart';
+import '../authentication/auth_viewmodel.dart';
+import 'package:provider/provider.dart';
 
 class BroadcastScreen extends StatefulWidget {
   const BroadcastScreen({super.key});
@@ -19,12 +22,12 @@ class _BroadcastScreenState extends State<BroadcastScreen> with SingleTickerProv
   final _titleController = TextEditingController();
   final _messageController = TextEditingController();
   String _imageUrl = '';
-  String _selectedAudience = 'All Members';
+  String _selectedAudience = 'Both (Staff & Members)';
 
   List<Announcement> _history = [];
   bool _isLoading = true;
 
-  final List<String> _audiences = ['All Members', 'All Staff', 'PT Members', 'Selected Members'];
+  final List<String> _audiences = ['Staff', 'Members', 'Both (Staff & Members)'];
 
   @override
   void initState() {
@@ -128,6 +131,9 @@ class _BroadcastScreenState extends State<BroadcastScreen> with SingleTickerProv
       return;
     }
 
+    final authVm = Provider.of<AuthViewModel>(context, listen: false);
+    final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
+
     final newAnn = Announcement(
       id: 'ann_${DateTime.now().millisecondsSinceEpoch}',
       title: title,
@@ -138,7 +144,16 @@ class _BroadcastScreenState extends State<BroadcastScreen> with SingleTickerProv
       status: status,
     );
 
-    await AnnouncementsService.addAnnouncement(newAnn);
+    await AnnouncementsService.addAnnouncement(newAnn, gymId: gymId);
+
+    // Trigger local device push notification
+    try {
+      await NotificationService.showNotification(
+        id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        title: '📢 $title',
+        body: message,
+      );
+    } catch (_) {}
 
     _titleController.clear();
     _messageController.clear();
@@ -148,7 +163,7 @@ class _BroadcastScreenState extends State<BroadcastScreen> with SingleTickerProv
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(status == 'Sent' ? 'Announcement broadcasted!' : 'Announcement scheduled!'),
+        content: Text(status == 'Sent' ? 'Announcement broadcasted & notified!' : 'Announcement scheduled!'),
         backgroundColor: AppTheme.success,
       ),
     );

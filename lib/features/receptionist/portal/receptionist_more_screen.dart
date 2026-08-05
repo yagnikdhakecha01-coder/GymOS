@@ -7,6 +7,7 @@ import '../../authentication/role_selection_screen.dart';
 import '../receptionist_viewmodel.dart';
 import 'receptionist_activity_log_screen.dart';
 import '../../members/trial_members_screen.dart';
+import '../../more/holidays_screen.dart';
 import '../../dashboard/gym_switcher_bottom_sheet.dart';
 import '../../staff/portal/staff_requests_screen.dart';
 
@@ -101,6 +102,17 @@ class ReceptionistMoreScreen extends StatelessWidget {
                       Navigator.push(
                         context,
                         MaterialPageRoute(builder: (_) => const StaffRequestsScreen()),
+                      );
+                    },
+                  ),
+                  _divider(),
+                  _buildMenuRow(
+                    icon: Icons.event_busy_rounded,
+                    title: 'Gym Holidays',
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const HolidaysScreen()),
                       );
                     },
                   ),
