@@ -452,6 +452,7 @@ class AuthViewModel extends ChangeNotifier {
       } else {
         // Pure Native In-App Google Sign-In for Android & iOS (No Chrome Browser Redirection)
         final GoogleSignIn googleSignIn = GoogleSignIn(
+          clientId: '225633708172-75k5t5303ici4s40lat94ps647lbci5e.apps.googleusercontent.com',
           serverClientId: '225633708172-7st3l0u84rl22ccnaphap3dfpooai0o6.apps.googleusercontent.com',
           scopes: ['email', 'profile'],
         );
@@ -494,10 +495,7 @@ class AuthViewModel extends ChangeNotifier {
       }
     } on AuthException catch (ae) {
       print('signInWithGoogle AuthException: $ae');
-      if (ae.statusCode == '400' || ae.message.contains('Internal Server Error')) {
-        throw Exception('Google Auth Configuration Error (400): Please check Google Client ID & SHA-1 in Supabase Dashboard.');
-      }
-      throw Exception('Google Sign-in failed: ${ae.message}');
+      throw Exception('Google Sign-in failed (400): ${ae.message}');
     } on PlatformException catch (pe) {
       String msg = 'Google Sign-in failed.';
       if (pe.code == 'sign_in_canceled' || pe.code == '12501') {
