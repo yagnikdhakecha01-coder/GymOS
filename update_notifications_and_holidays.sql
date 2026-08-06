@@ -32,7 +32,7 @@ CREATE POLICY holidays_isolation_policy ON public.holidays FOR ALL USING (true) 
 GRANT ALL ON public.holidays TO anon, authenticated, service_role;
 
 
--- 2. NOTIFICATIONS TABLE ENHANCEMENTS
+-- 2. NOTIFICATIONS TABLE ENHANCEMENTS & MISSING COLUMNS FIX
 CREATE TABLE IF NOT EXISTS public.notifications (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     gym_id UUID REFERENCES public.gyms(id) ON DELETE CASCADE,
@@ -44,6 +44,15 @@ CREATE TABLE IF NOT EXISTS public.notifications (
     is_read BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Ensure missing columns exist on ALREADY EXISTING notifications table
+ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS user_id UUID;
+ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS target_role TEXT DEFAULT 'All';
+ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS type TEXT DEFAULT 'general';
+ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT FALSE;
+
+-- Drop restrictive check constraints if they exist
+ALTER TABLE public.notifications DROP CONSTRAINT IF EXISTS notifications_target_role_check;
 
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS notifications_isolation_policy ON public.notifications;
@@ -69,20 +78,33 @@ BEGIN
     NEW.title := v_htitle;
     NEW.name := v_htitle;
 
-    -- Insert notification for the holiday
-    INSERT INTO public.notifications (
-        gym_id,
-        target_role,
-        title,
-        body,
-        type
-    ) VALUES (
-        NEW.gym_id,
-        'All',
-        '🎉 Holiday Declared: ' || v_htitle,
-        'Gym will remain closed on ' || to_char(v_hdate, 'DD Mon YYYY') || '. Reason: ' || COALESCE(NEW.description, v_htitle),
-        'holiday'
-    );
+    -- Insert notification for the holiday safely
+    BEGIN
+        INSERT INTO public.notifications (
+            gym_id,
+            target_role,
+            title,
+            body,
+            type
+        ) VALUES (
+            NEW.gym_id,
+            'All',
+            '🎉 Holiday Declared: ' || v_htitle,
+            'Gym will remain closed on ' || to_char(v_hdate, 'DD Mon YYYY') || '. Reason: ' || COALESCE(NEW.description, v_htitle),
+            'holiday'
+        );
+    EXCEPTION WHEN OTHERS THEN
+        -- Fallback if notifications schema is being modified concurrently
+        INSERT INTO public.notifications (
+            gym_id,
+            title,
+            body
+        ) VALUES (
+            NEW.gym_id,
+            '🎉 Holiday Declared: ' || v_htitle,
+            'Gym will remain closed on ' || to_char(v_hdate, 'DD Mon YYYY') || '. Reason: ' || COALESCE(NEW.description, v_htitle)
+        );
+    END;
 
     -- Auto mark attendance logs for all Staff members on this holiday date
     FOR r_staff IN SELECT id, user_id FROM public.staff WHERE gym_id = NEW.gym_id AND status = 'Active' LOOP
@@ -145,35 +167,51 @@ BEGIN
     SELECT name INTO s_name FROM public.staff WHERE id = NEW.staff_id;
 
     IF TG_OP = 'INSERT' THEN
-        INSERT INTO public.notifications (
-            gym_id,
-            target_role,
-            title,
-            body,
-            type
-        ) VALUES (
-            NEW.gym_id,
-            'Owner',
-            '📋 New Leave Request',
-            COALESCE(s_name, 'Staff Member') || ' has requested leave from ' || to_char(NEW.start_date, 'DD Mon') || ' to ' || to_char(NEW.end_date, 'DD Mon'),
-            'request'
-        );
+        BEGIN
+            INSERT INTO public.notifications (
+                gym_id,
+                target_role,
+                title,
+                body,
+                type
+            ) VALUES (
+                NEW.gym_id,
+                'Owner',
+                '📋 New Leave Request',
+                COALESCE(s_name, 'Staff Member') || ' has requested leave from ' || to_char(NEW.start_date, 'DD Mon') || ' to ' || to_char(NEW.end_date, 'DD Mon'),
+                'request'
+            );
+        EXCEPTION WHEN OTHERS THEN
+            INSERT INTO public.notifications (gym_id, title, body) VALUES (
+                NEW.gym_id,
+                '📋 New Leave Request',
+                COALESCE(s_name, 'Staff Member') || ' has requested leave from ' || to_char(NEW.start_date, 'DD Mon') || ' to ' || to_char(NEW.end_date, 'DD Mon')
+            );
+        END;
     ELSIF TG_OP = 'UPDATE' AND OLD.status <> NEW.status AND NEW.status IN ('Approved', 'Rejected') THEN
-        INSERT INTO public.notifications (
-            gym_id,
-            user_id,
-            target_role,
-            title,
-            body,
-            type
-        ) VALUES (
-            NEW.gym_id,
-            NEW.staff_id,
-            'Staff',
-            'Leave Request ' || NEW.status,
-            'Your leave request from ' || to_char(NEW.start_date, 'DD Mon') || ' to ' || to_char(NEW.end_date, 'DD Mon') || ' has been ' || NEW.status,
-            'request'
-        );
+        BEGIN
+            INSERT INTO public.notifications (
+                gym_id,
+                user_id,
+                target_role,
+                title,
+                body,
+                type
+            ) VALUES (
+                NEW.gym_id,
+                NEW.staff_id,
+                'Staff',
+                'Leave Request ' || NEW.status,
+                'Your leave request from ' || to_char(NEW.start_date, 'DD Mon') || ' to ' || to_char(NEW.end_date, 'DD Mon') || ' has been ' || NEW.status,
+                'request'
+            );
+        EXCEPTION WHEN OTHERS THEN
+            INSERT INTO public.notifications (gym_id, title, body) VALUES (
+                NEW.gym_id,
+                'Leave Request ' || NEW.status,
+                'Your leave request from ' || to_char(NEW.start_date, 'DD Mon') || ' to ' || to_char(NEW.end_date, 'DD Mon') || ' has been ' || NEW.status
+            );
+        END;
     END IF;
 
     RETURN NEW;
@@ -196,35 +234,51 @@ BEGIN
     SELECT name INTO s_name FROM public.staff WHERE id = NEW.staff_id;
 
     IF TG_OP = 'INSERT' THEN
-        INSERT INTO public.notifications (
-            gym_id,
-            target_role,
-            title,
-            body,
-            type
-        ) VALUES (
-            NEW.gym_id,
-            'Owner',
-            '💰 New Advance Salary Request',
-            COALESCE(s_name, 'Staff Member') || ' has requested an advance of ₹' || COALESCE(NEW.advance_amount, 0),
-            'request'
-        );
+        BEGIN
+            INSERT INTO public.notifications (
+                gym_id,
+                target_role,
+                title,
+                body,
+                type
+            ) VALUES (
+                NEW.gym_id,
+                'Owner',
+                '💰 New Advance Salary Request',
+                COALESCE(s_name, 'Staff Member') || ' has requested an advance of ₹' || COALESCE(NEW.advance_amount, 0),
+                'request'
+            );
+        EXCEPTION WHEN OTHERS THEN
+            INSERT INTO public.notifications (gym_id, title, body) VALUES (
+                NEW.gym_id,
+                '💰 New Advance Salary Request',
+                COALESCE(s_name, 'Staff Member') || ' has requested an advance of ₹' || COALESCE(NEW.advance_amount, 0)
+            );
+        END;
     ELSIF TG_OP = 'UPDATE' AND OLD.status <> NEW.status AND NEW.status IN ('Approved', 'Rejected', 'Given') THEN
-        INSERT INTO public.notifications (
-            gym_id,
-            user_id,
-            target_role,
-            title,
-            body,
-            type
-        ) VALUES (
-            NEW.gym_id,
-            NEW.staff_id,
-            'Staff',
-            'Advance Request ' || NEW.status,
-            'Your advance salary request of ₹' || COALESCE(NEW.advance_amount, 0) || ' has been ' || NEW.status,
-            'request'
-        );
+        BEGIN
+            INSERT INTO public.notifications (
+                gym_id,
+                user_id,
+                target_role,
+                title,
+                body,
+                type
+            ) VALUES (
+                NEW.gym_id,
+                NEW.staff_id,
+                'Staff',
+                'Advance Request ' || NEW.status,
+                'Your advance salary request of ₹' || COALESCE(NEW.advance_amount, 0) || ' has been ' || NEW.status,
+                'request'
+            );
+        EXCEPTION WHEN OTHERS THEN
+            INSERT INTO public.notifications (gym_id, title, body) VALUES (
+                NEW.gym_id,
+                'Advance Request ' || NEW.status,
+                'Your advance salary request of ₹' || COALESCE(NEW.advance_amount, 0) || ' has been ' || NEW.status
+            );
+        END;
     END IF;
 
     RETURN NEW;
@@ -263,21 +317,29 @@ BEGIN
               AND type = 'expiry'
               AND created_at::DATE = CURRENT_DATE
         ) THEN
-            INSERT INTO public.notifications (
-                gym_id,
-                user_id,
-                target_role,
-                title,
-                body,
-                type
-            ) VALUES (
-                p_gym_id,
-                r_exp.member_id,
-                'Member',
-                '⏳ Membership Expiring Soon',
-                'Hi ' || r_exp.member_name || ', your ' || COALESCE(r_exp.plan_name, 'Gym') || ' membership will expire in 15 days on ' || to_char(r_exp.end_date, 'DD Mon YYYY') || '. Please renew to stay fit!',
-                'expiry'
-            );
+            BEGIN
+                INSERT INTO public.notifications (
+                    gym_id,
+                    user_id,
+                    target_role,
+                    title,
+                    body,
+                    type
+                ) VALUES (
+                    p_gym_id,
+                    r_exp.member_id,
+                    'Member',
+                    '⏳ Membership Expiring Soon',
+                    'Hi ' || r_exp.member_name || ', your ' || COALESCE(r_exp.plan_name, 'Gym') || ' membership will expire in 15 days on ' || to_char(r_exp.end_date, 'DD Mon YYYY') || '. Please renew to stay fit!',
+                    'expiry'
+                );
+            EXCEPTION WHEN OTHERS THEN
+                INSERT INTO public.notifications (gym_id, title, body) VALUES (
+                    p_gym_id,
+                    '⏳ Membership Expiring Soon',
+                    'Hi ' || r_exp.member_name || ', your ' || COALESCE(r_exp.plan_name, 'Gym') || ' membership will expire in 15 days on ' || to_char(r_exp.end_date, 'DD Mon YYYY') || '. Please renew to stay fit!'
+                );
+            END;
         END IF;
     END LOOP;
 END;
