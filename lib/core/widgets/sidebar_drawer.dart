@@ -371,12 +371,34 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
       if (gymId == null || !SupabaseService.isInitialized) return;
 
       final client = SupabaseService.client;
+      int durationVal = 30;
+      String durationUnit = 'days';
+      
+      try {
+        final res = await client
+            .from('platform_settings')
+            .select('value')
+            .eq('key', 'default_free_trial')
+            .maybeSingle();
+        if (res != null && res['value'] != null) {
+          final Map<String, dynamic> val = Map<String, dynamic>.from(res['value']);
+          durationVal = int.tryParse(val['duration_value']?.toString() ?? '30') ?? 30;
+          durationUnit = val['duration_unit']?.toString() ?? 'days';
+        }
+      } catch (e) {
+        debugPrint('Error getting dynamic trial duration in drawer: $e');
+      }
+
+      final DateTime endDate = durationUnit.toLowerCase() == 'months'
+          ? DateTime.now().add(Duration(days: durationVal * 30))
+          : DateTime.now().add(Duration(days: durationVal));
+
       await client
           .from('subscriptions')
           .update({
             'plan_id': planId,
             'status': 'trial',
-            'end_date': DateTime.now().add(const Duration(days: 14)).toIso8601String(),
+            'end_date': endDate.toIso8601String(),
           })
           .eq('gym_id', gymId);
 

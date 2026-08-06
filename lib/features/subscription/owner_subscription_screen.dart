@@ -20,6 +20,11 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
   String? _pendingOrderId;
   double? _selectedPrice;
 
+  // Dynamic free trial settings
+  int _trialDuration = 30;
+  String _trialUnit = 'days';
+  bool _isLoadingSettings = true;
+
   @override
   void initState() {
     super.initState();
@@ -27,6 +32,65 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
     _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _handlePaymentSuccess);
     _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handlePaymentError);
     _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWallet);
+    _loadTrialSettings();
+  }
+
+  Future<void> _loadTrialSettings() async {
+    try {
+      if (SupabaseService.isInitialized) {
+        final res = await SupabaseService.client
+            .from('platform_settings')
+            .select('value')
+            .eq('key', 'default_free_trial')
+            .maybeSingle();
+
+        if (res != null && res['value'] != null) {
+          final Map<String, dynamic> val = Map<String, dynamic>.from(res['value']);
+          if (mounted) {
+            setState(() {
+              _trialDuration = int.tryParse(val['duration_value']?.toString() ?? '30') ?? 30;
+              _trialUnit = val['duration_unit']?.toString() ?? 'days';
+              _isLoadingSettings = false;
+            });
+            return;
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Error loading dynamic trial settings: $e');
+    }
+    if (mounted) {
+      setState(() {
+        _isLoadingSettings = false;
+      });
+    }
+  }
+
+  String get _trialTitleText {
+    final unitStr = _trialUnit.toLowerCase();
+    if (unitStr == 'months') {
+      return '$_trialDuration ${_trialDuration == 1 ? "Month" : "Month"} Free Trial';
+    } else {
+      return '$_trialDuration ${_trialDuration == 1 ? "Day" : "Days"} Free Trial';
+    }
+  }
+
+  String get _trialSubtitleText {
+    final unitStr = _trialUnit.toLowerCase();
+    if (unitStr == 'months') {
+      return 'Try all premium features free for $_trialDuration ${_trialDuration == 1 ? "month" : "months"}. Cancel anytime.';
+    } else {
+      return 'Try all premium features free for $_trialDuration ${_trialDuration == 1 ? "day" : "days"}. Cancel anytime.';
+    }
+  }
+
+  String get _trialFooterText {
+    final unitStr = _trialUnit.toLowerCase();
+    if (unitStr == 'months') {
+      return 'All plans include $_trialDuration ${_trialDuration == 1 ? "month" : "months"} free trial. Cancel anytime.';
+    } else {
+      return 'All plans include $_trialDuration ${_trialDuration == 1 ? "day" : "days"} free trial. Cancel anytime.';
+    }
   }
 
   @override
@@ -343,7 +407,7 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          '1 Month Free Trial',
+                          _trialTitleText,
                           style: GoogleFonts.inter(
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
@@ -352,7 +416,7 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          'Try all premium features free for 1 month. Cancel anytime.',
+                          _trialSubtitleText,
                           style: GoogleFonts.inter(
                             fontSize: 12,
                             color: const Color(0xFF5B21B6),
@@ -453,7 +517,7 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
             const SizedBox(height: 20),
             Center(
               child: Text(
-                'All plans include 1 month free trial. Cancel anytime.',
+                _trialFooterText,
                 style: GoogleFonts.inter(
                   fontSize: 12,
                   color: const Color(0xFF94A3B8),

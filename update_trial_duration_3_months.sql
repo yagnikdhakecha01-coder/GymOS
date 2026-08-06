@@ -40,3 +40,13 @@ EXCEPTION WHEN OTHERS THEN
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Update the default trial settings for new registrations
+INSERT INTO public.platform_settings (key, value, updated_at)
+VALUES (
+    'default_free_trial', 
+    '{"duration_value": 3, "duration_unit": "months", "enabled": true}'::jsonb,
+    NOW()
+)
+ON CONFLICT (key) DO UPDATE 
+SET value = EXCLUDED.value, updated_at = NOW();

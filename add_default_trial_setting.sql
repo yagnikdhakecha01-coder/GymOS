@@ -19,11 +19,11 @@ CREATE POLICY platform_settings_select_policy ON public.platform_settings FOR SE
 DROP POLICY IF EXISTS platform_settings_all_policy ON public.platform_settings;
 CREATE POLICY platform_settings_all_policy ON public.platform_settings FOR ALL USING (true);
 
--- Insert Default Free Trial setting (Default: 30 days)
+-- Insert Default Free Trial setting (Default: 3 months)
 INSERT INTO public.platform_settings (key, value, updated_at)
 VALUES (
     'default_free_trial', 
-    '{"duration_value": 30, "duration_unit": "days", "enabled": true}'::jsonb,
+    '{"duration_value": 3, "duration_unit": "months", "enabled": true}'::jsonb,
     NOW()
 )
 ON CONFLICT (key) DO NOTHING;
