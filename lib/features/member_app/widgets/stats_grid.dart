@@ -5,14 +5,12 @@ import '../../../core/theme/theme.dart';
 class StatsGrid extends StatelessWidget {
   final int attendancePercentage;
   final int membershipDaysLeft;
-  final int ptSessionsLeft;
   final String pendingPayment;
 
   const StatsGrid({
     super.key,
     required this.attendancePercentage,
     required this.membershipDaysLeft,
-    required this.ptSessionsLeft,
     this.pendingPayment = '₹0',
   });
 
@@ -54,25 +52,13 @@ class StatsGrid extends StatelessWidget {
             children: [
               Expanded(
                 child: _StatCard(
-                  icon: Icons.fitness_center_rounded,
-                  iconBgColor: const Color(0xFFDBEAFE),
-                  iconColor: const Color(0xFF3B82F6),
-                  title: 'PT Sessions',
-                  value: '$ptSessionsLeft',
-                  subtitle: 'Sessions Left',
-                  delay: 200,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _StatCard(
                   icon: Icons.payment_rounded,
                   iconBgColor: const Color(0xFFFEF3C7),
                   iconColor: const Color(0xFFD97706),
                   title: 'Pending Payment',
                   value: pendingPayment,
-                  subtitle: 'All Clear',
-                  delay: 300,
+                  subtitle: 'Fees Status',
+                  delay: 200,
                   isWarning: true,
                 ),
               ),
@@ -111,8 +97,8 @@ class _StatCard extends StatefulWidget {
 
 class _StatCardState extends State<_StatCard> with SingleTickerProviderStateMixin {
   late AnimationController _controller;
-  late Animation<double> _fadeAnim;
-  late Animation<Offset> _slideAnim;
+  late Animation<double> _scaleAnimation;
+  late Animation<double> _fadeAnimation;
 
   @override
   void initState() {
@@ -121,15 +107,19 @@ class _StatCardState extends State<_StatCard> with SingleTickerProviderStateMixi
       vsync: this,
       duration: const Duration(milliseconds: 600),
     );
-    _fadeAnim = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOut),
+
+    _scaleAnimation = Tween<double>(begin: 0.85, end: 1.0).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOutBack),
     );
-    _slideAnim = Tween<Offset>(begin: const Offset(0, 0.15), end: Offset.zero).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
+
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOut),
     );
 
     Future.delayed(Duration(milliseconds: widget.delay), () {
-      if (mounted) _controller.forward();
+      if (mounted) {
+        _controller.forward();
+      }
     });
   }
 
@@ -142,70 +132,69 @@ class _StatCardState extends State<_StatCard> with SingleTickerProviderStateMixi
   @override
   Widget build(BuildContext context) {
     return FadeTransition(
-      opacity: _fadeAnim,
-      child: SlideTransition(
-        position: _slideAnim,
+      opacity: _fadeAnimation,
+      child: ScaleTransition(
+        scale: _scaleAnimation,
         child: Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppTheme.border),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: const Color(0xFFF1F0FB)),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.02),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
+                color: const Color(0xFF5A4FCF).withValues(alpha: 0.06),
+                blurRadius: 16,
+                offset: const Offset(0, 4),
               ),
             ],
           ),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: widget.iconBgColor,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(widget.icon, color: widget.iconColor, size: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: widget.iconBgColor,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      widget.icon,
+                      color: widget.iconColor,
+                      size: 20,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      widget.title,
-                      style: GoogleFonts.inter(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w500,
-                        color: AppTheme.textMuted,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        widget.value,
-                        style: GoogleFonts.inter(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                          color: AppTheme.textPrimary,
-                          letterSpacing: -0.5,
-                        ),
-                      ),
-                    ),
-                    Text(
-                      widget.subtitle,
-                      style: GoogleFonts.inter(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                        color: widget.isWarning ? const Color(0xFFD97706) : AppTheme.textMuted,
-                      ),
-                    ),
-                  ],
+              const SizedBox(height: 14),
+              Text(
+                widget.title,
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: AppTheme.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                widget.value,
+                style: GoogleFonts.inter(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  color: AppTheme.textPrimary,
+                  letterSpacing: -0.5,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                widget.subtitle,
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  color: AppTheme.textMuted,
                 ),
               ),
             ],

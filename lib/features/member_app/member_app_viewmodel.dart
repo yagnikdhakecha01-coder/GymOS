@@ -38,21 +38,15 @@ class MemberAppViewModel extends ChangeNotifier {
   // ── Statistics ──
   int _attendancePercentage = 0;
   int _membershipDaysLeft = 0;
-  int _ptSessionsLeft = 0;
   double _pendingAmount = 0.0;
+  List<String> _declaredHolidays = [];
 
   // ── Today's Training ──
   String _todayMuscleGroup = 'Chest Day'; // Chest, Back, Leg, Shoulder, Arm, Rest, Cardio
   bool _isTrainingCompleted = false;
 
-  // Training History Mock
-  final List<Map<String, dynamic>> _trainingHistory = [
-    {'date': '16 May 2026', 'muscle': 'Back Day', 'status': 'Completed'},
-    {'date': '15 May 2026', 'muscle': 'Leg Day', 'status': 'Completed'},
-    {'date': '14 May 2026', 'muscle': 'Shoulder Day', 'status': 'Completed'},
-    {'date': '13 May 2026', 'muscle': 'Arm Day', 'status': 'Completed'},
-    {'date': '12 May 2026', 'muscle': 'Rest Day', 'status': 'Completed'},
-  ];
+  // Training History List
+  final List<Map<String, dynamic>> _trainingHistory = [];
 
   // ── Diet ──
   bool _isDietAvailable = true;
@@ -174,8 +168,8 @@ class MemberAppViewModel extends ChangeNotifier {
 
   int get attendancePercentage => _attendancePercentage;
   int get membershipDaysLeft => _membershipDaysLeft;
-  int get ptSessionsLeft => _ptSessionsLeft;
   double get pendingAmount => _pendingAmount;
+  List<String> get declaredHolidays => _declaredHolidays;
 
   int get totalGymDays {
     final now = DateTime.now();
@@ -303,9 +297,99 @@ class MemberAppViewModel extends ChangeNotifier {
       } catch (_) {}
     }
 
+    // Calculate days left offline automatically
+    final cachedDaysLeft = prefs.getInt('member_cached_days_left');
+    final cachedDaysTs = prefs.getString('member_cached_days_timestamp');
+    if (cachedDaysLeft != null && cachedDaysTs != null) {
+      try {
+        final cachedDate = DateTime.parse(cachedDaysTs);
+        final elapsed = DateTime.now().difference(DateTime(cachedDate.year, cachedDate.month, cachedDate.day)).inDays;
+        _membershipDaysLeft = max(0, cachedDaysLeft - elapsed);
+      } catch (_) {
+        _membershipDaysLeft = cachedDaysLeft;
+      }
+    }
+
+    final cachedHolidays = prefs.getStringList('member_declared_holidays');
+    if (cachedHolidays != null) {
+      _declaredHolidays = cachedHolidays;
+    }
+
+    final todayIsoStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    final lastWorkoutDate = prefs.getString('member_last_workout_completed_date');
+    _isTrainingCompleted = (lastWorkoutDate == todayIsoStr);
+
+    final cachedHistoryStr = prefs.getString('member_training_history');
+    if (cachedHistoryStr != null) {
+      try {
+        final List decoded = jsonDecode(cachedHistoryStr);
+        _trainingHistory.clear();
+        _trainingHistory.addAll(decoded.map((e) => Map<String, dynamic>.from(e as Map)));
+      } catch (_) {}
+    }
+
     _generateCurrentWeek();
     notifyListeners();
     await loadMemberDataFromSupabase();
+  }
+
+  Future<Map<String, dynamic>> completeTodayWorkout(BuildContext context) async {
+    final now = DateTime.now();
+    final todayDateStr = DateFormat('dd MMM yyyy').format(now);
+    final todayIsoStr = DateFormat('yyyy-MM-dd').format(now);
+
+    // 1. Attendance Check: verify if member checked in today
+    bool isAttendanceMarked = _checkedInToday;
+    if (!isAttendanceMarked) {
+      final todayFormatted = DateFormat('dd-MM-yyyy').format(now);
+      if (_checkInDate == todayFormatted || _attendedDaysOfCurrentMonth.contains(now.day)) {
+        isAttendanceMarked = true;
+      }
+    }
+
+    // If attendance is NOT marked and network is initialized, block workout completion
+    if (!isAttendanceMarked && SupabaseService.isInitialized) {
+      return {
+        'success': false,
+        'message': 'You haven\'t marked attendance today! Please check-in first to complete your workout.',
+      };
+    }
+
+    // 2. Mark workout completed
+    _isTrainingCompleted = true;
+    final newLog = {
+      'date': todayDateStr,
+      'muscle': _todayMuscleGroup,
+      'status': 'Completed',
+      'time': DateFormat('hh:mm a').format(now),
+    };
+
+    _trainingHistory.removeWhere((item) => item['date'] == todayDateStr);
+    _trainingHistory.insert(0, newLog);
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('member_last_workout_completed_date', todayIsoStr);
+    await prefs.setString('member_training_history', jsonEncode(_trainingHistory));
+
+    // 3. Save to Supabase if connected
+    if (SupabaseService.isInitialized) {
+      try {
+        final user = SupabaseService.client.auth.currentUser;
+        if (user != null) {
+          await SupabaseService.client.from('attendance_logs').update({
+            'shift_status': 'Workout Completed',
+          }).eq('user_id', user.id).gte('check_in', DateTime(now.year, now.month, now.day).toIso8601String());
+        }
+      } catch (e) {
+        print('Error updating workout log in Supabase: $e');
+      }
+    }
+
+    notifyListeners();
+    return {
+      'success': true,
+      'message': '🎉 Workout completed for today! Great job staying consistent.',
+    };
   }
 
   void _generateCurrentWeek() {
@@ -454,6 +538,8 @@ class MemberAppViewModel extends ChangeNotifier {
                   .difference(DateTime(today.year, today.month, today.day))
                   .inDays;
               _membershipDaysLeft = difference > 0 ? difference : 0;
+              await prefs.setInt('member_cached_days_left', _membershipDaysLeft);
+              await prefs.setString('member_cached_days_timestamp', DateTime.now().toIso8601String());
             } catch (_) {
               _membershipDaysLeft = 0;
             }
@@ -607,10 +693,37 @@ class MemberAppViewModel extends ChangeNotifier {
                   'xp_reward': reward,
                 });
               }
+
+              // Sort achievements: Unlocked badges FIRST, Locked badges SECOND
+              _achievements.sort((a, b) {
+                final aUnlocked = a['unlocked'] == true ? 0 : 1;
+                final bUnlocked = b['unlocked'] == true ? 0 : 1;
+                return aUnlocked.compareTo(bUnlocked);
+              });
             }
           }
         } catch (e) {
           print('Error loading gamification profile: $e');
+        }
+
+        // Fetch declared holidays from public.holidays for gym
+        try {
+          final gymIdVal = memberData['gym_id'];
+          if (gymIdVal != null) {
+            final holidaysRes = await SupabaseService.client
+                .from('holidays')
+                .select('holiday_date, date')
+                .eq('gym_id', gymIdVal);
+            final Set<String> hDates = {};
+            for (var h in holidaysRes) {
+              final dStr = h['holiday_date']?.toString() ?? h['date']?.toString() ?? '';
+              if (dStr.isNotEmpty) hDates.add(dStr);
+            }
+            _declaredHolidays = hDates.toList();
+            await prefs.setStringList('member_declared_holidays', _declaredHolidays);
+          }
+        } catch (e) {
+          print('Error loading declared holidays: $e');
         }
 
         // Setup Realtime listener for member row updates
@@ -772,7 +885,6 @@ class MemberAppViewModel extends ChangeNotifier {
     _weekAttendance = [false, false, false, false, false, false, false];
     _attendancePercentage = 0;
     _membershipDaysLeft = 0;
-    _ptSessionsLeft = 0;
     _pendingAmount = 0.0;
     _todayMuscleGroup = 'Rest Day';
     _isTrainingCompleted = false;

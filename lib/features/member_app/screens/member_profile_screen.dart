@@ -194,10 +194,37 @@ class MemberProfileScreen extends StatelessWidget {
                           color: AppTheme.textMuted,
                         ),
                       ),
+                      const SizedBox(height: 16),
+
+                      // Body Stats Summary Card (Database Synced)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: GestureDetector(
+                          onTap: () => _showBodyStatsDialog(context, vm),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF3F0FF),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: const Color(0xFFDDD6FE)),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceAround,
+                              children: [
+                                _statSummaryItem('Weight', vm.weight.isNotEmpty ? vm.weight : '-- kg'),
+                                Container(width: 1, height: 24, color: const Color(0xFFDDD6FE)),
+                                _statSummaryItem('Height', vm.height.isNotEmpty ? vm.height : '-- cm'),
+                                Container(width: 1, height: 24, color: const Color(0xFFDDD6FE)),
+                                _statSummaryItem('Body Fat', vm.bodyFat.isNotEmpty ? vm.bodyFat : '-- %'),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 28),
+                const SizedBox(height: 20),
 
                 // ── Menu Items ──
                 Padding(
@@ -347,6 +374,30 @@ class MemberProfileScreen extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _statSummaryItem(String label, String value) {
+    return Column(
+      children: [
+        Text(
+          label,
+          style: GoogleFonts.inter(
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+            color: const Color(0xFF6D28D9),
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          value,
+          style: GoogleFonts.inter(
+            fontSize: 14,
+            fontWeight: FontWeight.w800,
+            color: const Color(0xFF4C1D95),
+          ),
+        ),
+      ],
     );
   }
 }

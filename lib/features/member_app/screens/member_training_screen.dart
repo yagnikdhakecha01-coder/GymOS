@@ -125,30 +125,48 @@ class MemberTrainingScreen extends StatelessWidget {
                         ),
                         const SizedBox(height: 20),
 
-                        // Ask Trainer Button
+                        // Complete Workout Button
                         SizedBox(
-                          width: 150,
-                          height: 42,
-                          child: OutlinedButton(
-                            onPressed: () {},
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: AppTheme.primary,
-                              side: const BorderSide(color: AppTheme.primary, width: 1.5),
+                          width: 200,
+                          height: 46,
+                          child: ElevatedButton(
+                            onPressed: vm.isTrainingCompleted
+                                ? null
+                                : () async {
+                                    final res = await vm.completeTodayWorkout(context);
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text(res['message']?.toString() ?? ''),
+                                          backgroundColor: res['success'] == true ? AppTheme.success : AppTheme.danger,
+                                          behavior: SnackBarBehavior.floating,
+                                        ),
+                                      );
+                                    }
+                                  },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: vm.isTrainingCompleted ? const Color(0xFFDCFCE7) : AppTheme.primary,
+                              foregroundColor: vm.isTrainingCompleted ? const Color(0xFF15803D) : Colors.white,
+                              elevation: 0,
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(20),
                               ),
-                              padding: EdgeInsets.zero,
                             ),
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                const Icon(Icons.forum_outlined, size: 16),
-                                const SizedBox(width: 6),
+                                Icon(
+                                  vm.isTrainingCompleted ? Icons.check_circle_rounded : Icons.task_alt_rounded,
+                                  size: 18,
+                                  color: vm.isTrainingCompleted ? const Color(0xFF15803D) : Colors.white,
+                                ),
+                                const SizedBox(width: 8),
                                 Text(
-                                  'Ask Trainer',
+                                  vm.isTrainingCompleted ? 'Workout Done 🎉' : 'Complete Workout',
                                   style: GoogleFonts.inter(
-                                    fontSize: 13,
+                                    fontSize: 14,
                                     fontWeight: FontWeight.w700,
+                                    color: vm.isTrainingCompleted ? const Color(0xFF15803D) : Colors.white,
                                   ),
                                 ),
                               ],

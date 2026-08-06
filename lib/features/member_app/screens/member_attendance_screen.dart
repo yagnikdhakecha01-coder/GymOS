@@ -226,20 +226,25 @@ class _MemberAttendanceScreenState extends State<MemberAttendanceScreen> {
     List<Widget> rows = [];
     List<Widget> currentRow = [];
 
-    // Empty cells for offset
     for (int i = 0; i < startOffset; i++) {
       currentRow.add(const SizedBox(width: 36, height: 36));
     }
 
     for (int day = 1; day <= totalDays; day++) {
-      final dateStr = DateFormat('dd-MM-yyyy').format(DateTime(_currentMonth.year, _currentMonth.month, day));
+      final dayDate = DateTime(_currentMonth.year, _currentMonth.month, day);
+      final dateStr = DateFormat('dd-MM-yyyy').format(dayDate);
+      final dateIsoStr = DateFormat('yyyy-MM-dd').format(dayDate);
+      final isDeclaredHoliday = vm.declaredHolidays.contains(dateIsoStr) || vm.declaredHolidays.contains(dateStr);
       final logsForDay = logsThisMonth.where((l) => l.date == dateStr).toList();
       
       Color bgColor = Colors.transparent;
       Color textColor = AppTheme.textPrimary;
       final isToday = isCurrentMonth && day == today;
       
-      if (logsForDay.isNotEmpty) {
+      if (isDeclaredHoliday) {
+        bgColor = isToday ? const Color(0xFF9333EA) : const Color(0xFFF3E8FF);
+        textColor = isToday ? Colors.white : const Color(0xFF9333EA);
+      } else if (logsForDay.isNotEmpty) {
         final status = logsForDay.first.status;
         if (isToday) {
           // Today (Solid background, white text)
@@ -256,7 +261,7 @@ class _MemberAttendanceScreenState extends State<MemberAttendanceScreen> {
             bgColor = Colors.purple;
             textColor = Colors.white;
           } else if (status == 'Holiday') {
-            bgColor = AppTheme.textMuted;
+            bgColor = const Color(0xFF9333EA);
             textColor = Colors.white;
           }
         } else {
@@ -274,8 +279,8 @@ class _MemberAttendanceScreenState extends State<MemberAttendanceScreen> {
             bgColor = const Color(0xFFF3E8FF);
             textColor = Colors.purple;
           } else if (status == 'Holiday') {
-            bgColor = AppTheme.surfaceGray;
-            textColor = AppTheme.textMuted;
+            bgColor = const Color(0xFFF3E8FF);
+            textColor = const Color(0xFF9333EA);
           }
         }
       }

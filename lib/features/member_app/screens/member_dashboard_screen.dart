@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
 import '../../../core/theme/theme.dart';
 import '../member_app_viewmodel.dart';
 import 'member_training_screen.dart';
@@ -281,7 +282,7 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen>
                   )),
                   const SizedBox(height: 20),
 
-                  // ═══════ STATS GRID 2x2 (Image 4 - 4 stat cards) ═══════
+                  // ═══════ STATS GRID (Attendance, Membership Days Left, Pending Payment) ═══════
                   _animated(2, Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: Column(
@@ -296,8 +297,6 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen>
                         const SizedBox(height: 12),
                         Row(
                           children: [
-                            Expanded(child: _buildStatCard('🏆', 'PT Sessions', '${vm.ptSessionsLeft}', 'Sessions Left', const Color(0xFF3B82F6))),
-                            const SizedBox(width: 12),
                             Expanded(child: _buildStatCard('💳', 'Pending Payment', '₹${vm.pendingAmount.toStringAsFixed(0)}', vm.pendingAmount > 0 ? 'Pending' : 'All Clear', const Color(0xFFF59E0B))),
                           ],
                         ),
@@ -309,77 +308,82 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen>
                   // ═══════ TODAY'S TRAINING CARD ═══════
                   _animated(3, Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(color: const Color(0xFFF1F0FB)),
-                        boxShadow: [
-                          BoxShadow(
-                            color: const Color(0xFF5A4FCF).withOpacity(0.06),
-                            blurRadius: 20,
-                            offset: const Offset(0, 8),
-                          ),
-                        ],
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(20),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                // Left Section: 70% width
-                                Expanded(
-                                  flex: 7,
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      // Header: Icon + Today's Training
-                                      Row(
-                                        children: [
-                                          Container(
-                                            padding: const EdgeInsets.all(6),
-                                            decoration: BoxDecoration(
-                                              color: const Color(0xFFF3F0FF),
-                                              borderRadius: BorderRadius.circular(8),
-                                            ),
-                                            child: Transform.rotate(
-                                              angle: -0.7853981633974483, // Rotate 45 degrees counterclockwise to make horizontal
-                                              child: const Icon(
-                                                Icons.fitness_center_rounded,
-                                                color: Color(0xFF7C3AED),
-                                                size: 16,
+                    child: InkWell(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const MemberTrainingScreen()),
+                        );
+                      },
+                      borderRadius: BorderRadius.circular(24),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(color: const Color(0xFFF1F0FB)),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF5A4FCF).withValues(alpha: 0.06),
+                              blurRadius: 20,
+                              offset: const Offset(0, 8),
+                            ),
+                          ],
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(20),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  // Left Section
+                                  Expanded(
+                                    flex: 7,
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        // Header: Icon + Today's Training Day
+                                        Row(
+                                          children: [
+                                            Container(
+                                              padding: const EdgeInsets.all(6),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFFF3F0FF),
+                                                borderRadius: BorderRadius.circular(8),
+                                              ),
+                                              child: Transform.rotate(
+                                                angle: -0.7853981633974483,
+                                                child: const Icon(
+                                                  Icons.fitness_center_rounded,
+                                                  color: Color(0xFF7C3AED),
+                                                  size: 16,
+                                                ),
                                               ),
                                             ),
-                                          ),
-                                          const SizedBox(width: 8),
-                                          Text(
-                                            "Today's Training",
-                                            style: GoogleFonts.inter(
-                                              fontSize: 13,
-                                              fontWeight: FontWeight.w600,
-                                              color: const Color(0xFF4B5563),
+                                            const SizedBox(width: 8),
+                                            Text(
+                                              "${DateFormat('EEEE').format(DateTime.now())}'s Training",
+                                              style: GoogleFonts.inter(
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w600,
+                                                color: const Color(0xFF4B5563),
+                                              ),
                                             ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 10),
-                                      // Title: Chest Day / Plan Title
-                                      Text(
-                                        vm.assignedWorkoutId.isNotEmpty
-                                            ? (vm.assignedWorkoutTitle.isNotEmpty ? vm.assignedWorkoutTitle : vm.todayMuscleGroup)
-                                            : 'No Workout Assigned',
-                                        style: GoogleFonts.inter(
-                                          fontSize: 24,
-                                          fontWeight: FontWeight.w800,
-                                          color: const Color(0xFF111827),
-                                          letterSpacing: -0.5,
+                                          ],
                                         ),
-                                      ),
-                                      const SizedBox(height: 6),
-                                      if (vm.assignedWorkoutId.isNotEmpty) ...[
+                                        const SizedBox(height: 10),
+                                        // Title: Day + Muscle Group
+                                        Text(
+                                          vm.todayMuscleGroup,
+                                          style: GoogleFonts.inter(
+                                            fontSize: 22,
+                                            fontWeight: FontWeight.w800,
+                                            color: const Color(0xFF111827),
+                                            letterSpacing: -0.5,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 8),
                                         // Status Badge
                                         Container(
                                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
@@ -390,7 +394,7 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen>
                                             borderRadius: BorderRadius.circular(6),
                                           ),
                                           child: Text(
-                                            vm.isTrainingCompleted ? 'Completed' : 'Not Completed',
+                                            vm.isTrainingCompleted ? 'Workout Completed 🎉' : 'Not Completed Yet',
                                             style: GoogleFonts.inter(
                                               fontSize: 11,
                                               fontWeight: FontWeight.w700,
@@ -400,55 +404,32 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen>
                                             ),
                                           ),
                                         ),
-                                        const SizedBox(height: 10),
-                                        // Subtitle/Description
-                                        Text(
-                                          "Ask your trainer for today's exercises & plan.",
-                                          style: GoogleFonts.inter(
-                                            fontSize: 13,
-                                            color: const Color(0xFF4B5563),
-                                            height: 1.4,
-                                          ),
-                                        ),
-                                      ] else ...[
-                                        Text(
-                                          "Ask your gym owner to assign a workout plan.",
-                                          style: GoogleFonts.inter(
-                                            fontSize: 13,
-                                            color: AppTheme.danger,
-                                            fontWeight: FontWeight.bold,
-                                            height: 1.4,
-                                          ),
-                                        ),
                                       ],
-                                    ],
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(width: 12),
-                                // Right Section: 30% width (Illustration)
-                                if (vm.assignedWorkoutId.isNotEmpty)
+                                  const SizedBox(width: 12),
+                                  // Right Section (Illustration)
                                   Expanded(
                                     flex: 3,
                                     child: Center(
                                       child: FittedBox(
                                         fit: BoxFit.contain,
                                         child: SizedBox(
-                                          width: vm.todayMuscleGroup.toLowerCase().contains('chest') ? 150 : 100,
-                                          height: vm.todayMuscleGroup.toLowerCase().contains('chest') ? 150 : 150,
+                                          width: vm.todayMuscleGroup.toLowerCase().contains('chest') ? 140 : 100,
+                                          height: 140,
                                           child: Image.asset(
                                             vm.todayWorkoutImage,
                                             fit: vm.todayMuscleGroup.toLowerCase().contains('chest')
                                                 ? BoxFit.cover
                                                 : BoxFit.contain,
-                                            errorBuilder: (_, __, ___) => const SizedBox(),
+                                            errorBuilder: (_, __, ___) => const Icon(Icons.fitness_center_rounded, size: 50, color: AppTheme.primary),
                                           ),
                                         ),
                                       ),
                                     ),
                                   ),
-                              ],
-                            ),
-                            if (vm.assignedWorkoutId.isNotEmpty) ...[
+                                ],
+                              ),
                               const SizedBox(height: 16),
                               const Divider(
                                 color: Color(0xFFE5E7EB),
@@ -456,52 +437,42 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen>
                                 thickness: 1,
                               ),
                               const SizedBox(height: 16),
-                              // Ask Trainer button
+                              // Complete Workout button
                               GestureDetector(
-                                onTap: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(builder: (_) => const MemberTrainingScreen()),
-                                  );
+                                onTap: () async {
+                                  if (vm.isTrainingCompleted) return;
+                                  final res = await vm.completeTodayWorkout(context);
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(res['message']?.toString() ?? ''),
+                                        backgroundColor: res['success'] == true ? AppTheme.success : AppTheme.danger,
+                                        behavior: SnackBarBehavior.floating,
+                                      ),
+                                    );
+                                  }
                                 },
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(vertical: 14),
                                   decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    border: Border.all(color: const Color(0xFF7C3AED), width: 1.2),
+                                    color: vm.isTrainingCompleted ? const Color(0xFFDCFCE7) : const Color(0xFF7C3AED),
                                     borderRadius: BorderRadius.circular(16),
                                   ),
-                                  child: Stack(
-                                    alignment: Alignment.center,
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
-                                      Row(
-                                        mainAxisAlignment: MainAxisAlignment.center,
-                                        children: [
-                                          const Icon(
-                                            Icons.sms_outlined,
-                                            color: Color(0xFF7C3AED),
-                                            size: 20,
-                                          ),
-                                          const SizedBox(width: 8),
-                                          Text(
-                                            'Ask Trainer',
-                                            style: GoogleFonts.inter(
-                                              fontSize: 15,
-                                              fontWeight: FontWeight.w700,
-                                              color: const Color(0xFF7C3AED),
-                                            ),
-                                          ),
-                                        ],
+                                      Icon(
+                                        vm.isTrainingCompleted ? Icons.check_circle_rounded : Icons.task_alt_rounded,
+                                        color: vm.isTrainingCompleted ? const Color(0xFF15803D) : Colors.white,
+                                        size: 20,
                                       ),
-                                      const Align(
-                                        alignment: Alignment.centerRight,
-                                        child: Padding(
-                                          padding: EdgeInsets.only(right: 16),
-                                          child: Icon(
-                                            Icons.arrow_forward_ios_rounded,
-                                            color: Color(0xFF7C3AED),
-                                            size: 14,
-                                          ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        vm.isTrainingCompleted ? 'Workout Done 🎉' : 'Complete Workout',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w700,
+                                          color: vm.isTrainingCompleted ? const Color(0xFF15803D) : Colors.white,
                                         ),
                                       ),
                                     ],
@@ -509,7 +480,7 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen>
                                 ),
                               ),
                             ],
-                          ],
+                          ),
                         ),
                       ),
                     ),

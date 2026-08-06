@@ -46,12 +46,18 @@ class _MemberAchievementsScreenState extends State<MemberAchievementsScreen> wit
   Widget build(BuildContext context) {
     return Consumer<MemberAppViewModel>(
       builder: (context, vm, _) {
-        // Filter Achievements
+        // Filter & Sort Achievements (Unlocked first, Locked later)
         final filteredList = vm.achievements.where((badge) {
           if (_selectedFilter == 'Unlocked') return badge['unlocked'] == true;
           if (_selectedFilter == 'Locked') return badge['unlocked'] != true;
           return true;
         }).toList();
+
+        filteredList.sort((a, b) {
+          final aUnlocked = a['unlocked'] == true ? 0 : 1;
+          final bUnlocked = b['unlocked'] == true ? 0 : 1;
+          return aUnlocked.compareTo(bUnlocked);
+        });
 
         // Calculate progress totals
         final unlockedCount = vm.achievements.where((a) => a['unlocked'] == true).length;
