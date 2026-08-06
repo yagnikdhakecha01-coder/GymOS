@@ -379,6 +379,23 @@ class MemberAppViewModel extends ChangeNotifier {
           await SupabaseService.client.from('attendance_logs').update({
             'shift_status': 'Workout Completed',
           }).eq('user_id', user.id).gte('check_in', DateTime(now.year, now.month, now.day).toIso8601String());
+
+          // Also save in member_workout_logs
+          final gymInfoStr = prefs.getString('gymos_gym_info');
+          String? gymId;
+          if (gymInfoStr != null) {
+            final gymInfo = jsonDecode(gymInfoStr) as Map<String, dynamic>;
+            gymId = gymInfo['id'];
+          }
+          if (gymId != null && _memberId.isNotEmpty) {
+            await SupabaseService.client.from('member_workout_logs').upsert({
+              'gym_id': gymId,
+              'member_id': _memberId,
+              'date': todayIsoStr,
+              'muscle': _todayMuscleGroup,
+              'status': 'Completed',
+            });
+          }
         }
       } catch (e) {
         print('Error updating workout log in Supabase: $e');
@@ -534,8 +551,8 @@ class MemberAppViewModel extends ChangeNotifier {
             
             _membershipEndDate = membershipData['end_date'] ?? _membershipEndDate;
             
-            final totalAmount = membershipData['total_amount'] ?? 0;
-            _amountPaid = '₹$totalAmount';
+            final paidAmount = membershipData['paid_amount'] ?? 0;
+            _amountPaid = '₹$paidAmount';
             
             try {
               final endDate = DateTime.parse(_membershipEndDate);
@@ -580,6 +597,167 @@ class MemberAppViewModel extends ChangeNotifier {
           }
         } catch (e) {
           print('Error loading member_memberships: $e');
+        }
+
+        // Fetch real payment history from database
+        try {
+          _paymentHistory.clear();
+
+          // 1. Fetch memberships to extract direct paid amounts (in case membership_payments is empty)
+          final membershipsList = await SupabaseService.client
+              .from('member_memberships')
+              .select('id, start_date, total_amount, paid_amount, payment_status, membership_plans(title)')
+              .eq('member_id', _memberId)
+              .order('start_date', ascending: false);
+
+          // 2. Fetch explicit membership payments
+          final paymentsData = await SupabaseService.client
+              .from('membership_payments')
+              .select('id, amount, payment_date, member_membership_id')
+              .order('payment_date', ascending: false);
+
+          final Set<String> processedMembershipIds = {};
+
+          if (paymentsData != null && paymentsData.isNotEmpty) {
+            for (var pay in paymentsData) {
+              final mId = pay['member_membership_id']?.toString() ?? '';
+              // Verify this payment belongs to one of the user's memberships
+              final belongsToUser = membershipsList?.any((m) => m['id'].toString() == mId) ?? false;
+              if (belongsToUser) {
+                processedMembershipIds.add(mId);
+                final pDate = DateTime.tryParse(pay['payment_date'] ?? '') ?? DateTime.now();
+                final formattedDate = DateFormat('dd MMM yyyy').format(pDate);
+                final invoiceNum = 'INV-${pDate.year}-${pay['id'].toString().substring(0, 4).toUpperCase()}';
+                final amtVal = pay['amount'] ?? 0;
+                _paymentHistory.add({
+                  'invoice': invoiceNum,
+                  'date': formattedDate,
+                  'amount': '₹$amtVal',
+                  'status': 'Paid',
+                });
+              }
+            }
+          }
+
+          // 3. Fallback: for memberships that don't have explicit payments in membership_payments,
+          // but have paid_amount > 0 in member_memberships, synthesize a payment history entry!
+          if (membershipsList != null) {
+            for (var mship in membershipsList) {
+              final mId = mship['id'].toString();
+              final paidAmount = (mship['paid_amount'] as num?)?.toDouble() ?? 0.0;
+              
+              if (!processedMembershipIds.contains(mId) && paidAmount > 0) {
+                final pDate = DateTime.tryParse(mship['start_date'] ?? '') ?? DateTime.now();
+                final formattedDate = DateFormat('dd MMM yyyy').format(pDate);
+                final invoiceNum = 'INV-${pDate.year}-${mId.substring(0, 4).toUpperCase()}';
+                final statusStr = mship['payment_status']?.toString() ?? 'Paid';
+                _paymentHistory.add({
+                  'invoice': invoiceNum,
+                  'date': formattedDate,
+                  'amount': '₹$paidAmount',
+                  'status': statusStr == 'Fully Paid' ? 'Paid' : statusStr,
+                });
+              }
+            }
+          }
+        } catch (e) {
+          print('Error loading payment history: $e');
+        }
+
+        // Fetch workout logs for the last 30 days and clean up old ones
+        try {
+          final thirtyDaysAgo = DateTime.now().subtract(const Duration(days: 30));
+          final cutoffDateIso = DateFormat('yyyy-MM-dd').format(thirtyDaysAgo);
+          
+          // Delete logs older than 30 days from database
+          try {
+            await SupabaseService.client
+                .from('member_workout_logs')
+                .delete()
+                .eq('member_id', _memberId)
+                .lt('date', cutoffDateIso);
+          } catch (deleteErr) {
+            print('Error purging old workout logs: $deleteErr');
+          }
+
+          // Fetch recent logs
+          final dbLogs = await SupabaseService.client
+              .from('member_workout_logs')
+              .select('date, muscle, status')
+              .eq('member_id', _memberId)
+              .gte('date', cutoffDateIso)
+              .order('date', ascending: false);
+
+          if (dbLogs != null) {
+            final Map<String, Map<String, dynamic>> dbLogsMap = {};
+            for (var log in dbLogs) {
+              dbLogsMap[log['date']] = log;
+            }
+
+            // Get assigned workout plan schedule
+            Map<String, dynamic> rawSchedule = {};
+            if (_assignedWorkoutId.isNotEmpty) {
+              try {
+                final wPlan = await SupabaseService.client
+                    .from('workout_plans')
+                    .select('schedule')
+                    .eq('id', _assignedWorkoutId)
+                    .maybeSingle();
+                if (wPlan != null) {
+                  rawSchedule = wPlan['schedule'] as Map<String, dynamic>? ?? {};
+                }
+              } catch (_) {}
+            }
+
+            final List<Map<String, dynamic>> newHistory = [];
+
+            for (int i = 1; i <= 30; i++) {
+              final pastDate = DateTime.now().subtract(Duration(days: i));
+              final pastDateIso = DateFormat('yyyy-MM-dd').format(pastDate);
+              final pastDateFormatted = DateFormat('dd MMM yyyy').format(pastDate);
+
+              // Determine muscle group for this day
+              final dayName = DateFormat('EEEE').format(pastDate);
+              final dayList = rawSchedule[dayName] as List?;
+              String muscle = 'Rest Day';
+              if (dayList != null && dayList.isNotEmpty) {
+                final firstVal = dayList.first as Map<String, dynamic>?;
+                muscle = firstVal?['title'] ?? 'Rest Day';
+              }
+
+              if (dbLogsMap.containsKey(pastDateIso)) {
+                final dbLog = dbLogsMap[pastDateIso]!;
+                newHistory.add({
+                  'date': pastDateFormatted,
+                  'muscle': dbLog['muscle'] ?? muscle,
+                  'status': dbLog['status'] ?? 'Completed',
+                });
+              } else {
+                // Day changed, and they didn't complete it: save it in DB as 'Not Done'!
+                try {
+                  await SupabaseService.client.from('member_workout_logs').insert({
+                    'gym_id': memberData['gym_id'],
+                    'member_id': _memberId,
+                    'date': pastDateIso,
+                    'muscle': muscle,
+                    'status': 'Not Done',
+                  });
+                } catch (_) {}
+
+                newHistory.add({
+                  'date': pastDateFormatted,
+                  'muscle': muscle,
+                  'status': 'Not Done',
+                });
+              }
+            }
+
+            _trainingHistory.clear();
+            _trainingHistory.addAll(newHistory);
+            await prefs.setString('member_training_history', jsonEncode(_trainingHistory));
+          }
+        } catch (e) {
+          print('Error syncing training history: $e');
         }
 
         final extra = memberData['extra_fields'] as Map<String, dynamic>? ?? {};

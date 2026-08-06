@@ -44,12 +44,17 @@ class MemberMembershipScreen extends StatelessWidget {
                     width: double.infinity,
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [
-                          Color(0xFF0F172A), // Deep Slate Navy
-                          Color(0xFF1E1B4B), // Royal Indigo
-                          Color(0xFF312E81), // Deep Violet
-                        ],
+                      gradient: LinearGradient(
+                        colors: isExpired
+                            ? [
+                                const Color(0xFF1E293B),
+                                const Color(0xFF0F172A),
+                              ]
+                            : [
+                                const Color(0xFF2E0854), // Deep Purple
+                                const Color(0xFF1E1B4B), // Royal Indigo
+                                const Color(0xFF3B0764), // Luxurious Amethyst
+                              ],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
@@ -57,12 +62,13 @@ class MemberMembershipScreen extends StatelessWidget {
                       border: Border.all(
                         color: isExpired
                             ? Colors.redAccent.withValues(alpha: 0.5)
-                            : const Color(0xFFF59E0B).withValues(alpha: 0.4),
+                            : const Color(0xFFC084FC).withValues(alpha: 0.4),
                         width: 1.5,
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: const Color(0xFF312E81).withValues(alpha: 0.35),
+                          color: (isExpired ? Colors.redAccent : const Color(0xFF7C3AED))
+                              .withValues(alpha: 0.3),
                           blurRadius: 20,
                           offset: const Offset(0, 10),
                         ),

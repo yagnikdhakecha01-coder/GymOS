@@ -145,8 +145,10 @@ class MemberTrainingScreen extends StatelessWidget {
                                     }
                                   },
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: vm.isTrainingCompleted ? const Color(0xFFDCFCE7) : AppTheme.primary,
-                              foregroundColor: vm.isTrainingCompleted ? const Color(0xFF15803D) : Colors.white,
+                              backgroundColor: AppTheme.primary,
+                              foregroundColor: Colors.white,
+                              disabledBackgroundColor: const Color(0xFFDCFCE7),
+                              disabledForegroundColor: const Color(0xFF15803D),
                               elevation: 0,
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(20),
