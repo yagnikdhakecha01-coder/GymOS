@@ -44,31 +44,15 @@ class MemberMembershipScreen extends StatelessWidget {
                     width: double.infinity,
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: isExpired
-                            ? [
-                                const Color(0xFF1E293B),
-                                const Color(0xFF0F172A),
-                              ]
-                            : [
-                                const Color(0xFF2E0854), // Deep Purple
-                                const Color(0xFF1E1B4B), // Royal Indigo
-                                const Color(0xFF3B0764), // Luxurious Amethyst
-                              ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(24),
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(28),
                       border: Border.all(
-                        color: isExpired
-                            ? Colors.redAccent.withValues(alpha: 0.5)
-                            : const Color(0xFFC084FC).withValues(alpha: 0.4),
+                        color: const Color(0xFFF1C40F).withOpacity(0.5),
                         width: 1.5,
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: (isExpired ? Colors.redAccent : const Color(0xFF7C3AED))
-                              .withValues(alpha: 0.3),
+                          color: Colors.black.withOpacity(0.06),
                           blurRadius: 20,
                           offset: const Offset(0, 10),
                         ),
@@ -82,18 +66,27 @@ class MemberMembershipScreen extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
                             Container(
-                              padding: const EdgeInsets.all(10),
+                              width: 64,
+                              height: 64,
                               decoration: BoxDecoration(
-                                color: const Color(0xFFFEF3C7).withValues(alpha: 0.15),
+                                color: Colors.white,
                                 shape: BoxShape.circle,
                                 border: Border.all(
-                                  color: const Color(0xFFF59E0B).withValues(alpha: 0.4),
+                                  color: const Color(0xFFF1C40F).withOpacity(0.7),
                                   width: 1.5,
                                 ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: const Color(0xFFF1C40F).withOpacity(0.2),
+                                    blurRadius: 8,
+                                    spreadRadius: 2,
+                                  )
+                                ],
                               ),
-                              child: const Text('👑', style: TextStyle(fontSize: 22)),
+                              alignment: Alignment.center,
+                              child: const Text('👑', style: TextStyle(fontSize: 28)),
                             ),
-                            const SizedBox(width: 12),
+                            const SizedBox(width: 14),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -101,18 +94,18 @@ class MemberMembershipScreen extends StatelessWidget {
                                   Text(
                                     vm.membershipPlan.isNotEmpty ? vm.membershipPlan : 'Gold Plan',
                                     style: GoogleFonts.inter(
-                                      fontSize: 20,
+                                      fontSize: 22,
                                       fontWeight: FontWeight.w800,
-                                      color: Colors.white,
+                                      color: const Color(0xFF0F172A),
                                       letterSpacing: -0.3,
                                     ),
                                   ),
                                   const SizedBox(height: 2),
                                   Text(
-                                    vm.planDuration.isNotEmpty ? '${vm.planDuration} Plan' : 'Active Plan',
+                                    'Gym Membership Plan',
                                     style: GoogleFonts.inter(
                                       fontSize: 12,
-                                      color: Colors.white70,
+                                      color: const Color(0xFF64748B),
                                       fontWeight: FontWeight.w500,
                                     ),
                                   ),
@@ -120,14 +113,14 @@ class MemberMembershipScreen extends StatelessWidget {
                               ),
                             ),
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                               decoration: BoxDecoration(
                                 color: isExpired
-                                    ? Colors.redAccent.withValues(alpha: 0.25)
-                                    : const Color(0xFF10B981).withValues(alpha: 0.25),
+                                    ? const Color(0xFFFEE2E2)
+                                    : const Color(0xFFD1FAE5),
                                 borderRadius: BorderRadius.circular(20),
                                 border: Border.all(
-                                  color: isExpired ? Colors.redAccent : const Color(0xFF34D399),
+                                  color: isExpired ? const Color(0xFFFCA5A5) : const Color(0xFF6EE7B7),
                                   width: 1,
                                 ),
                               ),
@@ -135,73 +128,126 @@ class MemberMembershipScreen extends StatelessWidget {
                                 isExpired ? 'Expired' : 'Active',
                                 style: GoogleFonts.inter(
                                   fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                  color: isExpired ? Colors.redAccent : const Color(0xFF34D399),
+                                  fontWeight: FontWeight.w800,
+                                  color: isExpired ? const Color(0xFFEF4444) : const Color(0xFF059669),
                                 ),
                               ),
                             ),
                           ],
                         ),
 
-                        const SizedBox(height: 16),
-                        Divider(color: Colors.white.withValues(alpha: 0.15), height: 1, thickness: 1),
-                        const SizedBox(height: 16),
-
-                        // Line 1: Start Date, End Date, Days Remaining
+                        const SizedBox(height: 18),
+                        // Golden Star Divider
                         Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            _buildCardDataColumn('Start Date', vm.membershipStartDate.isNotEmpty ? vm.membershipStartDate : '01 Jan 2026', Colors.white),
-                            _buildCardDataColumn('End Date', vm.membershipEndDate.isNotEmpty ? vm.membershipEndDate : '29 May 2026', Colors.white),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Text(
-                                  'Remaining',
-                                  style: GoogleFonts.inter(fontSize: 11, color: Colors.white60, fontWeight: FontWeight.w500),
-                                ),
-                                const SizedBox(height: 4),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            Expanded(child: Divider(color: const Color(0xFFF1C40F).withOpacity(0.25), height: 1, thickness: 1)),
+                            const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 8),
+                              child: Icon(Icons.star_rounded, color: Color(0xFFF1C40F), size: 16),
+                            ),
+                            Expanded(child: Divider(color: const Color(0xFFF1C40F).withOpacity(0.25), height: 1, thickness: 1)),
+                          ],
+                        ),
+                        const SizedBox(height: 18),
+
+                        // Grid Row 1: Start Date, End Date, Remaining
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildGridCard(
+                                label: 'Start Date',
+                                value: vm.membershipStartDate.isNotEmpty ? vm.membershipStartDate : '01 Jan 2026',
+                                icon: Icons.calendar_month_rounded,
+                                iconColor: const Color(0xFFD97706),
+                                iconBgColor: const Color(0xFFFEF3C7),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: _buildGridCard(
+                                label: 'End Date',
+                                value: vm.membershipEndDate.isNotEmpty ? vm.membershipEndDate : '29 May 2026',
+                                icon: Icons.calendar_month_rounded,
+                                iconColor: const Color(0xFFD97706),
+                                iconBgColor: const Color(0xFFFEF3C7),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: _buildGridCard(
+                                label: 'Remaining',
+                                value: '${vm.membershipDaysLeft} Days',
+                                icon: Icons.hourglass_empty_rounded,
+                                iconColor: const Color(0xFFD97706),
+                                iconBgColor: const Color(0xFFFEF3C7),
+                                customValueWidget: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                   decoration: BoxDecoration(
-                                    color: isExpired ? Colors.redAccent : const Color(0xFFF59E0B),
-                                    borderRadius: BorderRadius.circular(8),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: (isExpired ? Colors.redAccent : const Color(0xFFF59E0B)).withValues(alpha: 0.4),
-                                        blurRadius: 8,
-                                        offset: const Offset(0, 2),
-                                      ),
-                                    ],
+                                    color: isExpired ? const Color(0xFFFEE2E2) : const Color(0xFFFEF3C7),
+                                    borderRadius: BorderRadius.circular(6),
                                   ),
                                   child: Text(
                                     '${vm.membershipDaysLeft} Days',
                                     style: GoogleFonts.inter(
-                                      fontSize: 12,
+                                      fontSize: 10,
                                       fontWeight: FontWeight.w800,
-                                      color: isExpired ? Colors.white : const Color(0xFF0F172A),
+                                      color: isExpired ? const Color(0xFFEF4444) : const Color(0xFFD97706),
                                     ),
                                   ),
                                 ),
-                              ],
+                              ),
                             ),
                           ],
                         ),
+                        const SizedBox(height: 10),
 
-                        const SizedBox(height: 16),
-                        Divider(color: Colors.white.withValues(alpha: 0.15), height: 1, thickness: 1),
-                        const SizedBox(height: 16),
-
-                        // Line 2: Amount Paid, Next Due, Pending Amount
+                        // Grid Row 2: Amount Paid, Next Due, Pending
                         Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            _buildCardDataColumn('Amount Paid', vm.amountPaid.isNotEmpty ? vm.amountPaid : '₹12,000', Colors.white),
-                            _buildCardDataColumn('Next Due', vm.nextDue.isNotEmpty ? vm.nextDue : '30 May 2026', Colors.white),
-                            _buildCardDataColumn(
-                              'Pending',
-                              '₹${vm.pendingAmount.toStringAsFixed(0)}',
-                              vm.pendingAmount > 0 ? const Color(0xFFF87171) : const Color(0xFF34D399),
+                            Expanded(
+                              child: _buildGridCard(
+                                label: 'Amount Paid',
+                                value: vm.amountPaid.isNotEmpty ? vm.amountPaid : '₹799.0',
+                                icon: Icons.account_balance_wallet_rounded,
+                                iconColor: const Color(0xFF059669),
+                                iconBgColor: const Color(0xFFD1FAE5),
+                                customValueWidget: Text(
+                                  vm.amountPaid.isNotEmpty ? vm.amountPaid : '₹799.0',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    color: const Color(0xFF059669),
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: _buildGridCard(
+                                label: 'Next Due',
+                                value: vm.nextDue.isNotEmpty ? vm.nextDue : '30 May 2026',
+                                icon: Icons.sync_rounded,
+                                iconColor: const Color(0xFF3B82F6),
+                                iconBgColor: const Color(0xFFDBEAFE),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: _buildGridCard(
+                                label: 'Pending',
+                                value: '₹${vm.pendingAmount.toStringAsFixed(0)}',
+                                icon: Icons.receipt_long_rounded,
+                                iconColor: const Color(0xFFEF4444),
+                                iconBgColor: const Color(0xFFFEE2E2),
+                                customValueWidget: Text(
+                                  '₹${vm.pendingAmount.toStringAsFixed(0)}',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    color: const Color(0xFFEF4444),
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
                             ),
                           ],
                         ),
@@ -216,12 +262,28 @@ class MemberMembershipScreen extends StatelessWidget {
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
                                 Text(
-                                  'Membership Days Remaining',
-                                  style: GoogleFonts.inter(fontSize: 11, color: Colors.white60, fontWeight: FontWeight.w500),
+                                  'Membership Progress',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    color: const Color(0xFF0F172A),
+                                    fontWeight: FontWeight.w700,
+                                  ),
                                 ),
-                                Text(
-                                  '${vm.membershipDaysLeft} Days Left',
-                                  style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFFFBBF24), fontWeight: FontWeight.w700),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: const Color(0xFFF1C40F).withOpacity(0.6)),
+                                  ),
+                                  child: Text(
+                                    '${vm.membershipDaysLeft} Days Left',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 10,
+                                      color: const Color(0xFFD97706),
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
                                 ),
                               ],
                             ),
@@ -230,9 +292,18 @@ class MemberMembershipScreen extends StatelessWidget {
                               borderRadius: BorderRadius.circular(6),
                               child: LinearProgressIndicator(
                                 value: (vm.membershipDaysLeft / 90).clamp(0.0, 1.0),
-                                backgroundColor: Colors.white.withValues(alpha: 0.15),
-                                color: isExpired ? Colors.redAccent : const Color(0xFFF59E0B),
+                                backgroundColor: const Color(0xFFF1F5F9),
+                                valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFF1C40F)),
                                 minHeight: 6,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '${((vm.membershipDaysLeft / 90).clamp(0.0, 1.0) * 100).toInt()}%',
+                              style: GoogleFonts.inter(
+                                fontSize: 10,
+                                color: const Color(0xFF94A3B8),
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                           ],
@@ -418,20 +489,70 @@ class MemberMembershipScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildCardDataColumn(String label, String value, Color valueColor) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: GoogleFonts.inter(fontSize: 11, color: Colors.white60, fontWeight: FontWeight.w500),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: valueColor),
-        ),
-      ],
+  Widget _buildGridCard({
+    required String label,
+    required String value,
+    required IconData icon,
+    required Color iconColor,
+    required Color iconBgColor,
+    Widget? customValueWidget,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFF1F5F9)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.015),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          )
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: iconBgColor,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, size: 16, color: iconColor),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    fontSize: 9,
+                    color: const Color(0xFF64748B),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                customValueWidget ?? Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    color: const Color(0xFF0F172A),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
