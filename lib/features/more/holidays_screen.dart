@@ -6,6 +6,7 @@ import '../../core/theme/theme.dart';
 import '../../core/widgets/custom_card.dart';
 import '../../core/widgets/custom_button.dart';
 import '../../core/services/supabase_service.dart';
+import '../../core/services/notification_service_mobile.dart';
 import '../authentication/auth_viewmodel.dart';
 
 class HolidaysScreen extends StatefulWidget {
@@ -246,6 +247,22 @@ class _HolidaysScreenState extends State<HolidaysScreen> {
                             'name': title,
                             'description': desc,
                           });
+
+                          // 1. Instantly show local device push notification on phone status bar
+                          try {
+                            await NotificationService.showNotification(
+                              id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+                              title: '🎉 Holiday Declared: $title',
+                              body: 'Gym will remain closed on ${DateFormat('EEEE, dd MMMM yyyy').format(selectedDate)}. Reason: ${desc.isNotEmpty ? desc : title}',
+                            );
+                          } catch (e) {
+                            print('Error showing push notification: $e');
+                          }
+
+                          // 2. Instantly update unread notification badge count on Home Screen
+                          try {
+                            authVm.setUnreadNotificationsCount(authVm.unreadNotificationsCount + 1);
+                          } catch (_) {}
                         }
 
                         if (Navigator.canPop(ctx)) {

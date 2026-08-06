@@ -29,8 +29,8 @@ class AlertsNotificationEngine {
       } catch (_) {}
     }
 
-    // Periodically run check every 15 seconds to guarantee alerts & notifications
-    _timer = Timer.periodic(const Duration(seconds: 15), (timer) async {
+    // Periodically run check every 3 seconds to guarantee instant push alerts & badge count
+    _timer = Timer.periodic(const Duration(seconds: 3), (timer) async {
       try {
         final authVm = Provider.of<AuthViewModel>(context, listen: false);
         final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
@@ -41,18 +41,19 @@ class AlertsNotificationEngine {
             await SupabaseService.client.rpc('check_membership_expiring_15_days', params: {'p_gym_id': gymId});
           } catch (_) {}
 
-          // 2. Fetch unread notifications for this gym
+          // 2. Fetch notifications for this gym and calculate unread count safely
           try {
-            final List unreadRes = await SupabaseService.client
+            final List allNotifs = await SupabaseService.client
                 .from('notifications')
                 .select()
                 .eq('gym_id', gymId)
-                .eq('is_read', false)
                 .order('created_at', ascending: false);
 
-            authVm.setUnreadNotificationsCount(unreadRes.length);
+            final unreadNotifs = allNotifs.where((n) => n['is_read'] != true).toList();
 
-            for (var notif in unreadRes) {
+            authVm.setUnreadNotificationsCount(unreadNotifs.length);
+
+            for (var notif in unreadNotifs) {
               final id = notif['id']?.toString() ?? '';
               final title = notif['title']?.toString() ?? 'Notification';
               final body = notif['body']?.toString() ?? notif['message']?.toString() ?? '';
@@ -119,7 +120,6 @@ class AlertsNotificationEngine {
     });
   }
 
-  /// Stops the loop (e.g. on logout)
   static void stop() {
     _timer?.cancel();
     _timer = null;
