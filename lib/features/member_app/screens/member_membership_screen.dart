@@ -176,7 +176,7 @@ class _MemberMembershipScreenState extends State<MemberMembershipScreen> {
 
                         // Fields section inside white area
                         Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
+                          padding: const EdgeInsets.fromLTRB(12, 10, 12, 20),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -215,7 +215,7 @@ class _MemberMembershipScreenState extends State<MemberMembershipScreen> {
 
                                   // Vertical Divider
                                   Container(
-                                    margin: const EdgeInsets.symmetric(horizontal: 12),
+                                    margin: const EdgeInsets.symmetric(horizontal: 6),
                                     width: 1,
                                     height: 140,
                                     color: const Color(0xFFF1F5F9),
@@ -252,7 +252,7 @@ class _MemberMembershipScreenState extends State<MemberMembershipScreen> {
 
                                   // Vertical Divider
                                   Container(
-                                    margin: const EdgeInsets.symmetric(horizontal: 12),
+                                    margin: const EdgeInsets.symmetric(horizontal: 6),
                                     width: 1,
                                     height: 140,
                                     color: const Color(0xFFF1F5F9),
@@ -364,7 +364,7 @@ class _MemberMembershipScreenState extends State<MemberMembershipScreen> {
                                         ),
                                       ),
                                       Text(
-                                        '${totalPlanDays - vm.membershipDaysLeft} / $totalPlanDays Days',
+                                        '${vm.membershipDaysLeft} / $totalPlanDays Days',
                                         style: GoogleFonts.inter(
                                           fontSize: 10,
                                           color: const Color(0xFF94A3B8),
@@ -652,14 +652,14 @@ class _MemberMembershipScreenState extends State<MemberMembershipScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
-          padding: const EdgeInsets.all(6),
+          padding: const EdgeInsets.all(4),
           decoration: BoxDecoration(
             color: iconBgColor,
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(6),
           ),
-          child: Icon(icon, size: 16, color: iconColor),
+          child: Icon(icon, size: 14, color: iconColor),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: 6),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -667,27 +667,33 @@ class _MemberMembershipScreenState extends State<MemberMembershipScreen> {
             children: [
               Text(
                 label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: GoogleFonts.inter(
-                  fontSize: 10,
+                  fontSize: 8.5,
                   color: const Color(0xFF64748B),
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              const SizedBox(height: 2),
+              const SizedBox(height: 1),
               customValueWidget ?? Text(
                 value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: GoogleFonts.inter(
-                  fontSize: 12,
+                  fontSize: 10.5,
                   color: valueColor ?? const Color(0xFF0F172A),
                   fontWeight: FontWeight.w700,
                 ),
               ),
               if (subLabel.isNotEmpty) ...[
-                const SizedBox(height: 2),
+                const SizedBox(height: 1),
                 Text(
                   subLabel,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.inter(
-                    fontSize: 9,
+                    fontSize: 8,
                     color: const Color(0xFF94A3B8),
                     fontWeight: FontWeight.w500,
                   ),
