@@ -27,7 +27,7 @@ class Announcement {
       title: json['title']?.toString() ?? '',
       message: json['message']?.toString() ?? json['body']?.toString() ?? '',
       image: json['image']?.toString() ?? '',
-      audience: json['audience']?.toString() ?? json['target_role']?.toString() ?? 'All Members',
+      audience: json['audience']?.toString() ?? json['target_role']?.toString() ?? 'Both (Staff & Members)',
       date: json['date']?.toString() ?? json['created_at']?.toString() ?? '',
       status: json['status']?.toString() ?? 'Sent',
     );
@@ -72,7 +72,7 @@ class AnnouncementsService {
           return announcements;
         }
 
-        // Also check public.notifications table
+        // Fallback to notifications table
         final List notifRes = (gymId != null && gymId.isNotEmpty)
             ? await SupabaseService.client
                 .from('notifications')
@@ -102,7 +102,6 @@ class AnnouncementsService {
       return decoded.map((e) => Announcement.fromJson(e)).toList();
     }
 
-    // Return clean empty list by default - NO FAKE HARDCODED ANNOUNCEMENTS!
     return [];
   }
 
@@ -114,27 +113,87 @@ class AnnouncementsService {
 
     if (SupabaseService.isInitialized && gymId != null && gymId.isNotEmpty) {
       try {
+        final String audienceLower = ann.audience.toLowerCase();
+        final bool targetStaff = audienceLower.contains('staff') || audienceLower.contains('both');
+        final bool targetMembers = audienceLower.contains('member') || audienceLower.contains('both');
+        final String targetRole = (targetStaff && targetMembers) ? 'Both' : (targetStaff ? 'Staff' : 'Member');
+
         await SupabaseService.client.from('announcements').insert({
           'gym_id': gymId,
           'title': ann.title,
           'message': ann.message,
           'image': ann.image,
           'audience': ann.audience,
+          'target_role': targetRole,
           'status': ann.status,
         });
 
-        final String targetRole = ann.audience.toLowerCase().contains('staff') && (ann.audience.toLowerCase().contains('member') || ann.audience.toLowerCase().contains('both'))
-            ? 'All'
-            : (ann.audience.toLowerCase().contains('staff') ? 'Staff' : (ann.audience.toLowerCase().contains('member') ? 'Member' : 'All'));
+        // Direct client-side notification fanout (backup for DB trigger)
+        final List<Map<String, dynamic>> notifRows = [];
 
-        await SupabaseService.client.from('notifications').insert({
+        if (targetMembers) {
+          try {
+            final members = await SupabaseService.client
+                .from('members')
+                .select('user_id')
+                .eq('gym_id', gymId);
+            for (var m in members) {
+              final uid = m['user_id']?.toString();
+              if (uid != null && uid.isNotEmpty) {
+                notifRows.add({
+                  'gym_id': gymId,
+                  'user_id': uid,
+                  'target_role': 'Member',
+                  'title': '📢 ${ann.title}',
+                  'body': ann.message,
+                  'type': 'announcement',
+                  'is_read': false,
+                });
+              }
+            }
+          } catch (e) {
+            print('Error fetching members for broadcast notification: $e');
+          }
+        }
+
+        if (targetStaff) {
+          try {
+            final staff = await SupabaseService.client
+                .from('staff')
+                .select('user_id')
+                .eq('gym_id', gymId);
+            for (var s in staff) {
+              final uid = s['user_id']?.toString();
+              if (uid != null && uid.isNotEmpty) {
+                notifRows.add({
+                  'gym_id': gymId,
+                  'user_id': uid,
+                  'target_role': 'Staff',
+                  'title': '📢 ${ann.title}',
+                  'body': ann.message,
+                  'type': 'announcement',
+                  'is_read': false,
+                });
+              }
+            }
+          } catch (e) {
+            print('Error fetching staff for broadcast notification: $e');
+          }
+        }
+
+        // Add general role fallback notification
+        notifRows.add({
           'gym_id': gymId,
           'target_role': targetRole,
-          'title': ann.title,
+          'title': '📢 ${ann.title}',
           'body': ann.message,
           'type': 'announcement',
           'is_read': false,
         });
+
+        if (notifRows.isNotEmpty) {
+          await SupabaseService.client.from('notifications').insert(notifRows);
+        }
       } catch (e) {
         print('Error inserting announcement to Supabase: $e');
       }
