@@ -51,6 +51,92 @@ class _HolidaysScreenState extends State<HolidaysScreen> {
     }
   }
 
+  void _showResultDialog({
+    required bool success,
+    required String title,
+    required String message,
+    String? errorReason,
+  }) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: success ? AppTheme.success.withValues(alpha: 0.1) : AppTheme.danger.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  success ? Icons.check_circle_rounded : Icons.error_outline_rounded,
+                  color: success ? AppTheme.success : AppTheme.danger,
+                  size: 54,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                title,
+                style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 10),
+              Text(
+                message,
+                style: GoogleFonts.inter(fontSize: 13.5, color: AppTheme.textSecondary, height: 1.4),
+                textAlign: TextAlign.center,
+              ),
+              if (!success && errorReason != null && errorReason.isNotEmpty) ...[
+                const SizedBox(height: 14),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppTheme.danger.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppTheme.danger.withValues(alpha: 0.3)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Error Details / Reason:', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.danger)),
+                      const SizedBox(height: 4),
+                      SelectableText(
+                        errorReason,
+                        style: GoogleFonts.robotoMono(fontSize: 11, color: AppTheme.danger),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              const SizedBox(height: 22),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: success ? AppTheme.primary : AppTheme.danger,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                  ),
+                  onPressed: () => Navigator.pop(ctx),
+                  child: Text(
+                    success ? 'Done' : 'Close & Retry',
+                    style: GoogleFonts.inter(fontWeight: FontWeight.bold, color: Colors.white),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   void _showDeclareHolidaySheet() {
     final titleController = TextEditingController();
     final descController = TextEditingController();
@@ -152,33 +238,14 @@ class _HolidaysScreenState extends State<HolidaysScreen> {
                           final formattedDate = DateFormat('yyyy-MM-dd').format(selectedDate);
                           final desc = descController.text.trim();
 
-                          // Try inserting both date/name and holiday_date/title for 100% compatibility with any DB schema
-                          try {
-                            await SupabaseService.client.from('holidays').insert({
-                              'gym_id': gymId,
-                              'holiday_date': formattedDate,
-                              'date': formattedDate,
-                              'title': title,
-                              'name': title,
-                              'description': desc,
-                            });
-                          } catch (_) {
-                            try {
-                              await SupabaseService.client.from('holidays').insert({
-                                'gym_id': gymId,
-                                'date': formattedDate,
-                                'name': title,
-                                'description': desc,
-                              });
-                            } catch (e2) {
-                              await SupabaseService.client.from('holidays').insert({
-                                'gym_id': gymId,
-                                'holiday_date': formattedDate,
-                                'title': title,
-                                'description': desc,
-                              });
-                            }
-                          }
+                          await SupabaseService.client.from('holidays').insert({
+                            'gym_id': gymId,
+                            'holiday_date': formattedDate,
+                            'date': formattedDate,
+                            'title': title,
+                            'name': title,
+                            'description': desc,
+                          });
                         }
 
                         if (Navigator.canPop(ctx)) {
@@ -186,13 +253,21 @@ class _HolidaysScreenState extends State<HolidaysScreen> {
                         }
                         _loadHolidays();
 
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('🎉 Gym Holiday declared successfully! All members & staff notified.'), backgroundColor: AppTheme.success),
+                        _showResultDialog(
+                          success: true,
+                          title: '🎉 Holiday Declared!',
+                          message: 'Gym Holiday "$title" has been declared successfully. All staff members & gym members have been notified.',
                         );
                       } catch (e) {
                         setSheetState(() => isSubmitting = false);
-                        ScaffoldMessenger.of(ctx).showSnackBar(
-                          SnackBar(content: Text('Error declaring holiday: $e'), backgroundColor: AppTheme.danger),
+                        if (Navigator.canPop(ctx)) {
+                          Navigator.pop(ctx);
+                        }
+                        _showResultDialog(
+                          success: false,
+                          title: '❌ Holiday Declaration Failed',
+                          message: 'Could not declare gym holiday due to database constraint or schema issue.',
+                          errorReason: e.toString(),
                         );
                       }
                     },

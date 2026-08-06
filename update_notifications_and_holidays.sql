@@ -2,7 +2,20 @@
 -- GYMOS: PUSH NOTIFICATIONS, OWNER BROADCAST & HOLIDAY MANAGEMENT SQL
 -- ====================================================================
 
--- 1. HOLIDAYS TABLE ENHANCEMENTS
+-- 1. ATTENDANCE LOGS STATUS CONSTRAINT FIX (ADD 'Holiday')
+DO $$
+BEGIN
+    ALTER TABLE public.attendance_logs DROP CONSTRAINT IF EXISTS attendance_logs_status_check;
+    ALTER TABLE public.attendance_logs DROP CONSTRAINT IF EXISTS chk_attendance_status;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
+ALTER TABLE public.attendance_logs
+ADD CONSTRAINT chk_attendance_status 
+CHECK (status IN ('Present', 'Absent', 'Half Day', 'Late', 'Early Exit', 'Overtime', 'Leave', 'Half Leave', 'Holiday', 'Incomplete Attendance', 'On Leave'));
+
+
+-- 2. HOLIDAYS TABLE ENHANCEMENTS
 CREATE TABLE IF NOT EXISTS public.holidays (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     gym_id UUID NOT NULL REFERENCES public.gyms(id) ON DELETE CASCADE,
@@ -32,7 +45,7 @@ CREATE POLICY holidays_isolation_policy ON public.holidays FOR ALL USING (true) 
 GRANT ALL ON public.holidays TO anon, authenticated, service_role;
 
 
--- 2. NOTIFICATIONS TABLE ENHANCEMENTS & MISSING COLUMNS FIX
+-- 3. NOTIFICATIONS TABLE ENHANCEMENTS & MISSING COLUMNS FIX
 CREATE TABLE IF NOT EXISTS public.notifications (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     gym_id UUID REFERENCES public.gyms(id) ON DELETE CASCADE,
@@ -60,7 +73,7 @@ CREATE POLICY notifications_isolation_policy ON public.notifications FOR ALL USI
 GRANT ALL ON public.notifications TO anon, authenticated, service_role;
 
 
--- 3. TRIGGER FUNCTION: ON HOLIDAY DECLARED AUTO NOTIFY & AUTO MARK ATTENDANCE
+-- 4. TRIGGER FUNCTION: ON HOLIDAY DECLARED AUTO NOTIFY & AUTO MARK ATTENDANCE
 CREATE OR REPLACE FUNCTION public.fn_on_holiday_declared()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -94,57 +107,71 @@ BEGIN
             'holiday'
         );
     EXCEPTION WHEN OTHERS THEN
-        -- Fallback if notifications schema is being modified concurrently
-        INSERT INTO public.notifications (
-            gym_id,
-            title,
-            body
-        ) VALUES (
-            NEW.gym_id,
-            '🎉 Holiday Declared: ' || v_htitle,
-            'Gym will remain closed on ' || to_char(v_hdate, 'DD Mon YYYY') || '. Reason: ' || COALESCE(NEW.description, v_htitle)
-        );
+        BEGIN
+            INSERT INTO public.notifications (
+                gym_id,
+                title,
+                body
+            ) VALUES (
+                NEW.gym_id,
+                '🎉 Holiday Declared: ' || v_htitle,
+                'Gym will remain closed on ' || to_char(v_hdate, 'DD Mon YYYY') || '. Reason: ' || COALESCE(NEW.description, v_htitle)
+            );
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END;
     END;
 
-    -- Auto mark attendance logs for all Staff members on this holiday date
-    FOR r_staff IN SELECT id, user_id FROM public.staff WHERE gym_id = NEW.gym_id AND status = 'Active' LOOP
-        INSERT INTO public.attendance_logs (
-            gym_id,
-            user_id,
-            user_type,
-            check_in,
-            check_out,
-            status
-        ) VALUES (
-            NEW.gym_id,
-            COALESCE(r_staff.user_id, r_staff.id),
-            'Staff',
-            v_hdate::TIMESTAMPTZ,
-            v_hdate::TIMESTAMPTZ,
-            'Holiday'
-        )
-        ON CONFLICT DO NOTHING;
-    END LOOP;
+    -- Auto mark attendance logs for all Staff members on this holiday date (SAFE BLOCK)
+    BEGIN
+        FOR r_staff IN SELECT id, user_id FROM public.staff WHERE gym_id = NEW.gym_id AND status = 'Active' LOOP
+            BEGIN
+                INSERT INTO public.attendance_logs (
+                    gym_id,
+                    user_id,
+                    user_type,
+                    check_in,
+                    check_out,
+                    status
+                ) VALUES (
+                    NEW.gym_id,
+                    COALESCE(r_staff.user_id, r_staff.id),
+                    'Staff',
+                    v_hdate::TIMESTAMPTZ,
+                    v_hdate::TIMESTAMPTZ,
+                    'Holiday'
+                )
+                ON CONFLICT DO NOTHING;
+            EXCEPTION WHEN OTHERS THEN NULL;
+            END;
+        END LOOP;
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
 
-    -- Auto mark attendance logs for all Active Members on this holiday date
-    FOR r_member IN SELECT id FROM public.members WHERE gym_id = NEW.gym_id AND status = 'Active' LOOP
-        INSERT INTO public.attendance_logs (
-            gym_id,
-            user_id,
-            user_type,
-            check_in,
-            check_out,
-            status
-        ) VALUES (
-            NEW.gym_id,
-            r_member.id,
-            'Member',
-            v_hdate::TIMESTAMPTZ,
-            v_hdate::TIMESTAMPTZ,
-            'Holiday'
-        )
-        ON CONFLICT DO NOTHING;
-    END LOOP;
+    -- Auto mark attendance logs for all Active Members on this holiday date (SAFE BLOCK)
+    BEGIN
+        FOR r_member IN SELECT id FROM public.members WHERE gym_id = NEW.gym_id AND status = 'Active' LOOP
+            BEGIN
+                INSERT INTO public.attendance_logs (
+                    gym_id,
+                    user_id,
+                    user_type,
+                    check_in,
+                    check_out,
+                    status
+                ) VALUES (
+                    NEW.gym_id,
+                    r_member.id,
+                    'Member',
+                    v_hdate::TIMESTAMPTZ,
+                    v_hdate::TIMESTAMPTZ,
+                    'Holiday'
+                )
+                ON CONFLICT DO NOTHING;
+            EXCEPTION WHEN OTHERS THEN NULL;
+            END;
+        END LOOP;
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
 
     RETURN NEW;
 END;
@@ -157,8 +184,7 @@ FOR EACH ROW
 EXECUTE FUNCTION public.fn_on_holiday_declared();
 
 
--- 4. TRIGGER FUNCTIONS: LEAVE & ADVANCE REQUEST NOTIFICATIONS
--- Staff submits Leave -> Notify Owner. Owner approves/rejects -> Notify Staff.
+-- 5. TRIGGER FUNCTIONS: LEAVE & ADVANCE REQUEST NOTIFICATIONS
 CREATE OR REPLACE FUNCTION public.fn_on_leave_request_notify()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -182,11 +208,14 @@ BEGIN
                 'request'
             );
         EXCEPTION WHEN OTHERS THEN
-            INSERT INTO public.notifications (gym_id, title, body) VALUES (
-                NEW.gym_id,
-                '📋 New Leave Request',
-                COALESCE(s_name, 'Staff Member') || ' has requested leave from ' || to_char(NEW.start_date, 'DD Mon') || ' to ' || to_char(NEW.end_date, 'DD Mon')
-            );
+            BEGIN
+                INSERT INTO public.notifications (gym_id, title, body) VALUES (
+                    NEW.gym_id,
+                    '📋 New Leave Request',
+                    COALESCE(s_name, 'Staff Member') || ' has requested leave from ' || to_char(NEW.start_date, 'DD Mon') || ' to ' || to_char(NEW.end_date, 'DD Mon')
+                );
+            EXCEPTION WHEN OTHERS THEN NULL;
+            END;
         END;
     ELSIF TG_OP = 'UPDATE' AND OLD.status <> NEW.status AND NEW.status IN ('Approved', 'Rejected') THEN
         BEGIN
@@ -206,11 +235,14 @@ BEGIN
                 'request'
             );
         EXCEPTION WHEN OTHERS THEN
-            INSERT INTO public.notifications (gym_id, title, body) VALUES (
-                NEW.gym_id,
-                'Leave Request ' || NEW.status,
-                'Your leave request from ' || to_char(NEW.start_date, 'DD Mon') || ' to ' || to_char(NEW.end_date, 'DD Mon') || ' has been ' || NEW.status
-            );
+            BEGIN
+                INSERT INTO public.notifications (gym_id, title, body) VALUES (
+                    NEW.gym_id,
+                    'Leave Request ' || NEW.status,
+                    'Your leave request from ' || to_char(NEW.start_date, 'DD Mon') || ' to ' || to_char(NEW.end_date, 'DD Mon') || ' has been ' || NEW.status
+                );
+            EXCEPTION WHEN OTHERS THEN NULL;
+            END;
         END;
     END IF;
 
@@ -225,7 +257,6 @@ FOR EACH ROW
 EXECUTE FUNCTION public.fn_on_leave_request_notify();
 
 
--- Staff submits Advance Salary Request -> Notify Owner. Owner approves/rejects -> Notify Staff.
 CREATE OR REPLACE FUNCTION public.fn_on_advance_request_notify()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -249,11 +280,14 @@ BEGIN
                 'request'
             );
         EXCEPTION WHEN OTHERS THEN
-            INSERT INTO public.notifications (gym_id, title, body) VALUES (
-                NEW.gym_id,
-                '💰 New Advance Salary Request',
-                COALESCE(s_name, 'Staff Member') || ' has requested an advance of ₹' || COALESCE(NEW.advance_amount, 0)
-            );
+            BEGIN
+                INSERT INTO public.notifications (gym_id, title, body) VALUES (
+                    NEW.gym_id,
+                    '💰 New Advance Salary Request',
+                    COALESCE(s_name, 'Staff Member') || ' has requested an advance of ₹' || COALESCE(NEW.advance_amount, 0)
+                );
+            EXCEPTION WHEN OTHERS THEN NULL;
+            END;
         END;
     ELSIF TG_OP = 'UPDATE' AND OLD.status <> NEW.status AND NEW.status IN ('Approved', 'Rejected', 'Given') THEN
         BEGIN
@@ -273,11 +307,14 @@ BEGIN
                 'request'
             );
         EXCEPTION WHEN OTHERS THEN
-            INSERT INTO public.notifications (gym_id, title, body) VALUES (
-                NEW.gym_id,
-                'Advance Request ' || NEW.status,
-                'Your advance salary request of ₹' || COALESCE(NEW.advance_amount, 0) || ' has been ' || NEW.status
-            );
+            BEGIN
+                INSERT INTO public.notifications (gym_id, title, body) VALUES (
+                    NEW.gym_id,
+                    'Advance Request ' || NEW.status,
+                    'Your advance salary request of ₹' || COALESCE(NEW.advance_amount, 0) || ' has been ' || NEW.status
+                );
+            EXCEPTION WHEN OTHERS THEN NULL;
+            END;
         END;
     END IF;
 
@@ -292,7 +329,7 @@ FOR EACH ROW
 EXECUTE FUNCTION public.fn_on_advance_request_notify();
 
 
--- 5. RPC FUNCTION: CHECK MEMBERSHIP EXPIRING IN 15 DAYS AND NOTIFY MEMBERS
+-- 6. RPC FUNCTION: CHECK MEMBERSHIP EXPIRING IN 15 DAYS AND NOTIFY MEMBERS
 CREATE OR REPLACE FUNCTION public.check_membership_expiring_15_days(p_gym_id UUID)
 RETURNS VOID AS $$
 DECLARE
@@ -334,11 +371,14 @@ BEGIN
                     'expiry'
                 );
             EXCEPTION WHEN OTHERS THEN
-                INSERT INTO public.notifications (gym_id, title, body) VALUES (
-                    p_gym_id,
-                    '⏳ Membership Expiring Soon',
-                    'Hi ' || r_exp.member_name || ', your ' || COALESCE(r_exp.plan_name, 'Gym') || ' membership will expire in 15 days on ' || to_char(r_exp.end_date, 'DD Mon YYYY') || '. Please renew to stay fit!'
-                );
+                BEGIN
+                    INSERT INTO public.notifications (gym_id, title, body) VALUES (
+                        p_gym_id,
+                        '⏳ Membership Expiring Soon',
+                        'Hi ' || r_exp.member_name || ', your ' || COALESCE(r_exp.plan_name, 'Gym') || ' membership will expire in 15 days on ' || to_char(r_exp.end_date, 'DD Mon YYYY') || '. Please renew to stay fit!'
+                    );
+                EXCEPTION WHEN OTHERS THEN NULL;
+                END;
             END;
         END IF;
     END LOOP;
