@@ -600,28 +600,31 @@ class MemberAppViewModel extends ChangeNotifier {
         }
 
         // Fetch real payment history from database
-        try {
-          _paymentHistory.clear();
+        _paymentHistory.clear();
+        final Set<String> processedMembershipIds = {};
 
-          // 1. Fetch memberships to extract direct paid amounts (in case membership_payments is empty)
-          final membershipsList = await SupabaseService.client
+        List<dynamic>? membershipsList;
+        try {
+          // 1. Fetch memberships to extract direct paid amounts (safe, since we know member_memberships works)
+          membershipsList = await SupabaseService.client
               .from('member_memberships')
               .select('id, start_date, total_amount, paid_amount, payment_status, membership_plans(title)')
               .eq('member_id', _memberId)
               .order('start_date', ascending: false);
+        } catch (e) {
+          print('Error loading member_memberships for payments: $e');
+        }
 
-          // 2. Fetch explicit membership payments
+        try {
+          // 2. Fetch explicit membership payments (might fail due to RLS, which we handle independently)
           final paymentsData = await SupabaseService.client
               .from('membership_payments')
               .select('id, amount, payment_date, member_membership_id')
               .order('payment_date', ascending: false);
 
-          final Set<String> processedMembershipIds = {};
-
           if (paymentsData != null && paymentsData.isNotEmpty) {
             for (var pay in paymentsData) {
               final mId = pay['member_membership_id']?.toString() ?? '';
-              // Verify this payment belongs to one of the user's memberships
               final belongsToUser = membershipsList?.any((m) => m['id'].toString() == mId) ?? false;
               if (belongsToUser) {
                 processedMembershipIds.add(mId);
@@ -638,30 +641,30 @@ class MemberAppViewModel extends ChangeNotifier {
               }
             }
           }
+        } catch (e) {
+          print('Error loading membership_payments: $e');
+        }
 
-          // 3. Fallback: for memberships that don't have explicit payments in membership_payments,
-          // but have paid_amount > 0 in member_memberships, synthesize a payment history entry!
-          if (membershipsList != null) {
-            for (var mship in membershipsList) {
-              final mId = mship['id'].toString();
-              final paidAmount = (mship['paid_amount'] as num?)?.toDouble() ?? 0.0;
-              
-              if (!processedMembershipIds.contains(mId) && paidAmount > 0) {
-                final pDate = DateTime.tryParse(mship['start_date'] ?? '') ?? DateTime.now();
-                final formattedDate = DateFormat('dd MMM yyyy').format(pDate);
-                final invoiceNum = 'INV-${pDate.year}-${mId.substring(0, 4).toUpperCase()}';
-                final statusStr = mship['payment_status']?.toString() ?? 'Paid';
-                _paymentHistory.add({
-                  'invoice': invoiceNum,
-                  'date': formattedDate,
-                  'amount': '₹$paidAmount',
-                  'status': statusStr == 'Fully Paid' ? 'Paid' : statusStr,
-                });
-              }
+        // 3. Fallback: for memberships that don't have explicit payments in membership_payments,
+        // but have paid_amount > 0 in member_memberships, synthesize a payment history entry!
+        if (membershipsList != null) {
+          for (var mship in membershipsList) {
+            final mId = mship['id'].toString();
+            final paidAmount = (mship['paid_amount'] as num?)?.toDouble() ?? 0.0;
+            
+            if (!processedMembershipIds.contains(mId) && paidAmount > 0) {
+              final pDate = DateTime.tryParse(mship['start_date'] ?? '') ?? DateTime.now();
+              final formattedDate = DateFormat('dd MMM yyyy').format(pDate);
+              final invoiceNum = 'INV-${pDate.year}-${mId.substring(0, 4).toUpperCase()}';
+              final statusStr = mship['payment_status']?.toString() ?? 'Paid';
+              _paymentHistory.add({
+                'invoice': invoiceNum,
+                'date': formattedDate,
+                'amount': '₹$paidAmount',
+                'status': statusStr == 'Fully Paid' ? 'Paid' : statusStr,
+              });
             }
           }
-        } catch (e) {
-          print('Error loading payment history: $e');
         }
 
         // Fetch workout logs for the last 30 days and clean up old ones
