@@ -525,7 +525,13 @@ class MemberAppViewModel extends ChangeNotifier {
               _planDuration = '$durationMonths Month${durationMonths > 1 ? 's' : ''}';
             }
             
-            _membershipStartDate = membershipData['start_date'] ?? _membershipStartDate;
+            try {
+              final startDate = DateTime.parse(membershipData['start_date']);
+              _membershipStartDate = DateFormat('dd MMM yyyy').format(startDate);
+            } catch (_) {
+              _membershipStartDate = membershipData['start_date'] ?? _membershipStartDate;
+            }
+            
             _membershipEndDate = membershipData['end_date'] ?? _membershipEndDate;
             
             final totalAmount = membershipData['total_amount'] ?? 0;
