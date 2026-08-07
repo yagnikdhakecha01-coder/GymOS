@@ -40,9 +40,18 @@ class _GymsScreenState extends State<GymsScreen> {
 
   Future<void> _fetchGyms() async {
     try {
+      if (!mounted) return;
       setState(() => _isLoading = true);
+
       if (!AdminSupabaseService.isInitialized) {
-        _loadMockGyms();
+        await AdminSupabaseService.initialize();
+      }
+
+      if (!AdminSupabaseService.isInitialized) {
+        setState(() {
+          _gyms = [];
+          _isLoading = false;
+        });
         return;
       }
       final client = AdminSupabaseService.client;
@@ -123,23 +132,20 @@ class _GymsScreenState extends State<GymsScreen> {
         });
       }
 
+      if (!mounted) return;
       setState(() {
         _gyms = loadedGyms;
         _isLoading = false;
       });
     } catch (e) {
-      _loadMockGyms();
+      debugPrint('Error fetching gyms from Supabase: $e');
+      if (mounted) {
+        setState(() {
+          _gyms = [];
+          _isLoading = false;
+        });
+      }
     }
-  }
-
-  void _loadMockGyms() {
-    setState(() {
-      _gyms = _mockGyms.map((g) => {
-        ...g,
-        'rawPlan': g['plan'] == 'Pro' ? 'pro' : (g['plan'] == 'Business' ? 'business' : (g['plan'] == 'Starter' ? 'starter' : 'free_trial')),
-      }).toList();
-      _isLoading = false;
-    });
   }
 
   List<Map<String, dynamic>> get _filteredGyms {
