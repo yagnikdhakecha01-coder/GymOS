@@ -46,6 +46,11 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
     super.dispose();
   }
 
+  bool _isQueuedPlan = false;
+  String _queuedPlanName = '';
+  String _trialEndStr = '';
+  String _planEndStr = '';
+
   Future<void> _fetchSubscription() async {
     try {
       if (!mounted) return;
@@ -58,20 +63,50 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
         return;
       }
 
-      final res = await SupabaseService.client
-          .rpc('get_gym_subscription_info', params: {'p_gym_id': gymId})
+      final subRes = await SupabaseService.client
+          .from('subscriptions')
+          .select('*')
+          .eq('gym_id', gymId)
           .maybeSingle();
 
-      if (res != null && mounted) {
-        final plan = res['plan']?.toString() ?? 'free_trial';
-        final isTrial = plan == 'free_trial' || plan == 'trial' || res['status'] == 'trial';
-        final days = (res['days_left'] as num?)?.toInt() ?? 0;
+      if (subRes != null && mounted) {
+        final planId = (subRes['plan_id'] ?? 'free_trial').toString();
+        final String status = (subRes['status'] ?? 'trial').toString().toLowerCase();
+
+        DateTime? trialEnd = subRes['trial_end'] != null ? DateTime.tryParse(subRes['trial_end'].toString()) : null;
+        DateTime? planEnd = subRes['end_date'] != null ? DateTime.tryParse(subRes['end_date'].toString()) : null;
+
+        if (trialEnd == null && authVm.gymInfo?['trial_end_date'] != null) {
+          trialEnd = DateTime.tryParse(authVm.gymInfo!['trial_end_date'].toString());
+        }
+
+        final bool isTrialActive = trialEnd != null && trialEnd.isAfter(DateTime.now());
+        final bool hasPurchasedPlan = planId.toLowerCase() != 'free_trial';
+        final bool isQueued = isTrialActive && hasPurchasedPlan;
+
+        int daysLeft = 0;
+        if (isTrialActive) {
+          daysLeft = trialEnd!.difference(DateTime.now()).inDays;
+          if (daysLeft < 0) daysLeft = 0;
+        } else if (planEnd != null && planEnd.isAfter(DateTime.now())) {
+          daysLeft = planEnd.difference(DateTime.now()).inDays;
+          if (daysLeft < 0) daysLeft = 0;
+        }
+
+        String formattedPlanName = 'Free Trial';
+        if (planId.toLowerCase() == 'starter') formattedPlanName = 'Starter Plan';
+        if (planId.toLowerCase() == 'pro') formattedPlanName = 'Pro Plan';
+        if (planId.toLowerCase() == 'business') formattedPlanName = 'Business Plan';
 
         setState(() {
-          _subscription = res;
-          _daysLeft = days;
-          _planName = isTrial ? 'Free Trial' : 'Active Plan';
-          _isTrial = isTrial;
+          _subscription = subRes;
+          _daysLeft = daysLeft;
+          _planName = isQueued ? 'Free Trial Active' : (hasPurchasedPlan && !isTrialActive ? formattedPlanName : 'Free Trial');
+          _isTrial = isTrialActive || !hasPurchasedPlan;
+          _isQueuedPlan = isQueued;
+          _queuedPlanName = formattedPlanName;
+          _trialEndStr = trialEnd != null ? trialEnd.toLocal().toString().split(' ')[0] : '-';
+          _planEndStr = planEnd != null ? planEnd.toLocal().toString().split(' ')[0] : '-';
           _isLoading = false;
         });
       } else {
@@ -99,6 +134,7 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
       _daysLeft = days;
       _planName = 'Free Trial';
       _isTrial = true;
+      _isQueuedPlan = false;
       _isLoading = false;
     });
   }
@@ -476,10 +512,10 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
               child: Container(
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: _isTrial ? const Color(0xFFFFF7ED) : const Color(0xFFF0FDF4),
+                  color: _isQueuedPlan ? const Color(0xFFF5F3FF) : (_isTrial ? const Color(0xFFFFF7ED) : const Color(0xFFF0FDF4)),
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(
-                    color: _isTrial ? const Color(0xFFFFEDD5) : const Color(0xFFDCFCE7),
+                    color: _isQueuedPlan ? const Color(0xFFDDD6FE) : (_isTrial ? const Color(0xFFFFEDD5) : const Color(0xFFDCFCE7)),
                   ),
                 ),
                 child: Column(
@@ -488,8 +524,8 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
                     Row(
                       children: [
                         Icon(
-                          _isTrial ? Icons.warning_amber_rounded : Icons.verified_user_rounded,
-                          color: _isTrial ? const Color(0xFFD97706) : AppTheme.success,
+                          _isQueuedPlan ? Icons.hourglass_top_rounded : (_isTrial ? Icons.warning_amber_rounded : Icons.verified_user_rounded),
+                          color: _isQueuedPlan ? const Color(0xFF6C4EFF) : (_isTrial ? const Color(0xFFD97706) : AppTheme.success),
                           size: 18,
                         ),
                         const SizedBox(width: 8),
@@ -498,7 +534,7 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
                           style: GoogleFonts.inter(
                             fontSize: 14, 
                             fontWeight: FontWeight.bold, 
-                            color: _isTrial ? const Color(0xFFC2410C) : const Color(0xFF15803D),
+                            color: _isQueuedPlan ? const Color(0xFF6C4EFF) : (_isTrial ? const Color(0xFFC2410C) : const Color(0xFF15803D)),
                           ),
                         ),
                       ],
@@ -506,14 +542,47 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
                     const SizedBox(height: 8),
                     Text(
                       _isTrial 
-                          ? '$_daysLeft Days Left in Trial' 
+                          ? '$_daysLeft Days Left in Free Trial' 
                           : 'Valid for another $_daysLeft Days',
                       style: GoogleFonts.inter(
                         fontSize: 12, 
                         fontWeight: FontWeight.w600,
-                        color: _isTrial ? const Color(0xFF9A3412) : const Color(0xFF166534),
+                        color: _isQueuedPlan ? const Color(0xFF4C1D95) : (_isTrial ? const Color(0xFF9A3412) : const Color(0xFF166534)),
                       ),
                     ),
+                    if (_isQueuedPlan) ...[
+                      const SizedBox(height: 14),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFC4B5FD)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.check_circle_rounded, color: Colors.green, size: 16),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    'Purchased: $_queuedPlanName',
+                                    style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: const Color(0xFF1E293B)),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Starts: $_trialEndStr\nExpires: $_planEndStr',
+                              style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF64748B), height: 1.3),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 16),
                     SizedBox(
                       width: double.infinity,
@@ -521,14 +590,14 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
                       child: ElevatedButton(
                         onPressed: _isLoading ? null : _showChangePlanDialog,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: _isTrial ? const Color(0xFFEA580C) : AppTheme.primary,
+                          backgroundColor: _isQueuedPlan ? const Color(0xFF6C4EFF) : (_isTrial ? const Color(0xFFEA580C) : AppTheme.primary),
                           foregroundColor: Colors.white,
                           elevation: 0,
                           padding: EdgeInsets.zero,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                         ),
                         child: Text(
-                          'Change Plan',
+                          _isQueuedPlan ? 'View Plans' : 'Change Plan',
                           style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold),
                         ),
                       ),

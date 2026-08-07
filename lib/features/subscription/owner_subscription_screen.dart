@@ -36,9 +36,63 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
     _loadTrialSettings();
   }
 
+  bool _isQueuedPlan = false;
+  String _queuedPlanName = '';
+  String _trialEndStr = '';
+  String _planEndStr = '';
+  int _trialDaysLeft = 0;
+
   Future<void> _loadTrialSettings() async {
     try {
       if (SupabaseService.isInitialized) {
+        final authVm = Provider.of<AuthViewModel>(context, listen: false);
+        final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
+
+        if (gymId != null) {
+          try {
+            final subRes = await SupabaseService.client
+                .from('subscriptions')
+                .select('*')
+                .eq('gym_id', gymId)
+                .maybeSingle();
+
+            if (subRes != null && mounted) {
+              final planId = (subRes['plan_id'] ?? 'free_trial').toString();
+              DateTime? trialEnd = subRes['trial_end'] != null ? DateTime.tryParse(subRes['trial_end'].toString()) : null;
+              DateTime? planEnd = subRes['end_date'] != null ? DateTime.tryParse(subRes['end_date'].toString()) : null;
+
+              if (trialEnd == null && authVm.gymInfo?['trial_end_date'] != null) {
+                trialEnd = DateTime.tryParse(authVm.gymInfo!['trial_end_date'].toString());
+              }
+
+              final bool isTrialActive = trialEnd != null && trialEnd.isAfter(DateTime.now());
+              final bool hasPurchasedPlan = planId.toLowerCase() != 'free_trial';
+              final bool isQueued = isTrialActive && hasPurchasedPlan;
+
+              int daysLeft = 0;
+              if (isTrialActive) {
+                daysLeft = trialEnd!.difference(DateTime.now()).inDays;
+                if (daysLeft < 0) daysLeft = 0;
+              }
+
+              String formattedPlanName = 'Free Trial';
+              if (planId.toLowerCase() == 'starter') formattedPlanName = 'Starter Plan';
+              if (planId.toLowerCase() == 'pro') formattedPlanName = 'Pro Plan';
+              if (planId.toLowerCase() == 'business') formattedPlanName = 'Business Plan';
+
+              setState(() {
+                _isQueuedPlan = isQueued;
+                _queuedPlanName = formattedPlanName;
+                _trialDaysLeft = daysLeft;
+                _trialEndStr = trialEnd != null ? trialEnd.toLocal().toString().split(' ')[0] : '-';
+                _planEndStr = planEnd != null ? planEnd.toLocal().toString().split(' ')[0] : '-';
+              });
+            }
+          } catch (e) {
+            debugPrint('Error fetching subscription details: $e');
+          }
+        }
+
         final res = await SupabaseService.client
             .from('platform_settings')
             .select('value')
@@ -560,7 +614,7 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
         child: ListView(
           padding: const EdgeInsets.all(24.0),
           children: [
-            // Trial Banner
+            // Trial & Upcoming Plan Banner
             Container(
               padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(
@@ -568,45 +622,83 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: const Color(0xFFDDD6FE), width: 1.2),
               ),
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.shield_outlined,
-                      color: Color(0xFF6C4EFF),
-                      size: 24,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _trialTitleText,
-                          style: GoogleFonts.inter(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                            color: const Color(0xFF6C4EFF),
-                          ),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          _trialSubtitleText,
-                          style: GoogleFonts.inter(
-                            fontSize: 12,
-                            color: const Color(0xFF5B21B6),
-                            fontWeight: FontWeight.w500,
-                          ),
+                        child: Icon(
+                          _isQueuedPlan ? Icons.hourglass_top_rounded : Icons.shield_outlined,
+                          color: const Color(0xFF6C4EFF),
+                          size: 24,
                         ),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _isQueuedPlan ? 'Free Trial Active ($_trialDaysLeft Days Left)' : _trialTitleText,
+                              style: GoogleFonts.inter(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: const Color(0xFF6C4EFF),
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _isQueuedPlan ? 'Free trial ends on $_trialEndStr' : _trialSubtitleText,
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                color: const Color(0xFF5B21B6),
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
+                  if (_isQueuedPlan) ...[
+                    const SizedBox(height: 14),
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFC4B5FD)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.check_circle_rounded, color: Colors.green, size: 22),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Purchased Plan: $_queuedPlanName',
+                                  style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF1E293B)),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Auto-activates on $_trialEndStr • Valid till $_planEndStr',
+                                  style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF64748B)),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
