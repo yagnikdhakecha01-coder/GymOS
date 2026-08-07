@@ -49,7 +49,7 @@ class _GymsScreenState extends State<GymsScreen> {
       
       final response = await client
           .from('gyms')
-          .select('*, members(count), staff(count), user_gym_associations(role, profiles(full_name, phone_number))');
+          .select('*, members(count), staff(count), user_gym_associations(role, user_id, profiles(full_name, phone_number)), subscriptions(*)');
       
       final List<Map<String, dynamic>> loadedGyms = [];
       for (var item in response as List) {
@@ -74,11 +74,12 @@ class _GymsScreenState extends State<GymsScreen> {
         final membersCount = (gymMap['members'] as List?)?.firstOrNull?['count'] ?? 0;
         final staffCount = (gymMap['staff'] as List?)?.firstOrNull?['count'] ?? 0;
         
+        final subMap = (gymMap['subscriptions'] as List?)?.firstOrNull;
         String trialLeftStr = '-';
         String expiryStr = '-';
-        final effectiveExpiryStr = gymMap['expiry_date'] ?? gymMap['trial_end_date'];
+        final effectiveExpiryStr = subMap?['end_date'] ?? subMap?['trial_end'] ?? gymMap['expiry_date'] ?? gymMap['trial_end_date'];
         if (effectiveExpiryStr != null) {
-          final endDate = DateTime.tryParse(effectiveExpiryStr);
+          final endDate = DateTime.tryParse(effectiveExpiryStr.toString());
           if (endDate != null) {
             final diff = endDate.difference(DateTime.now()).inDays;
             trialLeftStr = diff > 0 ? '$diff days' : 'Expired';
@@ -917,7 +918,10 @@ class _GymsScreenState extends State<GymsScreen> {
         }
         break;
       case 'edit_expiry':
-        final currentExpiryStr = gym['expiry'] ?? gym['expiry_date'];
+        final rawGymMap = gym['rawGym'] as Map<String, dynamic>? ?? gym;
+        final subMap = (rawGymMap['subscriptions'] as List?)?.firstOrNull;
+        final currentExpiryStr = subMap?['end_date'] ?? subMap?['trial_end'] ?? rawGymMap['expiry_date'] ?? rawGymMap['trial_end_date'] ?? gym['expiry'];
+        
         DateTime initialDate = DateTime.now().add(const Duration(days: 30));
         if (currentExpiryStr != null && currentExpiryStr.toString() != '-') {
           final parsed = DateTime.tryParse(currentExpiryStr.toString());
@@ -936,27 +940,50 @@ class _GymsScreenState extends State<GymsScreen> {
         );
 
         if (pickedDate != null) {
+          final newDateIso = pickedDate.toIso8601String();
+          final bool isActive = pickedDate.isAfter(DateTime.now());
+
           if (client != null && gymId != null) {
             await client.from('gyms').update({
-              'expiry_date': pickedDate.toIso8601String(),
-              'status': pickedDate.isAfter(DateTime.now()) ? 'active' : 'grace_period'
+              'expiry_date': newDateIso,
+              'trial_end_date': newDateIso,
+              'status': isActive ? (gym['status'] == 'trial' ? 'trial' : 'active') : 'grace_period'
             }).eq('id', gymId);
             
             try {
-              await client.from('subscriptions').update({
-                'end_date': pickedDate.toIso8601String(),
-                'status': pickedDate.isAfter(DateTime.now()) ? 'active' : 'expired'
-              }).eq('gym_id', gymId);
+              String ownerId = '';
+              final assoc = rawGymMap['user_gym_associations'] as List?;
+              if (assoc != null) {
+                for (var a in assoc) {
+                  if (a['role'] == 'owner' && a['user_id'] != null) {
+                    ownerId = a['user_id'].toString();
+                    break;
+                  }
+                }
+              }
+
+              if (ownerId.isNotEmpty) {
+                await client.from('subscriptions').upsert(
+                  {
+                    'gym_id': gymId,
+                    'owner_id': ownerId,
+                    'end_date': newDateIso,
+                    'trial_end': newDateIso,
+                    'status': isActive ? (gym['status'] == 'trial' ? 'trial' : 'active') : 'expired',
+                    'updated_at': DateTime.now().toIso8601String(),
+                  },
+                  onConflict: 'gym_id',
+                );
+              } else {
+                await client.from('subscriptions').update({
+                  'end_date': newDateIso,
+                  'trial_end': newDateIso,
+                  'status': isActive ? (gym['status'] == 'trial' ? 'trial' : 'active') : 'expired',
+                  'updated_at': DateTime.now().toIso8601String(),
+                }).eq('gym_id', gymId);
+              }
             } catch (e) {
               debugPrint('Error updating subscriptions on edit expiry: $e');
-            }
-          } else {
-            final index = _gyms.indexWhere((g) => g['id'] == gymId);
-            if (index != -1) {
-              setState(() {
-                _gyms[index]['expiry'] = pickedDate.toString().split(' ')[0];
-                _gyms[index]['status'] = pickedDate.isAfter(DateTime.now()) ? 'active' : 'grace_period';
-              });
             }
           }
           await _fetchGyms();
