@@ -296,15 +296,17 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
         // 2. Configure and Open Razorpay Checkout Dialog
         options = {
           'key': data['key_id'],
-          'amount': data['amount'],
+          if (data['amount'] != null) 'amount': data['amount'],
           'name': 'GymOS Enterprise',
-          'description': 'Subscription Plan Upgrade',
-          'order_id': data['order_id'],
+          'description': 'AutoPay Monthly Subscription (${planId.toUpperCase()} Plan)',
+          'recurring': 1,
+          if (data['order_id'] != null && data['order_id'].toString().isNotEmpty) 'order_id': data['order_id'],
           if (prefillMap.isNotEmpty) 'prefill': prefillMap,
           'notes': {
             'gym_id': gymId,
             'plan_id': planId,
             'razorpay_plan_id': razorpayPlanId,
+            'auto_pay': 'true',
             'owner_id': ownerId,
           }
         };
@@ -314,13 +316,15 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
         options = {
           'key': AppConfig.razorpayKeyId,
           'amount': amount,
-          'name': 'GymOS Enterprise (Test Mode)',
-          'description': 'Subscription Plan Upgrade Fallback',
+          'name': 'GymOS Enterprise',
+          'description': 'AutoPay Monthly Subscription (${planId.toUpperCase()} Plan)',
+          'recurring': 1,
           if (prefillMap.isNotEmpty) 'prefill': prefillMap,
           'notes': {
             'gym_id': gymId,
             'plan_id': planId,
             'razorpay_plan_id': razorpayPlanId,
+            'auto_pay': 'true',
             'owner_id': ownerId,
           }
         };
@@ -442,10 +446,20 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
           .from('subscriptions')
           .update({
             'plan_id': planId,
-            'status': 'trial',
+            'status': planId == 'free_trial' ? 'trial' : 'active',
+            'auto_pay': true,
+            'next_billing_date': endDate.toIso8601String(),
             'end_date': endDate.toIso8601String(),
           })
           .eq('gym_id', gymId);
+
+      try {
+        await client.from('gyms').update({
+          'plan': planId,
+          'status': planId == 'free_trial' ? 'trial' : 'active',
+          'expiry_date': endDate.toIso8601String(),
+        }).eq('id', gymId);
+      } catch (_) {}
 
       await authVm.loadCurrentProfile();
       _fetchSubscription();

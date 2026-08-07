@@ -228,7 +228,7 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
       debugPrint('Could not fetch existing subscription dates for extension: $e');
     }
 
-    // 2. Activate Subscription in DB
+    // 2. Activate Subscription & Enable AutoPay in DB
     final subRes = await SupabaseService.client
         .from('subscriptions')
         .upsert(
@@ -237,9 +237,11 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
             'owner_id': ownerId,
             'plan_id': planId,
             'status': 'active',
+            'auto_pay': true,
+            'next_billing_date': newEndDate.toIso8601String(),
             'start_date': DateTime.now().toIso8601String(),
             'end_date': newEndDate.toIso8601String(),
-            if (orderId != null) 'razorpay_subscription_id': orderId,
+            if (orderId != null && orderId.isNotEmpty) 'razorpay_subscription_id': orderId,
             'updated_at': DateTime.now().toIso8601String(),
           },
           onConflict: 'gym_id',
@@ -248,6 +250,16 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
         .single();
 
     final String subId = subRes['id'] as String;
+
+    try {
+      await SupabaseService.client.from('gyms').update({
+        'plan': planId,
+        'status': 'active',
+        'expiry_date': newEndDate.toIso8601String(),
+      }).eq('id', gymId);
+    } catch (e) {
+      debugPrint('Warning: Could not update gyms table: $e');
+    }
 
     // 3. Create Invoice (Safe block)
     String? invoiceId;
@@ -390,17 +402,39 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 const SizedBox(height: 10),
-                const Icon(Icons.check_circle_outline_rounded, color: Colors.green, size: 64),
+                const Icon(Icons.check_circle_rounded, color: Colors.green, size: 64),
                 const SizedBox(height: 16),
                 Text(
-                  'Subscription Active',
+                  'AutoPay Subscription Active! 🎉',
+                  textAlign: TextAlign.center,
                   style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF0FDF4),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFDCFCE7)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.autorenew_rounded, color: Colors.green, size: 22),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'AutoPay Enabled via Razorpay.\nNext auto-debit trigger: After 30 days on plan expiry (Auto-debits ₹${_selectedPrice?.toInt() ?? 699}/mo).',
+                          style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF166534), fontWeight: FontWeight.w500, height: 1.3),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
                 Text(
-                  'Your gym has been successfully unlocked!',
+                  'Your gym plan will seamlessly renew automatically without any manual payment steps!',
                   textAlign: TextAlign.center,
-                  style: GoogleFonts.inter(fontSize: 14, color: AppTheme.textSecondary),
+                  style: GoogleFonts.inter(fontSize: 13, color: AppTheme.textSecondary),
                 ),
                 const SizedBox(height: 24),
                 SizedBox(
@@ -510,10 +544,11 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
         
         options = {
           'key': keyId,
-          'amount': amount,
+          if (amount > 0) 'amount': amount,
           'name': 'Gym OS',
-          'order_id': orderId,
-          'description': 'Subscription for ${planId.toUpperCase()} Plan',
+          'description': 'AutoPay Monthly Subscription (${planId.toUpperCase()} Plan)',
+          'recurring': 1,
+          if (orderId.isNotEmpty) 'order_id': orderId,
           'timeout': 300,
           'prefill': {
             'contact': ownerPhone.isNotEmpty ? ownerPhone : '9999999999',
@@ -523,6 +558,7 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
             'gym_id': gymId,
             'plan_id': planId,
             'razorpay_plan_id': razorpayPlanId,
+            'auto_pay': 'true',
             'owner_id': ownerId,
           },
           'theme': {
@@ -536,7 +572,8 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
           'key': AppConfig.razorpayKeyId,
           'amount': amountInPaise,
           'name': 'Gym OS',
-          'description': 'Subscription for ${planId.toUpperCase()} Plan',
+          'description': 'AutoPay Monthly Subscription (${planId.toUpperCase()} Plan)',
+          'recurring': 1,
           'timeout': 300,
           'prefill': {
             'contact': ownerPhone.isNotEmpty ? ownerPhone : '9999999999',
@@ -546,6 +583,7 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
             'gym_id': gymId,
             'plan_id': planId,
             'razorpay_plan_id': razorpayPlanId,
+            'auto_pay': 'true',
             'owner_id': ownerId,
           },
           'theme': {
