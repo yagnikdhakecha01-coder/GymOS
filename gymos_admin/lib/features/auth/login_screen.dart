@@ -210,7 +210,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                               const SizedBox(height: 40),
                             ],
                             Text(
-                              _isSignUpMode ? 'Register Super Admin' : 'Welcome back',
+                              'Welcome back',
                               style: GoogleFonts.inter(
                                 fontSize: 28,
                                 fontWeight: FontWeight.bold,
@@ -220,13 +220,74 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                             ),
                             const SizedBox(height: 6),
                             Text(
-                              _isSignUpMode ? 'Register a new Super Admin account' : 'Sign in to your Super Admin account',
+                              'Sign in to your Super Admin account',
                               style: GoogleFonts.inter(
                                 fontSize: 15,
                                 color: const Color(0xFF94A3B8),
                               ),
                             ),
-                            const SizedBox(height: 36),
+                            const SizedBox(height: 28),
+                            // Google Sign In Button
+                            SizedBox(
+                              width: double.infinity,
+                              height: 48,
+                              child: OutlinedButton(
+                                onPressed: authProvider.isLoading ? null : _handleGoogleLogin,
+                                style: OutlinedButton.styleFrom(
+                                  side: const BorderSide(color: Color(0xFF334155)),
+                                  backgroundColor: const Color(0xFF1E293B),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  elevation: 0,
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Container(
+                                      width: 24,
+                                      height: 24,
+                                      decoration: const BoxDecoration(
+                                        color: Colors.white,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Center(
+                                        child: Text(
+                                          'G',
+                                          style: TextStyle(
+                                            color: Color(0xFF4285F4),
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 16,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Text(
+                                      'Continue with Google',
+                                      style: GoogleFonts.inter(
+                                        color: Colors.white,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+                            Row(
+                              children: [
+                                const Expanded(child: Divider(color: Color(0xFF334155))),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                                  child: Text(
+                                    'OR',
+                                    style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF64748B), fontWeight: FontWeight.w600),
+                                  ),
+                                ),
+                                const Expanded(child: Divider(color: Color(0xFF334155))),
+                              ],
+                            ),
+                            const SizedBox(height: 20),
                             // Email
                             Text('Email', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w500, color: const Color(0xFF94A3B8))),
                             const SizedBox(height: 8),
@@ -317,29 +378,12 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                                         ),
                                       )
                                     : Text(
-                                        _isSignUpMode ? 'Register Admin' : 'Sign In',
+                                        'Sign In',
                                         style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600),
                                       ),
                               ),
                             ),
-                            const SizedBox(height: 24),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  _isSignUpMode ? 'Already have an admin account? ' : 'First time here? ',
-                                  style: GoogleFonts.inter(fontSize: 13, color: const Color(0xFF94A3B8)),
-                                ),
-                                GestureDetector(
-                                  onTap: () => setState(() => _isSignUpMode = !_isSignUpMode),
-                                  child: Text(
-                                    _isSignUpMode ? 'Sign In' : 'Register Admin',
-                                    style: GoogleFonts.inter(fontSize: 13, color: AdminTheme.primary, fontWeight: FontWeight.bold),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 16),
+                            const SizedBox(height: 20),
                             Center(
                               child: Text(
                                 'Super Admin access only',
@@ -400,28 +444,16 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     );
   }
 
+  Future<void> _handleGoogleLogin() async {
+    await context.read<AuthProvider>().loginWithGoogle();
+  }
+
   Future<void> _handleLogin() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_isSignUpMode) {
-      final success = await context.read<AuthProvider>().signUp(
-        _emailController.text.trim(),
-        _passwordController.text.trim(),
-      );
-      if (success && mounted) {
-        setState(() => _isSignUpMode = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Admin registration successful! You can now log in.'),
-            backgroundColor: AdminTheme.success,
-          ),
-        );
-      }
-    } else {
-      await context.read<AuthProvider>().login(
-        _emailController.text.trim(),
-        _passwordController.text.trim(),
-      );
-    }
+    await context.read<AuthProvider>().login(
+      _emailController.text.trim(),
+      _passwordController.text.trim(),
+    );
   }
 }
 

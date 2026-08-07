@@ -34,20 +34,18 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> signUp(String email, String password) async {
+  Future<bool> loginWithGoogle() async {
     _isLoading = true;
     _error = null;
     notifyListeners();
     try {
-      final user = await _authService.signUp(email: email, password: password);
-      if (user == null) {
-        _error = 'Registration failed';
+      final success = await _authService.signInWithGoogle();
+      if (!success) {
+        _error = 'Google Sign-In failed or was cancelled';
         _isLoading = false;
         notifyListeners();
         return false;
       }
-      _isLoading = false;
-      notifyListeners();
       return true;
     } catch (e) {
       _error = e.toString().replaceAll('AuthException: ', '');

@@ -32,6 +32,14 @@ class AdminAuthService {
     return response.user;
   }
 
+  Future<bool> signInWithGoogle() async {
+    if (_client == null) return false;
+    return await _client!.auth.signInWithOAuth(
+      OAuthProvider.google,
+      redirectTo: null, // Same window redirect for web
+    );
+  }
+
   Future<void> signOut() async {
     if (_client != null) {
       try {
