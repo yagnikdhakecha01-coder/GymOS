@@ -89,6 +89,41 @@ class Staff {
   });
 
   factory Staff.fromJson(Map<String, dynamic> json) {
+    final rawShift = json['shift'] as String? ?? '09:00 AM - 05:00 PM';
+    String sType = (json['shift_type'] ?? json['shiftType']) as String? ?? (rawShift.toLowerCase().contains('both') ? 'both' : 'single');
+    String s1Start = (json['shift1_start'] ?? json['shift1Start']) as String? ?? '';
+    String s1End = (json['shift1_end'] ?? json['shift1End']) as String? ?? '';
+    String s2Start = (json['shift2_start'] ?? json['shift2Start']) as String? ?? '04:00 PM';
+    String s2End = (json['shift2_end'] ?? json['shift2End']) as String? ?? '09:00 PM';
+
+    if (s1Start.isEmpty || s1End.isEmpty) {
+      try {
+        if (rawShift.contains('&')) {
+          final parts = rawShift.split('&');
+          final s1Parts = parts[0].trim().split('-');
+          if (s1Parts.length == 2) {
+            s1Start = s1Parts[0].trim();
+            s1End = s1Parts[1].trim();
+          }
+          final s2Parts = parts[1].trim().split('-');
+          if (s2Parts.length == 2) {
+            s2Start = s2Parts[0].trim();
+            s2End = s2Parts[1].trim();
+          }
+          sType = 'both';
+        } else if (rawShift.contains('-')) {
+          final parts = rawShift.split('-');
+          if (parts.length == 2) {
+            s1Start = parts[0].trim();
+            s1End = parts[1].trim();
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (s1Start.isEmpty) s1Start = '09:00 AM';
+    if (s1End.isEmpty) s1End = '05:00 PM';
+
     return Staff(
       id: json['id'] as String,
       name: json['name'] as String,
@@ -98,7 +133,7 @@ class Staff {
       department: json['department'] as String? ?? 'Training',
       status: json['status'] as String? ?? 'Active',
       joinDate: (json['join_date'] ?? json['joinDate']) as String? ?? '',
-      shift: json['shift'] as String? ?? '9:00 AM - 5:00 PM',
+      shift: rawShift,
       experience: json['experience'] as String? ?? 'N/A',
       rating: (json['rating'] as num?)?.toDouble() ?? 5.0,
       sessionsCount: (json['sessions_count'] ?? json['sessionsCount']) as int? ?? 0,
@@ -131,11 +166,11 @@ class Staff {
         'manual_attendance': false,
         'attendance_correction': false,
       },
-      shiftType: json['shift_type'] as String? ?? 'single',
-      shift1Start: json['shift1_start'] as String? ?? '09:00 AM',
-      shift1End: json['shift1_end'] as String? ?? '05:00 PM',
-      shift2Start: json['shift2_start'] as String? ?? '04:00 PM',
-      shift2End: json['shift2_end'] as String? ?? '09:00 PM',
+      shiftType: sType,
+      shift1Start: s1Start,
+      shift1End: s1End,
+      shift2Start: s2Start,
+      shift2End: s2End,
     );
   }
 
