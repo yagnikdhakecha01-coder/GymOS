@@ -443,26 +443,21 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
       }
 
       // Call verify-payment Edge Function (Strict Backend Verification)
-      try {
-        final verifyRes = await SupabaseService.client.functions.invoke(
-          'verify-payment',
-          body: {
-            'razorpay_order_id': response.orderId ?? '',
-            'razorpay_payment_id': response.paymentId ?? '',
-            'razorpay_signature': response.signature ?? '',
-            'gym_id': _pendingGymId,
-            'plan_id': _pendingPlanId,
-            'owner_id': _pendingOwnerId,
-          },
-        );
+      final verifyRes = await SupabaseService.client.functions.invoke(
+        'verify-payment',
+        body: {
+          'razorpay_order_id': response.orderId ?? '',
+          'razorpay_payment_id': response.paymentId ?? '',
+          'razorpay_signature': response.signature ?? '',
+          'gym_id': _pendingGymId,
+          'plan_id': _pendingPlanId,
+          'owner_id': _pendingOwnerId,
+        },
+      );
 
-        final data = verifyRes.data as Map<String, dynamic>?;
-        if (data == null || data['success'] != true) {
-          throw Exception(data?['error'] ?? "Payment signature verification failed. Plan was not activated.");
-        }
-      } catch (e) {
-        debugPrint("Edge function 'verify-payment' failed/missing ($e). Falling back to direct database update.");
-        await _updateDatabaseDirectly(_pendingPlanId!);
+      final data = verifyRes.data as Map<String, dynamic>?;
+      if (data == null || data['success'] != true) {
+        throw Exception(data?['error'] ?? "Payment signature verification failed. Plan was not activated.");
       }
 
       // Reload auth context & reload subscriptions UI

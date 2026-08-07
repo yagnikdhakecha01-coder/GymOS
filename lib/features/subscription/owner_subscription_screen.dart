@@ -361,35 +361,23 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
       }
       
       bool verified = false;
-      try {
-        final response = await SupabaseService.client.functions.invoke(
-          'verify-payment',
-          body: {
-            'razorpay_order_id': orderId,
-            'razorpay_payment_id': paymentId,
-            'razorpay_signature': signature,
-            'gym_id': gymId,
-            'plan_id': _selectedPlanId,
-            'owner_id': ownerId,
-          },
-        );
-        
-        final data = response.data;
-        if (data != null && data['success'] == true) {
-          verified = true;
-        } else {
-          throw Exception(data?['error'] ?? 'Backend verification rejected');
-        }
-      } catch (e) {
-        debugPrint("Edge function 'verify-payment' failed/missing ($e). Executing direct DB update fallback.");
-        await _updateDatabaseDirectly(
-          _selectedPlanId ?? 'starter',
-          gymId,
-          ownerId,
-          paymentId: paymentId,
-          orderId: orderId,
-        );
+      final response = await SupabaseService.client.functions.invoke(
+        'verify-payment',
+        body: {
+          'razorpay_order_id': orderId,
+          'razorpay_payment_id': paymentId,
+          'razorpay_signature': signature,
+          'gym_id': gymId,
+          'plan_id': _selectedPlanId,
+          'owner_id': ownerId,
+        },
+      );
+      
+      final data = response.data;
+      if (data != null && data['success'] == true) {
         verified = true;
+      } else {
+        throw Exception(data?['error'] ?? 'Backend payment signature verification failed');
       }
       
       if (Navigator.canPop(context)) {
