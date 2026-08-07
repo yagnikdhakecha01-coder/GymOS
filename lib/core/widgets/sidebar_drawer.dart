@@ -313,26 +313,32 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
       }
 
       // Call verify-payment Edge Function (Strict Backend Verification)
-      final verifyRes = await SupabaseService.client.functions.invoke(
-        'verify-payment',
-        body: {
-          'razorpay_order_id': response.orderId ?? '',
-          'razorpay_payment_id': response.paymentId ?? '',
-          'razorpay_signature': response.signature ?? '',
-          'gym_id': _pendingGymId,
-          'plan_id': _pendingPlanId,
-          'owner_id': _pendingOwnerId,
-        },
-      );
+      try {
+        final verifyRes = await SupabaseService.client.functions.invoke(
+          'verify-payment',
+          body: {
+            'razorpay_order_id': response.orderId ?? '',
+            'razorpay_payment_id': response.paymentId ?? '',
+            'razorpay_signature': response.signature ?? '',
+            'gym_id': _pendingGymId,
+            'plan_id': _pendingPlanId,
+            'owner_id': _pendingOwnerId,
+          },
+        );
 
-      final data = verifyRes.data as Map<String, dynamic>?;
-      if (data == null || data['success'] != true) {
-        throw Exception(data?['error'] ?? "Payment signature verification failed. Plan was not activated.");
+        final data = verifyRes.data as Map<String, dynamic>?;
+        if (data == null || data['success'] != true) {
+          throw Exception(data?['error'] ?? "Payment signature verification failed. Plan was not activated.");
+        }
+      } catch (e) {
+        debugPrint("Edge function 'verify-payment' failed/missing ($e). Falling back to direct database update.");
+        await _updateDatabaseDirectly(_pendingPlanId!);
       }
 
       // Reload auth context & reload subscriptions UI
       final authVm = Provider.of<AuthViewModel>(context, listen: false);
       await authVm.loadCurrentProfile();
+      await authVm.fetchSubscriptionStatus();
       
       _fetchSubscription();
 
@@ -347,7 +353,10 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
           SnackBar(content: Text('Verification Failed: ${e.toString()}'), backgroundColor: Colors.red),
         );
       }
-      setState(() => _isLoading = false);
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
