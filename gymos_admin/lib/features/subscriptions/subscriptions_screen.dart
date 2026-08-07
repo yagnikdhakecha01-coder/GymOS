@@ -39,6 +39,10 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> with SingleTi
       setState(() => _isLoading = true);
 
       if (!AdminSupabaseService.isInitialized) {
+        await AdminSupabaseService.initialize();
+      }
+
+      if (!AdminSupabaseService.isInitialized) {
         _loadFallbackData();
         return;
       }
