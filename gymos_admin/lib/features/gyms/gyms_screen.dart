@@ -98,18 +98,35 @@ class _GymsScreenState extends State<GymsScreen> {
           orElse: () => <String, dynamic>{},
         );
 
+        final String rawPlan = (subMap['plan_id'] ?? gymMap['plan'] ?? 'free_trial').toString().toLowerCase();
+        final String rawStatus = (subMap['status'] ?? gymMap['status'] ?? 'trial').toString().toLowerCase();
+
         String trialLeftStr = '-';
         String expiryStr = '-';
+
         final effectiveExpiryStr = subMap['end_date'] ?? subMap['trial_end'] ?? gymMap['expiry_date'] ?? gymMap['trial_end_date'];
         if (effectiveExpiryStr != null) {
           final endDate = DateTime.tryParse(effectiveExpiryStr.toString());
           if (endDate != null) {
-            final diff = endDate.difference(DateTime.now()).inDays;
-            trialLeftStr = diff > 0 ? '$diff days' : 'Expired';
             expiryStr = endDate.toLocal().toString().split(' ')[0];
           }
         }
-        
+
+        // Calculate trial left string ONLY IF gym is on Trial or Free Trial plan
+        if (rawStatus == 'trial' || rawPlan == 'free_trial') {
+          final trialEndStr = subMap['trial_end'] ?? gymMap['trial_end_date'] ?? effectiveExpiryStr;
+          if (trialEndStr != null) {
+            final endDate = DateTime.tryParse(trialEndStr.toString());
+            if (endDate != null) {
+              final diff = endDate.difference(DateTime.now()).inDays;
+              trialLeftStr = diff > 0 ? '$diff days' : 'Expired';
+            }
+          }
+        } else {
+          // For active paid plans (Starter, Pro, Business), trial left is not applicable
+          trialLeftStr = '-';
+        }
+
         String lastLoginStr = 'Never';
         if (gymMap['last_login_at'] != null) {
           final date = DateTime.tryParse(gymMap['last_login_at']);
@@ -131,9 +148,9 @@ class _GymsScreenState extends State<GymsScreen> {
           'owner': ownerName,
           'email': gymMap['email'] ?? '-',
           'mobile': ownerMobile != '-' ? ownerMobile : (gymMap['phone_number'] ?? '-'),
-          'plan': PlatformPlan.displayName(gymMap['plan'] ?? 'free_trial'),
-          'rawPlan': gymMap['plan'] ?? 'free_trial',
-          'status': gymMap['status'] ?? 'trial',
+          'plan': PlatformPlan.displayName(rawPlan),
+          'rawPlan': rawPlan,
+          'status': rawStatus,
           'trialLeft': trialLeftStr,
           'expiry': expiryStr,
           'members': membersCount,
