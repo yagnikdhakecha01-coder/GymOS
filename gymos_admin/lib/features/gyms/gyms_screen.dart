@@ -101,31 +101,27 @@ class _GymsScreenState extends State<GymsScreen> {
         final String rawPlan = (subMap['plan_id'] ?? gymMap['plan'] ?? 'free_trial').toString().toLowerCase();
         final String rawStatus = (subMap['status'] ?? gymMap['status'] ?? 'trial').toString().toLowerCase();
 
+        final String? trialEndIso = subMap['trial_end'] ?? gymMap['trial_end_date'];
+        final String? planEndIso = subMap['end_date'] ?? gymMap['expiry_date'];
+
+        DateTime? trialEndDate;
+        if (trialEndIso != null) trialEndDate = DateTime.tryParse(trialEndIso.toString());
+
+        DateTime? planEndDate;
+        if (planEndIso != null) planEndDate = DateTime.tryParse(planEndIso.toString());
+
+        final bool isTrialActive = trialEndDate != null && trialEndDate.isAfter(DateTime.now());
+        final bool hasPaidPlan = rawPlan != 'free_trial';
+        final bool isPlanQueuedAfterTrial = isTrialActive && hasPaidPlan;
+
         String trialLeftStr = '-';
-        String expiryStr = '-';
-
-        final effectiveExpiryStr = subMap['end_date'] ?? subMap['trial_end'] ?? gymMap['expiry_date'] ?? gymMap['trial_end_date'];
-        if (effectiveExpiryStr != null) {
-          final endDate = DateTime.tryParse(effectiveExpiryStr.toString());
-          if (endDate != null) {
-            expiryStr = endDate.toLocal().toString().split(' ')[0];
-          }
+        if (isTrialActive) {
+          final diff = trialEndDate!.difference(DateTime.now()).inDays;
+          trialLeftStr = diff > 0 ? '$diff days' : '1 day left';
         }
 
-        // Calculate trial left string ONLY IF gym is on Trial or Free Trial plan
-        if (rawStatus == 'trial' || rawPlan == 'free_trial') {
-          final trialEndStr = subMap['trial_end'] ?? gymMap['trial_end_date'] ?? effectiveExpiryStr;
-          if (trialEndStr != null) {
-            final endDate = DateTime.tryParse(trialEndStr.toString());
-            if (endDate != null) {
-              final diff = endDate.difference(DateTime.now()).inDays;
-              trialLeftStr = diff > 0 ? '$diff days' : 'Expired';
-            }
-          }
-        } else {
-          // For active paid plans (Starter, Pro, Business), trial left is not applicable
-          trialLeftStr = '-';
-        }
+        String trialEndFormatted = trialEndDate != null ? trialEndDate.toLocal().toString().split(' ')[0] : '-';
+        String planEndFormatted = planEndDate != null ? planEndDate.toLocal().toString().split(' ')[0] : trialEndFormatted;
 
         String lastLoginStr = 'Never';
         if (gymMap['last_login_at'] != null) {
@@ -150,9 +146,13 @@ class _GymsScreenState extends State<GymsScreen> {
           'mobile': ownerMobile != '-' ? ownerMobile : (gymMap['phone_number'] ?? '-'),
           'plan': PlatformPlan.displayName(rawPlan),
           'rawPlan': rawPlan,
-          'status': rawStatus,
+          'status': isPlanQueuedAfterTrial ? 'trial' : rawStatus,
+          'isTrialActive': isTrialActive,
+          'hasPaidPlan': hasPaidPlan,
+          'isPlanQueuedAfterTrial': isPlanQueuedAfterTrial,
           'trialLeft': trialLeftStr,
-          'expiry': expiryStr,
+          'trialEndDate': trialEndFormatted,
+          'expiry': planEndFormatted,
           'members': membersCount,
           'staff': staffCount,
           'lastLogin': lastLoginStr,
@@ -383,8 +383,8 @@ class _GymsScreenState extends State<GymsScreen> {
             ),
             columnSpacing: 20,
             horizontalMargin: 20,
-            dataRowMinHeight: 56,
-            dataRowMaxHeight: 56,
+            dataRowMinHeight: 64,
+            dataRowMaxHeight: 64,
             columns: const [
               DataColumn(label: Text('GYM NAME')),
               DataColumn(label: Text('OWNER')),
@@ -398,69 +398,152 @@ class _GymsScreenState extends State<GymsScreen> {
               DataColumn(label: Text('LAST LOGIN')),
               DataColumn(label: Text('ACTIONS')),
             ],
-            rows: gyms.map((gym) => DataRow(
-              onSelectChanged: (selected) {
-                 if (selected == true) {
-                   Navigator.push(
-                     context,
-                     MaterialPageRoute(
-                       builder: (context) => AdminGymDashboardScreen(gym: gym),
-                     ),
-                   );
-                 }
-               },
-              cells: [
-                DataCell(
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 32, height: 32,
-                        decoration: BoxDecoration(
-                          color: AdminTheme.primary.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Center(
-                          child: Text(
-                            (gym['name'] as String)[0],
-                            style: GoogleFonts.inter(
-                              fontWeight: FontWeight.w700,
-                              color: AdminTheme.primary,
-                              fontSize: 14,
+            rows: gyms.map((gym) {
+              final bool isQueued = gym['isPlanQueuedAfterTrial'] == true;
+              final bool isTrial = gym['isTrialActive'] == true;
+
+              return DataRow(
+                onSelectChanged: (selected) {
+                  if (selected == true) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => AdminGymDashboardScreen(gym: gym),
+                      ),
+                    );
+                  }
+                },
+                cells: [
+                  DataCell(
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 32, height: 32,
+                          decoration: BoxDecoration(
+                            color: AdminTheme.primary.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Center(
+                            child: Text(
+                              (gym['name'] as String)[0],
+                              style: GoogleFonts.inter(
+                                fontWeight: FontWeight.w700,
+                                color: AdminTheme.primary,
+                                fontSize: 14,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 10),
-                      Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
+                        const SizedBox(width: 10),
+                        Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              gym['name'] as String,
+                              style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 13),
+                            ),
+                            Text(
+                              gym['email'] as String,
+                              style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.mutedTextColor(context)),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  DataCell(Text(gym['owner'] as String)),
+                  DataCell(Text(gym['mobile'] as String)),
+                  DataCell(
+                    Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildPlanBadge(gym['plan'] as String),
+                        if (isQueued) ...[
+                          const SizedBox(height: 2),
                           Text(
-                            gym['name'] as String,
-                            style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 13),
-                          ),
-                          Text(
-                            gym['email'] as String,
-                            style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.mutedTextColor(context)),
+                            'Starts after trial',
+                            style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w600, color: AdminTheme.primary),
                           ),
                         ],
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-                DataCell(Text(gym['owner'] as String)),
-                DataCell(Text(gym['mobile'] as String)),
-                DataCell(_buildPlanBadge(gym['plan'] as String)),
-                DataCell(AdminStatusBadge.fromGymStatus(gym['status'] as String)),
-                DataCell(Text(gym['trialLeft'] as String)),
-                DataCell(Text(gym['expiry'] as String)),
-                DataCell(Text('${gym['members']}')),
-                DataCell(Text('${gym['staff']}')),
-                DataCell(Text(gym['lastLogin'] as String)),
-                DataCell(_buildActionsButton(context, gym)),
-              ],
-            )).toList(),
+                  DataCell(
+                    isQueued
+                        ? Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: AdminTheme.info.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(AdminTheme.radiusXs),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.hourglass_top_rounded, size: 12, color: AdminTheme.info),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Trial Active',
+                                  style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: AdminTheme.info),
+                                ),
+                              ],
+                            ),
+                          )
+                        : AdminStatusBadge.fromGymStatus(gym['status'] as String),
+                  ),
+                  DataCell(
+                    Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          isTrial ? (gym['trialLeft'] as String) : '-',
+                          style: GoogleFonts.inter(
+                            fontWeight: isTrial ? FontWeight.bold : FontWeight.normal,
+                            fontSize: 13,
+                          ),
+                        ),
+                        if (isTrial) ...[
+                          Text(
+                            'Trial Ends: ${gym['trialEndDate']}',
+                            style: GoogleFonts.inter(fontSize: 10, color: AdminTheme.secondaryTextColor(context)),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  DataCell(
+                    Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          gym['expiry'] as String,
+                          style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 13),
+                        ),
+                        if (isQueued) ...[
+                          Text(
+                            'Paid Plan Expiry',
+                            style: GoogleFonts.inter(fontSize: 10, color: AdminTheme.success, fontWeight: FontWeight.w600),
+                          ),
+                        ] else if (isTrial) ...[
+                          Text(
+                            'Trial Expiry',
+                            style: GoogleFonts.inter(fontSize: 10, color: AdminTheme.warning, fontWeight: FontWeight.w500),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  DataCell(Text('${gym['members']}')),
+                  DataCell(Text('${gym['staff']}')),
+                  DataCell(Text(gym['lastLogin'] as String)),
+                  DataCell(_buildActionsButton(context, gym)),
+                ],
+              );
+            }).toList(),
           ),
         ),
       ),
