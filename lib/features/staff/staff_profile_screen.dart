@@ -39,7 +39,6 @@ class _StaffProfileScreenState extends State<StaffProfileScreen> {
   bool _loadingInvitation = false;
 
   // Dynamic tab data
-  // Dynamic tab data
   List<Map<String, dynamic>> _attendanceRecords = [];
   List<Map<String, dynamic>> _advanceSalaryRecords = [];
   List<Map<String, dynamic>> _leaveRequests = [];
@@ -48,9 +47,23 @@ class _StaffProfileScreenState extends State<StaffProfileScreen> {
   double _pendingSalaryFromDb = 0.0;
   String _gymShiftMode = 'Single Shift';
 
+  // Custom Shift Profile Card State
+  late String _profileShiftType;
+  late String _profileShift1Start;
+  late String _profileShift1End;
+  late String _profileShift2Start;
+  late String _profileShift2End;
+  bool _isSavingShiftSettings = false;
+
   @override
   void initState() {
     super.initState();
+    _profileShiftType = widget.staff.shiftType.isNotEmpty ? widget.staff.shiftType : 'single';
+    _profileShift1Start = widget.staff.shift1Start.isNotEmpty ? widget.staff.shift1Start : '09:00 AM';
+    _profileShift1End = widget.staff.shift1End.isNotEmpty ? widget.staff.shift1End : '05:00 PM';
+    _profileShift2Start = widget.staff.shift2Start.isNotEmpty ? widget.staff.shift2Start : '04:00 PM';
+    _profileShift2End = widget.staff.shift2End.isNotEmpty ? widget.staff.shift2End : '09:00 PM';
+
     _loadInvitation();
     _fetchDbTabsData();
   }
@@ -1039,6 +1052,11 @@ Thank you.''';
           ),
           if (widget.isOwnerView) ...[
             const SizedBox(height: 20),
+            // ── SHIFT TIMING SETTINGS ──
+            Text('SHIFT TIMING SETTINGS', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textSecondary, letterSpacing: 0.5)),
+            const SizedBox(height: 12),
+            _buildShiftSettingsCard(staff),
+            const SizedBox(height: 20),
             // ── ACCOUNT STATUS ──
             Text('ACCOUNT STATUS', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textSecondary, letterSpacing: 0.5)),
             const SizedBox(height: 12),
@@ -1054,6 +1072,271 @@ Thank you.''';
         ],
       ),
     );
+  }
+
+  Widget _buildShiftSettingsCard(Staff staff) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.access_time_filled_rounded, color: AppTheme.primary, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                'Custom Shift Configuration',
+                style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => setState(() => _profileShiftType = 'single'),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    decoration: BoxDecoration(
+                      color: _profileShiftType == 'single' ? AppTheme.primaryLight : AppTheme.surfaceGray,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: _profileShiftType == 'single' ? AppTheme.primary : AppTheme.border,
+                        width: _profileShiftType == 'single' ? 1.5 : 1,
+                      ),
+                    ),
+                    child: Text(
+                      'Single Shift',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.inter(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                        color: _profileShiftType == 'single' ? AppTheme.primary : AppTheme.textSecondary,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => setState(() => _profileShiftType = 'both'),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    decoration: BoxDecoration(
+                      color: _profileShiftType == 'both' ? AppTheme.primaryLight : AppTheme.surfaceGray,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: _profileShiftType == 'both' ? AppTheme.primary : AppTheme.border,
+                        width: _profileShiftType == 'both' ? 1.5 : 1,
+                      ),
+                    ),
+                    child: Text(
+                      'Both Shift (Double)',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.inter(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                        color: _profileShiftType == 'both' ? AppTheme.primary : AppTheme.textSecondary,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Text('Shift 1 Timings', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.textSecondary)),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => _pickTimeOnProfile(_profileShift1Start, (val) => setState(() => _profileShift1Start = val)),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AppTheme.surfaceGray.withOpacity(0.5),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppTheme.border),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(_profileShift1Start, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
+                        const Icon(Icons.access_time_rounded, size: 14, color: AppTheme.primary),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Text('to', style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted)),
+              ),
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => _pickTimeOnProfile(_profileShift1End, (val) => setState(() => _profileShift1End = val)),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AppTheme.surfaceGray.withOpacity(0.5),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppTheme.border),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(_profileShift1End, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
+                        const Icon(Icons.access_time_rounded, size: 14, color: AppTheme.primary),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          if (_profileShiftType == 'both') ...[
+            const SizedBox(height: 12),
+            Text('Shift 2 Timings (Evening)', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.textSecondary)),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => _pickTimeOnProfile(_profileShift2Start, (val) => setState(() => _profileShift2Start = val)),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: AppTheme.surfaceGray.withOpacity(0.5),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppTheme.border),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(_profileShift2Start, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
+                          const Icon(Icons.access_time_rounded, size: 14, color: AppTheme.primary),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Text('to', style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted)),
+                ),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => _pickTimeOnProfile(_profileShift2End, (val) => setState(() => _profileShift2End = val)),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: AppTheme.surfaceGray.withOpacity(0.5),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppTheme.border),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(_profileShift2End, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
+                          const Icon(Icons.access_time_rounded, size: 14, color: AppTheme.primary),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              icon: _isSavingShiftSettings
+                  ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                  : const Icon(Icons.save_rounded, size: 16),
+              label: Text(_isSavingShiftSettings ? 'Saving...' : 'Save Shift Settings', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 13)),
+              onPressed: _isSavingShiftSettings ? null : () => _saveShiftSettings(staff),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _saveShiftSettings(Staff staff) async {
+    setState(() => _isSavingShiftSettings = true);
+    final String formattedSummary = _profileShiftType == 'both'
+        ? '$_profileShift1Start - $_profileShift1End & $_profileShift2Start - $_profileShift2End'
+        : '$_profileShift1Start - $_profileShift1End';
+
+    final updatedStaff = staff.copyWith(
+      shift: formattedSummary,
+      shiftType: _profileShiftType,
+      shift1Start: _profileShift1Start,
+      shift1End: _profileShift1End,
+      shift2Start: _profileShift2Start,
+      shift2End: _profileShift2End,
+    );
+
+    try {
+      final staffVm = Provider.of<StaffViewModel>(context, listen: false);
+      await staffVm.saveStaff(updatedStaff);
+
+      if (mounted) {
+        setState(() => _isSavingShiftSettings = false);
+        SuccessDialog.show(
+          context,
+          title: 'Shift Timings Saved!',
+          message: 'Custom shift timings for ${staff.name} have been updated successfully in database.',
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isSavingShiftSettings = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to save shift: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  Future<void> _pickTimeOnProfile(String currentVal, Function(String) onPicked) async {
+    TimeOfDay initial = const TimeOfDay(hour: 9, minute: 0);
+    try {
+      final parts = currentVal.split(' ');
+      final timeParts = parts[0].split(':');
+      int hour = int.parse(timeParts[0]);
+      int minute = int.parse(timeParts[1]);
+      if (parts.length > 1 && parts[1].toUpperCase() == 'PM' && hour < 12) hour += 12;
+      if (parts.length > 1 && parts[1].toUpperCase() == 'AM' && hour == 12) hour = 0;
+      initial = TimeOfDay(hour: hour, minute: minute);
+    } catch (_) {}
+
+    final TimeOfDay? picked = await showTimePicker(
+      context: context,
+      initialTime: initial,
+    );
+
+    if (picked != null) {
+      final now = DateTime.now();
+      final dt = DateTime(now.year, now.month, now.day, picked.hour, picked.minute);
+      onPicked(DateFormat('hh:mm a').format(dt));
+    }
   }
 
   // ═══════════════════════════════════════════════════════
