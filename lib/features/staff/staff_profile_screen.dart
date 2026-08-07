@@ -298,35 +298,11 @@ Thank you.''';
     String gender = ['Male', 'Female', 'Other'].contains(staff.gender) ? staff.gender : 'Male';
     String salaryType = ['Fixed Salary', 'Commission', 'Both'].contains(staff.salaryType) ? staff.salaryType : 'Fixed Salary';
 
-    String editShiftType = staff.shiftType.isNotEmpty ? staff.shiftType : 'single';
-    String editShift1Start = staff.shift1Start.isNotEmpty ? staff.shift1Start : '09:00 AM';
-    String editShift1End = staff.shift1End.isNotEmpty ? staff.shift1End : '05:00 PM';
-    String editShift2Start = staff.shift2Start.isNotEmpty ? staff.shift2Start : '04:00 PM';
-    String editShift2End = staff.shift2End.isNotEmpty ? staff.shift2End : '09:00 PM';
-
-    Future<void> pickTimeHelper(String currentVal, Function(String) onPicked) async {
-      TimeOfDay initial = const TimeOfDay(hour: 9, minute: 0);
-      try {
-        final parts = currentVal.split(' ');
-        final timeParts = parts[0].split(':');
-        int hour = int.parse(timeParts[0]);
-        int minute = int.parse(timeParts[1]);
-        if (parts.length > 1 && parts[1].toUpperCase() == 'PM' && hour < 12) hour += 12;
-        if (parts.length > 1 && parts[1].toUpperCase() == 'AM' && hour == 12) hour = 0;
-        initial = TimeOfDay(hour: hour, minute: minute);
-      } catch (_) {}
-
-      final TimeOfDay? picked = await showTimePicker(
-        context: context,
-        initialTime: initial,
-      );
-
-      if (picked != null) {
-        final now = DateTime.now();
-        final dt = DateTime(now.year, now.month, now.day, picked.hour, picked.minute);
-        onPicked(DateFormat('hh:mm a').format(dt));
-      }
+    final availableShifts = ['Single Shift', 'Morning Shift', 'Evening Shift', 'Both Shifts'];
+    if (!availableShifts.contains(staff.shift) && staff.shift.isNotEmpty) {
+      availableShifts.add(staff.shift);
     }
+    String shift = availableShifts.contains(staff.shift) ? staff.shift : availableShifts.first;
 
     showModalBottomSheet(
       context: context,
@@ -414,172 +390,17 @@ Thank you.''';
                       controller: addressCtrl,
                       decoration: const InputDecoration(labelText: 'Address'),
                     ),
-                    const SizedBox(height: 14),
-
-                    // Custom Staff Shift Timings
-                    Text('Staff Custom Shift Configuration', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textSecondary)),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: GestureDetector(
-                            onTap: () => setModalState(() => editShiftType = 'single'),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(vertical: 10),
-                              decoration: BoxDecoration(
-                                color: editShiftType == 'single' ? AppTheme.primaryLight : AppTheme.surfaceGray,
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: editShiftType == 'single' ? AppTheme.primary : AppTheme.border,
-                                ),
-                              ),
-                              child: Text(
-                                'Single Shift',
-                                textAlign: TextAlign.center,
-                                style: GoogleFonts.inter(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
-                                  color: editShiftType == 'single' ? AppTheme.primary : AppTheme.textSecondary,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: GestureDetector(
-                            onTap: () => setModalState(() => editShiftType = 'both'),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(vertical: 10),
-                              decoration: BoxDecoration(
-                                color: editShiftType == 'both' ? AppTheme.primaryLight : AppTheme.surfaceGray,
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: editShiftType == 'both' ? AppTheme.primary : AppTheme.border,
-                                ),
-                              ),
-                              child: Text(
-                                'Both Shift (Double)',
-                                textAlign: TextAlign.center,
-                                style: GoogleFonts.inter(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
-                                  color: editShiftType == 'both' ? AppTheme.primary : AppTheme.textSecondary,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      value: shift,
+                      decoration: const InputDecoration(labelText: 'Assigned Gym Shift'),
+                      items: availableShifts
+                          .map((s) => DropdownMenuItem(value: s, child: Text(s)))
+                          .toList(),
+                      onChanged: (val) {
+                        if (val != null) setModalState(() => shift = val);
+                      },
                     ),
-                    const SizedBox(height: 10),
-
-                    // Shift 1 Timings
-                    Text('Shift 1 Timings', style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted)),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: GestureDetector(
-                            onTap: () => pickTimeHelper(editShift1Start, (val) => setModalState(() => editShift1Start = val)),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: AppTheme.border),
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(editShift1Start, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600)),
-                                  const Icon(Icons.access_time_rounded, size: 14, color: AppTheme.primary),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 6),
-                          child: Text('to', style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted)),
-                        ),
-                        Expanded(
-                          child: GestureDetector(
-                            onTap: () => pickTimeHelper(editShift1End, (val) => setModalState(() => editShift1End = val)),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: AppTheme.border),
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(editShift1End, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600)),
-                                  const Icon(Icons.access_time_rounded, size: 14, color: AppTheme.primary),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    if (editShiftType == 'both') ...[
-                      const SizedBox(height: 10),
-                      Text('Shift 2 Timings (Evening)', style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted)),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: GestureDetector(
-                              onTap: () => pickTimeHelper(editShift2Start, (val) => setModalState(() => editShift2Start = val)),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: AppTheme.border),
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(editShift2Start, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600)),
-                                    const Icon(Icons.access_time_rounded, size: 14, color: AppTheme.primary),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 6),
-                            child: Text('to', style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted)),
-                          ),
-                          Expanded(
-                            child: GestureDetector(
-                              onTap: () => pickTimeHelper(editShift2End, (val) => setModalState(() => editShift2End = val)),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: AppTheme.border),
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(editShift2End, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600)),
-                                    const Icon(Icons.access_time_rounded, size: 14, color: AppTheme.primary),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-
                     const SizedBox(height: 12),
                     Row(
                       children: [
@@ -614,9 +435,8 @@ Thank you.''';
                       ),
                       onPressed: () async {
                         final double salaryVal = double.tryParse(salaryCtrl.text) ?? staff.salary;
-                        final String formattedShiftSummary = editShiftType == 'both'
-                            ? '$editShift1Start - $editShift1End & $editShift2Start - $editShift2End'
-                            : '$editShift1Start - $editShift1End';
+                        final isBothShiftMode = shift.toLowerCase().contains('both');
+                        final newShiftType = isBothShiftMode ? 'both' : 'single';
 
                         final updatedStaff = staff.copyWith(
                           name: nameCtrl.text.trim(),
@@ -627,12 +447,8 @@ Thank you.''';
                           address: addressCtrl.text.trim(),
                           salary: salaryVal,
                           salaryType: salaryType,
-                          shift: formattedShiftSummary,
-                          shiftType: editShiftType,
-                          shift1Start: editShift1Start,
-                          shift1End: editShift1End,
-                          shift2Start: editShift2Start,
-                          shift2End: editShift2End,
+                          shift: shift,
+                          shiftType: newShiftType,
                         );
 
                         Navigator.pop(dialogCtx);
@@ -649,26 +465,25 @@ Thank you.''';
                           await staffVm.saveStaff(updatedStaff);
                           if (context.mounted) {
                             Navigator.pop(context); // Pop loading spinner
+                            setState(() {
+                              _profileShiftType = newShiftType;
+                            });
                             SuccessDialog.show(
                               context,
-                              title: 'Staff Updated',
-                              message: '${updatedStaff.name}\'s basic information has been updated successfully.',
-                              onDone: () {
-                                _fetchDbTabsData();
-                                setState(() {});
-                              },
+                              title: 'Staff Profile Updated!',
+                              message: 'Staff details updated successfully.',
                             );
                           }
                         } catch (e) {
                           if (context.mounted) {
-                            Navigator.pop(context); // Pop loading spinner
+                            Navigator.pop(context);
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Failed to update staff: $e'), backgroundColor: AppTheme.danger),
+                              SnackBar(content: Text('Failed to update: $e'), backgroundColor: Colors.red),
                             );
                           }
                         }
                       },
-                      child: Text('Save Changes', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white)),
+                      child: Text('Save Changes', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white)),
                     ),
                   ],
                 ),
@@ -1075,6 +890,8 @@ Thank you.''';
   }
 
   Widget _buildShiftSettingsCard(Staff staff) {
+    final isBothShift = (staff.shiftType == 'both' || staff.shift.toLowerCase().contains('both'));
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1086,72 +903,34 @@ Thank you.''';
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Icon(Icons.access_time_filled_rounded, color: AppTheme.primary, size: 20),
-              const SizedBox(width: 8),
-              Text(
-                'Custom Shift Configuration',
-                style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: GestureDetector(
-                  onTap: () => setState(() => _profileShiftType = 'single'),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    decoration: BoxDecoration(
-                      color: _profileShiftType == 'single' ? AppTheme.primaryLight : AppTheme.surfaceGray,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: _profileShiftType == 'single' ? AppTheme.primary : AppTheme.border,
-                        width: _profileShiftType == 'single' ? 1.5 : 1,
-                      ),
-                    ),
-                    child: Text(
-                      'Single Shift',
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.inter(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
-                        color: _profileShiftType == 'single' ? AppTheme.primary : AppTheme.textSecondary,
-                      ),
-                    ),
+              Row(
+                children: [
+                  const Icon(Icons.access_time_filled_rounded, color: AppTheme.primary, size: 20),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Custom Shift Timings',
+                    style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
                   ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryLight,
+                  borderRadius: BorderRadius.circular(6),
                 ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: GestureDetector(
-                  onTap: () => setState(() => _profileShiftType = 'both'),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    decoration: BoxDecoration(
-                      color: _profileShiftType == 'both' ? AppTheme.primaryLight : AppTheme.surfaceGray,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: _profileShiftType == 'both' ? AppTheme.primary : AppTheme.border,
-                        width: _profileShiftType == 'both' ? 1.5 : 1,
-                      ),
-                    ),
-                    child: Text(
-                      'Both Shift (Double)',
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.inter(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
-                        color: _profileShiftType == 'both' ? AppTheme.primary : AppTheme.textSecondary,
-                      ),
-                    ),
-                  ),
+                child: Text(
+                  isBothShift ? 'Both Shift (Double)' : 'Single Shift',
+                  style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.primary),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 14),
+
+          // Shift 1 Timings
           Text('Shift 1 Timings', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.textSecondary)),
           const SizedBox(height: 6),
           Row(
@@ -1162,7 +941,7 @@ Thank you.''';
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
                     decoration: BoxDecoration(
-                      color: AppTheme.surfaceGray.withOpacity(0.5),
+                      color: AppTheme.surfaceGray.withValues(alpha: 0.5),
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(color: AppTheme.border),
                     ),
@@ -1186,7 +965,7 @@ Thank you.''';
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
                     decoration: BoxDecoration(
-                      color: AppTheme.surfaceGray.withOpacity(0.5),
+                      color: AppTheme.surfaceGray.withValues(alpha: 0.5),
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(color: AppTheme.border),
                     ),
@@ -1203,7 +982,7 @@ Thank you.''';
             ],
           ),
 
-          if (_profileShiftType == 'both') ...[
+          if (isBothShift) ...[
             const SizedBox(height: 12),
             Text('Shift 2 Timings (Evening)', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.textSecondary)),
             const SizedBox(height: 6),
