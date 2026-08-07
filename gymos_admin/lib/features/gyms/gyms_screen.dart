@@ -58,7 +58,17 @@ class _GymsScreenState extends State<GymsScreen> {
       
       final response = await client
           .from('gyms')
-          .select('*, members(count), staff(count), user_gym_associations(role, user_id, profiles(full_name, phone_number)), subscriptions(*)');
+          .select('*, members(count), staff(count), user_gym_associations(role, user_id, profiles(full_name, phone_number))');
+      
+      List<Map<String, dynamic>> allSubs = [];
+      try {
+        final subsRes = await client.from('subscriptions').select('*');
+        if (subsRes is List) {
+          allSubs = subsRes.map((e) => Map<String, dynamic>.from(e)).toList();
+        }
+      } catch (e) {
+        debugPrint('Warning: Could not fetch subscriptions table ($e). Falling back to gyms table dates.');
+      }
       
       final List<Map<String, dynamic>> loadedGyms = [];
       for (var item in response as List) {
@@ -83,10 +93,14 @@ class _GymsScreenState extends State<GymsScreen> {
         final membersCount = (gymMap['members'] as List?)?.firstOrNull?['count'] ?? 0;
         final staffCount = (gymMap['staff'] as List?)?.firstOrNull?['count'] ?? 0;
         
-        final subMap = (gymMap['subscriptions'] as List?)?.firstOrNull;
+        final subMap = allSubs.firstWhere(
+          (s) => s['gym_id'] == gymMap['id'],
+          orElse: () => <String, dynamic>{},
+        );
+
         String trialLeftStr = '-';
         String expiryStr = '-';
-        final effectiveExpiryStr = subMap?['end_date'] ?? subMap?['trial_end'] ?? gymMap['expiry_date'] ?? gymMap['trial_end_date'];
+        final effectiveExpiryStr = subMap['end_date'] ?? subMap['trial_end'] ?? gymMap['expiry_date'] ?? gymMap['trial_end_date'];
         if (effectiveExpiryStr != null) {
           final endDate = DateTime.tryParse(effectiveExpiryStr.toString());
           if (endDate != null) {
