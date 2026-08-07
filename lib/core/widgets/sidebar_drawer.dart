@@ -241,11 +241,13 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
       dynamic functionRes;
       Map<String, dynamic> options;
       try {
+        final razorpayPlanId = AppConfig.getRazorpayPlanId(planId);
         functionRes = await SupabaseService.client.functions.invoke(
           'create-subscription',
           body: {
             'gym_id': gymId,
             'plan_id': planId,
+            'razorpay_plan_id': razorpayPlanId,
             'owner_id': ownerId,
           },
         );
@@ -266,11 +268,13 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
           'notes': {
             'gym_id': gymId,
             'plan_id': planId,
+            'razorpay_plan_id': razorpayPlanId,
             'owner_id': ownerId,
           }
         };
       } catch (e) {
         debugPrint("Edge function invoke failed: $e. Opening standard Razorpay Checkout fallback.");
+        final razorpayPlanId = AppConfig.getRazorpayPlanId(planId);
         options = {
           'key': AppConfig.razorpayKeyId,
           'amount': amount,
@@ -280,6 +284,7 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
           'notes': {
             'gym_id': gymId,
             'plan_id': planId,
+            'razorpay_plan_id': razorpayPlanId,
             'owner_id': ownerId,
           }
         };
@@ -307,27 +312,22 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
         throw Exception("Pending payment credentials not found.");
       }
 
-      // Call verify-payment Edge Function
-      try {
-        final verifyRes = await SupabaseService.client.functions.invoke(
-          'verify-payment',
-          body: {
-            'razorpay_order_id': response.orderId ?? '',
-            'razorpay_payment_id': response.paymentId ?? '',
-            'razorpay_signature': response.signature ?? '',
-            'gym_id': _pendingGymId,
-            'plan_id': _pendingPlanId,
-            'owner_id': _pendingOwnerId,
-          },
-        );
+      // Call verify-payment Edge Function (Strict Backend Verification)
+      final verifyRes = await SupabaseService.client.functions.invoke(
+        'verify-payment',
+        body: {
+          'razorpay_order_id': response.orderId ?? '',
+          'razorpay_payment_id': response.paymentId ?? '',
+          'razorpay_signature': response.signature ?? '',
+          'gym_id': _pendingGymId,
+          'plan_id': _pendingPlanId,
+          'owner_id': _pendingOwnerId,
+        },
+      );
 
-        final data = verifyRes.data as Map<String, dynamic>;
-        if (data['success'] != true) {
-          throw Exception(data['error'] ?? "Failed to verify signature.");
-        }
-      } catch (e) {
-        debugPrint("Verification function failed/missing: $e. Falling back to direct database update.");
-        await _updateDatabaseDirectly(_pendingPlanId!);
+      final data = verifyRes.data as Map<String, dynamic>?;
+      if (data == null || data['success'] != true) {
+        throw Exception(data?['error'] ?? "Payment signature verification failed. Plan was not activated.");
       }
 
       // Reload auth context & reload subscriptions UI

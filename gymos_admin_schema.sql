@@ -214,7 +214,7 @@ CREATE POLICY select_feature_flags_public ON public.platform_feature_flags FOR S
 INSERT INTO public.platform_plans (id, name, price, billing_cycle, features, is_popular)
 VALUES 
 ('free_trial', 'Free Trial', 0.00, 'monthly', ARRAY['3 Months Free', 'All Features', 'Up to 50 Members', '2 Staff'], false),
-('starter', 'Starter', 499.00, 'monthly', ARRAY['100 Members', '5 Staff', 'QR Attendance', 'Basic Reports'], false),
+('starter', 'Starter', 699.00, 'monthly', ARRAY['100 Members', '5 Staff', 'QR Attendance', 'Basic Reports'], false),
 ('pro', 'Pro', 999.00, 'monthly', ARRAY['500 Members', '15 Staff', 'All Attendance', 'AI Features', 'Priority Support'], true),
 ('business', 'Business', 1999.00, 'monthly', ARRAY['Unlimited Members', 'Unlimited Staff', 'All Features', 'Custom Branding', 'Dedicated Support'], false)
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, price = EXCLUDED.price, features = EXCLUDED.features, is_popular = EXCLUDED.is_popular;

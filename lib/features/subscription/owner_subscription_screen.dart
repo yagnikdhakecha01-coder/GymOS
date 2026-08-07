@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 import '../../core/theme/theme.dart';
+import '../../core/config/app_config.dart';
 import '../../core/services/supabase_service.dart';
 import '../authentication/auth_viewmodel.dart';
 
@@ -285,11 +286,13 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
         return;
       }
       
+      final razorpayPlanId = AppConfig.getRazorpayPlanId(planId);
       final response = await SupabaseService.client.functions.invoke(
         'create-subscription',
         body: {
           'gym_id': gymId,
           'plan_id': planId,
+          'razorpay_plan_id': razorpayPlanId,
           'owner_id': ownerId,
         },
       );
@@ -317,6 +320,12 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
         'prefill': {
           'contact': ownerPhone.isNotEmpty ? ownerPhone : '9999999999',
           'email': ownerEmail,
+        },
+        'notes': {
+          'gym_id': gymId,
+          'plan_id': planId,
+          'razorpay_plan_id': razorpayPlanId,
+          'owner_id': ownerId,
         },
         'theme': {
           'color': '#6C4EFF',
@@ -435,7 +444,7 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
             _buildPlanCard(
               planId: 'starter',
               title: 'Starter',
-              price: '₹499',
+              price: '₹699',
               badge: 'Popular',
               badgeColor: const Color(0xFFDCFCE7),
               badgeTextColor: const Color(0xFF15803D),
