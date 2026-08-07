@@ -1,4 +1,4 @@
--- Staff Custom Shifts & Attendance Migration (Updated for attendance_logs)
+-- Staff Custom Shifts & Attendance Migration
 -- Adds support for Single vs Both Shift (Double Shift) with custom start/end times and 1-hour late/absent rule
 
 -- 1. Update staff table
@@ -34,6 +34,11 @@ BEGIN
         ADD COLUMN IF NOT EXISTS shift_type TEXT DEFAULT 'single',
         ADD COLUMN IF NOT EXISTS is_late BOOLEAN DEFAULT false,
         ADD COLUMN IF NOT EXISTS late_minutes INT DEFAULT 0;
+    END IF;
+
+    IF EXISTS (SELECT FROM pg_tables WHERE tablename = 'staff_shift_assignments') THEN
+        ALTER TABLE staff_shift_assignments 
+        DROP CONSTRAINT IF EXISTS staff_shift_assignments_assignment_type_check;
     END IF;
 END $$;
 

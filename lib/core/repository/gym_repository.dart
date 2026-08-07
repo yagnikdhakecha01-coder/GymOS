@@ -2178,6 +2178,16 @@ class GymRepository extends ChangeNotifier {
     });
 
     // 3. Queue staff shift assignment
+    String mappedAssignmentType = 'Single';
+    final lowerShift = staff.shift.toLowerCase();
+    if (staff.shiftType == 'both' || lowerShift.contains('both')) {
+      mappedAssignmentType = 'Both';
+    } else if (lowerShift.contains('morning')) {
+      mappedAssignmentType = 'Morning';
+    } else if (lowerShift.contains('evening')) {
+      mappedAssignmentType = 'Evening';
+    }
+
     _crudQueue.add({
       'uuid': _generateUuidV4(),
       'table': 'staff_shift_assignments',
@@ -2185,7 +2195,7 @@ class GymRepository extends ChangeNotifier {
       'payload': {
         'staff_id': staff.id,
         'gym_id': gymId,
-        'assignment_type': staff.shift,
+        'assignment_type': mappedAssignmentType,
         'effective_from': DateTime.now().toLocal().toIso8601String().substring(0, 10),
         'status': 'Active',
       },
