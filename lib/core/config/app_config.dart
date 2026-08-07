@@ -1,10 +1,12 @@
+import 'env.dart';
+
 class AppConfig {
   static const String appName = 'GymOS';
   static const String appVersion = '1.0.0';
   static const int buildNumber = 1;
 
-  // Razorpay Test Key ID
-  static const String razorpayKeyId = 'rzp_test_TLEBpLEBBlInG6';
+  // Razorpay Key ID (configurable via build environment or defaults to test key)
+  static String get razorpayKeyId => Env.razorpayKeyId;
 
   // Razorpay Subscription Plan IDs
   static const String razorpayStarterPlanId = 'plan_TMW2eKLvuIqViB';
