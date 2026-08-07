@@ -4,9 +4,11 @@ import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
 import '../../core/theme/admin_theme.dart';
 import '../../core/theme/responsive.dart';
 import '../../core/widgets/skeleton_loader.dart';
+import '../../core/services/supabase_service.dart';
 
 class SubscriptionsScreen extends StatefulWidget {
   const SubscriptionsScreen({super.key});
+
   @override
   State<SubscriptionsScreen> createState() => _SubscriptionsScreenState();
 }
@@ -14,20 +16,395 @@ class SubscriptionsScreen extends StatefulWidget {
 class _SubscriptionsScreenState extends State<SubscriptionsScreen> with SingleTickerProviderStateMixin {
   bool _isLoading = true;
   late TabController _tabController;
+  List<Map<String, dynamic>> _subscriptions = [];
+  List<Map<String, dynamic>> _plans = [];
+  List<Map<String, dynamic>> _coupons = [];
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
-    Future.delayed(const Duration(milliseconds: 600), () {
-      if (mounted) setState(() => _isLoading = false);
-    });
+    _fetchData();
   }
 
   @override
   void dispose() {
     _tabController.dispose();
     super.dispose();
+  }
+
+  Future<void> _fetchData() async {
+    try {
+      if (!mounted) return;
+      setState(() => _isLoading = true);
+
+      if (!AdminSupabaseService.isInitialized) {
+        _loadFallbackData();
+        return;
+      }
+
+      final client = AdminSupabaseService.client;
+
+      // 1. Fetch Subscriptions from DB
+      final List<Map<String, dynamic>> loadedSubscriptions = [];
+      try {
+        final response = await client
+            .from('subscriptions')
+            .select('''
+              id,
+              gym_id,
+              owner_id,
+              plan_id,
+              status,
+              start_date,
+              end_date,
+              trial_start,
+              trial_end,
+              created_at,
+              gyms:gym_id (id, name, city, logo_url, phone),
+              profiles:owner_id (id, full_name, email, phone_number)
+            ''')
+            .order('created_at', ascending: false);
+
+        for (var item in response as List) {
+          final map = Map<String, dynamic>.from(item);
+          final gymMap = map['gyms'] != null ? Map<String, dynamic>.from(map['gyms']) : null;
+          final profileMap = map['profiles'] != null ? Map<String, dynamic>.from(map['profiles']) : null;
+
+          final String gymName = gymMap?['name'] ?? 'Unnamed Gym';
+          final String ownerName = profileMap?['full_name'] ?? 'Gym Owner';
+          final String ownerEmail = profileMap?['email'] ?? '';
+          final String ownerPhone = profileMap?['phone_number'] ?? gymMap?['phone'] ?? '';
+          final String planId = (map['plan_id'] ?? 'free_trial').toString().toLowerCase();
+          final String status = (map['status'] ?? 'active').toString();
+
+          String daysRemainingStr = '30 days';
+          final String? effectiveEndStr = map['end_date'] ?? map['trial_end'];
+          if (effectiveEndStr != null) {
+            final endDate = DateTime.tryParse(effectiveEndStr);
+            if (endDate != null) {
+              final diff = endDate.difference(DateTime.now()).inDays;
+              daysRemainingStr = diff > 0 ? '$diff days' : 'Expired';
+            }
+          }
+
+          loadedSubscriptions.add({
+            'id': map['id'],
+            'gym_id': map['gym_id'],
+            'gym_name': gymName,
+            'owner_name': ownerName,
+            'owner_email': ownerEmail,
+            'owner_phone': ownerPhone,
+            'plan_id': planId,
+            'status': status,
+            'days_remaining': daysRemainingStr,
+            'start_date': map['start_date'] ?? map['created_at'],
+            'end_date': map['end_date'] ?? map['trial_end'],
+            'created_at': map['created_at'],
+          });
+        }
+      } catch (e) {
+        debugPrint("Primary subscriptions query error: $e");
+      }
+
+      // If subscriptions table query was empty or incomplete, fallback to gyms table
+      if (loadedSubscriptions.isEmpty) {
+        try {
+          final gymsRes = await client
+              .from('gyms')
+              .select('id, name, city, plan, status, trial_end_date, expiry_date, user_gym_associations(role, profiles(full_name, email, phone_number))');
+
+          for (var item in gymsRes as List) {
+            final gymMap = Map<String, dynamic>.from(item);
+            String ownerName = 'Gym Owner';
+            String ownerEmail = '';
+            String ownerPhone = '';
+
+            final assoc = gymMap['user_gym_associations'] as List?;
+            if (assoc != null) {
+              for (var a in assoc) {
+                if (a['role'] == 'owner' && a['profiles'] != null) {
+                  final p = a['profiles'];
+                  ownerName = p['full_name'] ?? ownerName;
+                  ownerEmail = p['email'] ?? ownerEmail;
+                  ownerPhone = p['phone_number'] ?? ownerPhone;
+                  break;
+                }
+              }
+            }
+
+            final String planId = (gymMap['plan'] ?? 'free_trial').toString().toLowerCase();
+            final String status = (gymMap['status'] ?? 'trial').toString();
+            final String? endStr = gymMap['expiry_date'] ?? gymMap['trial_end_date'];
+            String daysLeft = '90 days';
+            if (endStr != null) {
+              final endDate = DateTime.tryParse(endStr);
+              if (endDate != null) {
+                final diff = endDate.difference(DateTime.now()).inDays;
+                daysLeft = diff > 0 ? '$diff days' : 'Expired';
+              }
+            }
+
+            loadedSubscriptions.add({
+              'id': gymMap['id'],
+              'gym_id': gymMap['id'],
+              'gym_name': gymMap['name'] ?? 'Gym',
+              'owner_name': ownerName,
+              'owner_email': ownerEmail,
+              'owner_phone': ownerPhone,
+              'plan_id': planId,
+              'status': status,
+              'days_remaining': daysLeft,
+              'end_date': endStr,
+            });
+          }
+        } catch (e) {
+          debugPrint("Gyms query error: $e");
+        }
+      }
+
+      // 2. Count plan totals dynamically from real subscriptions
+      final Map<String, int> counts = {
+        'free_trial': 0,
+        'starter': 0,
+        'pro': 0,
+        'business': 0,
+      };
+
+      for (var sub in loadedSubscriptions) {
+        final p = (sub['plan_id'] as String).toLowerCase();
+        if (p.contains('trial')) {
+          counts['free_trial'] = (counts['free_trial'] ?? 0) + 1;
+        } else if (p.contains('starter')) {
+          counts['starter'] = (counts['starter'] ?? 0) + 1;
+        } else if (p.contains('pro')) {
+          counts['pro'] = (counts['pro'] ?? 0) + 1;
+        } else if (p.contains('business')) {
+          counts['business'] = (counts['business'] ?? 0) + 1;
+        } else {
+          counts['free_trial'] = (counts['free_trial'] ?? 0) + 1;
+        }
+      }
+
+      final List<Map<String, dynamic>> calculatedPlans = [
+        {
+          'id': 'free_trial',
+          'name': 'Free Trial',
+          'price': '₹0',
+          'gyms': counts['free_trial'] ?? 0,
+          'popular': false,
+          'features': ['3 Months Free', 'All Features', 'Up to 50 Members', '2 Staff']
+        },
+        {
+          'id': 'starter',
+          'name': 'Starter',
+          'price': '₹699',
+          'gyms': counts['starter'] ?? 0,
+          'popular': false,
+          'features': ['100 Members', '5 Staff', 'QR Attendance', 'Basic Reports']
+        },
+        {
+          'id': 'pro',
+          'name': 'Pro',
+          'price': '₹999',
+          'gyms': counts['pro'] ?? 0,
+          'popular': true,
+          'features': ['500 Members', '15 Staff', 'All Attendance', 'AI Features', 'Priority Support']
+        },
+        {
+          'id': 'business',
+          'name': 'Business',
+          'price': '₹1,999',
+          'gyms': counts['business'] ?? 0,
+          'popular': false,
+          'features': ['Unlimited Members', 'Unlimited Staff', 'All Features', 'Custom Branding', 'Dedicated Support']
+        },
+      ];
+
+      // 3. Fetch Coupons
+      List<Map<String, dynamic>> loadedCoupons = [];
+      try {
+        final couponsRes = await client.from('platform_coupons').select('*').order('created_at', ascending: false);
+        if (couponsRes is List) {
+          loadedCoupons = couponsRes.map((e) => Map<String, dynamic>.from(e)).toList();
+        }
+      } catch (_) {}
+
+      if (!mounted) return;
+      setState(() {
+        _subscriptions = loadedSubscriptions;
+        _plans = calculatedPlans;
+        _coupons = loadedCoupons;
+        _isLoading = false;
+      });
+    } catch (e) {
+      debugPrint('Error fetching subscription data: $e');
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  void _loadFallbackData() {
+    setState(() {
+      _plans = const [
+        {'id': 'free_trial', 'name': 'Free Trial', 'price': '₹0', 'gyms': 1, 'popular': false, 'features': ['3 Months Free', 'All Features', 'Up to 50 Members', '2 Staff']},
+        {'id': 'starter', 'name': 'Starter', 'price': '₹699', 'gyms': 0, 'popular': false, 'features': ['100 Members', '5 Staff', 'QR Attendance', 'Basic Reports']},
+        {'id': 'pro', 'name': 'Pro', 'price': '₹999', 'gyms': 0, 'popular': true, 'features': ['500 Members', '15 Staff', 'All Attendance', 'AI Features', 'Priority Support']},
+        {'id': 'business', 'name': 'Business', 'price': '₹1,999', 'gyms': 0, 'popular': false, 'features': ['Unlimited Members', 'Unlimited Staff', 'All Features', 'Custom Branding', 'Dedicated Support']},
+      ];
+      _isLoading = false;
+    });
+  }
+
+  Future<void> _updateGymPlan(String gymId, String newPlanId, String newStatus, int extendDays) async {
+    try {
+      if (!AdminSupabaseService.isInitialized) return;
+      final client = AdminSupabaseService.client;
+      final DateTime newEndDate = DateTime.now().add(Duration(days: extendDays));
+
+      // Update Subscriptions Table
+      await client.from('subscriptions').upsert(
+        {
+          'gym_id': gymId,
+          'plan_id': newPlanId,
+          'status': newStatus,
+          'end_date': newEndDate.toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        },
+        onConflict: 'gym_id',
+      );
+
+      // Update Gyms Table
+      await client.from('gyms').update({
+        'plan': newPlanId,
+        'status': newStatus,
+        'expiry_date': newEndDate.toIso8601String(),
+      }).eq('id', gymId);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Plan updated to ${newPlanId.toUpperCase()} successfully!'), backgroundColor: Colors.green),
+        );
+      }
+      _fetchData();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to update plan: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  void _showManageDialog(Map<String, dynamic> sub) {
+    String selectedPlan = (sub['plan_id'] ?? 'starter').toString().toLowerCase();
+    if (!['free_trial', 'starter', 'pro', 'business'].contains(selectedPlan)) {
+      selectedPlan = 'starter';
+    }
+    String selectedStatus = (sub['status'] ?? 'active').toString().toLowerCase();
+    if (!['active', 'trial', 'expired', 'suspended'].contains(selectedStatus)) {
+      selectedStatus = 'active';
+    }
+    int extendDays = 30;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              const Icon(Icons.stars_rounded, color: AdminTheme.primary),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Manage Subscription - ${sub['gym_name']}',
+                  style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+              ),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Owner: ${sub['owner_name']} (${sub['owner_phone']})', style: GoogleFonts.inter(fontSize: 13, color: Colors.grey[700])),
+                const SizedBox(height: 16),
+                Text('Select Subscription Plan', style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 13)),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  value: selectedPlan,
+                  decoration: const InputDecoration(border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8)),
+                  items: const [
+                    DropdownMenuItem(value: 'free_trial', child: Text('Free Trial (₹0)')),
+                    DropdownMenuItem(value: 'starter', child: Text('Starter (₹699/mo)')),
+                    DropdownMenuItem(value: 'pro', child: Text('Pro (₹999/mo)')),
+                    DropdownMenuItem(value: 'business', child: Text('Business (₹1,999/mo)')),
+                  ],
+                  onChanged: (val) {
+                    if (val != null) setDialogState(() => selectedPlan = val);
+                  },
+                ),
+                const SizedBox(height: 16),
+                Text('Subscription Status', style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 13)),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  value: selectedStatus,
+                  decoration: const InputDecoration(border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8)),
+                  items: const [
+                    DropdownMenuItem(value: 'active', child: Text('Active')),
+                    DropdownMenuItem(value: 'trial', child: Text('Trial')),
+                    DropdownMenuItem(value: 'expired', child: Text('Expired')),
+                    DropdownMenuItem(value: 'suspended', child: Text('Suspended')),
+                  ],
+                  onChanged: (val) {
+                    if (val != null) setDialogState(() => selectedStatus = val);
+                  },
+                ),
+                const SizedBox(height: 16),
+                Text('Validity Duration', style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 13)),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    ChoiceChip(
+                      label: const Text('30 Days'),
+                      selected: extendDays == 30,
+                      onSelected: (_) => setDialogState(() => extendDays = 30),
+                    ),
+                    const SizedBox(width: 8),
+                    ChoiceChip(
+                      label: const Text('90 Days'),
+                      selected: extendDays == 90,
+                      onSelected: (_) => setDialogState(() => extendDays = 90),
+                    ),
+                    const SizedBox(width: 8),
+                    ChoiceChip(
+                      label: const Text('365 Days'),
+                      selected: extendDays == 365,
+                      onSelected: (_) => setDialogState(() => extendDays = 365),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: AdminTheme.primary),
+              onPressed: () {
+                Navigator.pop(ctx);
+                _updateGymPlan(sub['gym_id'], selectedPlan, selectedStatus, extendDays);
+              },
+              child: Text('Save Changes', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -44,9 +421,24 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> with SingleTi
             duration: const Duration(milliseconds: 300),
             childAnimationBuilder: (w) => SlideAnimation(verticalOffset: 20, child: FadeInAnimation(child: w)),
             children: [
-              Text('Subscription Management', style: GoogleFonts.inter(fontSize: 22, fontWeight: FontWeight.bold, color: AdminTheme.textColor(context))),
-              const SizedBox(height: 4),
-              Text('Manage platform plans, coupons, and gym subscriptions', style: GoogleFonts.inter(fontSize: 13, color: AdminTheme.secondaryTextColor(context))),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Subscription Management', style: GoogleFonts.inter(fontSize: 22, fontWeight: FontWeight.bold, color: AdminTheme.textColor(context))),
+                      const SizedBox(height: 4),
+                      Text('Manage platform plans, gym subscriptions & live revenue status', style: GoogleFonts.inter(fontSize: 13, color: AdminTheme.secondaryTextColor(context))),
+                    ],
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.refresh_rounded),
+                    onPressed: _fetchData,
+                    tooltip: 'Refresh Subscriptions',
+                  ),
+                ],
+              ),
               const SizedBox(height: 24),
               // Plans grid
               _buildPlansGrid(context),
@@ -109,7 +501,11 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> with SingleTi
             ],
           ),
           const SizedBox(height: 8),
-          Text('${plan['gyms']} gyms on this plan', style: GoogleFonts.inter(fontSize: 12, color: AdminTheme.secondaryTextColor(context))),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(color: AdminTheme.primary.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(6)),
+            child: Text('${plan['gyms']} Gyms Subscribed', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AdminTheme.primary)),
+          ),
           const SizedBox(height: 16),
           ...(plan['features'] as List<String>).map((f) => Padding(
             padding: const EdgeInsets.symmetric(vertical: 3),
@@ -121,22 +517,6 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> with SingleTi
               ],
             ),
           )),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () {},
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size(0, 36),
-                    side: BorderSide(color: AdminTheme.borderColor(context)),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AdminTheme.radiusSm)),
-                  ),
-                  child: Text('Edit', style: GoogleFonts.inter(fontSize: 12)),
-                ),
-              ),
-            ],
-          ),
         ],
       ),
     );
@@ -159,14 +539,14 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> with SingleTi
             unselectedLabelColor: AdminTheme.secondaryTextColor(context),
             indicatorColor: AdminTheme.primary,
             dividerColor: AdminTheme.borderColor(context),
-            tabs: const [
-              Tab(text: 'Active Subscriptions'),
-              Tab(text: 'Coupons'),
-              Tab(text: 'Offers'),
+            tabs: [
+              Tab(text: 'Active Subscriptions (${_subscriptions.length})'),
+              Tab(text: 'Coupons (${_coupons.length})'),
+              const Tab(text: 'Offers'),
             ],
           ),
           SizedBox(
-            height: 400,
+            height: 450,
             child: TabBarView(
               controller: _tabController,
               children: [
@@ -182,27 +562,81 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> with SingleTi
   }
 
   Widget _buildSubscriptionsList(BuildContext context) {
+    if (_subscriptions.isEmpty) {
+      return Center(
+        child: Text('No subscriptions found in database', style: GoogleFonts.inter(color: Colors.grey)),
+      );
+    }
+
     return ListView.separated(
       padding: const EdgeInsets.all(16),
-      itemCount: 6,
+      itemCount: _subscriptions.length,
       separatorBuilder: (_, _) => Divider(color: AdminTheme.borderColor(context), height: 1),
       itemBuilder: (ctx, i) {
-        final items = ['Iron Paradise', 'FitZone Premium', 'Elite Fitness', 'Spartan Club', 'Thunder Gym', 'Power House'];
-        final plans = ['Pro', 'Business', 'Business', 'Pro', 'Starter', 'Free Trial'];
-        final days = ['245', '180', '365', '120', '60', '45'];
+        final item = _subscriptions[i];
+        final String gymName = item['gym_name'] ?? 'Gym';
+        final String ownerName = item['owner_name'] ?? 'Owner';
+        final String ownerContact = item['owner_phone'].toString().isNotEmpty ? item['owner_phone'] : item['owner_email'];
+        final String planId = (item['plan_id'] ?? 'free_trial').toString().toUpperCase();
+        final String daysRemaining = item['days_remaining'] ?? '-';
+        final String status = (item['status'] ?? 'active').toString().toUpperCase();
+
+        Color badgeBg = AdminTheme.primary.withValues(alpha: 0.1);
+        Color badgeFg = AdminTheme.primary;
+        if (planId.contains('PRO')) {
+          badgeBg = const Color(0xFFEDE9FE);
+          badgeFg = const Color(0xFF6D28D9);
+        } else if (planId.contains('STARTER')) {
+          badgeBg = const Color(0xFFDCFCE7);
+          badgeFg = const Color(0xFF15803D);
+        } else if (planId.contains('BUSINESS')) {
+          badgeBg = const Color(0xFFFEF3C7);
+          badgeFg = const Color(0xFFB45309);
+        }
+
         return ListTile(
-          contentPadding: const EdgeInsets.symmetric(vertical: 4),
+          contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
           leading: Container(
-            width: 40, height: 40,
-            decoration: BoxDecoration(color: AdminTheme.primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)),
-            child: Center(child: Text(items[i][0], style: GoogleFonts.inter(fontWeight: FontWeight.w700, color: AdminTheme.primary, fontSize: 16))),
+            width: 44, height: 44,
+            decoration: BoxDecoration(color: AdminTheme.primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)),
+            child: Center(child: Text(gymName.isNotEmpty ? gymName[0].toUpperCase() : 'G', style: GoogleFonts.inter(fontWeight: FontWeight.w700, color: AdminTheme.primary, fontSize: 18))),
           ),
-          title: Text(items[i], style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: AdminTheme.textColor(context))),
-          subtitle: Text('${plans[i]} Plan  •  ${days[i]} days remaining', style: GoogleFonts.inter(fontSize: 12, color: AdminTheme.mutedTextColor(context))),
-          trailing: OutlinedButton(
-            onPressed: () {},
-            style: OutlinedButton.styleFrom(minimumSize: const Size(80, 32), side: BorderSide(color: AdminTheme.borderColor(context))),
-            child: Text('Manage', style: GoogleFonts.inter(fontSize: 12)),
+          title: Row(
+            children: [
+              Text(gymName, style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.bold, color: AdminTheme.textColor(context))),
+              const SizedBox(width: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(color: badgeBg, borderRadius: BorderRadius.circular(6)),
+                child: Text(planId, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: badgeFg)),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: status == 'ACTIVE' ? Colors.green.withOpacity(0.1) : Colors.amber.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(status, style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w600, color: status == 'ACTIVE' ? Colors.green[800] : Colors.amber[900])),
+              ),
+            ],
+          ),
+          subtitle: Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              'Owner: $ownerName ($ownerContact)  •  $daysRemaining remaining',
+              style: GoogleFonts.inter(fontSize: 12, color: AdminTheme.secondaryTextColor(context)),
+            ),
+          ),
+          trailing: OutlinedButton.icon(
+            onPressed: () => _showManageDialog(item),
+            icon: const Icon(Icons.settings_rounded, size: 16),
+            label: Text('Manage Plan', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold)),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size(110, 36),
+              side: BorderSide(color: AdminTheme.primary),
+              foregroundColor: AdminTheme.primary,
+            ),
           ),
         );
       },
@@ -210,17 +644,31 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> with SingleTi
   }
 
   Widget _buildCouponsList(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.local_offer_outlined, size: 48, color: AdminTheme.mutedTextColor(context)),
-          const SizedBox(height: 16),
-          Text('No coupons created yet', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600, color: AdminTheme.textColor(context))),
-          const SizedBox(height: 16),
-          ElevatedButton.icon(onPressed: () {}, icon: const Icon(Icons.add, size: 18), label: const Text('Create Coupon')),
-        ],
-      ),
+    if (_coupons.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.local_offer_outlined, size: 48, color: AdminTheme.mutedTextColor(context)),
+            const SizedBox(height: 16),
+            Text('No coupons created yet', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600, color: AdminTheme.textColor(context))),
+          ],
+        ),
+      );
+    }
+
+    return ListView.separated(
+      padding: const EdgeInsets.all(16),
+      itemCount: _coupons.length,
+      separatorBuilder: (_, _) => Divider(color: AdminTheme.borderColor(context), height: 1),
+      itemBuilder: (ctx, i) {
+        final coupon = _coupons[i];
+        return ListTile(
+          leading: const Icon(Icons.local_offer, color: AdminTheme.primary),
+          title: Text(coupon['code'] ?? 'COUPON', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+          subtitle: Text('${coupon['discount_percentage']}% OFF'),
+        );
+      },
     );
   }
 
@@ -231,18 +679,9 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> with SingleTi
         children: [
           Icon(Icons.celebration_outlined, size: 48, color: AdminTheme.mutedTextColor(context)),
           const SizedBox(height: 16),
-          Text('No offers available', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600, color: AdminTheme.textColor(context))),
-          const SizedBox(height: 16),
-          ElevatedButton.icon(onPressed: () {}, icon: const Icon(Icons.add, size: 18), label: const Text('Create Offer')),
+          Text('No platform offers active', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600, color: AdminTheme.textColor(context))),
         ],
       ),
     );
   }
 }
-
-const List<Map<String, dynamic>> _plans = [
-  {'name': 'Free Trial', 'price': '₹0', 'gyms': 14, 'popular': false, 'features': ['3 Months Free', 'All Features', 'Up to 50 Members', '2 Staff']},
-  {'name': 'Starter', 'price': '₹499', 'gyms': 45, 'popular': false, 'features': ['100 Members', '5 Staff', 'QR Attendance', 'Basic Reports']},
-  {'name': 'Pro', 'price': '₹999', 'gyms': 52, 'popular': true, 'features': ['500 Members', '15 Staff', 'All Attendance', 'AI Features', 'Priority Support']},
-  {'name': 'Business', 'price': '₹1,999', 'gyms': 20, 'popular': false, 'features': ['Unlimited Members', 'Unlimited Staff', 'All Features', 'Custom Branding', 'Dedicated Support']},
-];
