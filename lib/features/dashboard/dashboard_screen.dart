@@ -771,13 +771,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 children: [
                   _buildQuickActionBtn(
                     Icons.person_add_alt_1_outlined,
+                    const Color(0xFF6C4EFF),
                     'Add Member',
                     onTap: () {
                       AddMemberSelectionSheet.show(context);
                     },
                   ),
                   _buildQuickActionBtn(
-                    Icons.people_outline,
+                    Icons.people_outline_rounded,
+                    const Color(0xFF0EA5E9),
                     'Add Staff',
                     onTap: () {
                       showModalBottomSheet(
@@ -789,7 +791,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     },
                   ),
                   _buildQuickActionBtn(
-                    Icons.payment,
+                    Icons.payments_outlined,
+                    const Color(0xFF10B981),
                     'Take Payment',
                     onTap: () {
                       Navigator.push(
@@ -800,6 +803,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   _buildQuickActionBtn(
                     Icons.calendar_today_rounded,
+                    const Color(0xFFF59E0B),
                     'Attendance',
                     onTap: () {
                       Navigator.push(
@@ -809,7 +813,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     },
                   ),
                   _buildQuickActionBtn(
-                    Icons.fitness_center,
+                    Icons.fitness_center_rounded,
+                    const Color(0xFF3B82F6),
                     'Workout Plan',
                     onTap: () {
                       Navigator.push(
@@ -819,7 +824,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     },
                   ),
                   _buildQuickActionBtn(
-                    Icons.apple,
+                    Icons.apple_rounded,
+                    const Color(0xFFEC4899),
                     'Diet Plan',
                     onTap: () {
                       Navigator.push(
@@ -830,6 +836,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   _buildQuickActionBtn(
                     Icons.analytics_outlined,
+                    const Color(0xFF8B5CF6),
                     'Reports',
                     onTap: () {
                       Navigator.push(
@@ -840,6 +847,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   _buildQuickActionBtn(
                     Icons.send_rounded,
+                    const Color(0xFF06B6D4),
                     'Broadcast',
                     onTap: () {
                       Navigator.push(
@@ -850,6 +858,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   _buildQuickActionBtn(
                     Icons.currency_rupee_rounded,
+                    const Color(0xFF14B8A6),
                     'Pay Salary',
                     onTap: () {
                       Navigator.push(
@@ -1228,35 +1237,43 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildQuickActionBtn(IconData icon, String label, {VoidCallback? onTap}) {
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFFF9F9FB),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFF3F4F6), width: 1.0),
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
+  Widget _buildQuickActionBtn(IconData icon, Color color, String label, {VoidCallback? onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.08),
           borderRadius: BorderRadius.circular(12),
-          onTap: onTap,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, color: AppTheme.primary, size: 20),
-              const SizedBox(height: 6),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: Text(
-                  label,
-                  style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w600, color: AppTheme.textPrimary),
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
+          border: Border.all(color: color.withOpacity(0.12)),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(7),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
               ),
-            ],
-          ),
+              child: Icon(icon, color: color, size: 18),
+            ),
+            const SizedBox(height: 6),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 2),
+              child: Text(
+                label,
+                style: GoogleFonts.inter(
+                  fontSize: 9.5, 
+                  fontWeight: FontWeight.bold, 
+                  color: AppTheme.textPrimary,
+                ),
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
         ),
       ),
     );

@@ -260,11 +260,11 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
                 style: GoogleFonts.inter(fontSize: 13, color: AppTheme.textSecondary),
               ),
               const SizedBox(height: 24),
-              _planOptionCard(sheetCtx, 'starter', 'Starter Plan', '₹699/month', '100 Members  •  3 Staff  •  1 Gym', gymId),
+              _planOptionCard(sheetCtx, 'starter', 'Starter Plan', '₹699/month', 'Up to 50 Members  •  1 Staff  •  Basic Reports', gymId),
               const SizedBox(height: 12),
-              _planOptionCard(sheetCtx, 'pro', 'Pro Plan', '₹1,499/month', '1,000 Members  •  10 Staff  •  1 Gym', gymId),
+              _planOptionCard(sheetCtx, 'pro', 'Pro Plan', '₹999/month', 'Up to 200 Members  •  5 Staff  •  Priority Support', gymId),
               const SizedBox(height: 12),
-              _planOptionCard(sheetCtx, 'business', 'Business Plan', '₹2,999/month', '2,000 Members/Gym  •  50 Staff  •  3 Gyms', gymId),
+              _planOptionCard(sheetCtx, 'business', 'Business Plan', '₹1,999/month', 'Unlimited Members  •  Unlimited Staff  •  Custom Branding', gymId),
               const SizedBox(height: 24),
             ],
           ),
@@ -349,8 +349,8 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
       }
 
       int amount = 69900;
-      if (planId == 'pro') amount = 149900;
-      if (planId == 'business') amount = 299900;
+      if (planId == 'pro') amount = 99900;
+      if (planId == 'business') amount = 199900;
 
       // Save pending variables to verify signature on payment success callback
       _pendingPlanId = planId;
