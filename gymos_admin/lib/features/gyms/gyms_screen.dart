@@ -1026,6 +1026,46 @@ class _GymsScreenState extends State<GymsScreen> {
     }
   }
 
+  Future<List<Map<String, dynamic>>> _fetchGymPaymentHistory(dynamic gymId) async {
+    if (!AdminSupabaseService.isInitialized || gymId == null) return [];
+    final client = AdminSupabaseService.client;
+    List<Map<String, dynamic>> items = [];
+    try {
+      final paymentsRes = await client
+          .from('payments')
+          .select('*')
+          .eq('gym_id', gymId)
+          .order('created_at', ascending: false);
+      if (paymentsRes is List) {
+        items.addAll(paymentsRes.map((e) => Map<String, dynamic>.from(e)));
+      }
+    } catch (e) {
+      debugPrint('Error fetching payments for gym $gymId: $e');
+    }
+
+    if (items.isEmpty) {
+      try {
+        final invRes = await client
+            .from('invoices')
+            .select('*')
+            .eq('gym_id', gymId)
+            .order('created_at', ascending: false);
+        if (invRes is List) {
+          for (var inv in invRes) {
+            items.add({
+              'id': inv['id'],
+              'amount': inv['amount'],
+              'status': inv['status'] == 'paid' ? 'Success' : inv['status'],
+              'payment_method': 'Online Invoice (${inv['invoice_number'] ?? "Invoice"})',
+              'created_at': inv['created_at'] ?? inv['billing_date'],
+            });
+          }
+        }
+      } catch (_) {}
+    }
+    return items;
+  }
+
   Future<void> _showPaymentHistoryDialog(BuildContext context, Map<String, dynamic> gym) async {
     final gymName = gym['name'] as String;
     final gymId = gym['id'];
@@ -1034,45 +1074,7 @@ class _GymsScreenState extends State<GymsScreen> {
       context: context,
       builder: (ctx) {
         return FutureBuilder<List<Map<String, dynamic>>>(
-          future: () async {
-            if (!AdminSupabaseService.isInitialized || gymId == null) return [];
-            final client = AdminSupabaseService.client;
-            List<Map<String, dynamic>> items = [];
-            try {
-              final paymentsRes = await client
-                  .from('payments')
-                  .select('*')
-                  .eq('gym_id', gymId)
-                  .order('created_at', ascending: false);
-              if (paymentsRes is List) {
-                items.addAll(paymentsRes.map((e) => Map<String, dynamic>.from(e)));
-              }
-            } catch (e) {
-              debugPrint('Error fetching payments for gym $gymId: $e');
-            }
-
-            if (items.isEmpty) {
-              try {
-                final invRes = await client
-                    .from('invoices')
-                    .select('*')
-                    .eq('gym_id', gymId)
-                    .order('created_at', ascending: false);
-                if (invRes is List) {
-                  for (var inv in invRes) {
-                    items.add({
-                      'id': inv['id'],
-                      'amount': inv['amount'],
-                      'status': inv['status'] == 'paid' ? 'Success' : inv['status'],
-                      'payment_method': 'Online Invoice (${inv['invoice_number'] ?? "Invoice"})',
-                      'created_at': inv['created_at'] ?? inv['billing_date'],
-                    });
-                  }
-                }
-              } catch (_) {}
-            }
-            return items;
-          }(),
+          future: _fetchGymPaymentHistory(gymId),
           builder: (context, snapshot) {
             final isLoading = snapshot.connectionState == ConnectionState.waiting;
             final payments = snapshot.data ?? [];
