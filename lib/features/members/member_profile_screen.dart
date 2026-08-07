@@ -729,6 +729,38 @@ Thank you.''';
     final double pendingAmount = member.pendingAmount;
     final int percentPaid = finalAmount > 0 ? ((alreadyReceived / finalAmount) * 100).toInt() : 0;
 
+    String expiryDateStr = '—';
+    String remainingDaysStr = '—';
+    Color remainingColor = AppTheme.textSecondary;
+
+    final exp = member.extraFields['expiryDate'] as String?;
+    if (exp != null && exp.isNotEmpty) {
+      try {
+        final expiryDate = DateTime.parse(exp);
+        expiryDateStr = DateFormat('dd MMM yyyy').format(expiryDate);
+        
+        final today = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
+        final expZero = DateTime(expiryDate.year, expiryDate.month, expiryDate.day);
+        final diff = expZero.difference(today).inDays;
+        
+        if (diff < 0) {
+          remainingDaysStr = 'Expired';
+          remainingColor = AppTheme.danger;
+        } else {
+          remainingDaysStr = '$diff Days';
+          if (diff <= 7) {
+            remainingColor = AppTheme.danger;
+          } else if (diff <= 15) {
+            remainingColor = Colors.orange;
+          } else {
+            remainingColor = Colors.green;
+          }
+        }
+      } catch (_) {
+        expiryDateStr = exp;
+      }
+    }
+
     // Health & Measurements extraction
     final Map<String, dynamic> extra = member.extraFields;
     final Map<String, dynamic> measurements = (extra['measurements'] is Map<String, dynamic>)
@@ -860,7 +892,10 @@ Thank you.''';
                 ],
               ),
               const SizedBox(height: 2),
-              Text('${assignedPlan?.durationMonths ?? 3} Months Plan', style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary)),
+              Text(assignedPlan != null 
+                  ? '${assignedPlan.durationDays} Days Plan' 
+                  : '30 Days Plan', 
+                style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary)),
               const SizedBox(height: 16),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -878,7 +913,7 @@ Thank you.''';
                     children: [
                       Text('End Date', style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary)),
                       const SizedBox(height: 4),
-                      Text('12 Apr 2026', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 13)),
+                      Text(expiryDateStr, style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 13)),
                     ],
                   ),
                   Column(
@@ -886,7 +921,7 @@ Thank you.''';
                     children: [
                       Text('Remaining', style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary)),
                       const SizedBox(height: 4),
-                      Text('15 Days', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.orange)),
+                      Text(remainingDaysStr, style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 13, color: remainingColor)),
                     ],
                   ),
                 ],
@@ -1364,11 +1399,23 @@ Thank you.''';
               const SizedBox(height: 16),
               _buildDetailRow('Membership Name', plan?.title ?? 'Gold Membership'),
               const Divider(height: 16),
-              _buildDetailRow('Duration', '${plan?.durationMonths ?? 3} Months'),
+              _buildDetailRow('Duration', plan != null ? '${plan.durationDays} Days' : '30 Days'),
               const Divider(height: 16),
               _buildDetailRow('Start Date', member.joinDate),
               const Divider(height: 16),
-              _buildDetailRow('End Date', '12 Apr 2026'),
+              _buildDetailRow('End Date', () {
+                String expStr = '—';
+                final exp = member.extraFields['expiryDate'] as String?;
+                if (exp != null && exp.isNotEmpty) {
+                  try {
+                    final parsed = DateTime.parse(exp);
+                    expStr = DateFormat('dd MMM yyyy').format(parsed);
+                  } catch (_) {
+                    expStr = exp;
+                  }
+                }
+                return expStr;
+              }()),
               const Divider(height: 16),
               _buildDetailRow('Status', 'Active'),
               const Divider(height: 16),

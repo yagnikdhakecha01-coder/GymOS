@@ -4,18 +4,42 @@ import 'package:provider/provider.dart';
 import '../../core/theme/theme.dart';
 import '../../core/widgets/custom_card.dart';
 import 'attendance_viewmodel.dart';
-import 'owner_scanner_screen.dart';
 import 'owner_history_screen.dart';
 import 'owner_settings_screen.dart';
 import 'manual_attendance_screen.dart';
 import 'emergency_attendance_hub_screen.dart';
 import '../gym_settings/online_database_screen.dart';
+import '../staff/staff_viewmodel.dart';
 
-class AttendanceScreen extends StatelessWidget {
+class AttendanceScreen extends StatefulWidget {
   const AttendanceScreen({super.key});
 
   @override
+  State<AttendanceScreen> createState() => _AttendanceScreenState();
+}
+
+class _AttendanceScreenState extends State<AttendanceScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        Provider.of<AttendanceViewModel>(context, listen: false).refresh();
+        Provider.of<StaffViewModel>(context, listen: false).fetchStaff();
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final attendanceVm = Provider.of<AttendanceViewModel>(context);
+    final staffVm = Provider.of<StaffViewModel>(context);
+
+    final totalStaff = staffVm.allStaff.where((s) => s.status == 'Active').length;
+    final staffTodayRecords = attendanceVm.todayRecords.where((r) => r.userType == 'Staff').toList();
+    final checkedIn = staffTodayRecords.length;
+    final checkedOut = staffTodayRecords.where((r) => r.checkOutTime != null && r.checkOutTime!.isNotEmpty).length;
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -49,64 +73,49 @@ class AttendanceScreen extends StatelessWidget {
               padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 8),
               child: Row(
                 children: [
-                  _buildStat('Total Staff', '18', AppTheme.textPrimary),
+                  _buildStat('Total Staff', '$totalStaff', AppTheme.textPrimary),
                   _verticalDivider(),
-                  _buildStat('Checked In', '14', const Color(0xFF16A34A)),
+                  _buildStat('Checked In', '$checkedIn', const Color(0xFF16A34A)),
                   _verticalDivider(),
-                  _buildStat('Checked Out', '6', const Color(0xFFEF4444)),
+                  _buildStat('Checked Out', '$checkedOut', const Color(0xFFEF4444)),
                 ],
               ),
             ),
             const SizedBox(height: 24),
-
-            // ── Check In / Check Out Action Cards ──
-            Row(
-              children: [
-                Expanded(
-                  child: _ActionCard(
-                    icon: Icons.login_rounded,
-                    label: 'Check In',
-                    subtitle: 'Scan QR Code',
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const OwnerQRScannerScreen(isCheckIn: true)),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: _ActionCard(
-                    icon: Icons.logout_rounded,
-                    label: 'Check Out',
-                    subtitle: 'Scan QR Code',
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const OwnerQRScannerScreen(isCheckIn: false)),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 28),
 
             // ── Menu Items ──
             _MenuItem(
               icon: Icons.badge_outlined,
               title: 'Staff Attendance',
               subtitle: 'View all staff today',
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const OwnerAttendanceHistoryScreen())),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const OwnerAttendanceHistoryScreen(userTypeFilter: 'Staff'),
+                ),
+              ),
             ),
             _MenuItem(
               icon: Icons.people_outline_rounded,
               title: 'Member Attendance',
               subtitle: 'View all members today',
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const OwnerAttendanceHistoryScreen())),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const OwnerAttendanceHistoryScreen(userTypeFilter: 'Member'),
+                ),
+              ),
             ),
             _MenuItem(
               icon: Icons.history_rounded,
               title: 'Attendance History',
               subtitle: 'View past records',
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const OwnerAttendanceHistoryScreen())),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const OwnerAttendanceHistoryScreen(userTypeFilter: 'All'),
+                ),
+              ),
             ),
             _MenuItem(
               icon: Icons.edit_calendar_rounded,
@@ -192,66 +201,6 @@ class AttendanceScreen extends StatelessWidget {
 
   Widget _verticalDivider() {
     return Container(height: 40, width: 1, color: const Color(0xFFE5E7EB));
-  }
-}
-
-// ── Action Card Widget ──
-class _ActionCard extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String subtitle;
-  final VoidCallback onTap;
-
-  const _ActionCard({
-    required this.icon,
-    required this.label,
-    required this.subtitle,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: const Color(0xFFE5E7EB)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.03),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF5F3FF),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Icon(icon, color: AppTheme.primary, size: 26),
-            ),
-            const SizedBox(height: 14),
-            Text(
-              label,
-              style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              subtitle,
-              style: GoogleFonts.inter(fontSize: 11.5, color: AppTheme.textMuted),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }
 

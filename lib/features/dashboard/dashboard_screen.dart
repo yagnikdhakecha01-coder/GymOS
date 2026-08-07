@@ -41,6 +41,9 @@ import 'widgets/owner_staff_card.dart';
 import '../receptionist/portal/receptionist_activity_log_screen.dart';
 import '../../core/theme/responsive.dart';
 import '../../core/widgets/sidebar_drawer.dart';
+import '../../core/navigation/app_router.dart';
+import '../staff/add_staff_screen.dart';
+import '../more/holidays_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -767,7 +770,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 crossAxisCountTablet: 8,
                 spacing: 8,
                 runSpacing: 8,
-                childAspectRatio: context.selectValue(mobile: 0.9, smallMobile: 0.78, tablet: 1.1),
+                childAspectRatio: context.selectValue(mobile: 1.05, smallMobile: 0.92, tablet: 1.25),
                 children: [
                   _buildQuickActionBtn(
                     Icons.person_add_alt_1_outlined,
@@ -782,11 +785,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     const Color(0xFF0EA5E9),
                     'Add Staff',
                     onTap: () {
-                      showModalBottomSheet(
-                        context: context,
-                        isScrollControlled: true,
-                        backgroundColor: Colors.transparent,
-                        builder: (context) => const AddStaffSheet(),
+                      Navigator.push(
+                        context,
+                        AppRouter.slideRoute(const AddStaffScreen(), slideUp: true),
                       );
                     },
                   ),
@@ -794,6 +795,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     Icons.payments_outlined,
                     const Color(0xFF10B981),
                     'Take Payment',
+                    fontSize: 8.0,
                     onTap: () {
                       Navigator.push(
                         context,
@@ -864,6 +866,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(builder: (_) => const PendingSalaryListScreen()),
+                      );
+                    },
+                  ),
+                  _buildQuickActionBtn(
+                    Icons.event_busy_outlined,
+                    const Color(0xFFEF4444),
+                    'Holidays',
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        AppRouter.slideRoute(const HolidaysScreen()),
                       );
                     },
                   ),
@@ -1237,11 +1250,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildQuickActionBtn(IconData icon, Color color, String label, {VoidCallback? onTap}) {
+  Widget _buildQuickActionBtn(IconData icon, Color color, String label, {VoidCallback? onTap, double? fontSize}) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
         decoration: BoxDecoration(
           color: color.withOpacity(0.08),
           borderRadius: BorderRadius.circular(12),
@@ -1264,7 +1277,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               child: Text(
                 label,
                 style: GoogleFonts.inter(
-                  fontSize: 9.5, 
+                  fontSize: fontSize ?? 9.5, 
                   fontWeight: FontWeight.bold, 
                   color: AppTheme.textPrimary,
                 ),

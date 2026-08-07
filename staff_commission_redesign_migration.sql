@@ -251,7 +251,13 @@ BEGIN
                 NEW.reference_id,
                 (SELECT membership_plan_id FROM public.members WHERE id = NEW.reference_id LIMIT 1),
                 CURRENT_DATE,
-                CURRENT_DATE + INTERVAL '3 months',
+                CURRENT_DATE + (
+                    COALESCE(
+                        (SELECT duration_days FROM public.membership_plans WHERE id = (SELECT membership_plan_id FROM public.members WHERE id = NEW.reference_id LIMIT 1) LIMIT 1),
+                        (SELECT COALESCE(duration_months, 1) * 30 FROM public.membership_plans WHERE id = (SELECT membership_plan_id FROM public.members WHERE id = NEW.reference_id LIMIT 1) LIMIT 1),
+                        30
+                    ) || ' days'
+                )::INTERVAL,
                 NEW.amount,
                 0.0,
                 'Unpaid'
