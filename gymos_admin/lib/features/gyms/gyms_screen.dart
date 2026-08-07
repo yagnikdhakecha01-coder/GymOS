@@ -1013,11 +1013,276 @@ class _GymsScreenState extends State<GymsScreen> {
           );
         }
         break;
+      case 'payment_history':
+        _showPaymentHistoryDialog(context, gym);
+        break;
+      case 'payment':
+        _showManualPaymentDialog(context, gym);
+        break;
       default:
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Action: $action on $gymName')),
         );
     }
+  }
+
+  Future<void> _showPaymentHistoryDialog(BuildContext context, Map<String, dynamic> gym) async {
+    final gymName = gym['name'] as String;
+    final gymId = gym['id'];
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return FutureBuilder<List<Map<String, dynamic>>>(
+          future: () async {
+            if (!AdminSupabaseService.isInitialized || gymId == null) return [];
+            final client = AdminSupabaseService.client;
+            List<Map<String, dynamic>> items = [];
+            try {
+              final paymentsRes = await client
+                  .from('payments')
+                  .select('*')
+                  .eq('gym_id', gymId)
+                  .order('created_at', ascending: false);
+              if (paymentsRes is List) {
+                items.addAll(paymentsRes.map((e) => Map<String, dynamic>.from(e)));
+              }
+            } catch (e) {
+              debugPrint('Error fetching payments for gym $gymId: $e');
+            }
+
+            if (items.isEmpty) {
+              try {
+                final invRes = await client
+                    .from('invoices')
+                    .select('*')
+                    .eq('gym_id', gymId)
+                    .order('created_at', ascending: false);
+                if (invRes is List) {
+                  for (var inv in invRes) {
+                    items.add({
+                      'id': inv['id'],
+                      'amount': inv['amount'],
+                      'status': inv['status'] == 'paid' ? 'Success' : inv['status'],
+                      'payment_method': 'Online Invoice (${inv['invoice_number'] ?? "Invoice"})',
+                      'created_at': inv['created_at'] ?? inv['billing_date'],
+                    });
+                  }
+                }
+              } catch (_) {}
+            }
+            return items;
+          }(),
+          builder: (context, snapshot) {
+            final isLoading = snapshot.connectionState == ConnectionState.waiting;
+            final payments = snapshot.data ?? [];
+
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: Row(
+                children: [
+                  const Icon(Icons.history_rounded, color: AdminTheme.primary),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Payment History - $gymName',
+                      style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: 500,
+                height: 380,
+                child: isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : (payments.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.receipt_long_outlined, size: 48, color: Colors.grey[400]),
+                                const SizedBox(height: 12),
+                                Text(
+                                  'No payment history found for $gymName',
+                                  style: GoogleFonts.inter(color: Colors.grey[600], fontSize: 14),
+                                ),
+                              ],
+                            ),
+                          )
+                        : ListView.separated(
+                            itemCount: payments.length,
+                            separatorBuilder: (_, _) => const Divider(height: 1),
+                            itemBuilder: (ctx, i) {
+                              final item = payments[i];
+                              final amount = item['amount'] ?? 0;
+                              final status = (item['status'] ?? 'Success').toString().toUpperCase();
+                              final method = item['payment_method'] ?? 'Razorpay Gateway';
+                              final razorpayId = item['razorpay_payment_id'] ?? item['id'] ?? '-';
+                              final dateStr = item['created_at'] != null
+                                  ? DateTime.tryParse(item['created_at'].toString())?.toLocal().toString().split('.')[0] ?? item['created_at']
+                                  : '-';
+
+                              final bool isSuccess = status == 'SUCCESS' || status == 'PAID';
+
+                              return ListTile(
+                                contentPadding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                                leading: Container(
+                                  width: 38,
+                                  height: 38,
+                                  decoration: BoxDecoration(
+                                    color: isSuccess ? Colors.green.withOpacity(0.1) : Colors.red.withOpacity(0.1),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Icon(
+                                    isSuccess ? Icons.check_circle_rounded : Icons.cancel_rounded,
+                                    color: isSuccess ? Colors.green : Colors.red,
+                                    size: 20,
+                                  ),
+                                ),
+                                title: Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text('₹$amount', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 15)),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: isSuccess ? Colors.green.withOpacity(0.1) : Colors.red.withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Text(
+                                        status,
+                                        style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: isSuccess ? Colors.green[800] : Colors.red[800]),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                subtitle: Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Text(
+                                    'Method: $method\nTxn ID: $razorpayId  •  $dateStr',
+                                    style: GoogleFonts.inter(fontSize: 11, color: Colors.grey[600]),
+                                  ),
+                                ),
+                              );
+                            },
+                          )),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Close'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showManualPaymentDialog(BuildContext context, Map<String, dynamic> gym) {
+    final gymName = gym['name'] as String;
+    final gymId = gym['id'];
+    final TextEditingController amountController = TextEditingController(text: '699');
+    String selectedMethod = 'Bank Transfer';
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              const Icon(Icons.payment_rounded, color: AdminTheme.primary),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text('Record Manual Payment - $gymName', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 15)),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Amount (₹)', style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 13)),
+              const SizedBox(height: 8),
+              TextField(
+                controller: amountController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(border: OutlineInputBorder(), prefixText: '₹ '),
+              ),
+              const SizedBox(height: 16),
+              Text('Payment Method', style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 13)),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                value: selectedMethod,
+                decoration: const InputDecoration(border: OutlineInputBorder()),
+                items: const [
+                  DropdownMenuItem(value: 'Bank Transfer', child: Text('Bank Transfer (NEFT/IMPS)')),
+                  DropdownMenuItem(value: 'Cash', child: Text('Cash Payment')),
+                  DropdownMenuItem(value: 'UPI / Direct', child: Text('Direct UPI')),
+                  DropdownMenuItem(value: 'Other Manual', child: Text('Other Payment Method')),
+                ],
+                onChanged: (val) {
+                  if (val != null) setDialogState(() => selectedMethod = val);
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: AdminTheme.primary),
+              onPressed: () async {
+                final double? amt = double.tryParse(amountController.text);
+                if (amt != null && amt > 0 && gymId != null && AdminSupabaseService.isInitialized) {
+                  Navigator.pop(ctx);
+                  try {
+                    final client = AdminSupabaseService.client;
+                    final txnId = 'MANUAL-${DateTime.now().millisecondsSinceEpoch}';
+
+                    await client.from('payments').insert({
+                      'gym_id': gymId,
+                      'amount': amt,
+                      'status': 'Success',
+                      'payment_method': selectedMethod,
+                      'razorpay_payment_id': txnId,
+                    });
+
+                    final newEndDate = DateTime.now().add(const Duration(days: 30)).toIso8601String();
+                    await client.from('gyms').update({
+                      'expiry_date': newEndDate,
+                      'status': 'active',
+                    }).eq('id', gymId);
+
+                    await client.from('subscriptions').update({
+                      'end_date': newEndDate,
+                      'status': 'active',
+                    }).eq('gym_id', gymId);
+
+                    await _fetchGyms();
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Manual payment ₹$amt recorded successfully!'), backgroundColor: Colors.green),
+                    );
+                  } catch (e) {
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Failed to record payment: $e'), backgroundColor: Colors.red),
+                    );
+                  }
+                }
+              },
+              child: Text('Record Payment', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _showGymDetailSheet(BuildContext context, Map<String, dynamic> gym) {
