@@ -55,6 +55,13 @@ class _AddStaffScreenState extends State<AddStaffScreen> {
   bool _isActiveStatus = true;
   String _gymShiftMode = 'Single Shift';
 
+  // Custom Shift State Variables
+  String _shiftType = 'single'; // 'single' or 'both'
+  String _shift1Start = '09:00 AM';
+  String _shift1End = '05:00 PM';
+  String _shift2Start = '04:00 PM';
+  String _shift2End = '09:00 PM';
+
   // Step 3 Controllers (Salary Info)
   final _salaryController = TextEditingController();
   final _commissionController = TextEditingController();
@@ -298,6 +305,43 @@ class _AddStaffScreenState extends State<AddStaffScreen> {
     }
   }
 
+  // --- Time Picker ---
+  Future<void> _pickTime(BuildContext context, String currentVal, Function(String) onPicked) async {
+    TimeOfDay initial = const TimeOfDay(hour: 9, minute: 0);
+    try {
+      final parts = currentVal.split(' ');
+      final timeParts = parts[0].split(':');
+      int hour = int.parse(timeParts[0]);
+      int minute = int.parse(timeParts[1]);
+      if (parts.length > 1 && parts[1].toUpperCase() == 'PM' && hour < 12) hour += 12;
+      if (parts.length > 1 && parts[1].toUpperCase() == 'AM' && hour == 12) hour = 0;
+      initial = TimeOfDay(hour: hour, minute: minute);
+    } catch (_) {}
+
+    final TimeOfDay? picked = await showTimePicker(
+      context: context,
+      initialTime: initial,
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: AppTheme.primary,
+              onPrimary: Colors.white,
+              onSurface: AppTheme.textPrimary,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      final now = DateTime.now();
+      final dt = DateTime(now.year, now.month, now.day, picked.hour, picked.minute);
+      onPicked(DateFormat('hh:mm a').format(dt));
+    }
+  }
+
   // --- Step Indicator Builder ---
   Widget _buildStepIndicator() {
     return Padding(
@@ -452,6 +496,10 @@ class _AddStaffScreenState extends State<AddStaffScreen> {
     final double salaryVal = double.tryParse(_salaryController.text) ?? 0.0;
     final double commissionVal = double.tryParse(_commissionController.text) ?? 0.0;
 
+    final String formattedShift = _shiftType == 'both'
+        ? '$_shift1Start - $_shift1End & $_shift2Start - $_shift2End'
+        : '$_shift1Start - $_shift1End';
+
     final newStaff = Staff(
       id: staffId,
       name: _fullNameController.text.trim(),
@@ -461,7 +509,7 @@ class _AddStaffScreenState extends State<AddStaffScreen> {
       department: _selectedRole == 'Trainer' || _selectedRole == 'Personal Trainer' ? 'Training' : 'Administration',
       status: _isActiveStatus ? 'Active' : 'Inactive',
       joinDate: _joiningDateController.text,
-      shift: _selectedShift,
+      shift: formattedShift,
       experience: _experienceController.text.trim().isEmpty ? 'N/A' : _experienceController.text.trim(),
       rating: 5.0,
       sessionsCount: 0,
@@ -482,6 +530,11 @@ class _AddStaffScreenState extends State<AddStaffScreen> {
       commissionPercentage: commissionVal,
       qualification: _qualificationController.text.trim(),
       notes: _notesController.text.trim(),
+      shiftType: _shiftType,
+      shift1Start: _shift1Start,
+      shift1End: _shift1End,
+      shift2Start: _shift2Start,
+      shift2End: _shift2End,
     );
 
     try {
@@ -733,28 +786,167 @@ class _AddStaffScreenState extends State<AddStaffScreen> {
           ),
           const SizedBox(height: 16),
 
-          _buildLabel('Gym Shift *'),
-          if (_gymShiftMode == 'Single Shift') ...[
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-              decoration: BoxDecoration(
-                color: AppTheme.surfaceGray,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppTheme.border),
+          _buildLabel('Gym Shift Configuration *'),
+          Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => setState(() => _shiftType = 'single'),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    decoration: BoxDecoration(
+                      color: _shiftType == 'single' ? AppTheme.primaryLight : AppTheme.surfaceGray,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: _shiftType == 'single' ? AppTheme.primary : AppTheme.border,
+                        width: _shiftType == 'single' ? 1.5 : 1,
+                      ),
+                    ),
+                    child: Text(
+                      'Single Shift',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.inter(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: _shiftType == 'single' ? AppTheme.primary : AppTheme.textSecondary,
+                      ),
+                    ),
+                  ),
+                ),
               ),
-              child: Text('Single Shift', style: GoogleFonts.inter(fontSize: 14, color: AppTheme.textPrimary, fontWeight: FontWeight.w600)),
-            ),
-          ] else ...[
-            DropdownButtonFormField<String>(
-              value: ['Morning Shift', 'Evening Shift', 'Both Shifts'].contains(_selectedShift) ? _selectedShift : 'Morning Shift',
-              items: const [
-                DropdownMenuItem(value: 'Morning Shift', child: Text('Morning Shift')),
-                DropdownMenuItem(value: 'Evening Shift', child: Text('Evening Shift')),
-                DropdownMenuItem(value: 'Both Shifts', child: Text('Both Shifts')),
+              const SizedBox(width: 12),
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => setState(() => _shiftType = 'both'),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    decoration: BoxDecoration(
+                      color: _shiftType == 'both' ? AppTheme.primaryLight : AppTheme.surfaceGray,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: _shiftType == 'both' ? AppTheme.primary : AppTheme.border,
+                        width: _shiftType == 'both' ? 1.5 : 1,
+                      ),
+                    ),
+                    child: Text(
+                      'Both Shift (Double)',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.inter(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: _shiftType == 'both' ? AppTheme.primary : AppTheme.textSecondary,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          // Shift 1 Timings
+          Text('Shift 1 Timings', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textSecondary)),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => _pickTime(context, _shift1Start, (val) => setState(() => _shift1Start = val)),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: AppTheme.border),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(_shift1Start, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600)),
+                        const Icon(Icons.access_time_rounded, size: 16, color: AppTheme.primary),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Text('to', style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary)),
+              ),
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => _pickTime(context, _shift1End, (val) => setState(() => _shift1End = val)),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: AppTheme.border),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(_shift1End, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600)),
+                        const Icon(Icons.access_time_rounded, size: 16, color: AppTheme.primary),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          if (_shiftType == 'both') ...[
+            const SizedBox(height: 14),
+            Text('Shift 2 Timings (Evening)', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textSecondary)),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => _pickTime(context, _shift2Start, (val) => setState(() => _shift2Start = val)),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: AppTheme.border),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(_shift2Start, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600)),
+                          const Icon(Icons.access_time_rounded, size: 16, color: AppTheme.primary),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Text('to', style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary)),
+                ),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => _pickTime(context, _shift2End, (val) => setState(() => _shift2End = val)),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: AppTheme.border),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(_shift2End, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600)),
+                          const Icon(Icons.access_time_rounded, size: 16, color: AppTheme.primary),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               ],
-              onChanged: (val) {
-                if (val != null) setState(() => _selectedShift = val);
-              },
             ),
           ],
           const SizedBox(height: 16),

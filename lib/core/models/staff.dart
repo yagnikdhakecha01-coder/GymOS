@@ -32,6 +32,13 @@ class Staff {
   final String notes;
   final Map<String, dynamic> permissions;
 
+  // Custom Shift Properties
+  final String shiftType; // 'single' or 'both'
+  final String shift1Start; // e.g. '06:00 AM'
+  final String shift1End; // e.g. '02:00 PM' or '11:00 AM'
+  final String shift2Start; // e.g. '04:00 PM'
+  final String shift2End; // e.g. '09:00 PM'
+
   Staff({
     required this.id,
     required this.name,
@@ -74,6 +81,11 @@ class Staff {
       'manual_attendance': false,
       'attendance_correction': false,
     },
+    this.shiftType = 'single',
+    this.shift1Start = '09:00 AM',
+    this.shift1End = '05:00 PM',
+    this.shift2Start = '04:00 PM',
+    this.shift2End = '09:00 PM',
   });
 
   factory Staff.fromJson(Map<String, dynamic> json) {
@@ -119,6 +131,11 @@ class Staff {
         'manual_attendance': false,
         'attendance_correction': false,
       },
+      shiftType: json['shift_type'] as String? ?? 'single',
+      shift1Start: json['shift1_start'] as String? ?? '09:00 AM',
+      shift1End: json['shift1_end'] as String? ?? '05:00 PM',
+      shift2Start: json['shift2_start'] as String? ?? '04:00 PM',
+      shift2End: json['shift2_end'] as String? ?? '09:00 PM',
     );
   }
 
@@ -154,6 +171,11 @@ class Staff {
       'qualification': qualification,
       'notes': notes,
       'permissions': permissions,
+      'shift_type': shiftType,
+      'shift1_start': shift1Start,
+      'shift1_end': shift1End,
+      'shift2_start': shift2Start,
+      'shift2_end': shift2End,
     };
   }
 
@@ -188,6 +210,11 @@ class Staff {
     String? qualification,
     String? notes,
     Map<String, dynamic>? permissions,
+    String? shiftType,
+    String? shift1Start,
+    String? shift1End,
+    String? shift2Start,
+    String? shift2End,
   }) {
     return Staff(
       id: id ?? this.id,
@@ -220,6 +247,11 @@ class Staff {
       qualification: qualification ?? this.qualification,
       notes: notes ?? this.notes,
       permissions: permissions ?? this.permissions,
+      shiftType: shiftType ?? this.shiftType,
+      shift1Start: shift1Start ?? this.shift1Start,
+      shift1End: shift1End ?? this.shift1End,
+      shift2Start: shift2Start ?? this.shift2Start,
+      shift2End: shift2End ?? this.shift2End,
     );
   }
 }

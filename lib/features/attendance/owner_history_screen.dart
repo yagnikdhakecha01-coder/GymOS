@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../core/theme/theme.dart';
+import '../../core/services/staff_shift_attendance_engine.dart';
 import 'attendance_viewmodel.dart';
 import '../staff/staff_viewmodel.dart';
 
@@ -132,6 +133,24 @@ class _OwnerAttendanceHistoryScreenState extends State<OwnerAttendanceHistoryScr
             (log.userId == staff.userId || log.staffId == staff.id)
           ).toList();
 
+          final String? checkInStr = staffLogs.isNotEmpty && staffLogs.first.checkInTime.isNotEmpty
+              ? staffLogs.first.checkInTime
+              : null;
+          final DateTime? checkInTime = checkInStr != null
+              ? StaffShiftAttendanceEngine.parseTimeToDateTime(checkInStr, targetDate: _selectedDate)
+              : null;
+
+          final eval = StaffShiftAttendanceEngine.evaluateAttendanceStatus(
+            shiftStartStr: staff.shift1Start,
+            shiftEndStr: staff.shift1End,
+            checkInDateTime: checkInTime,
+            nowDateTime: isSameDay(_selectedDate, DateTime.now()) ? DateTime.now() : _selectedDate,
+          );
+
+          final String computedStatus = staffLogs.isNotEmpty
+              ? (eval['is_late'] == true ? 'Late' : (staffLogs.first.status.isNotEmpty ? staffLogs.first.status : 'Present'))
+              : (eval['is_absent'] == true ? 'Absent' : 'Pending');
+
           if (staffLogs.isNotEmpty) {
             presentCount++;
             for (var log in staffLogs) {
@@ -140,18 +159,18 @@ class _OwnerAttendanceHistoryScreenState extends State<OwnerAttendanceHistoryScr
                 'checkIn': log.checkInTime.isNotEmpty ? log.checkInTime : '--',
                 'checkOut': log.checkOutTime != null && log.checkOutTime!.isNotEmpty ? log.checkOutTime : '--',
                 'hours': log.workingHours != null ? '${log.workingHours!.toStringAsFixed(1)}h' : '--',
-                'status': log.status,
+                'status': computedStatus,
                 'avatar': staff.avatar.isNotEmpty ? staff.avatar : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=150',
               });
             }
           } else {
-            absentCount++;
+            if (computedStatus == 'Absent') absentCount++;
             displayItems.add({
               'name': staff.name,
               'checkIn': '--',
               'checkOut': '--',
               'hours': '--',
-              'status': 'Absent',
+              'status': computedStatus,
               'avatar': staff.avatar.isNotEmpty ? staff.avatar : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=150',
             });
           }
