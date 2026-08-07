@@ -140,7 +140,9 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
         if (isTrialActive && trialEnd != null) {
           // Paid plan starts after free trial ends
           paidStart = trialEnd;
-          paidEnd = trialEnd.add(const Duration(days: 30));
+          if (paidEnd == null || !paidEnd.isAfter(trialEnd)) {
+            paidEnd = trialEnd.add(const Duration(days: 30));
+          }
           paidDaysLeft = 30;
         } else {
           paidStart ??= DateTime.now();

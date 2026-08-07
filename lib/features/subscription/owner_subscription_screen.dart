@@ -89,6 +89,12 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
                 return '$day/$month/$year';
               }
 
+              if (isQueued) {
+                if (planEnd == null || !planEnd.isAfter(trialEnd!)) {
+                  planEnd = trialEnd!.add(const Duration(days: 30));
+                }
+              }
+
               setState(() {
                 _isQueuedPlan = isQueued;
                 _queuedPlanName = formattedPlanName;
