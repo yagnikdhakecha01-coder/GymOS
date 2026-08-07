@@ -18,9 +18,20 @@ class SidebarDrawer extends StatefulWidget {
 class _SidebarDrawerState extends State<SidebarDrawer> {
   bool _isLoading = true;
   Map<String, dynamic>? _subscription;
-  int _daysLeft = 0;
-  String _planName = 'Free Trial';
-  bool _isTrial = true;
+
+  // Free Trial Details
+  bool _hasFreeTrial = true;
+  bool _isTrialActive = true;
+  int _trialDaysLeft = 0;
+  String _trialStartStr = '-';
+  String _trialEndStr = '-';
+
+  // Paid Plan Details
+  bool _hasPurchasedPlan = false;
+  String _purchasedPlanName = '';
+  int _paidDaysLeft = 0;
+  String _paidStartStr = '-';
+  String _paidEndStr = '-';
 
   // Razorpay Checkout variables
   late Razorpay _razorpay;
@@ -46,11 +57,6 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
     super.dispose();
   }
 
-  bool _isQueuedPlan = false;
-  String _queuedPlanName = '';
-  String _trialEndStr = '';
-  String _planEndStr = '';
-
   Future<void> _fetchSubscription() async {
     try {
       if (!mounted) return;
@@ -69,48 +75,107 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
           .eq('gym_id', gymId)
           .maybeSingle();
 
-      if (subRes != null && mounted) {
-        final planId = (subRes['plan_id'] ?? 'free_trial').toString();
-        final String status = (subRes['status'] ?? 'trial').toString().toLowerCase();
+      final gymInfo = authVm.gymInfo;
 
-        DateTime? trialEnd = subRes['trial_end'] != null ? DateTime.tryParse(subRes['trial_end'].toString()) : null;
-        DateTime? planEnd = subRes['end_date'] != null ? DateTime.tryParse(subRes['end_date'].toString()) : null;
+      // Free Trial dates calculation
+      DateTime? trialStart;
+      DateTime? trialEnd;
 
-        if (trialEnd == null && authVm.gymInfo?['trial_end_date'] != null) {
-          trialEnd = DateTime.tryParse(authVm.gymInfo!['trial_end_date'].toString());
+      if (subRes != null) {
+        if (subRes['trial_start'] != null) {
+          trialStart = DateTime.tryParse(subRes['trial_start'].toString());
+        }
+        if (subRes['trial_end'] != null) {
+          trialEnd = DateTime.tryParse(subRes['trial_end'].toString());
+        }
+      }
+
+      if (trialStart == null && gymInfo?['created_at'] != null) {
+        trialStart = DateTime.tryParse(gymInfo!['created_at'].toString());
+      }
+      if (trialStart == null && subRes?['created_at'] != null) {
+        trialStart = DateTime.tryParse(subRes!['created_at'].toString());
+      }
+
+      if (trialEnd == null && gymInfo?['trial_end_date'] != null) {
+        trialEnd = DateTime.tryParse(gymInfo!['trial_end_date'].toString());
+      }
+
+      if (trialEnd == null && trialStart != null) {
+        trialEnd = trialStart.add(const Duration(days: 90));
+      }
+
+      int trialDaysLeft = 0;
+      bool isTrialActive = false;
+      if (trialEnd != null) {
+        trialDaysLeft = trialEnd.difference(DateTime.now()).inDays;
+        if (trialDaysLeft < 0) trialDaysLeft = 0;
+        isTrialActive = trialEnd.isAfter(DateTime.now());
+      }
+
+      // Paid Plan calculation
+      final planId = subRes != null ? (subRes['plan_id'] ?? 'free_trial').toString() : 'free_trial';
+      final bool hasPurchasedPlan = planId.toLowerCase() != 'free_trial';
+
+      String formattedPlanName = '';
+      if (planId.toLowerCase() == 'starter') formattedPlanName = 'Starter Plan';
+      else if (planId.toLowerCase() == 'pro') formattedPlanName = 'Pro Plan';
+      else if (planId.toLowerCase() == 'business') formattedPlanName = 'Business Plan';
+      else if (hasPurchasedPlan) formattedPlanName = '${planId[0].toUpperCase()}${planId.substring(1)} Plan';
+
+      DateTime? paidStart;
+      DateTime? paidEnd;
+      int paidDaysLeft = 30;
+
+      if (hasPurchasedPlan && subRes != null) {
+        if (subRes['start_date'] != null) {
+          paidStart = DateTime.tryParse(subRes['start_date'].toString());
+        }
+        if (subRes['end_date'] != null) {
+          paidEnd = DateTime.tryParse(subRes['end_date'].toString());
+        } else if (subRes['next_billing_date'] != null) {
+          paidEnd = DateTime.tryParse(subRes['next_billing_date'].toString());
         }
 
-        final bool isTrialActive = trialEnd != null && trialEnd.isAfter(DateTime.now());
-        final bool hasPurchasedPlan = planId.toLowerCase() != 'free_trial';
-        final bool isQueued = isTrialActive && hasPurchasedPlan;
-
-        int daysLeft = 0;
-        if (isTrialActive) {
-          daysLeft = trialEnd!.difference(DateTime.now()).inDays;
-          if (daysLeft < 0) daysLeft = 0;
-        } else if (planEnd != null && planEnd.isAfter(DateTime.now())) {
-          daysLeft = planEnd.difference(DateTime.now()).inDays;
-          if (daysLeft < 0) daysLeft = 0;
+        if (isTrialActive && trialEnd != null) {
+          // Paid plan starts after free trial ends
+          paidStart = trialEnd;
+          paidEnd = trialEnd.add(const Duration(days: 30));
+          paidDaysLeft = 30;
+        } else {
+          paidStart ??= DateTime.now();
+          paidEnd ??= paidStart.add(const Duration(days: 30));
+          paidDaysLeft = paidEnd.difference(DateTime.now()).inDays;
+          if (paidDaysLeft < 0) paidDaysLeft = 0;
         }
+      }
 
-        String formattedPlanName = 'Free Trial';
-        if (planId.toLowerCase() == 'starter') formattedPlanName = 'Starter Plan';
-        if (planId.toLowerCase() == 'pro') formattedPlanName = 'Pro Plan';
-        if (planId.toLowerCase() == 'business') formattedPlanName = 'Business Plan';
+      String formatDate(DateTime? dt) {
+        if (dt == null) return '-';
+        final local = dt.toLocal();
+        final day = local.day.toString().padLeft(2, '0');
+        final month = local.month.toString().padLeft(2, '0');
+        final year = local.year.toString().padLeft(4, '0');
+        return '$day/$month/$year';
+      }
 
+      if (mounted) {
         setState(() {
           _subscription = subRes;
-          _daysLeft = daysLeft;
-          _planName = isQueued ? 'Free Trial Active' : (hasPurchasedPlan && !isTrialActive ? formattedPlanName : 'Free Trial');
-          _isTrial = isTrialActive || !hasPurchasedPlan;
-          _isQueuedPlan = isQueued;
-          _queuedPlanName = formattedPlanName;
-          _trialEndStr = trialEnd != null ? trialEnd.toLocal().toString().split(' ')[0] : '-';
-          _planEndStr = planEnd != null ? planEnd.toLocal().toString().split(' ')[0] : '-';
+          _hasFreeTrial = trialEnd != null || isTrialActive;
+          _isTrialActive = isTrialActive;
+          _trialDaysLeft = trialDaysLeft;
+          _trialStartStr = formatDate(trialStart);
+          _trialEndStr = formatDate(trialEnd);
+
+          _hasPurchasedPlan = hasPurchasedPlan;
+          _purchasedPlanName = formattedPlanName;
+          _paidDaysLeft = paidDaysLeft;
+          _paidStartStr = formatDate(paidStart);
+          _paidEndStr = formatDate(paidEnd);
+
           _isLoading = false;
         });
-      } else {
-        _setFallbackStats();
       }
     } catch (_) {
       _setFallbackStats();
@@ -121,20 +186,45 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
     if (!mounted) return;
     final authVm = Provider.of<AuthViewModel>(context, listen: false);
     final gymInfo = authVm.gymInfo;
-    int days = 90;
-    if (gymInfo != null && gymInfo['trial_end_date'] != null) {
-      final expiryDate = DateTime.tryParse(gymInfo['trial_end_date']);
-      if (expiryDate != null) {
-        days = expiryDate.difference(DateTime.now()).inDays;
-        if (days < 0) days = 0;
+    DateTime? trialStart;
+    DateTime? trialEnd;
+
+    if (gymInfo != null) {
+      if (gymInfo['created_at'] != null) {
+        trialStart = DateTime.tryParse(gymInfo['created_at']);
+      }
+      if (gymInfo['trial_end_date'] != null) {
+        trialEnd = DateTime.tryParse(gymInfo['trial_end_date']);
       }
     }
+    trialStart ??= DateTime.now();
+    trialEnd ??= trialStart.add(const Duration(days: 90));
+
+    int days = trialEnd.difference(DateTime.now()).inDays;
+    if (days < 0) days = 0;
+
+    String formatDate(DateTime? dt) {
+      if (dt == null) return '-';
+      final local = dt.toLocal();
+      final day = local.day.toString().padLeft(2, '0');
+      final month = local.month.toString().padLeft(2, '0');
+      final year = local.year.toString().padLeft(4, '0');
+      return '$day/$month/$year';
+    }
+
     setState(() {
       _subscription = null;
-      _daysLeft = days;
-      _planName = 'Free Trial';
-      _isTrial = true;
-      _isQueuedPlan = false;
+      _hasFreeTrial = true;
+      _isTrialActive = days > 0;
+      _trialDaysLeft = days;
+      _trialStartStr = formatDate(trialStart);
+      _trialEndStr = formatDate(trialEnd);
+
+      _hasPurchasedPlan = false;
+      _purchasedPlanName = '';
+      _paidDaysLeft = 0;
+      _paidStartStr = '-';
+      _paidEndStr = '-';
       _isLoading = false;
     });
   }
@@ -438,9 +528,20 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
         debugPrint('Error getting dynamic trial duration in drawer: $e');
       }
 
-      final DateTime endDate = durationUnit.toLowerCase() == 'months'
+      DateTime startDate = DateTime.now();
+      DateTime endDate = durationUnit.toLowerCase() == 'months'
           ? DateTime.now().add(Duration(days: durationVal * 30))
           : DateTime.now().add(Duration(days: durationVal));
+
+      if (planId != 'free_trial' && _isTrialActive && _trialEndStr != '-') {
+        final trialEnd = DateTime.tryParse(_subscription?['trial_end']?.toString() ?? '');
+        if (trialEnd != null && trialEnd.isAfter(DateTime.now())) {
+          startDate = trialEnd;
+          endDate = durationUnit.toLowerCase() == 'months'
+              ? trialEnd.add(Duration(days: durationVal * 30))
+              : trialEnd.add(Duration(days: durationVal));
+        }
+      }
 
       await client
           .from('subscriptions')
@@ -448,6 +549,7 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
             'plan_id': planId,
             'status': planId == 'free_trial' ? 'trial' : 'active',
             'auto_pay': true,
+            'start_date': startDate.toIso8601String(),
             'next_billing_date': endDate.toIso8601String(),
             'end_date': endDate.toIso8601String(),
           })
@@ -471,6 +573,218 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
       }
       setState(() => _isLoading = false);
     }
+  }
+
+  Widget _buildSubscriptionSection() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Box 1: Free Trial Card
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF5F3FF),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFDDD6FE)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.hourglass_top_rounded, color: Color(0xFF6C4EFF), size: 18),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Free Trial Active',
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: const Color(0xFF6C4EFF),
+                      ),
+                    ),
+                    const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEDE9FE),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        '$_trialDaysLeft Days Left',
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF5B21B6),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                const Divider(height: 1, color: Color(0xFFDDD6FE)),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Start Date',
+                            style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w500, color: const Color(0xFF64748B)),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            _trialStartStr,
+                            style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: const Color(0xFF1E293B)),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'End Date',
+                            style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w500, color: const Color(0xFF64748B)),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            _trialEndStr,
+                            style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: const Color(0xFF1E293B)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          // Box 2: Paid Plan Card (shown if money paid / plan purchased)
+          if (_hasPurchasedPlan) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFF10B981).withOpacity(0.4)),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF10B981).withOpacity(0.06),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.check_circle_rounded, color: Color(0xFF10B981), size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _purchasedPlanName.isNotEmpty ? _purchasedPlanName : 'Purchased Plan',
+                          style: GoogleFonts.inter(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: const Color(0xFF065F46),
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFD1FAE5),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          '$_paidDaysLeft Days',
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF047857),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  const Divider(height: 1, color: Color(0xFFA7F3D0)),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Start Date',
+                              style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w500, color: const Color(0xFF64748B)),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _paidStartStr,
+                              style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: const Color(0xFF1E293B)),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'End Date',
+                              style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w500, color: const Color(0xFF64748B)),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _paidEndStr,
+                              style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: const Color(0xFF1E293B)),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          const SizedBox(height: 14),
+
+          // Action Button (View Plans / Change Plan)
+          SizedBox(
+            width: double.infinity,
+            height: 44,
+            child: ElevatedButton(
+              onPressed: _isLoading ? null : _showChangePlanDialog,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF6C4EFF),
+                foregroundColor: Colors.white,
+                elevation: 0,
+                padding: EdgeInsets.zero,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              child: Text(
+                _hasPurchasedPlan ? 'Change Plan' : 'View Plans',
+                style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -520,108 +834,17 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
             ),
             const Divider(),
 
-            // Plan Status Info
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
-              child: Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: _isQueuedPlan ? const Color(0xFFF5F3FF) : (_isTrial ? const Color(0xFFFFF7ED) : const Color(0xFFF0FDF4)),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: _isQueuedPlan ? const Color(0xFFDDD6FE) : (_isTrial ? const Color(0xFFFFEDD5) : const Color(0xFFDCFCE7)),
-                  ),
-                ),
+            // Two Box Subscription Section
+            Expanded(
+              child: SingleChildScrollView(
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Icon(
-                          _isQueuedPlan ? Icons.hourglass_top_rounded : (_isTrial ? Icons.warning_amber_rounded : Icons.verified_user_rounded),
-                          color: _isQueuedPlan ? const Color(0xFF6C4EFF) : (_isTrial ? const Color(0xFFD97706) : AppTheme.success),
-                          size: 18,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          _planName,
-                          style: GoogleFonts.inter(
-                            fontSize: 14, 
-                            fontWeight: FontWeight.bold, 
-                            color: _isQueuedPlan ? const Color(0xFF6C4EFF) : (_isTrial ? const Color(0xFFC2410C) : const Color(0xFF15803D)),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      _isTrial 
-                          ? '$_daysLeft Days Left in Free Trial' 
-                          : 'Valid for another $_daysLeft Days',
-                      style: GoogleFonts.inter(
-                        fontSize: 12, 
-                        fontWeight: FontWeight.w600,
-                        color: _isQueuedPlan ? const Color(0xFF4C1D95) : (_isTrial ? const Color(0xFF9A3412) : const Color(0xFF166534)),
-                      ),
-                    ),
-                    if (_isQueuedPlan) ...[
-                      const SizedBox(height: 14),
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: const Color(0xFFC4B5FD)),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                const Icon(Icons.check_circle_rounded, color: Colors.green, size: 16),
-                                const SizedBox(width: 6),
-                                Expanded(
-                                  child: Text(
-                                    'Purchased: $_queuedPlanName',
-                                    style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: const Color(0xFF1E293B)),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Starts: $_trialEndStr\nExpires: $_planEndStr',
-                              style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF64748B), height: 1.3),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 16),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 44,
-                      child: ElevatedButton(
-                        onPressed: _isLoading ? null : _showChangePlanDialog,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _isQueuedPlan ? const Color(0xFF6C4EFF) : (_isTrial ? const Color(0xFFEA580C) : AppTheme.primary),
-                          foregroundColor: Colors.white,
-                          elevation: 0,
-                          padding: EdgeInsets.zero,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        ),
-                        child: Text(
-                          _isQueuedPlan ? 'View Plans' : 'Change Plan',
-                          style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                    ),
+                    _buildSubscriptionSection(),
                   ],
                 ),
               ),
             ),
 
-            const Spacer(),
             const Divider(),
 
             // Logout row

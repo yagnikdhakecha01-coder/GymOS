@@ -80,12 +80,21 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
               if (planId.toLowerCase() == 'pro') formattedPlanName = 'Pro Plan';
               if (planId.toLowerCase() == 'business') formattedPlanName = 'Business Plan';
 
+              String formatDate(DateTime? dt) {
+                if (dt == null) return '-';
+                final local = dt.toLocal();
+                final day = local.day.toString().padLeft(2, '0');
+                final month = local.month.toString().padLeft(2, '0');
+                final year = local.year.toString().padLeft(4, '0');
+                return '$day/$month/$year';
+              }
+
               setState(() {
                 _isQueuedPlan = isQueued;
                 _queuedPlanName = formattedPlanName;
                 _trialDaysLeft = daysLeft;
-                _trialEndStr = trialEnd != null ? trialEnd.toLocal().toString().split(' ')[0] : '-';
-                _planEndStr = planEnd != null ? planEnd.toLocal().toString().split(' ')[0] : '-';
+                _trialEndStr = formatDate(trialEnd);
+                _planEndStr = formatDate(planEnd);
               });
             }
           } catch (e) {
