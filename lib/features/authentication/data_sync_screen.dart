@@ -260,7 +260,7 @@ class _DataSyncScreenState extends State<DataSyncScreen> with SingleTickerProvid
                   textAlign: TextAlign.center,
                   style: GoogleFonts.inter(
                     fontSize: 13,
-                    color: Colors.slate[400],
+                    color: const Color(0xFF94A3B8),
                   ),
                 ),
                 const SizedBox(height: 48),
@@ -271,7 +271,7 @@ class _DataSyncScreenState extends State<DataSyncScreen> with SingleTickerProvid
                   child: Container(
                     height: 8,
                     width: double.infinity,
-                    color: Colors.slate[800],
+                    color: const Color(0xFF1E293B),
                     child: Align(
                       alignment: Alignment.centerLeft,
                       child: FractionallySizedBox(
@@ -296,7 +296,7 @@ class _DataSyncScreenState extends State<DataSyncScreen> with SingleTickerProvid
                   style: GoogleFonts.inter(
                     fontSize: 13,
                     fontWeight: FontWeight.w500,
-                    color: _hasError ? Colors.amber[400] : Colors.slate[300],
+                    color: _hasError ? Colors.amber[400] : const Color(0xFFCBD5E1),
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -333,7 +333,7 @@ class _DataSyncScreenState extends State<DataSyncScreen> with SingleTickerProvid
                         child: OutlinedButton(
                           onPressed: _completeSync,
                           style: OutlinedButton.styleFrom(
-                            side: const BorderSide(color: Colors.slate),
+                            side: const BorderSide(color: Color(0xFF64748B)),
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),

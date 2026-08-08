@@ -9,6 +9,7 @@ import '../members/members_viewmodel.dart';
 import '../staff/staff_viewmodel.dart';
 import '../finance/finance_viewmodel.dart';
 import '../attendance/attendance_viewmodel.dart';
+import '../../core/repository/gym_repository.dart';
 
 class ReportsScreen extends StatelessWidget {
   const ReportsScreen({super.key});

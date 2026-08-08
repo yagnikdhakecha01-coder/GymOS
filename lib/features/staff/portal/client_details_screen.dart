@@ -249,7 +249,7 @@ class ClientDetailsScreen extends StatelessWidget {
       itemCount: logs.length,
       itemBuilder: (context, index) {
         final log = logs[index];
-        final timeStr = log.checkIn.isNotEmpty ? log.checkIn : '—';
+        final timeStr = log.checkInTime.isNotEmpty ? log.checkInTime : '—';
         final statusColor = log.status == 'Present' ? Colors.green : Colors.red;
 
         return CustomCard(
@@ -384,7 +384,7 @@ class ClientDetailsScreen extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                workout != null ? workout.name : 'No Workout Assigned',
+                workout != null ? workout.title : 'No Workout Assigned',
                 style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
               ),
               if (workout != null && workout.description.isNotEmpty) ...[
@@ -409,13 +409,13 @@ class ClientDetailsScreen extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                diet != null ? diet.name : 'No Diet Plan Assigned',
+                diet != null ? diet.title : 'No Diet Plan Assigned',
                 style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
               ),
-              if (diet != null && diet.description.isNotEmpty) ...[
+              if (diet != null && diet.notes.isNotEmpty) ...[
                 const SizedBox(height: 6),
                 Text(
-                  diet.description,
+                  diet.notes,
                   style: GoogleFonts.inter(fontSize: 11.5, color: AppTheme.textSecondary),
                 ),
               ],

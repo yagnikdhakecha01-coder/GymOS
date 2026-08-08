@@ -7,6 +7,7 @@ import '../../core/widgets/custom_button.dart';
 import '../../core/widgets/sparkline_chart.dart';
 import 'finance_viewmodel.dart';
 import '../../core/models/finance.dart';
+import '../../core/repository/gym_repository.dart';
 import 'package:intl/intl.dart';
 import '../../core/theme/responsive.dart';
 
