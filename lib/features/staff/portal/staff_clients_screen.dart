@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'dart:convert';
 import '../../../core/theme/theme.dart';
 import '../../../core/widgets/custom_card.dart';
 import '../../authentication/auth_viewmodel.dart';
@@ -30,50 +31,117 @@ class _StaffClientsScreenState extends State<StaffClientsScreen> {
   Future<void> _loadClients() async {
     if (!mounted) return;
     setState(() => _isLoading = true);
-    try {
-      final authVm = Provider.of<AuthViewModel>(context, listen: false);
-      final repo = Provider.of<GymRepository>(context, listen: false);
-      final profileUserId = authVm.currentProfile?.id ?? authVm.currentUser?.id;
+    
+    final repo = Provider.of<GymRepository>(context, listen: false);
+    final authVm = Provider.of<AuthViewModel>(context, listen: false);
+    final profileUserId = authVm.currentProfile?.id ?? authVm.currentUser?.id;
+    
+    if (profileUserId == null) {
+      if (mounted) setState(() => _isLoading = false);
+      return;
+    }
 
-      if (profileUserId != null) {
-        final matchingStaff = repo.getStaff().where((s) => s.userId == profileUserId).toList();
-        final staff = matchingStaff.isNotEmpty ? matchingStaff.first : null;
+    final matchingStaff = repo.getStaff().where((s) => s.userId == profileUserId).toList();
+    final staff = matchingStaff.isNotEmpty ? matchingStaff.first : null;
 
-        if (staff != null) {
-          final response = await SupabaseService.client
-              .from('pt_assignments')
-              .select('*, members(*)')
-              .eq('staff_id', staff.id);
+    if (staff == null) {
+      if (mounted) setState(() => _isLoading = false);
+      return;
+    }
 
-          final List rawList = response as List;
-          final List<Map<String, dynamic>> clients = [];
-          for (var item in rawList) {
-            final memberJson = item['members'];
-            if (memberJson != null) {
-              final member = Member.fromJson(memberJson);
-              clients.add({
-                'member': member,
-                'program': 'PT - ' + ((item['commission_percentage'] as num?)?.toString() ?? '0') + '% Comm.',
-                'status': item['assignment_status'] ?? 'Active',
-                'name': member.name,
-                'image': member.avatar.isNotEmpty ? member.avatar : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=150',
-                'phone': member.phone,
-              });
-            }
-          }
-          if (mounted) {
-            setState(() {
-              _ptClients = clients;
-            });
-          }
+    final cacheKey = 'gymos_pt_clients_${staff.id}';
+
+    // 1. Load cached data first for instant UI response
+    final cachedData = repo.storage.getString(cacheKey);
+    if (cachedData != null) {
+      try {
+        final List decoded = jsonDecode(cachedData);
+        final List<Map<String, dynamic>> clients = [];
+        for (var item in decoded) {
+          final member = Member.fromJson(item['member']);
+          clients.add({
+            'member': member,
+            'program': item['program'] as String,
+            'status': item['status'] as String,
+            'name': member.name,
+            'image': member.avatar.isNotEmpty ? member.avatar : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=150',
+            'phone': member.phone,
+          });
         }
+        if (mounted) {
+          setState(() {
+            _ptClients = clients;
+          });
+        }
+      } catch (e) {
+        print('Error reading cached clients: $e');
       }
-    } catch (e) {
-      print('Error loading PT clients: $e');
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
+    }
+
+    // 2. Fetch live data if online
+    if (SupabaseService.isInitialized) {
+      try {
+        final response = await SupabaseService.client
+            .rpc('get_trainer_clients', params: {'p_staff_id': staff.id});
+
+        final List rawList = response as List;
+        final List<Map<String, dynamic>> clients = [];
+        final List<Map<String, dynamic>> cacheList = [];
+
+        for (var item in rawList) {
+          final memberJson = {
+            'id': item['member_id'],
+            'name': item['member_name'],
+            'email': item['member_email'],
+            'phone': item['member_phone'],
+            'avatar': item['member_avatar'] ?? '',
+            'status': item['member_status'],
+            'membership_plan_id': item['membership_plan_id'],
+            'pt_member': true,
+            'pt_trainer': staff.id,
+            'assigned_workout_id': '',
+            'assigned_diet_id': '',
+            'medical_details': item['medical_details'] ?? 'None',
+            'notes': item['notes'] ?? '',
+            'total_received_amount': ((item['total_received_amount'] ?? 0.0) as num).toDouble(),
+            'pending_amount': ((item['pending_amount'] ?? 0.0) as num).toDouble(),
+            'discount_amount': ((item['discount_amount'] ?? 0.0) as num).toDouble(),
+            'payment_status': item['payment_status'] ?? 'Pending',
+            'extra_fields': item['extra_fields'] ?? {},
+          };
+
+          final member = Member.fromJson(memberJson);
+          clients.add({
+            'member': member,
+            'program': item['program'] ?? 'PT Client',
+            'status': item['assignment_status'] ?? 'Active',
+            'name': member.name,
+            'image': member.avatar.isNotEmpty ? member.avatar : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=150',
+            'phone': member.phone,
+          });
+
+          cacheList.add({
+            'member': member.toJson(),
+            'program': item['program'] ?? 'PT Client',
+            'status': item['assignment_status'] ?? 'Active',
+          });
+        }
+
+        // Cache the fetched data
+        await repo.storage.setString(cacheKey, jsonEncode(cacheList));
+
+        if (mounted) {
+          setState(() {
+            _ptClients = clients;
+          });
+        }
+      } catch (e) {
+        print('Error loading PT clients from database: $e');
       }
+    }
+
+    if (mounted) {
+      setState(() => _isLoading = false);
     }
   }
 
