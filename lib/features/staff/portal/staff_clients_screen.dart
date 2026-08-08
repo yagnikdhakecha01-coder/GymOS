@@ -7,6 +7,7 @@ import '../../authentication/auth_viewmodel.dart';
 import '../../../core/repository/gym_repository.dart';
 import '../../../core/services/supabase_service.dart';
 import 'client_details_screen.dart';
+import '../../../core/models/member.dart';
 
 class StaffClientsScreen extends StatefulWidget {
   const StaffClientsScreen({super.key});
@@ -47,16 +48,16 @@ class _StaffClientsScreenState extends State<StaffClientsScreen> {
           final List rawList = response as List;
           final List<Map<String, dynamic>> clients = [];
           for (var item in rawList) {
-            final member = item['members'];
-            if (member != null) {
+            final memberJson = item['members'];
+            if (memberJson != null) {
+              final member = Member.fromJson(memberJson);
               clients.add({
-                'name': member['name'] ?? 'Client',
+                'member': member,
                 'program': 'PT - ' + ((item['commission_percentage'] as num?)?.toString() ?? '0') + '% Comm.',
                 'status': item['assignment_status'] ?? 'Active',
-                'image': (member['avatar'] != null && member['avatar'].toString().isNotEmpty)
-                    ? member['avatar']
-                    : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=150',
-                'phone': member['phone'] ?? '',
+                'name': member.name,
+                'image': member.avatar.isNotEmpty ? member.avatar : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=150',
+                'phone': member.phone,
               });
             }
           }
@@ -192,10 +193,9 @@ class _StaffClientsScreenState extends State<StaffClientsScreen> {
                                 context,
                                 MaterialPageRoute(
                                   builder: (_) => ClientDetailsScreen(
-                                    name: client['name']!,
-                                    program: client['program']!,
-                                    status: client['status']!,
-                                    imageUrl: client['image']!,
+                                    member: client['member'] as Member,
+                                    program: client['program'] as String,
+                                    status: client['status'] as String,
                                   ),
                                 ),
                               );
