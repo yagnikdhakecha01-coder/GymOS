@@ -48,6 +48,7 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
   String _failureMessage = '';
 
   GymRepository? _gymRepo;
+  bool _isCheckingStatus = false;
 
   @override
   void initState() {
@@ -148,6 +149,7 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
   }
 
   Future<void> _checkCurrentStatus() async {
+    if (_isCheckingStatus) return;
     if (_currentState == AttendanceState.scanningCheckIn ||
         _currentState == AttendanceState.scanningCheckOut ||
         _currentState == AttendanceState.checkInSuccess ||
@@ -155,13 +157,14 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
         _currentState == AttendanceState.scanFailure) {
       return;
     }
+    _isCheckingStatus = true;
     try {
       final authVm = Provider.of<AuthViewModel>(context, listen: false);
       final repo = Provider.of<GymRepository>(context, listen: false);
       final profileUserId = authVm.currentProfile?.id ?? authVm.currentUser?.id;
       final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
       if (profileUserId != null && gymId != null) {
-        await repo.fetchTodayAttendanceDetails(profileUserId, gymId);
+        await repo.fetchTodayAttendanceDetails(profileUserId, gymId).timeout(const Duration(seconds: 3));
         final details = repo.todayAttendanceDetails;
         print('[StaffAttendance] RPC returned details: $details');
         print('[StaffAttendance] assigned_shift = ${details?['assigned_shift']}');
@@ -195,6 +198,8 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
       }
     } catch (e) {
       print('[StaffAttendance] _checkCurrentStatus error: $e');
+    } finally {
+      _isCheckingStatus = false;
     }
   }
 
