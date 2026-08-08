@@ -182,6 +182,18 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
         final hours = totalMins ~/ 60;
         final mins = totalMins % 60;
 
+        // Parse joining date for staff to prevent marking historical days as absent
+        DateTime? joinDateTime;
+        if (staff.joinDate.isNotEmpty) {
+          try {
+            joinDateTime = DateFormat('dd MMM yyyy').parse(staff.joinDate);
+          } catch (_) {
+            try {
+              joinDateTime = DateTime.parse(staff.joinDate);
+            } catch (_) {}
+          }
+        }
+
         // Get dots for the current week (Sunday to Saturday)
         final List<Map<String, dynamic>> dots = [];
         final weekdays = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
@@ -194,6 +206,15 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
           final matchingLogs = staffAttendance.where((r) => r.date == formattedTarget).toList();
           final log = matchingLogs.isNotEmpty ? matchingLogs.first : null;
           
+          bool isBeforeJoinDate = false;
+          if (joinDateTime != null) {
+            final targetDateOnly = DateTime(targetDate.year, targetDate.month, targetDate.day);
+            final joinDateOnly = DateTime(joinDateTime.year, joinDateTime.month, joinDateTime.day);
+            if (targetDateOnly.isBefore(joinDateOnly)) {
+              isBeforeJoinDate = true;
+            }
+          }
+
           String dotStatus = 'absent';
           if (log != null) {
             if (log.status == 'Present' || log.status == 'Late' || log.status == 'Early Exit' || log.status == 'Overtime') {
@@ -208,7 +229,9 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
               dotStatus = 'holiday'; // Other leave types
             }
           } else {
-            if (targetDate.weekday == DateTime.sunday) {
+            if (isBeforeJoinDate) {
+              dotStatus = 'holiday'; // Render as grey dot (not joined yet)
+            } else if (targetDate.weekday == DateTime.sunday) {
               dotStatus = 'holiday';
             } else {
               final todayDateOnly = DateTime(now.year, now.month, now.day);
