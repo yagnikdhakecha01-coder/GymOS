@@ -59,9 +59,21 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
                       onPressed: () => _scaffoldKey.currentState?.openDrawer(),
                     ),
                     const SizedBox(width: 8),
-                    CircleAvatar(
-                      radius: 20,
-                      backgroundImage: NetworkImage(staff?.avatar ?? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200'),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(20),
+                      child: Image.network(
+                        staff?.avatar ?? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200',
+                        width: 40,
+                        height: 40,
+                        fit: BoxFit.cover,
+                        gaplessPlayback: true,
+                        errorBuilder: (_, __, ___) => Container(
+                          width: 40,
+                          height: 40,
+                          color: AppTheme.primaryLight,
+                          child: const Icon(Icons.person, color: AppTheme.primary, size: 20),
+                        ),
+                      ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(

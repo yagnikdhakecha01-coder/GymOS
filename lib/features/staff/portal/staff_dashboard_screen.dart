@@ -350,9 +350,21 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
                                 ],
                               ),
                               const SizedBox(width: 8),
-                              CircleAvatar(
-                                radius: 16,
-                                backgroundImage: NetworkImage(avatarUrl),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(16),
+                                child: Image.network(
+                                  avatarUrl,
+                                  width: 32,
+                                  height: 32,
+                                  fit: BoxFit.cover,
+                                  gaplessPlayback: true,
+                                  errorBuilder: (_, __, ___) => Container(
+                                    width: 32,
+                                    height: 32,
+                                    color: AppTheme.primaryLight,
+                                    child: const Icon(Icons.person, color: AppTheme.primary, size: 16),
+                                  ),
+                                ),
                               ),
                             ],
                           ),

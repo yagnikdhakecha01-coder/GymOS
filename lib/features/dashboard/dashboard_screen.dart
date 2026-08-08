@@ -440,6 +440,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               width: 36,
                               height: 36,
                               fit: BoxFit.cover,
+                              gaplessPlayback: true,
                               errorBuilder: (_, __, ___) => _buildDefaultGymLogo(),
                             ),
                           );
@@ -451,6 +452,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               width: 36,
                               height: 36,
                               fit: BoxFit.cover,
+                              gaplessPlayback: true,
                               errorBuilder: (_, __, ___) => _buildDefaultGymLogo(),
                             ),
                           );
