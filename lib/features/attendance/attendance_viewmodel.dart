@@ -164,6 +164,32 @@ class AttendanceViewModel extends ChangeNotifier {
     }
   }
 
+  Future<void> setLateTimeSetting(String time) async {
+    await updateLateTime(time);
+  }
+
+  Future<void> toggleWiFiVerification(bool enabled) async {
+    if (settings == null) return;
+    String newMethod;
+    if (enabled) {
+      newMethod = isDynamicQrEnabled ? 'Dynamic QR + WiFi' : 'WiFi Only';
+    } else {
+      newMethod = isDynamicQrEnabled ? 'Dynamic QR' : 'QR Only';
+    }
+    await updateAttendanceMethod(newMethod);
+  }
+
+  Future<void> toggleDynamicQr(bool enabled) async {
+    if (settings == null) return;
+    String newMethod;
+    if (enabled) {
+      newMethod = isWiFiVerificationEnabled ? 'Dynamic QR + WiFi' : 'Dynamic QR';
+    } else {
+      newMethod = isWiFiVerificationEnabled ? 'WiFi Only' : 'Static QR';
+    }
+    await updateAttendanceMethod(newMethod);
+  }
+
   Future<void> toggleStaticQrLock(bool locked) async {
     if (settings != null) {
       final updated = GymAttendanceSettings(

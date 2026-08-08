@@ -502,7 +502,7 @@ Thank you.''';
                           pendingAmount: finalAmount - receiveToday,
                           paymentStatus: (finalAmount - receiveToday) <= 0 ? 'Paid' : 'Partial',
                         );
-                        await membersVm.updateMember(updated, paymentMethod: selectedMethod);
+                        await membersVm.updateMember(updated, paymentMethod: selectedMethod, transactionAmount: receiveToday, isRenewal: true);
                         
                         if (mounted) {
                           Navigator.pop(context); // Pop loading spinner
@@ -1353,13 +1353,20 @@ Thank you.''';
               : Column(
                   children: List.generate(transactions.length, (idx) {
                     final tx = transactions[idx];
+                    final isRevenue = tx.type == 'Revenue';
                     return Column(
                       children: [
                         ListTile(
-                          leading: const Icon(Icons.arrow_circle_down_rounded, color: Colors.green),
-                          title: Text('Payment Received', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 13)),
+                          leading: Icon(
+                            isRevenue ? Icons.arrow_circle_down_rounded : Icons.arrow_circle_up_rounded,
+                            color: isRevenue ? Colors.green : Colors.redAccent,
+                          ),
+                          title: Text(tx.title, style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 13)),
                           subtitle: Text('${tx.date} • ${tx.paymentMethod}', style: GoogleFonts.inter(fontSize: 11)),
-                          trailing: Text('₹ ${tx.amount.toStringAsFixed(0)}', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.green)),
+                          trailing: Text(
+                            '${isRevenue ? '+' : '-'} ₹${tx.amount.toStringAsFixed(0)}',
+                            style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 14, color: isRevenue ? Colors.green : Colors.redAccent),
+                          ),
                         ),
                         if (idx < transactions.length - 1) const Divider(height: 1),
                       ],

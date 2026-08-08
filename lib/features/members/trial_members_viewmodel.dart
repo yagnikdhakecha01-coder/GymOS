@@ -95,9 +95,31 @@ class TrialMembersViewModel extends ChangeNotifier {
 
   // Update Trial Member (Edits)
   Future<void> updateTrialMember(TrialMember trial, {String paymentMethod = 'Cash'}) async {
-    // If edit changes received amount, we can create or update transaction.
-    // For simplicity, we just save the trial record.
+    final oldTrials = _repository.getTrialMembers();
+    final oldMatch = oldTrials.where((t) => t.id == trial.id).toList();
+    final double oldReceived = oldMatch.isNotEmpty ? oldMatch.first.receivedAmount : 0.0;
+
     await _repository.saveTrialMember(trial);
+
+    final double newReceived = trial.receivedAmount;
+    final double diff = newReceived - oldReceived;
+
+    if (diff > 0 && trial.trialType == 'Paid') {
+      final txId = 'tx_trial_edit_${DateTime.now().millisecondsSinceEpoch}';
+      final tx = FinanceTransaction(
+        id: txId,
+        title: '${trial.name} - Trial Fee Payment',
+        amount: diff,
+        type: 'Revenue',
+        category: 'Trial Membership',
+        paymentMethod: paymentMethod,
+        date: DateFormat('dd MMM yyyy').format(DateTime.now()),
+        transactionDate: DateTime.now().toIso8601String(),
+        notes: 'Trial Registration Fee Payment Update (Edited)',
+        referenceId: trial.id,
+      );
+      await _repository.saveTransaction(tx);
+    }
     notifyListeners();
   }
 

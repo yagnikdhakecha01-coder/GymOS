@@ -32,9 +32,10 @@ class _FinanceScreenState extends State<FinanceScreen> {
   @override
   Widget build(BuildContext context) {
     final financeVm = Provider.of<FinanceViewModel>(context);
+    final gymRepo = Provider.of<GymRepository>(context);
+    final analytics = gymRepo.reportsAnalytics;
     final transactions = financeVm.transactions;
     
-    // Calculated mockup values to fit design constraints
     final totalRevenue = financeVm.totalRevenue;
     final totalExpense = financeVm.totalExpense;
     final profit = totalRevenue - totalExpense;
@@ -201,7 +202,11 @@ class _FinanceScreenState extends State<FinanceScreen> {
                       title: 'Income',
                       value: '₹ ${NumberFormat('#,##,###').format(totalRevenue)}',
                       subtitle: 'This Month',
-                      trend: '↑ ${totalRevenue > 0 ? 14 : 0}%',
+                      trend: analytics['collected_revenue_change'] != null 
+                          ? (analytics['collected_revenue_change']!.toString().startsWith('-') 
+                              ? '↓ ${analytics['collected_revenue_change']!.toString().replaceAll('-', '')}' 
+                              : '↑ ${analytics['collected_revenue_change']!.toString().replaceAll('+', '')}')
+                          : '↑ 14%',
                       trendColor: AppTheme.success,
                     ),
                     _buildGridStat(
@@ -210,7 +215,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
                       title: 'Expense',
                       value: '₹ ${NumberFormat('#,##,###').format(totalExpense)}',
                       subtitle: 'This Month',
-                      trend: '↑ ${totalExpense > 0 ? 8 : 0}%',
+                      trend: totalExpense > 0 ? '↑ 8%' : '0%',
                       trendColor: AppTheme.danger,
                     ),
                     _buildGridStat(
@@ -219,7 +224,11 @@ class _FinanceScreenState extends State<FinanceScreen> {
                       title: 'Profit',
                       value: '₹ ${NumberFormat('#,##,###').format(profit)}',
                       subtitle: 'This Month',
-                      trend: '↑ ${profit > 0 ? 16 : 0}%',
+                      trend: analytics['total_invoiced_change'] != null 
+                          ? (analytics['total_invoiced_change']!.toString().startsWith('-') 
+                              ? '↓ ${analytics['total_invoiced_change']!.toString().replaceAll('-', '')}' 
+                              : '↑ ${analytics['total_invoiced_change']!.toString().replaceAll('+', '')}')
+                          : '↑ 16%',
                       trendColor: AppTheme.success,
                     ),
                     _buildGridStat(
@@ -228,7 +237,11 @@ class _FinanceScreenState extends State<FinanceScreen> {
                       title: 'Outstanding',
                       value: '₹ ${NumberFormat('#,##,###').format(pendingPayments)}',
                       subtitle: 'Total Pending',
-                      trend: 'View >',
+                      trend: analytics['pending_dues_change'] != null 
+                          ? (analytics['pending_dues_change']!.toString().startsWith('-') 
+                              ? '↓ ${analytics['pending_dues_change']!.toString().replaceAll('-', '')}' 
+                              : '↑ ${analytics['pending_dues_change']!.toString().replaceAll('+', '')}')
+                          : 'View >',
                       trendColor: AppTheme.warning,
                       onTap: () {},
                     ),

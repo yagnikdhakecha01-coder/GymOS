@@ -6,6 +6,7 @@ import '../theme/responsive.dart';
 import '../providers/navigation_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/auth_provider.dart';
+import '../services/supabase_service.dart';
 
 /// Menu item definition
 class SidebarMenuItem {
@@ -255,14 +256,22 @@ class _AdminSidebar extends StatelessWidget {
                       ),
                       const SizedBox(width: 12),
                       Expanded(
-                        child: Text(
-                          item.label,
-                          style: GoogleFonts.inter(
-                            fontSize: 13,
-                            fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                            color: isSelected ? AdminTheme.primary : AdminTheme.secondaryTextColor(context),
-                          ),
-                          overflow: TextOverflow.ellipsis,
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                item.label,
+                                style: GoogleFonts.inter(
+                                  fontSize: 13,
+                                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                                  color: isSelected ? AdminTheme.primary : AdminTheme.secondaryTextColor(context),
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (item.label == 'Support')
+                              _buildSupportBadge(context),
+                          ],
                         ),
                       ),
                     ],
@@ -270,16 +279,61 @@ class _AdminSidebar extends StatelessWidget {
                 : Tooltip(
                     message: item.label,
                     child: Center(
-                      child: Icon(
-                        isSelected ? item.activeIcon : item.icon,
-                        size: 22,
-                        color: isSelected ? AdminTheme.primary : AdminTheme.secondaryTextColor(context),
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Icon(
+                            isSelected ? item.activeIcon : item.icon,
+                            size: 22,
+                            color: isSelected ? AdminTheme.primary : AdminTheme.secondaryTextColor(context),
+                          ),
+                          if (item.label == 'Support')
+                            Positioned(
+                              top: -4,
+                              right: -4,
+                              child: _buildSupportBadge(context, isMini: true),
+                            ),
+                        ],
                       ),
                     ),
                   ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildSupportBadge(BuildContext context, {bool isMini = false}) {
+    if (!AdminSupabaseService.isInitialized) return const SizedBox.shrink();
+    return FutureBuilder<int>(
+      future: AdminSupabaseService.client
+          .from('support_tickets')
+          .select('id')
+          .eq('status', 'Open')
+          .then((value) => value.length),
+      builder: (context, snapshot) {
+        if (snapshot.hasData && snapshot.data! > 0) {
+          return Container(
+            padding: EdgeInsets.symmetric(
+              horizontal: isMini ? 4 : 6,
+              vertical: isMini ? 1 : 2,
+            ),
+            decoration: BoxDecoration(
+              color: AdminTheme.danger,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              '${snapshot.data}',
+              style: GoogleFonts.inter(
+                fontSize: isMini ? 8 : 10,
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          );
+        }
+        return const SizedBox.shrink();
+      },
     );
   }
 

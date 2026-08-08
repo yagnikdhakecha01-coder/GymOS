@@ -16,6 +16,7 @@ import 'auth_viewmodel.dart';
 import 'first_time_setup_screen.dart';
 import 'gym_role_selector_screen.dart';
 import '../member_app/screens/member_code_screen.dart';
+import 'data_sync_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -87,10 +88,12 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
         if (mounted) {
           final profile = authVm.currentProfile!;
           Widget targetScreen;
+          bool shouldSync = false;
           switch (profile.role) {
             case UserRole.owner:
               if (profile.setupCompleted) {
                 targetScreen = const MainNavigationHolder();
+                shouldSync = true;
               } else {
                 targetScreen = const FirstTimeSetupScreen();
               }
@@ -102,12 +105,17 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
               } else {
                 targetScreen = const StaffShell();
               }
+              shouldSync = true;
               break;
             case UserRole.member:
               targetScreen = const MemberShell();
+              shouldSync = true;
               break;
           }
-          Navigator.pushReplacement(context, AppRouter.scaleRoute(targetScreen));
+          Navigator.pushReplacement(
+            context,
+            AppRouter.scaleRoute(shouldSync ? DataSyncScreen(targetScreen: targetScreen) : targetScreen),
+          );
         }
       }
     } catch (e) {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme/theme.dart';
 import '../../core/widgets/custom_card.dart';
+import '../dashboard/support_tickets_screen.dart';
 
 class HelpSupportScreen extends StatelessWidget {
   const HelpSupportScreen({super.key});
@@ -67,6 +68,50 @@ class HelpSupportScreen extends StatelessWidget {
                       const SizedBox(width: 12),
                       Text('+91 99887 76655', style: GoogleFonts.inter(fontSize: 13.5, color: AppTheme.textPrimary)),
                     ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            CustomCard(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  const Icon(Icons.support_agent_rounded, color: AppTheme.primary, size: 28),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Raise a Support Ticket',
+                          style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Submit queries & chat with our team',
+                          style: GoogleFonts.inter(fontSize: 11.5, color: AppTheme.textSecondary),
+                        ),
+                      ],
+                    ),
+                  ),
+                  ElevatedButton(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const SupportTicketsScreen()),
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      elevation: 0,
+                    ),
+                    child: Text('Open', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold)),
                   ),
                 ],
               ),

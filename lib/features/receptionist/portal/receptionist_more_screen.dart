@@ -10,6 +10,7 @@ import '../../members/trial_members_screen.dart';
 import '../../more/holidays_screen.dart';
 import '../../dashboard/gym_switcher_bottom_sheet.dart';
 import '../../staff/portal/staff_requests_screen.dart';
+import '../../dashboard/support_tickets_screen.dart';
 
 class ReceptionistMoreScreen extends StatelessWidget {
   const ReceptionistMoreScreen({super.key});
@@ -147,7 +148,12 @@ class ReceptionistMoreScreen extends StatelessWidget {
                   _buildMenuRow(
                     icon: Icons.help_outline_rounded,
                     title: 'Help & Support',
-                    onTap: () {},
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const SupportTicketsScreen()),
+                      );
+                    },
                   ),
                   _divider(),
                   _buildMenuRow(

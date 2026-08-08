@@ -42,7 +42,7 @@ class AuthService {
       );
       return response.user;
     }
-    return getMockUser(email);
+    throw Exception('Database offline. Cannot register account.');
   }
 
   /// Sign in with email + password
@@ -54,7 +54,7 @@ class AuthService {
       );
       return response.user;
     }
-    return getMockUser(email);
+    throw Exception('Database offline. Cannot login.');
   }
 
   /// Sign out
@@ -83,7 +83,7 @@ class AuthService {
         return _client!.auth.currentUser;
       } catch (_) {}
     }
-    return getMockUser('jigar.owner@gymos.com');
+    return null;
   }
 
   /// Verifies if a gym exists with the given gym code.
@@ -102,7 +102,7 @@ class AuthService {
         print('Verify gym code error: $e');
       }
     }
-    return 'mock_gym_123';
+    return null;
   }
 
   /// Fetches the profile of the current authenticated user directly from the database.

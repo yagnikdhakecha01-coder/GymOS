@@ -123,19 +123,7 @@ class _PaySalaryScreenState extends State<PaySalaryScreen> {
         } catch (_) {}
       }
 
-      final SalaryDraft validDraft = isPaidSalaryMonth ? (draft ?? SalaryDraft(
-        id: 'draft_${widget.staff.id}_${widget.selectedMonth.replaceAll(' ', '_')}',
-        gymId: gymId,
-        staffId: widget.staff.id,
-        salaryMonth: widget.selectedMonth,
-        baseSalary: widget.staff.salary,
-        commissionAmount: 0.0,
-        advanceDeduction: 0.0,
-        otherAdditions: 0.0,
-        otherDeductions: 0.0,
-        netSalary: widget.staff.salary,
-        status: 'Paid',
-      )).copyWith(status: 'Paid') : draft!;
+      final SalaryDraft validDraft = isPaidSalaryMonth ? draft.copyWith(status: 'Paid') : draft;
 
       final results = await Future.wait([
         staffVm.fetchSalaryAdjustments(validDraft.id).catchError((_) => <SalaryAdjustment>[]),

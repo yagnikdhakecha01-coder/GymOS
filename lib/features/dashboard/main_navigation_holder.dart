@@ -13,6 +13,7 @@ import '../finance/finance_screen.dart';
 import '../more/more_screen.dart';
 import '../subscription/owner_subscription_screen.dart';
 import 'support_chat_screen.dart';
+import 'support_tickets_screen.dart';
 
 class MainNavigationHolder extends StatefulWidget {
   const MainNavigationHolder({Key? key}) : super(key: key);
@@ -665,300 +666,52 @@ class _MainNavigationHolderState extends State<MainNavigationHolder> {
           )
         ],
       ),
+      padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Tab Headers
-          Row(
-            children: [
-              _buildTabButton('Raise Support Ticket', 0),
-              _buildTabButton('Ticket History (${_tickets.length})', 1),
-            ],
+          const Icon(Icons.support_agent_rounded, color: AppTheme.primary, size: 48),
+          const SizedBox(height: 16),
+          Text(
+            'Support Ticket Center',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.inter(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: const Color(0xFF1E293B),
+            ),
           ),
-          const Divider(height: 1),
-          Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 200),
-              child: _activeTab == 0 ? _buildRaiseTicketForm() : _buildTicketHistory(),
+          const SizedBox(height: 8),
+          Text(
+            'Raise a ticket or track history of your queries directly. Chat with our support agents in real-time.',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.inter(
+              fontSize: 12.5,
+              color: const Color(0xFF64748B),
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 20),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const SupportTicketsScreen()),
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primary,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              elevation: 0,
+            ),
+            child: Text(
+              'Open Support Center',
+              style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold),
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildTabButton(String label, int index) {
-    final isActive = _activeTab == index;
-    return Expanded(
-      child: InkWell(
-        onTap: () {
-          setState(() {
-            _activeTab = index;
-          });
-          if (index == 1) {
-            _fetchTickets();
-          }
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 18),
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            border: Border(
-              bottom: BorderSide(
-                color: isActive ? AppTheme.primary : Colors.transparent,
-                width: 2.5,
-              ),
-            ),
-          ),
-          child: Text(
-            label,
-            style: GoogleFonts.inter(
-              fontSize: 14,
-              fontWeight: isActive ? FontWeight.bold : FontWeight.w600,
-              color: isActive ? AppTheme.primary : const Color(0xFF64748B),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildRaiseTicketForm() {
-    return Column(
-      key: const ValueKey('raise_ticket_form'),
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          'Describe Your Issue',
-          style: GoogleFonts.inter(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: const Color(0xFF1E293B),
-          ),
-        ),
-        const SizedBox(height: 16),
-        // Title field
-        TextField(
-          controller: _titleController,
-          decoration: InputDecoration(
-            labelText: 'Subject / Title',
-            hintText: 'e.g. Account suspended after payment',
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-            floatingLabelBehavior: FloatingLabelBehavior.always,
-          ),
-          style: GoogleFonts.inter(fontSize: 14),
-        ),
-        const SizedBox(height: 18),
-        // Priority Dropdown
-        DropdownButtonFormField<String>(
-          value: _selectedPriority,
-          decoration: InputDecoration(
-            labelText: 'Priority Level',
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-          items: const [
-            DropdownMenuItem(value: 'low', child: Text('Low')),
-            DropdownMenuItem(value: 'medium', child: Text('Medium')),
-            DropdownMenuItem(value: 'high', child: Text('High')),
-            DropdownMenuItem(value: 'urgent', child: Text('Urgent')),
-          ],
-          onChanged: (val) {
-            if (val != null) {
-              setState(() {
-                _selectedPriority = val;
-              });
-            }
-          },
-        ),
-        const SizedBox(height: 18),
-        // Description field
-        TextField(
-          controller: _descController,
-          maxLines: 4,
-          decoration: InputDecoration(
-            labelText: 'Detailed Message',
-            hintText: 'Please detail your request or details of your transaction...',
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-            floatingLabelBehavior: FloatingLabelBehavior.always,
-          ),
-          style: GoogleFonts.inter(fontSize: 14),
-        ),
-        const SizedBox(height: 24),
-        ElevatedButton(
-          onPressed: _createTicket,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: AppTheme.primary,
-            foregroundColor: Colors.white,
-            minimumSize: const Size(double.infinity, 52),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            elevation: 2,
-            shadowColor: AppTheme.primary.withOpacity(0.3),
-          ),
-          child: Text(
-            'Submit Support Ticket',
-            style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.bold),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildTicketHistory() {
-    if (_loadingTickets) {
-      return const SizedBox(
-        key: ValueKey('tickets_loading'),
-        height: 200,
-        child: Center(child: CircularProgressIndicator(color: AppTheme.primary)),
-      );
-    }
-
-    if (_tickets.isEmpty) {
-      return SizedBox(
-        key: const ValueKey('tickets_empty'),
-        height: 250,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.mark_chat_read_outlined, size: 48, color: Colors.grey[400]),
-            const SizedBox(height: 16),
-            Text(
-              'No Support Tickets Found',
-              style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600, color: const Color(0xFF64748B)),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Tickets you raise will be shown here.',
-              style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF94A3B8)),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return SizedBox(
-      key: const ValueKey('tickets_list'),
-      height: 380,
-      child: ListView.builder(
-        itemCount: _tickets.length,
-        itemBuilder: (context, index) {
-          final ticket = _tickets[index];
-          final priority = (ticket['priority'] ?? 'medium').toString().toUpperCase();
-          final status = ticket['status'] ?? 'Open';
-          final title = ticket['title'] ?? 'Support Ticket';
-          final desc = ticket['description'] ?? '';
-          final date = ticket['created_at'] != null 
-              ? DateTime.tryParse(ticket['created_at'])?.toLocal().toString().substring(0, 16) ?? ''
-              : '';
-
-          Color priorityColor;
-          switch (priority.toLowerCase()) {
-            case 'urgent': priorityColor = Colors.red[700]!; break;
-            case 'high': priorityColor = Colors.orange[700]!; break;
-            case 'medium': priorityColor = Colors.amber[700]!; break;
-            default: priorityColor = Colors.blue[700]!;
-          }
-
-          Color statusColor;
-          switch (status.toString().toLowerCase()) {
-            case 'open': statusColor = Colors.blue; break;
-            case 'in progress': statusColor = Colors.orange; break;
-            case 'resolved': statusColor = Colors.green; break;
-            default: statusColor = Colors.grey;
-          }
-
-          return GestureDetector(
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => SupportChatScreen(ticket: ticket),
-                ),
-              ).then((_) => _fetchTickets());
-            },
-            child: Card(
-              margin: const EdgeInsets.only(bottom: 12),
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-                side: BorderSide(color: Colors.grey[200]!),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            title,
-                            style: GoogleFonts.inter(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                              color: const Color(0xFF1E293B),
-                            ),
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: statusColor.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            status,
-                            style: GoogleFonts.inter(
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                              color: statusColor,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      desc,
-                      style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF475569)),
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: priorityColor.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                priority,
-                                style: GoogleFonts.inter(
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.w800,
-                                  color: priorityColor,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              date,
-                              style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF94A3B8)),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        },
       ),
     );
   }

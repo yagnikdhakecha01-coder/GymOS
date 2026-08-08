@@ -75,12 +75,29 @@ class _SupportChatScreenState extends State<SupportChatScreen> {
           _loading = false;
         });
         _scrollToBottom();
+        _markMessagesAsRead();
       }
     } catch (e) {
       debugPrint("Failed to fetch messages: $e");
       if (mounted) {
         setState(() => _loading = false);
       }
+    }
+  }
+
+  Future<void> _markMessagesAsRead() async {
+    if (!SupabaseService.isInitialized) return;
+    try {
+      final unreadAdminMessages = _messages.where((m) => m['sender_role'] == 'admin' && m['is_read'] != true).toList();
+      if (unreadAdminMessages.isNotEmpty) {
+        await SupabaseService.client
+            .from('support_messages')
+            .update({'is_read': true})
+            .eq('ticket_id', widget.ticket['id'])
+            .eq('sender_role', 'admin');
+      }
+    } catch (e) {
+      debugPrint("Failed to mark messages as read: $e");
     }
   }
 

@@ -122,20 +122,20 @@ class MembersViewModel extends ChangeNotifier {
   }
 
   // Update
-  Future<void> updateMember(Member member, {String paymentMethod = 'Cash', double? transactionAmount}) async {
+  Future<void> updateMember(Member member, {String paymentMethod = 'Cash', double? transactionAmount, bool isRenewal = false}) async {
     await _repository.saveMember(member);
     final txAmount = transactionAmount ?? member.totalReceivedAmount;
     if (txAmount > 0) {
       final tx = FinanceTransaction(
         id: 'tx_${DateTime.now().millisecondsSinceEpoch}',
-        title: '${member.name} - Initial Payment',
+        title: '${member.name} - ${isRenewal ? 'Renewal Payment' : 'Initial Payment'}',
         amount: txAmount,
         type: 'Revenue',
         category: 'Membership',
         paymentMethod: paymentMethod,
         date: DateFormat('dd MMM yyyy').format(DateTime.now()),
         transactionDate: DateTime.now().toIso8601String(),
-        notes: 'Automatic Membership Initial Payment',
+        notes: isRenewal ? 'Membership Renewal Payment' : 'Automatic Membership Initial Payment',
         referenceId: member.id,
       );
       await _repository.saveTransaction(tx);
@@ -219,9 +219,31 @@ class MembersViewModel extends ChangeNotifier {
   }
 
   List<FinanceTransaction> getMemberTransactions(String memberId) {
-    return _repository.getTransactions()
-        .where((tx) => tx.referenceId == memberId)
-        .toList();
+    final member = allMembers.cast<Member?>().firstWhere((m) => m?.id == memberId, orElse: () => null);
+    final memberName = member?.name ?? '';
+
+    final results = _repository.getTransactions().where((tx) {
+      // Match by direct reference_id (app-created transactions)
+      if (tx.referenceId == memberId) return true;
+      // Match by member name in title or notes (DB-trigger-created transactions)
+      if (memberName.isNotEmpty) {
+        final titleLower = tx.title.toLowerCase();
+        final notesLower = tx.notes.toLowerCase();
+        final nameLower = memberName.toLowerCase();
+        if (titleLower.contains(nameLower) || notesLower.contains(nameLower)) return true;
+      }
+      return false;
+    }).toList();
+
+    // Sort by transaction date descending (newest first)
+    results.sort((a, b) {
+      if (a.transactionDate.isNotEmpty && b.transactionDate.isNotEmpty) {
+        return b.transactionDate.compareTo(a.transactionDate);
+      }
+      return 0;
+    });
+
+    return results;
   }
 
   List<AttendanceRecord> getMemberAttendance(String memberId) {

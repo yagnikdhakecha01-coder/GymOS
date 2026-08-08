@@ -44,27 +44,10 @@ class _AdminSupportChatScreenState extends State<AdminSupportChatScreen> {
 
   Future<void> _fetchMessages() async {
     if (!AdminSupabaseService.isInitialized) {
-      // Mock messages
       setState(() {
-        _messages = [
-          {
-            'id': 'mock_msg_1',
-            'ticket_id': widget.ticket['id'],
-            'sender_role': 'owner',
-            'message': widget.ticket['description'] ?? 'Hello, I need help.',
-            'created_at': widget.ticket['created_at'] ?? DateTime.now().toIso8601String(),
-          },
-          {
-            'id': 'mock_msg_2',
-            'ticket_id': widget.ticket['id'],
-            'sender_role': 'admin',
-            'message': 'Hi! Welcome to support. We have received your query and are looking into it.',
-            'created_at': DateTime.now().add(const Duration(minutes: 5)).toIso8601String(),
-          }
-        ];
+        _messages = [];
         _loading = false;
       });
-      _scrollToBottom();
       return;
     }
 
@@ -136,22 +119,7 @@ class _AdminSupportChatScreenState extends State<AdminSupportChatScreen> {
     setState(() => _sending = true);
 
     if (!AdminSupabaseService.isInitialized) {
-      // Mock local update
-      await Future.delayed(const Duration(milliseconds: 400));
-      if (mounted) {
-        setState(() {
-          _messages.add({
-            'id': DateTime.now().toIso8601String(),
-            'ticket_id': widget.ticket['id'],
-            'sender_role': 'admin',
-            'message': msgText.isNotEmpty ? msgText : null,
-            'image_url': imageUrl,
-            'created_at': DateTime.now().toIso8601String(),
-          });
-          _sending = false;
-        });
-        _scrollToBottom();
-      }
+      setState(() => _sending = false);
       return;
     }
 
@@ -460,13 +428,26 @@ class _AdminSupportChatScreenState extends State<AdminSupportChatScreen> {
                                         ),
                                       ),
                                     const SizedBox(height: 6),
-                                    Text(
-                                      '${isAdmin ? "Support Admin" : "Gym Owner"} • $time',
-                                      style: GoogleFonts.inter(
-                                        fontSize: 9.5,
-                                        fontWeight: FontWeight.bold,
-                                        color: AdminTheme.mutedTextColor(context),
-                                      ),
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          '${isAdmin ? "Support Admin" : (msg['sender_role'] == 'staff' ? 'Gym Staff' : 'Gym Owner')} • $time',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 9.5,
+                                            fontWeight: FontWeight.bold,
+                                            color: AdminTheme.mutedTextColor(context),
+                                          ),
+                                        ),
+                                        if (isAdmin) ...[
+                                          const SizedBox(width: 6),
+                                          Icon(
+                                            Icons.done_all_rounded,
+                                            size: 13,
+                                            color: (msg['is_read'] == true) ? Colors.blue : AdminTheme.mutedTextColor(context),
+                                          ),
+                                        ],
+                                      ],
                                     ),
                                   ],
                                 ),

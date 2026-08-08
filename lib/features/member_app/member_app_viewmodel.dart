@@ -252,16 +252,63 @@ class MemberAppViewModel extends ChangeNotifier {
   void addWater(double amount) {
     _waterIntake = min(_waterGoal, _waterIntake + amount);
     notifyListeners();
+    _saveWellnessLocallyAndSync();
   }
 
   void addCalories(int amount) {
     _caloriesIntake = min(_caloriesGoal, _caloriesIntake + amount);
     notifyListeners();
+    _saveWellnessLocallyAndSync();
   }
 
   void addProtein(int amount) {
     _proteinIntake = min(_proteinGoal, _proteinIntake + amount);
     notifyListeners();
+    _saveWellnessLocallyAndSync();
+  }
+
+  Future<void> _saveWellnessLocallyAndSync() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble('member_cached_water_intake', _waterIntake);
+      await prefs.setDouble('member_cached_water_goal', _waterGoal);
+      await prefs.setInt('member_cached_calories_intake', _caloriesIntake);
+      await prefs.setInt('member_cached_calories_goal', _caloriesGoal);
+      await prefs.setInt('member_cached_protein_intake', _proteinIntake);
+      await prefs.setInt('member_cached_protein_goal', _proteinGoal);
+      
+      _saveDailyLogToSupabase();
+    } catch (_) {}
+  }
+
+  Future<void> _saveDailyLogToSupabase() async {
+    if (!SupabaseService.isInitialized || _memberId.isEmpty) return;
+    try {
+      final todayStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
+      final prefs = await SharedPreferences.getInstance();
+      final gymInfoStr = prefs.getString('gymos_gym_info');
+      String? gymId;
+      if (gymInfoStr != null) {
+        final gymInfo = jsonDecode(gymInfoStr) as Map<String, dynamic>;
+        gymId = gymInfo['id'];
+      }
+      
+      if (gymId == null) return;
+
+      await SupabaseService.client.from('member_daily_logs').upsert({
+        'member_id': _memberId,
+        'gym_id': gymId,
+        'date': todayStr,
+        'water_intake': _waterIntake,
+        'water_goal': _waterGoal,
+        'calories_intake': _caloriesIntake,
+        'calories_goal': _caloriesGoal,
+        'protein_intake': _proteinIntake,
+        'protein_goal': _proteinGoal,
+      }, onConflict: 'member_id, date');
+    } catch (e) {
+      print('Failed to save daily log to database: $e');
+    }
   }
 
   // ── Persistence ──
@@ -314,6 +361,40 @@ class MemberAppViewModel extends ChangeNotifier {
     if (cachedHolidays != null) {
       _declaredHolidays = cachedHolidays;
     }
+
+    _waterIntake = prefs.getDouble('member_cached_water_intake') ?? 2.5;
+    _waterGoal = prefs.getDouble('member_cached_water_goal') ?? 4.0;
+    _caloriesIntake = prefs.getInt('member_cached_calories_intake') ?? 1850;
+    _caloriesGoal = prefs.getInt('member_cached_calories_goal') ?? 2500;
+    _proteinIntake = prefs.getInt('member_cached_protein_intake') ?? 120;
+    _proteinGoal = prefs.getInt('member_cached_protein_goal') ?? 160;
+
+    final cachedAttendance = prefs.getString('member_cached_attendance_history');
+    if (cachedAttendance != null) {
+      try {
+        final decoded = jsonDecode(cachedAttendance) as List;
+        _attendanceHistory.clear();
+        _attendanceHistory.addAll(decoded.map((e) => Map<String, dynamic>.from(e as Map)));
+      } catch (_) {}
+    }
+    _presentDays = prefs.getInt('member_cached_present_days') ?? 0;
+    _absentDays = prefs.getInt('member_cached_absent_days') ?? 0;
+    _lateDays = prefs.getInt('member_cached_late_days') ?? 0;
+    
+    final cachedMonthDays = prefs.getStringList('member_cached_attended_days_curr_month');
+    if (cachedMonthDays != null) {
+      _attendedDaysOfCurrentMonth = cachedMonthDays.map((e) => int.parse(e)).toList();
+    }
+    
+    // Calculate attendance percentage based on active present days
+    final lastDay = DateTime(DateTime.now().year, DateTime.now().month + 1, 0).day;
+    int totalGymDays = 0;
+    for (int i = 1; i <= lastDay; i++) {
+      if (DateTime(DateTime.now().year, DateTime.now().month, i).weekday != DateTime.sunday) {
+        totalGymDays++;
+      }
+    }
+    _attendancePercentage = totalGymDays > 0 ? ((_presentDays / totalGymDays) * 100).round() : 0;
 
     final todayIsoStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
     final lastWorkoutDate = prefs.getString('member_last_workout_completed_date');
@@ -423,7 +504,7 @@ class MemberAppViewModel extends ChangeNotifier {
   Future<void> loadMemberDataFromSupabase() async {
     final prefs = await SharedPreferences.getInstance();
     try {
-      if (SupabaseService.client == null) return;
+      if (!SupabaseService.isInitialized) return;
       final user = SupabaseService.client.auth.currentUser;
       if (user == null) return;
 
@@ -911,6 +992,136 @@ class MemberAppViewModel extends ChangeNotifier {
           }
         } catch (e) {
           print('Error loading declared holidays: $e');
+        }
+
+        // Fetch today's daily wellness logs (water, calories, protein)
+        try {
+          final todayStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
+          final logData = await SupabaseService.client
+              .from('member_daily_logs')
+              .select()
+              .eq('member_id', _memberId)
+              .eq('date', todayStr)
+              .maybeSingle();
+
+          if (logData != null) {
+            _waterIntake = (logData['water_intake'] as num?)?.toDouble() ?? _waterIntake;
+            _waterGoal = (logData['water_goal'] as num?)?.toDouble() ?? _waterGoal;
+            _caloriesIntake = (logData['calories_intake'] as num?)?.toInt() ?? _caloriesIntake;
+            _caloriesGoal = (logData['calories_goal'] as num?)?.toInt() ?? _caloriesGoal;
+            _proteinIntake = (logData['protein_intake'] as num?)?.toInt() ?? _proteinIntake;
+            _proteinGoal = (logData['protein_goal'] as num?)?.toInt() ?? _proteinGoal;
+          } else {
+            // First time today: reset daily counters and try inserting a row on database
+            _waterIntake = 0.0;
+            _caloriesIntake = 0;
+            _proteinIntake = 0;
+
+            final gymIdVal = memberData['gym_id'];
+            if (gymIdVal != null) {
+              await SupabaseService.client.from('member_daily_logs').insert({
+                'member_id': _memberId,
+                'gym_id': gymIdVal,
+                'date': todayStr,
+                'water_intake': _waterIntake,
+                'water_goal': _waterGoal,
+                'calories_intake': _caloriesIntake,
+                'calories_goal': _caloriesGoal,
+                'protein_intake': _proteinIntake,
+                'protein_goal': _proteinGoal,
+              });
+            }
+          }
+
+          await prefs.setDouble('member_cached_water_intake', _waterIntake);
+          await prefs.setDouble('member_cached_water_goal', _waterGoal);
+          await prefs.setInt('member_cached_calories_intake', _caloriesIntake);
+          await prefs.setInt('member_cached_calories_goal', _caloriesGoal);
+          await prefs.setInt('member_cached_protein_intake', _proteinIntake);
+          await prefs.setInt('member_cached_protein_goal', _proteinGoal);
+        } catch (e) {
+          print('Error loading member daily logs: $e');
+        }
+
+        // Fetch attendance logs for member
+        try {
+          final attendanceData = await SupabaseService.client
+              .from('attendance_logs')
+              .select('date, check_in, check_out, status')
+              .eq('member_id', _memberId)
+              .order('date', ascending: false)
+              .limit(50);
+
+          if (attendanceData != null) {
+            _attendanceHistory.clear();
+            _presentDays = 0;
+            _absentDays = 0;
+            _lateDays = 0;
+            _attendedDaysOfCurrentMonth.clear();
+            
+            final now = DateTime.now();
+
+            for (var row in attendanceData) {
+              final status = row['status']?.toString() ?? 'Present';
+              if (status == 'Present') _presentDays++;
+              if (status == 'Absent') _absentDays++;
+              if (status == 'Late') _lateDays++;
+
+              final rawDateStr = row['date']?.toString() ?? '';
+              DateTime? parsedDate;
+              if (rawDateStr.isNotEmpty) {
+                try {
+                  parsedDate = DateTime.parse(rawDateStr);
+                } catch (_) {}
+              }
+
+              if (parsedDate != null && parsedDate.month == now.month && parsedDate.year == now.year) {
+                if (status == 'Present' || status == 'Late') {
+                  _attendedDaysOfCurrentMonth.add(parsedDate.day);
+                }
+              }
+
+              String displayDate = 'Unknown Date';
+              if (parsedDate != null) {
+                displayDate = DateFormat('dd MMM yyyy').format(parsedDate);
+              }
+
+              String checkInTime = '—';
+              final rawCheckIn = row['check_in']?.toString() ?? '';
+              if (rawCheckIn.isNotEmpty) {
+                try {
+                  checkInTime = DateFormat('hh:mm a').format(DateTime.parse(rawCheckIn));
+                } catch (_) {
+                  checkInTime = rawCheckIn;
+                }
+              }
+
+              String checkOutTime = '—';
+              final rawCheckOut = row['check_out']?.toString() ?? '';
+              if (rawCheckOut.isNotEmpty) {
+                try {
+                  checkOutTime = DateFormat('hh:mm a').format(DateTime.parse(rawCheckOut));
+                } catch (_) {
+                  checkOutTime = rawCheckOut;
+                }
+              }
+
+              _attendanceHistory.add({
+                'date': displayDate,
+                'checkIn': checkInTime,
+                'checkOut': checkOutTime,
+                'status': status,
+              });
+            }
+            
+            await prefs.setString('member_cached_attendance_history', jsonEncode(_attendanceHistory));
+            await prefs.setInt('member_cached_present_days', _presentDays);
+            await prefs.setInt('member_cached_absent_days', _absentDays);
+            await prefs.setInt('member_cached_late_days', _lateDays);
+            await prefs.setStringList('member_cached_attended_days_curr_month', _attendedDaysOfCurrentMonth.map((e) => e.toString()).toList());
+          }
+        } catch (e) {
+          print('Error loading member attendance logs: $e');
         }
 
         // Setup Realtime listener for member row updates

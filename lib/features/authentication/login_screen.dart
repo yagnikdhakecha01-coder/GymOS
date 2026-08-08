@@ -21,6 +21,7 @@ import '../more/more_screen.dart';
 import 'gym_role_selector_screen.dart';
 import '../member_app/member_app_viewmodel.dart';
 import '../member_app/screens/member_code_screen.dart';
+import 'data_sync_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   final String role;
@@ -96,6 +97,8 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     Widget targetScreen;
+    bool shouldSync = false;
+    
     if (authVm.userAssociations.isEmpty) {
       if (authVm.selectedRole == 'owner') {
         targetScreen = const FirstTimeSetupScreen();
@@ -108,6 +111,7 @@ class _LoginScreenState extends State<LoginScreen> {
         case UserRole.owner:
           if (profile.setupCompleted) {
             targetScreen = const MainNavigationHolder();
+            shouldSync = true;
           } else {
             targetScreen = const FirstTimeSetupScreen();
           }
@@ -119,17 +123,18 @@ class _LoginScreenState extends State<LoginScreen> {
           } else {
             targetScreen = const StaffShell();
           }
+          shouldSync = true;
           break;
         case UserRole.member:
-          Provider.of<MemberAppViewModel>(context, listen: false).loadMemberDataFromSupabase();
           targetScreen = const MemberShell();
+          shouldSync = true;
           break;
       }
     }
 
     Navigator.pushAndRemoveUntil(
       context,
-      AppRouter.scaleRoute(targetScreen),
+      AppRouter.scaleRoute(shouldSync ? DataSyncScreen(targetScreen: targetScreen) : targetScreen),
       (route) => false,
     );
   }

@@ -35,7 +35,10 @@ class _SupportScreenState extends State<SupportScreen> {
     try {
       setState(() => _isLoading = true);
       if (!AdminSupabaseService.isInitialized) {
-        _loadMockTickets();
+        setState(() {
+          _tickets = [];
+          _isLoading = false;
+        });
         return;
       }
       final client = AdminSupabaseService.client;
@@ -50,15 +53,11 @@ class _SupportScreenState extends State<SupportScreen> {
       });
     } catch (e) {
       debugPrint("Failed to fetch tickets: $e");
-      _loadMockTickets();
+      setState(() {
+        _tickets = [];
+        _isLoading = false;
+      });
     }
-  }
-
-  void _loadMockTickets() {
-    setState(() {
-      _tickets = List<Map<String, dynamic>>.from(_mockTickets);
-      _isLoading = false;
-    });
   }
 
   Future<void> _updateTicketStatus(String ticketId, String newStatus) async {
@@ -395,8 +394,4 @@ class _SupportScreenState extends State<SupportScreen> {
   }
 }
 
-const _mockTickets = [
-  {'id': 'mock-1', 'title': 'Unable to login after password reset', 'gym_name': 'Iron Paradise — Rahul Sharma', 'description': 'The owner cannot login using their temporary password credentials.', 'priority': 'urgent', 'status': 'Open', 'created_at': '2026-08-03T06:00:00Z'},
-  {'id': 'mock-2', 'title': 'QR attendance not scanning', 'gym_name': 'FitZone Premium — Priya Patel', 'description': 'The staff is seeing camera permissions error on multiple Android devices.', 'priority': 'high', 'status': 'In Progress', 'created_at': '2026-08-03T03:00:00Z'},
-  {'id': 'mock-3', 'title': 'Invoice generation error', 'gym_name': 'Elite Fitness — Ravi Joshi', 'description': 'Tax invoice calculations are throwing currency parse failures.', 'priority': 'medium', 'status': 'Open', 'created_at': '2026-08-02T10:00:00Z'},
-];
+// Mock tickets removed to prevent fake data rendering.

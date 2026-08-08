@@ -182,6 +182,10 @@ class GymRepository extends ChangeNotifier {
   List<AttendanceAlert> _alerts = [];
   List<AttendanceCorrectionRequest> _corrections = [];
   Map<String, dynamic> _dashboardStats = {};
+  Map<String, dynamic> _reportsAnalytics = {};
+
+  Map<String, dynamic> get reportsAnalytics => _reportsAnalytics;
+  String get _reportsAnalyticsKey => 'gymos_reports_analytics_${_storage.getGymInfo()?['id'] ?? 'default'}';
 
   List<Map<String, dynamic>> _salaryAdvances = [];
   List<Map<String, dynamic>> _salaryDrafts = [];
@@ -336,6 +340,8 @@ class GymRepository extends ChangeNotifier {
       final todayStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
       await fetchDashboardStatsFromSupabase(gymId, todayStr);
       if (_hasNetworkConnectionError) return;
+      await fetchReportsAnalyticsFromSupabase(gymId, todayStr);
+      if (_hasNetworkConnectionError) return;
       await fetchOwnerDashboardStats(gymId);
       if (_hasNetworkConnectionError) return;
       await fetchAttendanceAlerts(gymId);
@@ -416,6 +422,26 @@ class GymRepository extends ChangeNotifier {
     } finally {
       _loadingDashboardStats = false;
       notifyListeners();
+    }
+  }
+
+  Future<void> fetchReportsAnalyticsFromSupabase(String gymId, String targetDate) async {
+    if (!SupabaseService.isInitialized) return;
+    try {
+      final response = await SupabaseService.client.rpc(
+        'get_reports_analytics',
+        params: {
+          'p_gym_id': gymId,
+          'p_target_date': targetDate,
+        },
+      );
+      if (response != null && response is List && response.isNotEmpty) {
+        _reportsAnalytics = Map<String, dynamic>.from(response[0] as Map);
+        await _storage.setString(_reportsAnalyticsKey, jsonEncode(_reportsAnalytics));
+        notifyListeners();
+      }
+    } catch (e) {
+      print('fetchReportsAnalyticsFromSupabase error: $e');
     }
   }
 
@@ -1759,6 +1785,20 @@ class GymRepository extends ChangeNotifier {
     _loadAttendanceSettings();
     _loadShiftSettings();
     _loadDashboardStats();
+    _loadReportsAnalytics();
+  }
+
+  void _loadReportsAnalytics() {
+    final raw = _storage.getString(_reportsAnalyticsKey);
+    if (raw != null) {
+      try {
+        _reportsAnalytics = Map<String, dynamic>.from(jsonDecode(raw) as Map);
+      } catch (_) {
+        _reportsAnalytics = {};
+      }
+    } else {
+      _reportsAnalytics = {};
+    }
   }
 
   void _loadAttendanceSettings() {
