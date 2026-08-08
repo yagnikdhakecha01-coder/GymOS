@@ -173,7 +173,7 @@ class _DataSyncScreenState extends State<DataSyncScreen> with SingleTickerProvid
           
           try {
             final Future Function() action = step['action'] as Future Function();
-            await action();
+            await action().timeout(const Duration(seconds: 4));
           } catch (e) {
             debugPrint('Sync warning on step: ${_statusText} ($e). Continuing...');
           }

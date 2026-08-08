@@ -53,7 +53,9 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
     try {
       final authVm = Provider.of<AuthViewModel>(context, listen: false);
       if (authVm.isLoggedIn) {
-        await authVm.loadCurrentProfile();
+        if (authVm.currentProfile == null) {
+          await authVm.loadCurrentProfile().timeout(const Duration(seconds: 3));
+        }
         if (authVm.userAssociations.isEmpty) {
           if (mounted) {
             showDialog(
@@ -148,10 +150,18 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
         // Fetch salary advances
         double advanceSum = 0.0;
         if (staff.id.isNotEmpty) {
-          final advances = await staffVm.fetchSalaryAdvances(staff.id);
-          advanceSum = advances
-              .where((a) => a['status'] == 'Approved')
-              .fold(0.0, (sum, a) => sum + ((a['advance_amount'] as num?)?.toDouble() ?? 0.0));
+          try {
+            final advances = await staffVm.fetchSalaryAdvances(staff.id).timeout(const Duration(seconds: 3));
+            advanceSum = advances
+                .where((a) => a['status'] == 'Approved')
+                .fold(0.0, (sum, a) => sum + ((a['advance_amount'] as num?)?.toDouble() ?? 0.0));
+          } catch (e) {
+            print('Timeout or error fetching advances: $e');
+            final advances = repo.salaryAdvances;
+            advanceSum = advances
+                .where((a) => a['staff_id'] == staff.id && a['status'] == 'Approved')
+                .fold(0.0, (sum, a) => sum + ((a['advance_amount'] as num?)?.toDouble() ?? 0.0));
+          }
         }
 
         // Get attendance records
@@ -222,11 +232,16 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
         int notifCount = 0;
         final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
         if (gymId != null) {
-          final notifRes = await SupabaseService.client
-              .from('notifications')
-              .select('id')
-              .eq('gym_id', gymId);
-          notifCount = (notifRes as List).length;
+          try {
+            final notifRes = await SupabaseService.client
+                .from('notifications')
+                .select('id')
+                .eq('gym_id', gymId)
+                .timeout(const Duration(seconds: 3));
+            notifCount = (notifRes as List).length;
+          } catch (e) {
+            print('Timeout or error fetching notifications: $e');
+          }
         }
 
         if (mounted) {
