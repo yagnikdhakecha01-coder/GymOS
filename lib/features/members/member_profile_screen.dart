@@ -218,10 +218,9 @@ Thank you.''';
     final notesController = TextEditingController();
     final refController = TextEditingController();
     String selectedMethod = 'UPI';
-    final double planPrice = plan?.price ?? 3000.0;
-    final double finalAmount = planPrice - member.discountAmount;
     final double alreadyReceived = member.totalReceivedAmount;
     final double pendingAmount = member.pendingAmount;
+    final double finalAmount = alreadyReceived + pendingAmount;
 
     amountController.text = pendingAmount.toStringAsFixed(0);
 
@@ -723,10 +722,9 @@ Thank you.''';
 
   Widget _buildInfoTab(MembersViewModel membersVm, Member member, MembershipPlan? assignedPlan) {
     final double planPrice = assignedPlan?.price ?? 3000.0;
-    final double discount = member.discountAmount;
-    final double finalAmount = planPrice - discount;
     final double alreadyReceived = member.totalReceivedAmount;
     final double pendingAmount = member.pendingAmount;
+    final double finalAmount = alreadyReceived + pendingAmount;
     final int percentPaid = finalAmount > 0 ? ((alreadyReceived / finalAmount) * 100).toInt() : 0;
 
     String expiryDateStr = '—';
@@ -1380,7 +1378,7 @@ Thank you.''';
 
   void _showMembershipDetailsBottomSheet(MembersViewModel membersVm, Member member, MembershipPlan? plan) {
     final double planPrice = plan?.price ?? 3000.0;
-    final double finalAmount = planPrice - member.discountAmount;
+    final double finalAmount = member.totalReceivedAmount + member.pendingAmount;
 
     showModalBottomSheet(
       context: context,
@@ -1428,7 +1426,7 @@ Thank you.''';
               const Divider(height: 16),
               _buildDetailRow('Final Amount', '₹ ${finalAmount.toStringAsFixed(0)}'),
               const Divider(height: 16),
-              _buildDetailRow('Discount', '₹ ${member.discountAmount.toStringAsFixed(0)}'),
+              _buildDetailRow('Discount', '₹ ${(planPrice - finalAmount).clamp(0.0, double.infinity).toStringAsFixed(0)}'),
               const Divider(height: 16),
               _buildDetailRow('Received', '₹ ${member.totalReceivedAmount.toStringAsFixed(0)}'),
               const Divider(height: 16),

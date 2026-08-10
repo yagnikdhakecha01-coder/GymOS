@@ -8,6 +8,7 @@ RETURNS TRIGGER AS $$
 DECLARE
     v_member_id UUID;
     v_total_pending NUMERIC(12,2) := 0.0;
+    v_total_received NUMERIC(12,2) := 0.0;
 BEGIN
     v_member_id := COALESCE(NEW.member_id, OLD.member_id);
     IF v_member_id IS NULL THEN
@@ -20,8 +21,15 @@ BEGIN
     FROM public.member_memberships
     WHERE member_id = v_member_id;
 
+    -- Calculate total received amount for this member from member_memberships
+    SELECT COALESCE(SUM(COALESCE(paid_amount, 0.0)), 0.0)
+    INTO v_total_received
+    FROM public.member_memberships
+    WHERE member_id = v_member_id;
+
     UPDATE public.members
     SET pending_amount = v_total_pending,
+        total_received_amount = v_total_received,
         payment_status = CASE WHEN v_total_pending <= 0 THEN 'Paid' ELSE 'Pending' END
     WHERE id = v_member_id;
 
