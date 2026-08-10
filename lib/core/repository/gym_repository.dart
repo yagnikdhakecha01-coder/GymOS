@@ -811,6 +811,11 @@ class GymRepository extends ChangeNotifier {
               'save_gym_operating_hours',
               params: payload,
             );
+          } else if (table == 'rpc_sync_member_payment_amounts') {
+            await SupabaseService.client.rpc(
+              'sync_member_payment_amounts',
+              params: payload,
+            );
           } else if (action == 'update') {
             final id = payload['id'] as String;
             final updateData = Map<String, dynamic>.from(payload)..remove('id')..remove('uuid');
@@ -2038,6 +2043,39 @@ class GymRepository extends ChangeNotifier {
 
     await _saveQueuesToStorage();
     triggerBackgroundSync();
+  }
+
+  /// Queue an update to member_memberships to keep paid_amount in sync
+  /// with app-side payment tracking. This prevents the DB trigger
+  /// fn_sync_member_payment_status from overwriting members.total_received_amount
+  /// with stale data on app restart.
+  Future<void> updateMemberMembershipPayment({
+    required String memberId,
+    required double paymentAmount,
+    required double newTotalReceived,
+    required double newPendingAmount,
+  }) async {
+    final gymId = _storage.getGymInfo()?['id'];
+    if (gymId == null || !_isValidUUID(memberId)) return;
+
+    // Queue a direct update to member_memberships via RPC
+    // This updates the most recent membership's paid_amount to match app state
+    _crudQueue.add({
+      'uuid': _generateUuidV4(),
+      'table': 'rpc_sync_member_payment_amounts',
+      'action': 'rpc',
+      'payload': {
+        'p_member_id': memberId,
+        'p_gym_id': gymId,
+        'p_payment_amount': paymentAmount,
+        'p_new_total_received': newTotalReceived,
+        'p_new_pending_amount': newPendingAmount,
+      },
+      'created_at': DateTime.now().toIso8601String(),
+      'retry_count': 0,
+      'error_message': null,
+    });
+    await _saveQueuesToStorage();
   }
 
   Future<void> saveTrialMember(TrialMember trial) async {

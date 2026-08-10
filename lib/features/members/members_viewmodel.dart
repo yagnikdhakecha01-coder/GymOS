@@ -205,6 +205,15 @@ class MembersViewModel extends ChangeNotifier {
         referenceId: memberId,
       );
       await _repository.saveTransaction(tx);
+
+      // Sync member_memberships.paid_amount to prevent DB trigger
+      // from overwriting correct values on app restart
+      await _repository.updateMemberMembershipPayment(
+        memberId: memberId,
+        paymentAmount: amount,
+        newTotalReceived: newReceived,
+        newPendingAmount: newPending,
+      );
       
       notifyListeners();
     }
