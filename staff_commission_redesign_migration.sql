@@ -224,13 +224,21 @@ DECLARE
     v_staff_id UUID;
     v_comm_rate NUMERIC(5,2);
     v_payment_month TEXT;
+    v_ref_uuid UUID;
 BEGIN
     -- Check if this transaction is revenue for membership and has a valid member reference_id
     IF NEW.type = 'Revenue' AND NEW.category = 'Membership' AND NEW.reference_id IS NOT NULL THEN
+        -- Safely cast reference_id to UUID if it matches UUID format
+        IF NEW.reference_id ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' THEN
+            v_ref_uuid := NEW.reference_id::UUID;
+        ELSE
+            RETURN NEW;
+        END IF;
+
         -- Find the active member membership plan
         SELECT id INTO v_member_membership_id 
         FROM public.member_memberships 
-        WHERE member_id = NEW.reference_id
+        WHERE member_id = v_ref_uuid
         ORDER BY created_at DESC 
         LIMIT 1;
 
@@ -248,13 +256,13 @@ BEGIN
             )
             VALUES (
                 NEW.gym_id,
-                NEW.reference_id,
-                (SELECT membership_plan_id FROM public.members WHERE id = NEW.reference_id LIMIT 1),
+                v_ref_uuid,
+                (SELECT membership_plan_id FROM public.members WHERE id = v_ref_uuid LIMIT 1),
                 CURRENT_DATE,
                 CURRENT_DATE + (
                     COALESCE(
-                        (SELECT duration_days FROM public.membership_plans WHERE id = (SELECT membership_plan_id FROM public.members WHERE id = NEW.reference_id LIMIT 1) LIMIT 1),
-                        (SELECT COALESCE(duration_months, 1) * 30 FROM public.membership_plans WHERE id = (SELECT membership_plan_id FROM public.members WHERE id = NEW.reference_id LIMIT 1) LIMIT 1),
+                        (SELECT duration_days FROM public.membership_plans WHERE id = (SELECT membership_plan_id FROM public.members WHERE id = v_ref_uuid LIMIT 1) LIMIT 1),
+                        (SELECT COALESCE(duration_months, 1) * 30 FROM public.membership_plans WHERE id = (SELECT membership_plan_id FROM public.members WHERE id = v_ref_uuid LIMIT 1) LIMIT 1),
                         30
                     ) || ' days'
                 )::INTERVAL,
@@ -286,12 +294,12 @@ BEGIN
         SELECT staff_id, commission_percentage 
         INTO v_staff_id, v_comm_rate
         FROM public.pt_assignments
-        WHERE member_id = NEW.reference_id AND assignment_status = 'Active'
+        WHERE member_id = v_ref_uuid AND assignment_status = 'Active'
         LIMIT 1;
 
         -- Fallback check
         IF v_staff_id IS NULL THEN
-            SELECT pt_trainer INTO v_staff_id FROM public.members WHERE id = NEW.reference_id;
+            SELECT pt_trainer INTO v_staff_id FROM public.members WHERE id = v_ref_uuid;
             IF v_staff_id IS NOT NULL THEN
                 SELECT commission_percentage INTO v_comm_rate FROM public.staff WHERE id = v_staff_id;
             END IF;
@@ -325,7 +333,7 @@ BEGIN
                 VALUES (
                     NEW.gym_id,
                     v_staff_id,
-                    NEW.reference_id,
+                    v_ref_uuid,
                     v_payment_id,
                     NEW.amount,
                     v_comm_rate,

@@ -212,7 +212,7 @@ class _DataSyncScreenState extends State<DataSyncScreen> with SingleTickerProvid
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0F172A), // Premium Dark background
+      backgroundColor: Colors.white, // Premium Light background
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -227,10 +227,10 @@ class _DataSyncScreenState extends State<DataSyncScreen> with SingleTickerProvid
                   child: Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF6C4EFF).withOpacity(0.12),
+                      color: const Color(0xFF6C4EFF).withOpacity(0.08),
                       shape: BoxShape.circle,
                       border: Border.all(
-                        color: const Color(0xFF6C4EFF).withOpacity(0.3),
+                        color: const Color(0xFF6C4EFF).withOpacity(0.2),
                         width: 1.5,
                       ),
                     ),
@@ -249,7 +249,7 @@ class _DataSyncScreenState extends State<DataSyncScreen> with SingleTickerProvid
                   style: GoogleFonts.outfit(
                     fontSize: 26,
                     fontWeight: FontWeight.bold,
-                    color: Colors.white,
+                    color: const Color(0xFF0F172A), // Slate 900
                     letterSpacing: -0.5,
                   ),
                 ),
@@ -260,7 +260,7 @@ class _DataSyncScreenState extends State<DataSyncScreen> with SingleTickerProvid
                   textAlign: TextAlign.center,
                   style: GoogleFonts.inter(
                     fontSize: 13,
-                    color: const Color(0xFF94A3B8),
+                    color: const Color(0xFF475569), // Slate 600
                   ),
                 ),
                 const SizedBox(height: 48),
@@ -271,7 +271,7 @@ class _DataSyncScreenState extends State<DataSyncScreen> with SingleTickerProvid
                   child: Container(
                     height: 8,
                     width: double.infinity,
-                    color: const Color(0xFF1E293B),
+                    color: const Color(0xFFE2E8F0), // Slate 200
                     child: Align(
                       alignment: Alignment.centerLeft,
                       child: FractionallySizedBox(
@@ -296,7 +296,7 @@ class _DataSyncScreenState extends State<DataSyncScreen> with SingleTickerProvid
                   style: GoogleFonts.inter(
                     fontSize: 13,
                     fontWeight: FontWeight.w500,
-                    color: _hasError ? Colors.amber[400] : const Color(0xFFCBD5E1),
+                    color: _hasError ? Colors.amber[800] : const Color(0xFF475569), // Darker amber and slate 600 for contrast
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -323,7 +323,7 @@ class _DataSyncScreenState extends State<DataSyncScreen> with SingleTickerProvid
                     child: Text(
                       'Error: $_errorText',
                       textAlign: TextAlign.center,
-                      style: GoogleFonts.inter(fontSize: 12, color: Colors.redAccent[100]),
+                      style: GoogleFonts.inter(fontSize: 12, color: Colors.red[800]), // Dark red for readability
                     ),
                   ),
                   const SizedBox(height: 24),
@@ -333,13 +333,13 @@ class _DataSyncScreenState extends State<DataSyncScreen> with SingleTickerProvid
                         child: OutlinedButton(
                           onPressed: _completeSync,
                           style: OutlinedButton.styleFrom(
-                            side: const BorderSide(color: Color(0xFF64748B)),
+                            side: const BorderSide(color: Color(0xFFCBD5E1)), // Slate 300
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
                           child: Text(
                             'Continue Offline',
-                            style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600),
+                            style: GoogleFonts.inter(color: const Color(0xFF334155), fontWeight: FontWeight.w600), // Slate 700
                           ),
                         ),
                       ),
