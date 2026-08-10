@@ -207,6 +207,18 @@ DECLARE
     p_title TEXT;
     t_id UUID;
 BEGIN
+    -- If transaction_id is already set, update paid_amount and skip creating transactions
+    IF NEW.transaction_id IS NOT NULL THEN
+        UPDATE public.member_memberships 
+        SET paid_amount = paid_amount + NEW.amount,
+            payment_status = CASE 
+                WHEN paid_amount + NEW.amount >= total_amount THEN 'Fully Paid'
+                ELSE 'Partially Paid'
+            END
+        WHERE id = NEW.member_membership_id;
+        RETURN NEW;
+    END IF;
+
     -- Fetch Member name
     SELECT name INTO m_name FROM public.members WHERE id = (
         SELECT member_id FROM public.member_memberships WHERE id = NEW.member_membership_id
