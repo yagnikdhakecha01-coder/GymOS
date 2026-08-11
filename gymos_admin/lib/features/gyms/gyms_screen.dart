@@ -643,12 +643,19 @@ class _GymsScreenState extends State<GymsScreen> {
         try {
           if (client != null && gymId != null) {
             await client.from('gyms').update({'custom_branding_allowed': true}).eq('id', gymId);
-            await _fetchGyms();
-            if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Custom branding enabled for $gymName'), backgroundColor: AdminTheme.success),
-              );
+          } else {
+            final index = _gyms.indexWhere((g) => g['id'] == gymId);
+            if (index != -1) {
+              setState(() {
+                _gyms[index]['custom_branding_allowed'] = true;
+              });
             }
+          }
+          await _fetchGyms();
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Custom branding enabled for $gymName'), backgroundColor: AdminTheme.success),
+            );
           }
         } catch (e) {
           if (context.mounted) {
@@ -662,12 +669,19 @@ class _GymsScreenState extends State<GymsScreen> {
         try {
           if (client != null && gymId != null) {
             await client.from('gyms').update({'custom_branding_allowed': false}).eq('id', gymId);
-            await _fetchGyms();
-            if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Custom branding disabled for $gymName'), backgroundColor: AdminTheme.orange),
-              );
+          } else {
+            final index = _gyms.indexWhere((g) => g['id'] == gymId);
+            if (index != -1) {
+              setState(() {
+                _gyms[index]['custom_branding_allowed'] = false;
+              });
             }
+          }
+          await _fetchGyms();
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Custom branding disabled for $gymName'), backgroundColor: AdminTheme.orange),
+            );
           }
         } catch (e) {
           if (context.mounted) {
