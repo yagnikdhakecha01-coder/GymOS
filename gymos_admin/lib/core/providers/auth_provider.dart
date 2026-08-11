@@ -19,18 +19,25 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> checkSession() async {
-    if (_authService.isLoggedIn) {
-      _isLoading = true;
-      notifyListeners();
-      try {
-        final isAdmin = await _authService.verifySuperAdmin();
-        _isAuthenticated = isAdmin;
-      } catch (_) {
-        _isAuthenticated = false;
-      } finally {
-        _isLoading = false;
+    try {
+      if (_authService.isLoggedIn) {
+        _isLoading = true;
         notifyListeners();
+        try {
+          final isAdmin = await _authService.verifySuperAdmin();
+          _isAuthenticated = isAdmin;
+        } catch (_) {
+          _isAuthenticated = false;
+        } finally {
+          _isLoading = false;
+          notifyListeners();
+        }
       }
+    } catch (e) {
+      print('Error in AuthProvider.checkSession: $e');
+      _isAuthenticated = false;
+      _isLoading = false;
+      notifyListeners();
     }
   }
 

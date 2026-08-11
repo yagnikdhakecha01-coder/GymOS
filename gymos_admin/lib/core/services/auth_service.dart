@@ -10,9 +10,29 @@ class AdminAuthService {
     }
   }
 
-  User? get currentUser => _client?.auth.currentUser;
-  Session? get currentSession => _client?.auth.currentSession;
-  bool get isLoggedIn => currentUser != null;
+  User? get currentUser {
+    try {
+      return _client?.auth.currentUser;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Session? get currentSession {
+    try {
+      return _client?.auth.currentSession;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  bool get isLoggedIn {
+    try {
+      return currentUser != null;
+    } catch (_) {
+      return false;
+    }
+  }
 
   Future<User?> signUp({required String email, required String password}) async {
     if (_client == null) return null;
