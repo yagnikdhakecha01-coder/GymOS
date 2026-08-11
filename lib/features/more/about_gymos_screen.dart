@@ -5,6 +5,9 @@ import '../../core/theme/theme.dart';
 import '../../core/widgets/custom_card.dart';
 import '../../core/config/app_config.dart';
 import '../../core/services/version_check_service.dart';
+import 'package:provider/provider.dart';
+import '../authentication/auth_viewmodel.dart';
+import '../../core/widgets/app_branding_header.dart';
 
 class AboutGymOSScreen extends StatefulWidget {
   const AboutGymOSScreen({super.key});
@@ -176,7 +179,9 @@ class _AboutGymOSScreenState extends State<AboutGymOSScreen> {
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
-        title: const Text('About GymOS'),
+        title: Text(Provider.of<AuthViewModel>(context, listen: false).isCustomBrandingEnabled
+            ? 'About ${Provider.of<AuthViewModel>(context, listen: false).customBrandingName}'
+            : 'About GymOS'),
         centerTitle: false,
         backgroundColor: Colors.white,
       ),
@@ -186,20 +191,12 @@ class _AboutGymOSScreenState extends State<AboutGymOSScreen> {
           child: Column(
             children: [
               const Spacer(flex: 1),
-              // App Logo
-              Container(
-                width: 72,
-                height: 72,
-                decoration: BoxDecoration(
-                  color: AppTheme.primary,
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                child: const Icon(Icons.fitness_center_rounded, color: Colors.white, size: 36),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'GymOS',
-                style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+              // App Branding Header (Custom logo & Name)
+              const AppBrandingHeader(
+                logoSize: 72,
+                fontSize: 24,
+                spacing: 16,
+                welcomeText: false,
               ),
               const SizedBox(height: 6),
               Text(

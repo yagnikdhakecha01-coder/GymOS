@@ -353,6 +353,26 @@ class StaffViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> fetchGymSalaryAdvances(String gymId) async {
+    try {
+      await _repository.fetchGymSalaryAdvancesFromSupabase(gymId);
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  List<Map<String, dynamic>> getStaffAdvancesForMonth(String staffId, String month) {
+    return _repository.salaryAdvances.where((a) {
+      final isStaff = a['staff_id'].toString() == staffId;
+      final mStr = (a['salary_month'] ?? '').toString().trim().toLowerCase();
+      final givenDate = a['given_date'] != null ? DateTime.tryParse(a['given_date'].toString()) : null;
+      final calculatedMonth = givenDate != null ? DateFormat('MMMM yyyy').format(givenDate) : '';
+      
+      final matchesMonth = mStr == month.trim().toLowerCase() || 
+                           (mStr.isEmpty && calculatedMonth.trim().toLowerCase() == month.trim().toLowerCase());
+      return isStaff && matchesMonth;
+    }).toList();
+  }
+
   // --- Database Salary History ---
   Future<List<Map<String, dynamic>>> fetchSalaryHistory(String staffId) async {
     final gymId = _repository.storage.getGymInfo()?['id'];

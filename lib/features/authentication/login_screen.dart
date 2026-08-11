@@ -22,6 +22,7 @@ import 'gym_role_selector_screen.dart';
 import '../member_app/member_app_viewmodel.dart';
 import '../member_app/screens/member_code_screen.dart';
 import 'data_sync_screen.dart';
+import '../../core/widgets/app_branding_header.dart';
 
 class LoginScreen extends StatefulWidget {
   final String role;
@@ -153,17 +154,14 @@ class _LoginScreenState extends State<LoginScreen> {
           child: Column(
             children: [
               const SizedBox(height: 32),
-              // Logo
-              Container(
-                width: 64,
-                height: 64,
-                decoration: BoxDecoration(
-                  color: AppTheme.primary,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: const Icon(Icons.fitness_center_rounded, color: Colors.white, size: 32),
+              // App Branding Header (Custom logo & Name)
+              const AppBrandingHeader(
+                logoSize: 64,
+                fontSize: 20,
+                spacing: 12,
+                welcomeText: false,
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
 
               if (!_emailEntered) ...[
                 // Step 1: Email entry

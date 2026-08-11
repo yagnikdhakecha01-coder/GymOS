@@ -8,6 +8,7 @@ import '../../core/services/supabase_service.dart';
 import 'first_time_setup_screen.dart';
 import 'login_screen.dart';
 import 'auth_viewmodel.dart';
+import '../../core/widgets/app_branding_header.dart';
 
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
@@ -114,21 +115,20 @@ class _SignupScreenState extends State<SignupScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Logo
-                  Center(
-                    child: Container(
-                      width: 64,
-                      height: 64,
-                      decoration: BoxDecoration(
-                        color: AppTheme.primary,
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: const Icon(Icons.fitness_center_rounded, color: Colors.white, size: 32),
+                  // App Branding Header (Custom logo & Name)
+                  const Center(
+                    child: AppBrandingHeader(
+                      logoSize: 64,
+                      fontSize: 22,
+                      spacing: 16,
+                      welcomeText: false,
                     ),
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 16),
                   Text(
-                    'Get Started with GymOS',
+                    Provider.of<AuthViewModel>(context, listen: false).isCustomBrandingEnabled
+                        ? 'Get Started'
+                        : 'Get Started with GymOS',
                     textAlign: TextAlign.center,
                     style: GoogleFonts.inter(
                       fontSize: 22,

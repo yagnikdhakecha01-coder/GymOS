@@ -159,6 +159,7 @@ class _GymsScreenState extends State<GymsScreen> {
           'appVersion': gymMap['app_version'] ?? 'v2.4.1',
           'notes': gymMap['notes'] ?? '',
           'is_locked': gymMap['is_locked'] ?? false,
+          'custom_branding_allowed': gymMap['custom_branding_allowed'] ?? false,
           'rawGym': gymMap,
         });
       }
@@ -580,12 +581,16 @@ class _GymsScreenState extends State<GymsScreen> {
         final status = (gym['status'] as String? ?? 'active').toLowerCase();
         final isSuspended = status == 'suspended';
         final isLocked = gym['is_locked'] == true;
+        final customBrandingAllowed = gym['custom_branding_allowed'] == true;
         return [
           _popupItem(Icons.visibility_outlined, 'View Gym', 'view'),
           _popupItem(Icons.swap_horiz_rounded, 'Change Plan', 'change_plan'),
           isLocked
               ? _popupItem(Icons.lock_open_rounded, 'Unlock Gym', 'unlock_gym', color: AdminTheme.success)
               : _popupItem(Icons.lock_outline_rounded, 'Lock Gym', 'lock_gym', color: AdminTheme.orange),
+          customBrandingAllowed
+              ? _popupItem(Icons.branding_watermark_rounded, 'Disable Branding', 'disable_branding', color: AdminTheme.orange)
+              : _popupItem(Icons.branding_watermark_outlined, 'Enable Branding', 'enable_branding', color: AdminTheme.success),
           _popupItem(Icons.timer_outlined, 'Extend Trial', 'extend_trial'),
           _popupItem(Icons.date_range_outlined, 'Edit Expiry', 'edit_expiry'),
           const PopupMenuDivider(),
@@ -633,6 +638,44 @@ class _GymsScreenState extends State<GymsScreen> {
             builder: (context) => AdminGymDashboardScreen(gym: gym),
           ),
         );
+        break;
+      case 'enable_branding':
+        try {
+          if (client != null && gymId != null) {
+            await client.from('gyms').update({'custom_branding_allowed': true}).eq('id', gymId);
+            await _fetchGyms();
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Custom branding enabled for $gymName'), backgroundColor: AdminTheme.success),
+              );
+            }
+          }
+        } catch (e) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Failed to enable custom branding: $e'), backgroundColor: Colors.red),
+            );
+          }
+        }
+        break;
+      case 'disable_branding':
+        try {
+          if (client != null && gymId != null) {
+            await client.from('gyms').update({'custom_branding_allowed': false}).eq('id', gymId);
+            await _fetchGyms();
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Custom branding disabled for $gymName'), backgroundColor: AdminTheme.orange),
+              );
+            }
+          }
+        } catch (e) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Failed to disable custom branding: $e'), backgroundColor: Colors.red),
+            );
+          }
+        }
         break;
       case 'lock_gym':
         final confirmedLock = await showAdminConfirmDialog(context,

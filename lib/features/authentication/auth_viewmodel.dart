@@ -58,6 +58,19 @@ class AuthViewModel extends ChangeNotifier {
   bool get isSubscriptionExpired => _isSubscriptionExpired;
   bool get isOffline => _isOffline;
 
+  // Custom Whitelabel Branding Getters
+  bool get isCustomBrandingEnabled {
+    final allowed = _gymInfo?['custom_branding_allowed'] == true || _storage.getBrandingEnabled();
+    final plan = _subscriptionInfo?['plan']?.toString() ?? _gymInfo?['plan']?.toString() ?? 'free_trial';
+    final status = _subscriptionInfo?['status']?.toString() ?? _gymInfo?['status']?.toString() ?? 'trial';
+    final hasPremiumPlan = plan == 'pro' || plan == 'business';
+    final isActive = status == 'active' || status == 'trial';
+    return allowed || (hasPremiumPlan && isActive);
+  }
+  String get customBrandingName => _storage.getBrandingName() ?? _gymInfo?['name'] ?? 'GYMOS';
+  String? get customBrandingLogoUrl => _storage.getBrandingLogoUrl() ?? _gymInfo?['logo_url'] ?? '';
+  String? get customBrandingLogoBase64 => _storage.getCachedImage('custom_gym_logo');
+
   void clearUnreadNotifications() {
     _unreadNotificationsCount = 0;
     notifyListeners();
@@ -696,9 +709,37 @@ class AuthViewModel extends ChangeNotifier {
               'gym_type': gymData['gym_type'] ?? '',
               'status': gymData['status'] ?? 'active',
               'is_locked': gymData['is_locked'] ?? false,
+              'custom_branding_allowed': gymData['custom_branding_allowed'] ?? false,
+              'plan': gymData['plan'] ?? 'free_trial',
             };
             _gymInfo = info;
             await _storage.setGymInfo(info);
+
+            // Fetch and cache branding status from RPC
+            try {
+              final brandingRes = await SupabaseService.client
+                  .rpc('check_custom_branding_status', params: {'p_gym_id': assoc.gymId})
+                  .maybeSingle();
+
+              if (brandingRes != null) {
+                final bool isAllowed = brandingRes['is_allowed'] == true;
+                final String gName = brandingRes['gym_name'] ?? gymData['name'] ?? 'GYMOS';
+                final String gLogo = brandingRes['gym_logo'] ?? gymData['logo_url'] ?? '';
+
+                await _storage.setBrandingEnabled(isAllowed);
+                await _storage.setBrandingName(gName);
+                await _storage.setBrandingLogoUrl(gLogo);
+
+                if (isAllowed && gLogo.isNotEmpty) {
+                  // Cache image locally in background
+                  cacheImageLocally(gLogo, 'custom_gym_logo');
+                } else if (!isAllowed) {
+                  await _storage.remove('cached_img_custom_gym_logo');
+                }
+              }
+            } catch (e) {
+              print('Error checking custom branding status in loadCurrentProfile: $e');
+            }
           }
         } catch (_) {
           final info = _storage.getGymInfo() ?? {
@@ -922,5 +963,24 @@ class AuthViewModel extends ChangeNotifier {
         notifyListeners();
       }
     }
+  }
+
+  Future<void> updateCustomBranding({required bool enabled, required String name, required String logoUrl}) async {
+    await _storage.setBrandingEnabled(enabled);
+    await _storage.setBrandingName(name);
+    await _storage.setBrandingLogoUrl(logoUrl);
+    if (enabled && logoUrl.isNotEmpty) {
+      await cacheImageLocally(logoUrl, 'custom_gym_logo');
+    } else {
+      await _storage.remove('cached_img_custom_gym_logo');
+    }
+    // Update local gymInfo as well so changes reflect immediately
+    if (_gymInfo != null) {
+      _gymInfo!['name'] = name;
+      _gymInfo!['logo_url'] = logoUrl;
+      _gymInfo!['logo'] = logoUrl;
+      await _storage.setGymInfo(_gymInfo!);
+    }
+    notifyListeners();
   }
 }

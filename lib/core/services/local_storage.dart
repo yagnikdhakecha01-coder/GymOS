@@ -93,6 +93,16 @@ class LocalStorageService {
   Future<bool> setCachedImage(String key, String base64Data) =>
       _prefs.setString('cached_img_$key', base64Data);
 
+  // Custom branding helpers
+  bool getBrandingEnabled() => _prefs.getBool('gymos_branding_enabled') ?? false;
+  Future<bool> setBrandingEnabled(bool value) => _prefs.setBool('gymos_branding_enabled', value);
+
+  String? getBrandingName() => _prefs.getString('gymos_branding_name');
+  Future<bool> setBrandingName(String name) => _prefs.setString('gymos_branding_name', name);
+
+  String? getBrandingLogoUrl() => _prefs.getString('gymos_branding_logo_url');
+  Future<bool> setBrandingLogoUrl(String url) => _prefs.setString('gymos_branding_logo_url', url);
+
   // Initialize beautiful, production-quality dummy data
   Future<void> _initDemoData({bool force = false}) async {
     final bool hasNewDb = _prefs.getBool('gymos_db_version_v5') ?? false;

@@ -18,6 +18,8 @@ import 'gym_role_selector_screen.dart';
 import '../member_app/screens/member_code_screen.dart';
 import 'data_sync_screen.dart';
 
+import '../../core/widgets/app_branding_header.dart';
+
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 
@@ -143,27 +145,13 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Logo icon
-                Container(
-                  width: 80,
-                  height: 80,
-                  decoration: BoxDecoration(
-                    color: AppTheme.primary,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: const Icon(Icons.fitness_center_rounded, color: Colors.white, size: 40),
+                const AppBrandingHeader(
+                  logoSize: 80,
+                  fontSize: 32,
+                  spacing: 20,
+                  welcomeText: false,
                 ),
-                const SizedBox(height: 20),
-                Text(
-                  'GYMOS',
-                  style: GoogleFonts.inter(
-                    fontSize: 32,
-                    fontWeight: FontWeight.w800,
-                    color: AppTheme.primary,
-                    letterSpacing: 2,
-                  ),
-                ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 10),
                 Text(
                   'Stronger Every Day',
                   style: GoogleFonts.inter(fontSize: 14, color: AppTheme.textMuted),

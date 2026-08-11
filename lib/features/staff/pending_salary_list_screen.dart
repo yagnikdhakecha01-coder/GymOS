@@ -4,8 +4,9 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../core/theme/theme.dart';
 import '../../core/models/staff.dart';
-import 'staff_viewmodel.dart';
+import '../staff_viewmodel.dart';
 import 'pay_salary_screen.dart';
+import '../auth/auth_viewmodel.dart';
 
 class PendingSalaryListScreen extends StatefulWidget {
   const PendingSalaryListScreen({super.key});
@@ -29,6 +30,11 @@ class _PendingSalaryListScreenState extends State<PendingSalaryListScreen> {
     }
     _selectedMonth = DateFormat('MMMM yyyy').format(now);
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      final authVm = Provider.of<AuthViewModel>(context, listen: false);
+      final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
+      if (gymId != null) {
+        Provider.of<StaffViewModel>(context, listen: false).fetchGymSalaryAdvances(gymId);
+      }
       Provider.of<StaffViewModel>(context, listen: false)
           .fetchPaidSalariesForMonth(_selectedMonth);
     });
@@ -90,6 +96,11 @@ class _PendingSalaryListScreenState extends State<PendingSalaryListScreen> {
                             setState(() {
                               _selectedMonth = newValue;
                             });
+                            final authVm = Provider.of<AuthViewModel>(context, listen: false);
+                            final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
+                            if (gymId != null) {
+                              Provider.of<StaffViewModel>(context, listen: false).fetchGymSalaryAdvances(gymId);
+                            }
                             Provider.of<StaffViewModel>(context, listen: false)
                                 .fetchPaidSalariesForMonth(newValue);
                           }
@@ -169,7 +180,17 @@ class _PendingSalaryListScreenState extends State<PendingSalaryListScreen> {
                           }
                           final double totalPayable = draft != null
                               ? (draft['net_salary'] as num).toDouble()
-                              : staff.salary; // Default fallback to base salary
+                              : () {
+                                  final advances = staffVm.getStaffAdvancesForMonth(staff.id, _selectedMonth);
+                                  final double totalAdvance = advances.fold<double>(0.0, (sum, adv) {
+                                    final status = adv['status'] as String?;
+                                    if (status == 'Approved' || status == 'Given' || status == 'Pending') {
+                                      return sum + ((adv['advance_amount'] ?? adv['amount'] ?? 0.0) as num).toDouble();
+                                    }
+                                    return sum;
+                                  });
+                                  return (staff.salary - totalAdvance).clamp(0.0, double.infinity);
+                                }();
 
                           return GestureDetector(
                             onTap: () {

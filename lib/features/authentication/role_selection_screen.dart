@@ -7,6 +7,7 @@ import 'first_time_setup_screen.dart';
 import '../member_app/screens/member_code_screen.dart';
 import '../staff/portal/staff_dashboard_screen.dart';
 import '../member_app/screens/member_shell.dart';
+import '../../core/widgets/app_branding_header.dart';
 
 class RoleSelectionScreen extends StatelessWidget {
   final bool isAddProfile;
@@ -23,24 +24,12 @@ class RoleSelectionScreen extends StatelessWidget {
           child: Column(
             children: [
               const Spacer(flex: 2),
-              // Logo
-              Container(
-                width: 72,
-                height: 72,
-                decoration: BoxDecoration(
-                  color: AppTheme.primary,
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                child: const Icon(Icons.fitness_center_rounded, color: Colors.white, size: 36),
-              ),
-              const SizedBox(height: 20),
-              Text(
-                'Welcome to GymOS',
-                style: GoogleFonts.inter(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: AppTheme.textPrimary,
-                ),
+              // App Branding Header (Custom logo & Welcome name)
+              const AppBrandingHeader(
+                logoSize: 72,
+                fontSize: 24,
+                spacing: 20,
+                welcomeText: true,
               ),
               const SizedBox(height: 6),
               Text(
