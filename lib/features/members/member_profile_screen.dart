@@ -17,6 +17,8 @@ import '../../core/models/finance.dart';
 import '../../core/models/workout_plan.dart';
 import '../../core/models/diet_plan.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../staff/staff_viewmodel.dart';
+import '../../core/services/supabase_service.dart';
 class MemberProfileScreen extends StatefulWidget {
   final Member member;
   const MemberProfileScreen({super.key, required this.member});
@@ -31,6 +33,9 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
   // Invitation tracking
   Map<String, dynamic>? _invitation;
   bool _loadingInvitation = false;
+
+  double _activeCommissionPercentage = 0.0;
+  bool _loadingPt = false;
 
   void _shareInvitationCode(String code, String phone) {
     showModalBottomSheet(
@@ -96,6 +101,7 @@ Thank you.''';
   void initState() {
     super.initState();
     _loadInvitation();
+    _loadPtAssignment();
     _ownerNotesController.text = widget.member.notes.isNotEmpty ? widget.member.notes : 'Prefers morning sessions.\nFocus on weight loss goal.';
     _trainerNotesController.text = 'Suggesting low carb diet and moderate cardio intensity.';
     _privateNotesController.text = 'VIP Client. Needs premium attention.';
@@ -119,6 +125,206 @@ Thank you.''';
         _loadingInvitation = false;
       });
     }
+  }
+
+  bool _isValidUUID(String val) {
+    return RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$').hasMatch(val);
+  }
+
+  Future<void> _loadPtAssignment() async {
+    if (!widget.member.ptMember || widget.member.ptTrainer.isEmpty) return;
+    setState(() => _loadingPt = true);
+    
+    final staffVm = Provider.of<StaffViewModel>(context, listen: false);
+    final trainer = staffVm.allStaff.where((s) => s.id == widget.member.ptTrainer).firstOrNull;
+    if (trainer != null) {
+      _activeCommissionPercentage = trainer.commissionPercentage;
+    }
+    
+    if (SupabaseService.isInitialized) {
+      try {
+        final res = await SupabaseService.client
+            .from('pt_assignments')
+            .select('commission_percentage')
+            .eq('member_id', widget.member.id)
+            .eq('assignment_status', 'Active')
+            .maybeSingle();
+            
+        if (res != null && res['commission_percentage'] != null) {
+          if (mounted) {
+            setState(() {
+              _activeCommissionPercentage = (res['commission_percentage'] as num).toDouble();
+            });
+          }
+        }
+      } catch (e) {
+        print('Error loading active PT assignment: $e');
+      }
+    }
+    if (mounted) {
+      setState(() => _loadingPt = false);
+    }
+  }
+
+  void _showEditTrainerBottomSheet(MembersViewModel membersVm) {
+    final staffVm = Provider.of<StaffViewModel>(context, listen: false);
+    final trainerList = staffVm.allStaff.where((s) => 
+      s.role == 'Trainer' || s.role == 'Personal Trainer' || s.role.toLowerCase().contains('trainer')
+    ).toList();
+
+    bool hasPT = widget.member.ptMember;
+    String? selectedTrainerId = _isValidUUID(widget.member.ptTrainer) ? widget.member.ptTrainer : null;
+    
+    if (selectedTrainerId == null && trainerList.isNotEmpty) {
+      selectedTrainerId = trainerList.first.id;
+    }
+
+    final commController = TextEditingController(text: _activeCommissionPercentage.toStringAsFixed(1));
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return SafeArea(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(context).viewInsets.bottom + 24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Edit PT Assignment', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.bold)),
+                        IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    
+                    SwitchListTile(
+                      activeColor: AppTheme.primary,
+                      title: Text('Assign Personal Trainer', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600)),
+                      subtitle: Text('Enable personal training sessions for this member', style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary)),
+                      value: hasPT,
+                      onChanged: (val) {
+                        setSheetState(() {
+                          hasPT = val;
+                        });
+                      },
+                    ),
+                    
+                    if (hasPT) ...[
+                      const SizedBox(height: 16),
+                      Text('Select Trainer', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 6),
+                      DropdownButtonFormField<String>(
+                        value: selectedTrainerId,
+                        isExpanded: true,
+                        decoration: InputDecoration(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        items: trainerList.map((t) {
+                          return DropdownMenuItem<String>(
+                            value: t.id,
+                            child: Text(t.name, style: GoogleFonts.inter(fontSize: 14)),
+                          );
+                        }).toList(),
+                        onChanged: (val) {
+                          setSheetState(() {
+                            selectedTrainerId = val;
+                            final selectedTrainer = trainerList.where((s) => s.id == val).firstOrNull;
+                            if (selectedTrainer != null) {
+                              commController.text = selectedTrainer.commissionPercentage.toStringAsFixed(1);
+                            }
+                          });
+                        },
+                      ),
+                      
+                      const SizedBox(height: 16),
+                      Text('Commission Percentage (%)', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 6),
+                      TextFormField(
+                        controller: commController,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        decoration: InputDecoration(
+                          hintText: 'e.g. 10.0',
+                          suffixText: '%',
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                      ),
+                    ],
+                    
+                    const SizedBox(height: 24),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primary,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                      ),
+                      onPressed: () async {
+                        if (hasPT && selectedTrainerId == null) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Please select a trainer'), backgroundColor: AppTheme.danger),
+                          );
+                          return;
+                        }
+
+                        final double percentage = hasPT
+                            ? (double.tryParse(commController.text.trim()) ?? 0.0)
+                            : 0.0;
+
+                        Navigator.pop(context); // Close sheet
+                        
+                        showDialog(
+                          context: context,
+                          barrierDismissible: false,
+                          builder: (context) => const Center(child: CircularProgressIndicator(color: AppTheme.primary)),
+                        );
+
+                        try {
+                          await membersVm.updateMemberPt(
+                            memberId: widget.member.id,
+                            ptMember: hasPT,
+                            ptTrainerId: hasPT ? selectedTrainerId! : '',
+                            commissionPercentage: percentage,
+                          );
+
+                          if (mounted) {
+                            Navigator.pop(context); // Close loader
+                            setState(() {
+                              _activeCommissionPercentage = percentage;
+                            });
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('✅ Trainer assignment updated successfully!'), backgroundColor: AppTheme.success),
+                            );
+                            _loadPtAssignment(); // Reload from database
+                          }
+                        } catch (e) {
+                          if (mounted) {
+                            Navigator.pop(context); // Close loader
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Error updating Trainer: $e'), backgroundColor: AppTheme.danger),
+                            );
+                          }
+                        }
+                      },
+                      child: const Text('Save Details', style: TextStyle(fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<void> _confirmUnlink(MembersViewModel vm, Member member) async {
@@ -1017,6 +1223,68 @@ Thank you.''';
               ),
             ),
           ],
+        ),
+        const SizedBox(height: 24),
+
+        // 3.5 Personal Trainer & Commission
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('PERSONAL TRAINER & COMMISSION', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textSecondary, letterSpacing: 0.5)),
+            GestureDetector(
+              onTap: () => _showEditTrainerBottomSheet(membersVm),
+              child: Row(
+                children: [
+                  const Icon(Icons.edit_outlined, size: 14, color: AppTheme.primary),
+                  const SizedBox(width: 4),
+                  Text('Edit', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.primary)),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        CustomCard(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Consumer<StaffViewModel>(
+            builder: (context, staffVm, child) {
+              final trainer = staffVm.allStaff.where((s) => s.id == member.ptTrainer).firstOrNull;
+              final trainerName = member.ptMember && trainer != null ? trainer.name : 'None / Unassigned';
+              return Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.person_outline_rounded, color: AppTheme.primary, size: 18),
+                          const SizedBox(width: 8),
+                          Text('Assigned PT', style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary)),
+                        ],
+                      ),
+                      Text(trainerName, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
+                    ],
+                  ),
+                  if (member.ptMember) ...[
+                    const Divider(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.percent_rounded, color: AppTheme.primary, size: 18),
+                            const SizedBox(width: 8),
+                            Text('Commission Rate', style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary)),
+                          ],
+                        ),
+                        Text('${_activeCommissionPercentage.toStringAsFixed(1)} %', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
+                      ],
+                    ),
+                  ],
+                ],
+              );
+            },
+          ),
         ),
         const SizedBox(height: 24),
 

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:math';
 import '../../core/repository/gym_repository.dart';
 import '../../core/models/member.dart';
 import '../../core/models/finance.dart';
@@ -100,7 +101,7 @@ class MembersViewModel extends ChangeNotifier {
     double pendingAmount = 0.0,
   }) async {
     final newMember = Member(
-      id: 'mem_${DateTime.now().millisecondsSinceEpoch}',
+      id: _generateUUIDv4(),
       name: name,
       email: email,
       phone: phone,
@@ -140,6 +141,21 @@ class MembersViewModel extends ChangeNotifier {
       );
       await _repository.saveTransaction(tx);
     }
+    notifyListeners();
+  }
+
+  Future<void> updateMemberPt({
+    required String memberId,
+    required bool ptMember,
+    required String ptTrainerId,
+    required double commissionPercentage,
+  }) async {
+    await _repository.updateMemberPtAssignment(
+      memberId: memberId,
+      ptMember: ptMember,
+      ptTrainerId: ptTrainerId,
+      commissionPercentage: commissionPercentage,
+    );
     notifyListeners();
   }
 
@@ -290,5 +306,18 @@ class MembersViewModel extends ChangeNotifier {
     final code = await _repository.unlinkAccount(recordId, false);
     notifyListeners();
     return code;
+  }
+
+  String _generateUUIDv4() {
+    final rnd = Random.secure();
+    final bytes = List.generate(16, (_) => rnd.nextInt(256));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    final chars = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).toList();
+    return '${chars[0]}${chars[1]}${chars[2]}${chars[3]}-'
+        '${chars[4]}${chars[5]}-'
+        '${chars[6]}${chars[7]}-'
+        '${chars[8]}${chars[9]}-'
+        '${chars[10]}${chars[11]}${chars[12]}${chars[13]}${chars[14]}${chars[15]}';
   }
 }

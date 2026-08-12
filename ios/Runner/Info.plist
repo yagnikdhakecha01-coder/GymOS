@@ -83,6 +83,8 @@
 	<string>This app requires access to your camera to scan QR codes for attendance and take photos.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>This app requires access to your microphone to record audio if needed.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Gym OS requires Face ID permission to authenticate you and secure your access.</string>
 </dict>
 </plist>
 

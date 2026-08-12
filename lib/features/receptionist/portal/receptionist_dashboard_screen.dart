@@ -17,6 +17,7 @@ import '../../../core/theme/responsive.dart';
 import 'receptionist_activity_log_screen.dart';
 import '../../dashboard/gym_switcher_bottom_sheet.dart';
 import '../../../core/widgets/sidebar_drawer.dart';
+import '../../more/notifications_screen.dart';
 
 class ReceptionistDashboardScreen extends StatefulWidget {
   const ReceptionistDashboardScreen({super.key});
@@ -117,16 +118,52 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
                       ),
                     ),
                     // Notification Button
-                    Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: AppTheme.border),
-                      ),
-                      child: IconButton(
-                        icon: const Icon(Icons.notifications_none_rounded, color: AppTheme.textPrimary, size: 22),
-                        onPressed: () {},
-                      ),
+                    Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: AppTheme.border),
+                          ),
+                          child: IconButton(
+                            icon: const Icon(Icons.notifications_none_rounded, color: AppTheme.textPrimary, size: 22),
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+                              );
+                            },
+                          ),
+                        ),
+                        if (authVm.unreadNotificationsCount > 0)
+                          Positioned(
+                            top: -2,
+                            right: -2,
+                            child: Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: const BoxDecoration(
+                                color: AppTheme.danger,
+                                shape: BoxShape.circle,
+                              ),
+                              constraints: const BoxConstraints(
+                                minWidth: 16,
+                                minHeight: 16,
+                              ),
+                              child: Center(
+                                child: Text(
+                                  authVm.unreadNotificationsCount > 9 ? '9+' : '${authVm.unreadNotificationsCount}',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 8,
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ],
                 ),

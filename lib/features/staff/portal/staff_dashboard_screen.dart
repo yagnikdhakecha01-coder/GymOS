@@ -260,6 +260,7 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
                 .from('notifications')
                 .select('id')
                 .eq('gym_id', gymId)
+                .eq('is_read', false)
                 .timeout(const Duration(seconds: 3));
             notifCount = (notifRes as List).length;
           } catch (e) {

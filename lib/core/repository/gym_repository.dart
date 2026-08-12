@@ -824,6 +824,11 @@ class GymRepository extends ChangeNotifier {
               'sync_member_payment_amounts',
               params: payload,
             );
+          } else if (table == 'rpc_change_member_pt') {
+            await SupabaseService.client.rpc(
+              'change_member_pt',
+              params: payload,
+            );
           } else if (action == 'update') {
             final id = payload['id'] as String;
             final updateData = Map<String, dynamic>.from(payload)..remove('id')..remove('uuid');
@@ -2013,6 +2018,15 @@ class GymRepository extends ChangeNotifier {
       'extra_fields': member.extraFields,
     };
 
+    // Direct Supabase upsert when online to prevent FK errors in child tables (e.g. invitations)
+    if (SupabaseService.isInitialized) {
+      try {
+        await SupabaseService.client.from('members').upsert(data);
+      } catch (e) {
+        print('saveMember direct Supabase upsert skipped/failed: $e. Fallback to queue.');
+      }
+    }
+
     _crudQueue.add({
       'uuid': _generateUuidV4(),
       'table': 'members',
@@ -2045,6 +2059,55 @@ class GymRepository extends ChangeNotifier {
         'error_message': null,
       });
     }
+
+    await _saveQueuesToStorage();
+    triggerBackgroundSync();
+  }
+
+  Future<void> updateMemberPtAssignment({
+    required String memberId,
+    required bool ptMember,
+    required String ptTrainerId,
+    required double commissionPercentage,
+  }) async {
+    final gymId = _storage.getGymInfo()?['id'];
+    final memberIndex = _members.indexWhere((m) => m.id == memberId);
+    if (memberIndex >= 0) {
+      final oldMember = _members[memberIndex];
+      final updatedMember = oldMember.copyWith(
+        ptMember: ptMember,
+        ptTrainer: ptTrainerId,
+      );
+      _members[memberIndex] = updatedMember;
+      await _storage.setString(LocalStorageService.keyMembers, jsonEncode(_members.map((e) => e.toJson()).toList()));
+      notifyListeners();
+    }
+
+    final payload = {
+      'p_gym_id': gymId,
+      'p_member_id': memberId,
+      'p_pt_member': ptMember,
+      'p_staff_id': _isValidUUID(ptTrainerId) ? ptTrainerId : null,
+      'p_commission_percentage': commissionPercentage,
+    };
+
+    if (SupabaseService.isInitialized) {
+      try {
+        await SupabaseService.client.rpc('change_member_pt', params: payload);
+      } catch (e) {
+        print('updateMemberPtAssignment RPC skipped/failed: $e. Fallback to queue.');
+      }
+    }
+
+    _crudQueue.add({
+      'uuid': _generateUuidV4(),
+      'table': 'rpc_change_member_pt',
+      'action': 'rpc',
+      'payload': payload,
+      'created_at': DateTime.now().toIso8601String(),
+      'retry_count': 0,
+      'error_message': null,
+    });
 
     await _saveQueuesToStorage();
     triggerBackgroundSync();
@@ -2266,14 +2329,14 @@ class GymRepository extends ChangeNotifier {
     });
 
     // 3. Queue staff shift assignment
-    String mappedAssignmentType = 'Single';
+    String mappedAssignmentType = 'Single Shift';
     final lowerShift = staff.shift.toLowerCase();
     if (staff.shiftType == 'both' || lowerShift.contains('both')) {
-      mappedAssignmentType = 'Both';
+      mappedAssignmentType = 'Both Shifts';
     } else if (lowerShift.contains('morning')) {
-      mappedAssignmentType = 'Morning';
+      mappedAssignmentType = 'Morning Shift';
     } else if (lowerShift.contains('evening')) {
-      mappedAssignmentType = 'Evening';
+      mappedAssignmentType = 'Evening Shift';
     }
 
     _crudQueue.add({
@@ -2882,6 +2945,49 @@ class GymRepository extends ChangeNotifier {
               'notes': staffRecord.notes,
             };
             await SupabaseService.client.from('staff').upsert(staffData);
+          } else {
+            final memberRecord = _members.firstWhere(
+              (m) => m.id == recordId,
+              orElse: () => Member(
+                id: recordId,
+                name: name,
+                email: '',
+                phone: phone,
+                avatar: '',
+                joinDate: DateTime.now().toString().split(' ')[0],
+                status: 'Active',
+                membershipPlanId: '',
+                ptMember: false,
+                ptTrainer: '',
+                assignedWorkoutId: '',
+                assignedDietId: '',
+                medicalDetails: 'None',
+                notes: '',
+                pendingAmount: 0.0,
+              ),
+            );
+            final Map<String, dynamic> memberData = {
+              'id': memberRecord.id,
+              'gym_id': gymId,
+              'name': memberRecord.name,
+              'phone': memberRecord.phone,
+              'status': memberRecord.status,
+              'join_date': memberRecord.joinDate,
+              'avatar': memberRecord.avatar,
+              'membership_plan_id': memberRecord.membershipPlanId.isNotEmpty ? memberRecord.membershipPlanId : null,
+              'pt_member': memberRecord.ptMember,
+              'pt_trainer': _isValidUUID(memberRecord.ptTrainer) ? memberRecord.ptTrainer : null,
+              'assigned_workout_id': _isValidUUID(memberRecord.assignedWorkoutId) ? memberRecord.assignedWorkoutId : null,
+              'assigned_diet_id': _isValidUUID(memberRecord.assignedDietId) ? memberRecord.assignedDietId : null,
+              'medical_details': memberRecord.medicalDetails,
+              'notes': memberRecord.notes,
+              'pending_amount': memberRecord.pendingAmount,
+              'discount_amount': memberRecord.discountAmount,
+              'total_received_amount': memberRecord.totalReceivedAmount,
+              'payment_status': memberRecord.paymentStatus,
+              'extra_fields': memberRecord.extraFields,
+            };
+            await SupabaseService.client.from('members').upsert(memberData);
           }
         }
       }

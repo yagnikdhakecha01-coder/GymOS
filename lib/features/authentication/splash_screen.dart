@@ -17,6 +17,8 @@ import 'first_time_setup_screen.dart';
 import 'gym_role_selector_screen.dart';
 import '../member_app/screens/member_code_screen.dart';
 import 'data_sync_screen.dart';
+import 'biometric_lock_screen.dart';
+import '../../core/services/biometric_service.dart';
 
 import '../../core/widgets/app_branding_header.dart';
 
@@ -70,53 +72,60 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
       final authVm = Provider.of<AuthViewModel>(context, listen: false);
       await authVm.loadCurrentProfile(); // Sync profile state
       
+      Widget nextScreen;
+      
       if (authVm.userAssociations.length > 1 && authVm.activeAssociation == null) {
-        if (mounted) {
-          Navigator.pushReplacement(context, AppRouter.scaleRoute(const GymRoleSelectorScreen()));
+        nextScreen = const GymRoleSelectorScreen();
+      } else if (authVm.userAssociations.isEmpty) {
+        final role = authVm.selectedRole ?? '';
+        if (role == 'owner') {
+          nextScreen = const FirstTimeSetupScreen();
+        } else {
+          nextScreen = const MemberCodeScreen();
         }
-        return;
+      } else {
+        final profile = authVm.currentProfile!;
+        Widget targetScreen;
+        bool shouldSync = false;
+        switch (profile.role) {
+          case UserRole.owner:
+            if (profile.setupCompleted) {
+              targetScreen = const MainNavigationHolder();
+              shouldSync = true;
+            } else {
+              targetScreen = const FirstTimeSetupScreen();
+            }
+            break;
+          case UserRole.staff:
+            final staffRole = authVm.staffRecord?.role.toLowerCase() ?? '';
+            if (staffRole.contains('reception')) {
+              targetScreen = const ReceptionistShell();
+            } else {
+              targetScreen = const StaffShell();
+            }
+            shouldSync = true;
+            break;
+          case UserRole.member:
+            targetScreen = const MemberShell();
+            shouldSync = true;
+            break;
+        }
+        nextScreen = targetScreen;
       }
 
-      if (authVm.userAssociations.isEmpty) {
+      final lockEnabled = await BiometricService.isLockEnabled();
+      if (lockEnabled) {
         if (mounted) {
-          final role = authVm.selectedRole ?? '';
-          if (role == 'owner') {
-            Navigator.pushReplacement(context, AppRouter.scaleRoute(const FirstTimeSetupScreen()));
-          } else {
-            Navigator.pushReplacement(context, AppRouter.scaleRoute(const MemberCodeScreen()));
-          }
+          Navigator.pushReplacement(
+            context,
+            AppRouter.scaleRoute(BiometricLockScreen(targetScreen: nextScreen)),
+          );
         }
       } else {
         if (mounted) {
-          final profile = authVm.currentProfile!;
-          Widget targetScreen;
-          bool shouldSync = false;
-          switch (profile.role) {
-            case UserRole.owner:
-              if (profile.setupCompleted) {
-                targetScreen = const MainNavigationHolder();
-                shouldSync = true;
-              } else {
-                targetScreen = const FirstTimeSetupScreen();
-              }
-              break;
-            case UserRole.staff:
-              final staffRole = authVm.staffRecord?.role.toLowerCase() ?? '';
-              if (staffRole.contains('reception')) {
-                targetScreen = const ReceptionistShell();
-              } else {
-                targetScreen = const StaffShell();
-              }
-              shouldSync = true;
-              break;
-            case UserRole.member:
-              targetScreen = const MemberShell();
-              shouldSync = true;
-              break;
-          }
           Navigator.pushReplacement(
             context,
-            AppRouter.scaleRoute(targetScreen),
+            AppRouter.scaleRoute(nextScreen),
           );
         }
       }

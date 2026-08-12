@@ -68,7 +68,7 @@ class AuthViewModel extends ChangeNotifier {
     return allowed || (hasPremiumPlan && isActive);
   }
   String get customBrandingName => _storage.getBrandingName() ?? _gymInfo?['name'] ?? 'GYMOS';
-  String? get customBrandingLogoUrl => _storage.getBrandingLogoUrl() ?? _gymInfo?['logo_url'] ?? '';
+  String? get customBrandingLogoUrl => _storage.getBrandingLogoUrl() ?? _gymInfo?['logo_url'] ?? _gymInfo?['logo'] ?? '';
   String? get customBrandingLogoBase64 => _storage.getCachedImage('custom_gym_logo');
 
   void clearUnreadNotifications() {

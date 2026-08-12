@@ -829,20 +829,22 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
                 ],
               ),
             ),
-            const Divider(),
-
-            // Two Box Subscription Section
-            Expanded(
-              child: SingleChildScrollView(
-                child: Column(
-                  children: [
-                    _buildSubscriptionSection(),
-                  ],
+            // Two Box Subscription Section (Gym Owners only)
+            if (authVm.selectedRole?.toLowerCase() == 'owner') ...[
+              const Divider(),
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      _buildSubscriptionSection(),
+                    ],
+                  ),
                 ),
               ),
-            ),
-
-            const Divider(),
+              const Divider(),
+            ] else ...[
+              const Spacer(),
+            ],
 
             // Logout row
             Padding(

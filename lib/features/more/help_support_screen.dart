@@ -2,10 +2,89 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme/theme.dart';
 import '../../core/widgets/custom_card.dart';
+import '../../core/services/supabase_service.dart';
 import '../dashboard/support_tickets_screen.dart';
 
-class HelpSupportScreen extends StatelessWidget {
+class FAQItem {
+  final String question;
+  final String answer;
+
+  FAQItem({required this.question, required this.answer});
+
+  factory FAQItem.fromJson(Map<String, dynamic> json) {
+    return FAQItem(
+      question: json['question'] ?? '',
+      answer: json['answer'] ?? '',
+    );
+  }
+}
+
+class HelpSupportScreen extends StatefulWidget {
   const HelpSupportScreen({super.key});
+
+  @override
+  State<HelpSupportScreen> createState() => _HelpSupportScreenState();
+}
+
+class _HelpSupportScreenState extends State<HelpSupportScreen> {
+  List<FAQItem> _faqs = [];
+  bool _loadingFAQs = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchFAQs();
+  }
+
+  Future<void> _fetchFAQs() async {
+    final defaultFAQs = [
+      FAQItem(
+        question: 'How do I add custom fields to member forms?',
+        answer: 'Go to More -> Gym Settings -> Custom Member Form. Here, you can configure text, number, dropdown, switch, or photo fields that will automatically appear when adding a member.',
+      ),
+      FAQItem(
+        question: 'Can I schedule multiple workouts in a single day?',
+        answer: 'Yes, inside More -> Workout Plans -> Add/Edit Plan. Each day of the weekly schedule has an "+ Add Workout" button allowing you to add unlimited routines.',
+      ),
+      FAQItem(
+        question: 'How does trainer assignment work?',
+        answer: 'When adding a member, toggle the "Personal Trainer" switch to ON. You will then see options to select an assigned trainer, PT package, and custom coaching notes.',
+      ),
+    ];
+
+    if (!SupabaseService.isInitialized) {
+      setState(() {
+        _faqs = defaultFAQs;
+        _loadingFAQs = false;
+      });
+      return;
+    }
+
+    try {
+      final List res = await SupabaseService.client
+          .from('faqs')
+          .select()
+          .order('display_order', ascending: true);
+
+      if (res.isNotEmpty) {
+        setState(() {
+          _faqs = res.map((e) => FAQItem.fromJson(e)).toList();
+          _loadingFAQs = false;
+        });
+      } else {
+        setState(() {
+          _faqs = defaultFAQs;
+          _loadingFAQs = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error fetching FAQs: $e');
+      setState(() {
+        _faqs = defaultFAQs;
+        _loadingFAQs = false;
+      });
+    }
+  }
 
   Widget _buildFAQTile(String question, String answer) {
     return ExpansionTile(
@@ -123,24 +202,24 @@ class HelpSupportScreen extends StatelessWidget {
             const SizedBox(height: 8),
             CustomCard(
               padding: EdgeInsets.zero,
-              child: Column(
-                children: [
-                  _buildFAQTile(
-                    'How do I add custom fields to member forms?',
-                    'Go to More -> Gym Settings -> Custom Member Form. Here, you can configure text, number, dropdown, switch, or photo fields that will automatically appear when adding a member.',
-                  ),
-                  const Divider(height: 1),
-                  _buildFAQTile(
-                    'Can I schedule multiple workouts in a single day?',
-                    'Yes, inside More -> Workout Plans -> Add/Edit Plan. Each day of the weekly schedule has an "+ Add Workout" button allowing you to add unlimited routines.',
-                  ),
-                  const Divider(height: 1),
-                  _buildFAQTile(
-                    'How does trainer assignment work?',
-                    'When adding a member, toggle the "Personal Trainer" switch to ON. You will then see options to select an assigned trainer, PT package, and custom coaching notes.',
-                  ),
-                ],
-              ),
+              child: _loadingFAQs
+                  ? const Padding(
+                      padding: EdgeInsets.all(24.0),
+                      child: Center(
+                        child: CircularProgressIndicator(color: AppTheme.primary),
+                      ),
+                    )
+                  : Column(
+                      children: List.generate(_faqs.length, (index) {
+                        final faq = _faqs[index];
+                        return Column(
+                          children: [
+                            _buildFAQTile(faq.question, faq.answer),
+                            if (index < _faqs.length - 1) const Divider(height: 1),
+                          ],
+                        );
+                      }),
+                    ),
             ),
           ],
         ),

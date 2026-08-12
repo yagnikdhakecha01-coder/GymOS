@@ -108,6 +108,16 @@ class ReceptionistMoreScreen extends StatelessWidget {
                   ),
                   _divider(),
                   _buildMenuRow(
+                    icon: Icons.calendar_month_outlined,
+                    title: 'My Work Schedule',
+                    onTap: () {
+                      if (staff != null) {
+                        _showScheduleDialog(context, staff);
+                      }
+                    },
+                  ),
+                  _divider(),
+                  _buildMenuRow(
                     icon: Icons.event_busy_rounded,
                     title: 'Gym Holidays',
                     onTap: () {
@@ -176,6 +186,63 @@ class ReceptionistMoreScreen extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _dayScheduleRow(String days, String status) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(days, style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary)),
+          Text(status, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: status.contains('Off') ? Colors.red : AppTheme.primary)),
+        ],
+      ),
+    );
+  }
+
+  void _showScheduleDialog(BuildContext context, dynamic staff) {
+    final isBothShift = staff.shiftType == 'both' || staff.shift.toLowerCase().contains('both');
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('My Work Schedule'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Shift: ${isBothShift ? 'Both Shifts (Double)' : (staff.shift.isNotEmpty ? staff.shift : 'Single Shift')}',
+              style: GoogleFonts.inter(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 6),
+            if (isBothShift) ...[
+              Text(
+                'Shift 1: ${staff.shift1Start.isNotEmpty ? staff.shift1Start : '09:00 AM'} - ${staff.shift1End.isNotEmpty ? staff.shift1End : '05:00 PM'}',
+                style: GoogleFonts.inter(color: AppTheme.textSecondary, fontSize: 13),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Shift 2: ${staff.shift2Start.isNotEmpty ? staff.shift2Start : '04:00 PM'} - ${staff.shift2End.isNotEmpty ? staff.shift2End : '09:00 PM'}',
+                style: GoogleFonts.inter(color: AppTheme.textSecondary, fontSize: 13),
+              ),
+            ] else ...[
+              Text(
+                'Timing: ${staff.shift1Start.isNotEmpty ? staff.shift1Start : '09:00 AM'} - ${staff.shift1End.isNotEmpty ? staff.shift1End : '05:00 PM'}',
+                style: GoogleFonts.inter(color: AppTheme.textSecondary, fontSize: 13),
+              ),
+            ],
+            const Divider(height: 20),
+            _dayScheduleRow('Mon - Fri', 'Active'),
+            _dayScheduleRow('Saturday', 'Active'),
+            _dayScheduleRow('Sunday', 'Weekly Off'),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
+        ],
       ),
     );
   }

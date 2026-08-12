@@ -10,6 +10,8 @@ import '../../core/widgets/custom_button.dart';
 import '../../core/repository/gym_repository.dart';
 import '../authentication/auth_viewmodel.dart';
 import '../../core/services/supabase_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../core/models/attendance.dart';
 
 class StaffAttendanceScreen extends StatefulWidget {
   const StaffAttendanceScreen({super.key});
@@ -50,12 +52,17 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
   GymRepository? _gymRepo;
   bool _isCheckingStatus = false;
 
+  bool _showCalendar = true;
+  DateTime _currentMonth = DateTime.now();
+  List<String> _holidaysList = [];
+
   @override
   void initState() {
     super.initState();
     _initAttendance();
     _gymRepo = Provider.of<GymRepository>(context, listen: false);
     _gymRepo?.addListener(_onRepoUpdated);
+    _loadHolidaysForCalendar();
   }
 
   Future<void> _initAttendance() async {
@@ -1155,6 +1162,308 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
     );
   }
 
+  Future<void> _loadHolidaysForCalendar() async {
+    final authVm = Provider.of<AuthViewModel>(context, listen: false);
+    final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
+    if (gymId == null) return;
+    
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cached = prefs.getStringList('staff_declared_holidays_$gymId');
+      if (cached != null) {
+        if (mounted) {
+          setState(() {
+            _holidaysList = cached;
+          });
+        }
+      }
+      
+      if (SupabaseService.isInitialized) {
+        final res = await SupabaseService.client
+            .from('holidays')
+            .select('date')
+            .eq('gym_id', gymId);
+        
+        final List<String> hDates = (res as List)
+            .map((h) => h['date']?.toString() ?? '')
+            .where((d) => d.isNotEmpty)
+            .toList();
+            
+        await prefs.setStringList('staff_declared_holidays_$gymId', hDates);
+        if (mounted) {
+          setState(() {
+            _holidaysList = hDates;
+          });
+        }
+      }
+    } catch (e) {
+      print('Error loading holidays in staff attendance: $e');
+    }
+  }
+
+  void _changeMonth(int offset) {
+    setState(() {
+      _currentMonth = DateTime(_currentMonth.year, _currentMonth.month + offset, 1);
+    });
+    final repo = Provider.of<GymRepository>(context, listen: false);
+    repo.fetchAttendanceLogsFromSupabase();
+    _loadHolidaysForCalendar();
+  }
+
+  Widget _buildCalendarView() {
+    final authVm = Provider.of<AuthViewModel>(context);
+    final repo = Provider.of<GymRepository>(context);
+    final profileUserId = authVm.currentProfile?.id ?? authVm.currentUser?.id;
+
+    final staffLogsThisMonth = repo.getAttendance().where((r) {
+      if (r.userId != profileUserId || r.userType != 'Staff') return false;
+      try {
+        DateTime parsedDate = DateFormat('dd-MM-yyyy').parse(r.date);
+        return parsedDate.year == _currentMonth.year && parsedDate.month == _currentMonth.month;
+      } catch (_) {
+        return false;
+      }
+    }).toList();
+
+    final totalDaysInMonth = DateTime(_currentMonth.year, _currentMonth.month + 1, 0).day;
+    int presentCount = 0;
+    int absentCount = 0;
+    int leaveCount = 0;
+
+    for (var log in staffLogsThisMonth) {
+      final status = log.status;
+      if (status == 'Present' || status == 'Late' || status == 'Early Exit' || status == 'Overtime') {
+        presentCount++;
+      } else if (status == 'Absent') {
+        absentCount++;
+      } else if (status == 'Leave' || status == 'On Leave' || status == 'Half Leave') {
+        leaveCount++;
+      }
+    }
+
+    return Column(
+      children: [
+        // ═══════ CALENDAR CARD ═══════
+        Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppTheme.border),
+              boxShadow: AppTheme.cardShadow,
+            ),
+            child: Column(
+              children: [
+                // Month Header
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.chevron_left_rounded, color: AppTheme.textMuted),
+                        onPressed: () => _changeMonth(-1),
+                      ),
+                      Text(
+                        DateFormat('MMMM yyyy').format(_currentMonth),
+                        style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: AppTheme.textPrimary),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.chevron_right_rounded, color: AppTheme.textMuted),
+                        onPressed: () => _changeMonth(1),
+                      ),
+                    ],
+                  ),
+                ),
+                // Day Headers
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: ['S', 'M', 'T', 'W', 'T', 'F', 'S']
+                        .map((d) => SizedBox(
+                              width: 36,
+                              child: Center(
+                                child: Text(d, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: AppTheme.textMuted)),
+                              ),
+                            ))
+                        .toList(),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                // Calendar Grid
+                _buildCalendarGrid(staffLogsThisMonth),
+                const SizedBox(height: 12),
+              ],
+            ),
+          ),
+        ),
+
+        // ═══════ SUMMARY CARD ═══════
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+          child: CustomCard(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Summary (${DateFormat('MMMM').format(_currentMonth)})',
+                  style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: AppTheme.textPrimary),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    _summaryItem('Present', '$presentCount Days', Colors.green, const Color(0xFFE8F5E9)),
+                    _summaryItem('Absent', '$absentCount Days', Colors.red, const Color(0xFFFFF1F2)),
+                    _summaryItem('Leave', '$leaveCount Days', Colors.purple, const Color(0xFFF3E8FF)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _summaryItem(String label, String value, Color textColor, Color bgColor) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        children: [
+          Text(label, style: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.w600, color: AppTheme.textSecondary)),
+          const SizedBox(height: 2),
+          Text(value, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold, color: textColor)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCalendarGrid(List<AttendanceRecord> logsThisMonth) {
+    final now = DateTime.now();
+    final firstDayOfMonth = DateTime(_currentMonth.year, _currentMonth.month, 1);
+    final lastDayOfMonth = DateTime(_currentMonth.year, _currentMonth.month + 1, 0);
+    
+    final firstDayWeekday = firstDayOfMonth.weekday;
+    final startOffset = firstDayWeekday == 7 ? 0 : firstDayWeekday; 
+    final totalDays = lastDayOfMonth.day;
+    final today = now.day;
+    final isCurrentMonth = _currentMonth.year == now.year && _currentMonth.month == now.month;
+
+    List<Widget> rows = [];
+    List<Widget> currentRow = [];
+
+    for (int i = 0; i < startOffset; i++) {
+      currentRow.add(const SizedBox(width: 36, height: 36));
+    }
+
+    for (int day = 1; day <= totalDays; day++) {
+      final dayDate = DateTime(_currentMonth.year, _currentMonth.month, day);
+      final dateStr = DateFormat('dd-MM-yyyy').format(dayDate);
+      final dateIsoStr = DateFormat('yyyy-MM-dd').format(dayDate);
+      final isDeclaredHoliday = _holidaysList.contains(dateIsoStr) || _holidaysList.contains(dateStr);
+      final logsForDay = logsThisMonth.where((l) => l.date == dateStr).toList();
+      
+      Color bgColor = Colors.transparent;
+      Color textColor = AppTheme.textPrimary;
+      final isToday = isCurrentMonth && day == today;
+      
+      if (isDeclaredHoliday) {
+        bgColor = isToday ? const Color(0xFF9333EA) : const Color(0xFFF3E8FF);
+        textColor = isToday ? Colors.white : const Color(0xFF9333EA);
+      } else if (logsForDay.isNotEmpty) {
+        final status = logsForDay.first.status;
+        if (isToday) {
+          if (status == 'Present' || status == 'Late' || status == 'Early Exit' || status == 'Overtime') {
+            bgColor = AppTheme.success;
+            textColor = Colors.white;
+          } else if (status == 'Half Day' || status == 'Half Leave') {
+            bgColor = Colors.orange;
+            textColor = Colors.white;
+          } else if (status == 'Absent') {
+            bgColor = AppTheme.danger;
+            textColor = Colors.white;
+          } else if (status == 'Leave' || status == 'On Leave') {
+            bgColor = Colors.purple;
+            textColor = Colors.white;
+          } else if (status == 'Holiday') {
+            bgColor = const Color(0xFF9333EA);
+            textColor = Colors.white;
+          }
+        } else {
+          if (status == 'Present' || status == 'Late' || status == 'Early Exit' || status == 'Overtime') {
+            bgColor = AppTheme.successLight;
+            textColor = AppTheme.success;
+          } else if (status == 'Half Day' || status == 'Half Leave') {
+            bgColor = const Color(0xFFFEF3C7);
+            textColor = Colors.orange;
+          } else if (status == 'Absent') {
+            bgColor = AppTheme.dangerLight;
+            textColor = AppTheme.danger;
+          } else if (status == 'Leave' || status == 'On Leave') {
+            bgColor = const Color(0xFFF3E8FF);
+            textColor = Colors.purple;
+          } else if (status == 'Holiday') {
+            bgColor = const Color(0xFFF3E8FF);
+            textColor = const Color(0xFF9333EA);
+          }
+        }
+      }
+
+      if (isToday && bgColor == Colors.transparent) {
+        bgColor = AppTheme.info;
+        textColor = Colors.white;
+      }
+
+      currentRow.add(
+        SizedBox(
+          width: 36, height: 36,
+          child: Center(
+            child: Container(
+              width: 30, height: 30,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: bgColor,
+              ),
+              child: Center(
+                child: Text(
+                  '$day',
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    fontWeight: (isToday || bgColor != Colors.transparent) ? FontWeight.w700 : FontWeight.w500,
+                    color: textColor,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      if ((startOffset + day) % 7 == 0 || day == totalDays) {
+        while (currentRow.length < 7) {
+          currentRow.add(const SizedBox(width: 36, height: 36));
+        }
+        rows.add(
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+            child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: List.from(currentRow)),
+          ),
+        );
+        currentRow = [];
+      }
+    }
+
+    return Column(children: rows);
+  }
+
   Widget _buildHistoryScreen() {
     return Scaffold(
       backgroundColor: AppTheme.background,
@@ -1169,8 +1478,14 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
           'Attendance History',
           style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
         ),
+        actions: [
+          IconButton(
+            icon: Icon(_showCalendar ? Icons.list_alt_rounded : Icons.calendar_month_rounded, color: AppTheme.primary),
+            onPressed: () => setState(() => _showCalendar = !_showCalendar),
+          ),
+        ],
       ),
-      body: _buildHistoryList(),
+      body: _showCalendar ? SingleChildScrollView(child: _buildCalendarView()) : _buildHistoryList(),
     );
   }
 

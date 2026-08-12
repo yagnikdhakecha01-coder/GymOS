@@ -49,7 +49,8 @@ class StaffMoreScreen extends StatelessWidget {
     );
   }
 
-  void _showScheduleDialog(BuildContext context) {
+  void _showScheduleDialog(BuildContext context, Staff staff) {
+    final isBothShift = staff.shiftType == 'both' || staff.shift.toLowerCase().contains('both');
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -58,11 +59,30 @@ class StaffMoreScreen extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Shift: Morning Shift', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-            Text('Timing: 06:00 AM - 02:00 PM', style: GoogleFonts.inter(color: AppTheme.textSecondary)),
+            Text(
+              'Shift: ${isBothShift ? 'Both Shifts (Double)' : (staff.shift.isNotEmpty ? staff.shift : 'Single Shift')}',
+              style: GoogleFonts.inter(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 6),
+            if (isBothShift) ...[
+              Text(
+                'Shift 1: ${staff.shift1Start.isNotEmpty ? staff.shift1Start : '09:00 AM'} - ${staff.shift1End.isNotEmpty ? staff.shift1End : '05:00 PM'}',
+                style: GoogleFonts.inter(color: AppTheme.textSecondary, fontSize: 13),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Shift 2: ${staff.shift2Start.isNotEmpty ? staff.shift2Start : '04:00 PM'} - ${staff.shift2End.isNotEmpty ? staff.shift2End : '09:00 PM'}',
+                style: GoogleFonts.inter(color: AppTheme.textSecondary, fontSize: 13),
+              ),
+            ] else ...[
+              Text(
+                'Timing: ${staff.shift1Start.isNotEmpty ? staff.shift1Start : '09:00 AM'} - ${staff.shift1End.isNotEmpty ? staff.shift1End : '05:00 PM'}',
+                style: GoogleFonts.inter(color: AppTheme.textSecondary, fontSize: 13),
+              ),
+            ],
             const Divider(height: 20),
-            _dayScheduleRow('Mon - Fri', 'Active (8 hours)'),
-            _dayScheduleRow('Saturday', 'Half Day (4 hours)'),
+            _dayScheduleRow('Mon - Fri', 'Active'),
+            _dayScheduleRow('Saturday', 'Active'),
             _dayScheduleRow('Sunday', 'Weekly Off'),
           ],
         ),
@@ -181,7 +201,7 @@ class StaffMoreScreen extends StatelessWidget {
                   _buildMenuItem(
                     icon: Icons.calendar_month_outlined,
                     label: 'My Work Schedule',
-                    onTap: () => _showScheduleDialog(context),
+                    onTap: () => _showScheduleDialog(context, staff),
                   ),
                   const Divider(height: 1, color: Color(0xFFF3F4F6), indent: 16, endIndent: 16),
                   _buildMenuItem(

@@ -27,6 +27,11 @@ class AppBrandingHeader extends StatelessWidget {
     final logoBase64 = authVm.customBrandingLogoBase64;
     final logoUrl = authVm.customBrandingLogoUrl;
 
+    // Use whitelabel custom logo if enabled, otherwise fall back to the standard gym logo
+    final displayLogoUrl = (logoUrl != null && logoUrl.isNotEmpty)
+        ? logoUrl
+        : (authVm.gymInfo?['logo'] ?? authVm.gymInfo?['logo_url'] ?? '');
+
     Widget logoWidget;
     if (isBrandingEnabled && (logoBase64 != null && logoBase64.isNotEmpty)) {
       try {
@@ -48,7 +53,7 @@ class AppBrandingHeader extends StatelessWidget {
       } catch (_) {
         logoWidget = _buildDefaultLogo();
       }
-    } else if (isBrandingEnabled && (logoUrl != null && logoUrl.isNotEmpty)) {
+    } else if (displayLogoUrl.isNotEmpty) {
       logoWidget = Container(
         decoration: BoxDecoration(
           boxShadow: AppTheme.cardShadow,
@@ -57,7 +62,7 @@ class AppBrandingHeader extends StatelessWidget {
         child: ClipRRect(
           borderRadius: BorderRadius.circular(logoSize * 0.25),
           child: Image.network(
-            logoUrl,
+            displayLogoUrl,
             width: logoSize,
             height: logoSize,
             fit: BoxFit.cover,
