@@ -18,7 +18,7 @@ class MemberAppViewModel extends ChangeNotifier {
   // ── Member Profile ──
   String _memberName = 'Jigar Patel';
   String _memberId = 'M10042';
-  String _gymName = 'FitZone Gym';
+  String _gymName = 'GYMOS';
   String _memberAvatar = 'assets/images/member/avatar_default.png';
   int _notificationCount = 0;
 

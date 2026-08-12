@@ -153,7 +153,7 @@ class _MainNavigationHolderState extends State<MainNavigationHolder> {
 
     final authVm = Provider.of<AuthViewModel>(context, listen: false);
     final gymId = authVm.gymInfo?['id'];
-    final gymName = authVm.gymInfo?['name'] ?? 'FitZone Gym';
+    final gymName = authVm.gymInfo?['name'] ?? 'GYMOS';
     final ownerId = authVm.currentUser?.id;
 
     if (gymId == null || ownerId == null || !SupabaseService.isInitialized) return;

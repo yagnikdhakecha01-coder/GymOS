@@ -76,7 +76,7 @@ class _SupportTicketsScreenState extends State<SupportTicketsScreen> {
 
     final authVm = Provider.of<AuthViewModel>(context, listen: false);
     final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
-    final gymName = authVm.activeAssociation?.gymName ?? authVm.gymInfo?['name'] ?? 'FitZone Gym';
+    final gymName = authVm.activeAssociation?.gymName ?? authVm.gymInfo?['name'] ?? 'GYMOS';
     final ownerId = authVm.currentUser?.id;
 
     if (gymId == null || ownerId == null || !SupabaseService.isInitialized) return;

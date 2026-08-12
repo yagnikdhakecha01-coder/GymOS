@@ -787,7 +787,7 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
   @override
   Widget build(BuildContext context) {
     final authVm = Provider.of<AuthViewModel>(context);
-    final gymName = authVm.gymInfo?['name'] ?? 'FitZone Gym';
+    final gymName = authVm.gymInfo?['name'] ?? 'GYMOS';
     final profileName = authVm.currentProfile?.fullName ?? 'User';
     final logoUrl = authVm.gymInfo?['logo'] ?? authVm.gymInfo?['logo_url'] ?? '';
 

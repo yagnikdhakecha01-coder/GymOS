@@ -67,7 +67,7 @@ class MoreScreen extends StatelessWidget {
     final authVm = Provider.of<AuthViewModel>(context);
     final gym = authVm.gymInfo ?? {};
     
-    final gymName = gym['name'] ?? 'FitZone Gym';
+    final gymName = gym['name'] ?? 'GYMOS';
     final plan = gym['plan'] ?? 'Premium Plan';
     final validity = gym['validUntil'] ?? '25 May 2025';
 

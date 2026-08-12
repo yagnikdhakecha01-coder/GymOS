@@ -185,7 +185,7 @@ class AuthViewModel extends ChangeNotifier {
 
           Map<String, dynamic> info = {
             'id': assoc.gymId,
-            'name': assoc.gymName ?? 'FitZone Gym',
+            'name': assoc.gymName ?? 'GYMOS',
             'gym_code': assoc.gymCode ?? 'MOCK123',
             'owner': profile.email,
             'status': 'active',
@@ -283,7 +283,7 @@ class AuthViewModel extends ChangeNotifier {
     } catch (_) {
       final info = {
         'id': assoc.gymId,
-        'name': assoc.gymName ?? 'FitZone Gym',
+        'name': assoc.gymName ?? 'GYMOS',
         'gym_code': assoc.gymCode ?? 'MOCK1234',
         'owner': _currentProfile?.email ?? '',
       };
@@ -575,7 +575,7 @@ class AuthViewModel extends ChangeNotifier {
         } catch (e) {
           final info = {
             'id': 'mock_gym_123',
-            'name': gymName ?? 'FitZone Gym',
+            'name': gymName ?? 'GYMOS',
             'gym_code': gymCode ?? 'MOCK1234',
             'owner': profile.email,
           };
@@ -625,7 +625,7 @@ class AuthViewModel extends ChangeNotifier {
         email: savedGymInfo?['email'] ?? 'owner@gymos.com',
         role: role,
         gymId: savedGymInfo != null ? (savedGymInfo['id'] ?? 'mock_gym_123') : null,
-        setupCompleted: true,
+        setupCompleted: savedGymInfo != null,
       );
     }
 
@@ -746,7 +746,7 @@ class AuthViewModel extends ChangeNotifier {
         } catch (_) {
           final info = _storage.getGymInfo() ?? {
             'id': assoc.gymId,
-            'name': assoc.gymName ?? 'FitZone Gym',
+            'name': assoc.gymName ?? 'GYMOS',
             'gym_code': assoc.gymCode ?? 'MOCK1234',
             'owner': profile.email,
           };

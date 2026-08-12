@@ -112,7 +112,7 @@ class LocalStorageService {
 
     // Default Gym Info
     await setGymInfo({
-      'name': 'FitZone Gym',
+      'name': 'GYMOS',
       'owner': 'Jigar Gamer',
       'email': 'jigarnaliyadhara10@gmail.com',
       'country': 'India',

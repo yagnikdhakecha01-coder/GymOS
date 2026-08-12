@@ -313,7 +313,7 @@ class _GymInfoScreenState extends State<GymInfoScreen> {
                       TextFormField(
                         controller: _nameController,
                         validator: (value) => value == null || value.trim().isEmpty ? 'Please enter gym name' : null,
-                        decoration: const InputDecoration(hintText: 'e.g. FitZone Gym'),
+                        decoration: const InputDecoration(hintText: 'e.g. GYMOS'),
                       ),
                       const SizedBox(height: 16),
 

@@ -112,7 +112,7 @@ class GymSwitcherBottomSheet extends StatelessWidget {
                     children: [
                       const TextSpan(text: 'You are about to switch to\n'),
                       TextSpan(
-                        text: '${assoc.gymName ?? 'FitZone Gym'} (${assoc.role == UserRole.owner ? 'Owner' : assoc.role == UserRole.staff ? 'Staff' : 'Member'})',
+                        text: '${assoc.gymName ?? 'GYMOS'} (${assoc.role == UserRole.owner ? 'Owner' : assoc.role == UserRole.staff ? 'Staff' : 'Member'})',
                         style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
                       ),
                       const TextSpan(
@@ -367,7 +367,7 @@ class GymSwitcherBottomSheet extends StatelessWidget {
                                     children: [
                                       Expanded(
                                         child: Text(
-                                          assoc.gymName ?? 'FitZone Gym',
+                                          assoc.gymName ?? 'GYMOS',
                                           style: GoogleFonts.inter(
                                             fontSize: 15,
                                             fontWeight: FontWeight.bold,

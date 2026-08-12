@@ -24,7 +24,7 @@ class GymSettingsViewModel extends ChangeNotifier {
 
   // --- Gym Info Access ---
   Map<String, dynamic> get gymInfo => _authViewModel.gymInfo ?? {
-    'name': 'FitZone Gym',
+    'name': 'GYMOS',
     'logo': '',
     'address': '123 Main Road, City',
     'phone': '+91 98765 43210',

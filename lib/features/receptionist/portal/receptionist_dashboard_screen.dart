@@ -35,7 +35,7 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
     final vm = Provider.of<ReceptionistViewModel>(context);
     final repo = Provider.of<GymRepository>(context);
     final staff = vm.staffRecord;
-    final gymName = authVm.gymInfo?['name'] ?? 'FitZone Gym';
+    final gymName = authVm.gymInfo?['name'] ?? 'GYMOS';
 
     return Scaffold(
       key: _scaffoldKey,

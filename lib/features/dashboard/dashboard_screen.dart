@@ -210,7 +210,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final financeVm = Provider.of<FinanceViewModel>(context);
     final attendanceVm = Provider.of<AttendanceViewModel>(context);
 
-    final gymName = authVm.gymInfo?['name'] ?? 'FitZone Gym';
+    final gymName = authVm.gymInfo?['name'] ?? 'GYMOS';
     final ownerName = authVm.gymInfo?['owner'] ?? 'Rahul Sharma';
 
     final activeMembersCount = repo.activeMembersCount;
