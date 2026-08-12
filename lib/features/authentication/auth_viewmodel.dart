@@ -153,7 +153,9 @@ class AuthViewModel extends ChangeNotifier {
 
         if (_userAssociations.isEmpty) {
           _selectedRole = _storage.getUserRole();
+          _activeAssociation = null;
           _gymInfo = null;
+          await _storage.remove(LocalStorageService.keyUserGymInfo);
         } else if (_userAssociations.length == 1) {
           final assoc = _userAssociations.first;
           _activeAssociation = assoc;
@@ -769,6 +771,7 @@ class AuthViewModel extends ChangeNotifier {
         _selectedRole = _storage.getUserRole();
         _activeAssociation = null;
         _gymInfo = null;
+        await _storage.remove(LocalStorageService.keyUserGymInfo);
       }
     }
     await fetchSubscriptionStatus();

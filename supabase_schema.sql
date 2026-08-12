@@ -465,6 +465,19 @@ CREATE POLICY insert_associations ON public.user_gym_associations
     FOR INSERT TO authenticated
     WITH CHECK (user_id = auth.uid());
 
+-- Allow users to delete their own associations or owners to delete associations in their gym
+CREATE POLICY delete_associations ON public.user_gym_associations
+    FOR DELETE TO authenticated
+    USING (
+        user_id = auth.uid()
+        OR
+        gym_id IN (
+            SELECT gym_id 
+            FROM public.user_gym_associations 
+            WHERE user_id = auth.uid() AND role = 'owner'
+        )
+    );
+
 -- 6.4 Invitations Table Policies
 -- Only owners can manage invitations for their gym, invited users can read and update (use) active ones
 CREATE POLICY manage_invitations_owner ON public.invitations
