@@ -77,6 +77,26 @@ class _PaySalaryScreenState extends State<PaySalaryScreen> {
       final staffVm = Provider.of<StaffViewModel>(context, listen: false);
 
       SalaryDraft? draft = await staffVm.getOrCreateSalaryDraft(gymId, widget.staff.id, widget.selectedMonth);
+      
+      // If RPC failed, try direct upsert as fallback
+      if (draft == null && SupabaseService.isInitialized && gymId.isNotEmpty) {
+        try {
+          final upsertResponse = await SupabaseService.client
+              .from('salary_drafts')
+              .upsert({
+                'gym_id': gymId,
+                'staff_id': widget.staff.id,
+                'salary_month': widget.selectedMonth,
+                'base_salary': widget.staff.salary,
+                'net_salary': widget.staff.salary,
+                'status': 'Draft',
+              }, onConflict: 'staff_id,salary_month')
+              .select()
+              .single();
+          draft = SalaryDraft.fromJson(upsertResponse);
+        } catch (_) {}
+      }
+      
       draft ??= SalaryDraft(
         id: 'draft_${widget.staff.id}_${widget.selectedMonth.replaceAll(' ', '_')}',
         gymId: gymId,
@@ -364,7 +384,21 @@ class _PaySalaryScreenState extends State<PaySalaryScreen> {
                           draftId = realDraft.id;
                           setState(() => _draft = realDraft);
                         } else {
-                          throw Exception('Could not create salary draft in database. Please check your internet connection.');
+                          // RPC unavailable — fallback: direct upsert into salary_drafts
+                          final upsertResponse = await SupabaseService.client
+                              .from('salary_drafts')
+                              .upsert({
+                                'gym_id': gymId,
+                                'staff_id': widget.staff.id,
+                                'salary_month': widget.selectedMonth,
+                                'base_salary': widget.staff.salary,
+                                'net_salary': widget.staff.salary,
+                                'status': 'Draft',
+                              }, onConflict: 'staff_id,salary_month')
+                              .select()
+                              .single();
+                          draftId = upsertResponse['id'] as String;
+                          setState(() => _draft = SalaryDraft.fromJson(upsertResponse));
                         }
                       }
 
