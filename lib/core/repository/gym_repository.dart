@@ -2711,6 +2711,97 @@ class GymRepository extends ChangeNotifier {
     await _storage.setString(_attendanceKey, jsonEncode(_attendance.map((e) => e.toJson()).toList()));
   }
 
+  Future<void> saveMemberAttendanceLog({
+    required String memberId,
+    required String memberName,
+    required String date,
+    required String status,
+    required String checkInTime,
+    required String? checkOutTime,
+  }) async {
+    final gymId = _storage.getGymInfo()?['id'];
+    if (gymId == null) return;
+
+    final existingIndex = _attendance.indexWhere((a) => a.userId == memberId && a.date == date);
+    final uuid = existingIndex >= 0 ? _attendance[existingIndex].id : _generateUuidV4();
+    
+    String? formatToIso(String? timeStr) {
+      if (timeStr == null || timeStr.isEmpty) return null;
+      try {
+        final parsed = DateFormat('hh:mm a').parse(timeStr);
+        final dateObj = DateFormat('dd-MM-yyyy').parse(date);
+        final fullDt = DateTime(dateObj.year, dateObj.month, dateObj.day, parsed.hour, parsed.minute);
+        return fullDt.toUtc().toIso8601String();
+      } catch (_) {
+        return null;
+      }
+    }
+
+    final checkInIso = formatToIso(checkInTime) ?? DateTime.now().toUtc().toIso8601String();
+    final checkOutIso = formatToIso(checkOutTime);
+
+    final newRecord = AttendanceRecord(
+      id: uuid,
+      userId: memberId,
+      userName: memberName,
+      userType: 'Member',
+      date: date,
+      checkInTime: checkInTime,
+      checkOutTime: checkOutTime ?? '',
+      status: status,
+      shiftStatus: '',
+      workingMinutes: 0,
+      lateMinutes: 0,
+      earlyExitMinutes: 0,
+      overtimeMinutes: 0,
+      ruleVersion: 1,
+    );
+
+    if (existingIndex >= 0) {
+      _attendance[existingIndex] = newRecord;
+    } else {
+      _attendance.add(newRecord);
+    }
+
+    await _storage.setString(_attendanceKey, jsonEncode(_attendance.map((e) => e.toJson()).toList()));
+    notifyListeners();
+
+    final payload = {
+      'id': uuid,
+      'gym_id': gymId,
+      'user_id': memberId,
+      'member_id': memberId,
+      'user_type': 'Member',
+      'role': 'Member',
+      'date': date,
+      'check_in': checkInIso,
+      'check_out': checkOutIso,
+      'status': status,
+      'method': 'Manual',
+    };
+
+    if (SupabaseService.isInitialized) {
+      try {
+        await SupabaseService.client.from('attendance_logs').upsert(payload);
+      } catch (e) {
+        print('saveMemberAttendanceLog Supabase upsert skipped/failed: $e. Fallback to queue.');
+      }
+    }
+
+    _crudQueue.add({
+      'uuid': _generateUuidV4(),
+      'table': 'attendance_logs',
+      'action': 'insert',
+      'payload': payload,
+      'created_at': DateTime.now().toIso8601String(),
+      'retry_count': 0,
+      'error_message': null,
+    });
+
+    await _saveQueuesToStorage();
+    triggerBackgroundSync();
+  }
+
   // --- Reset/Clear ---
   Future<void> clearAll() async {
     await _storage.clearAll();
