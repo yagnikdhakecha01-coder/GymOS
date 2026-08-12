@@ -334,10 +334,25 @@ class _PaySalaryScreenState extends State<PaySalaryScreen> {
                       final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'] ?? '';
                       final userId = authVm.currentProfile?.id ?? authVm.currentUser?.id ?? '';
 
+                      // Ensure we have a real UUID draft ID before inserting
+                      String draftId = _draft!.id;
+                      final uuidRegex = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
+                      if (!uuidRegex.hasMatch(draftId)) {
+                        // Draft has a synthetic placeholder ID — create real one via RPC
+                        final staffVm = Provider.of<StaffViewModel>(pageContext, listen: false);
+                        final realDraft = await staffVm.getOrCreateSalaryDraft(gymId, widget.staff.id, widget.selectedMonth);
+                        if (realDraft != null) {
+                          draftId = realDraft.id;
+                          setState(() => _draft = realDraft);
+                        } else {
+                          throw Exception('Could not create salary draft in database. Please check your internet connection.');
+                        }
+                      }
+
                       // Direct insert into salary_adjustments table
                       await SupabaseService.client.from('salary_adjustments').insert({
                         'gym_id': gymId,
-                        'salary_draft_id': _draft!.id,
+                        'salary_draft_id': draftId,
                         'type': finalType,
                         'amount': amt,
                         'reason': reasonCtrl.text.trim(),
