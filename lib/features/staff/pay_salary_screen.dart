@@ -171,6 +171,17 @@ class _PaySalaryScreenState extends State<PaySalaryScreen> {
           _advances = List<Map<String, dynamic>>.from(localAdvances);
           _isLoading = false;
         });
+
+        // Force-touch the draft in DB to trigger recalculation of commission/advance/adjustment totals
+        final uuidRegex = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
+        if (uuidRegex.hasMatch(validDraft.id) && validDraft.status != 'Paid' && SupabaseService.isInitialized) {
+          try {
+            await SupabaseService.client
+                .from('salary_drafts')
+                .update({'base_salary': validDraft.baseSalary})
+                .eq('id', validDraft.id);
+          } catch (_) {}
+        }
       }
     } catch (e) {
       print('Error loading draft details in background: $e');
@@ -206,7 +217,15 @@ class _PaySalaryScreenState extends State<PaySalaryScreen> {
 
   // Calculate live totals using database-backed draft calculations from Supabase
   double get _fixedSalary => _draft?.baseSalary ?? widget.staff.salary;
-  double get _commission => _draft?.commissionAmount ?? 0.0;
+  double get _commission {
+    // Compute live total from the fetched pending commissions list
+    final liveTotal = _commissions.fold<double>(
+      0.0,
+      (sum, c) => sum + ((c['amount'] as num?)?.toDouble() ?? 0.0),
+    );
+    if (liveTotal > 0) return liveTotal;
+    return _draft?.commissionAmount ?? 0.0;
+  }
   
   double get _advanceDeduction {
     // If draft is already Paid, use the locked advance deduction from the draft
