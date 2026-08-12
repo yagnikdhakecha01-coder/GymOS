@@ -4,9 +4,9 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../core/theme/theme.dart';
 import '../../core/models/staff.dart';
-import '../staff_viewmodel.dart';
+import 'staff_viewmodel.dart';
 import 'pay_salary_screen.dart';
-import '../auth/auth_viewmodel.dart';
+import '../authentication/auth_viewmodel.dart';
 
 class PendingSalaryListScreen extends StatefulWidget {
   const PendingSalaryListScreen({super.key});

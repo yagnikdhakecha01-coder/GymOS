@@ -520,6 +520,14 @@ class GymRepository extends ChangeNotifier {
     if (rawCrud != null && rawCrud.isNotEmpty) {
       try {
         _crudQueue = List<Map<String, dynamic>>.from(jsonDecode(rawCrud));
+        // Reset retry count for failed/stuck items so they get retried now that we have fixed the database column
+        for (var item in _crudQueue) {
+          if (item['sync_status'] == 'failed' || (item['retry_count'] ?? 0) > 5) {
+            item['sync_status'] = 'pending';
+            item['retry_count'] = 0;
+            item['error_message'] = null;
+          }
+        }
       } catch (_) {}
     }
 
@@ -2001,10 +2009,7 @@ class GymRepository extends ChangeNotifier {
       'assigned_diet_id': _isValidUUID(member.assignedDietId) ? member.assignedDietId : null,
       'medical_details': member.medicalDetails,
       'notes': member.notes,
-      'pending_amount': member.pendingAmount,
       'discount_amount': member.discountAmount,
-      'total_received_amount': member.totalReceivedAmount,
-      'payment_status': member.paymentStatus,
       'extra_fields': member.extraFields,
     };
 
@@ -2953,7 +2958,7 @@ class GymRepository extends ChangeNotifier {
 
   List<Member> _mergeMembersList(List<Member> serverList) {
     final pendingIds = _crudQueue
-        .where((q) => q['table'] == 'members')
+        .where((q) => q['table'] == 'members' && q['sync_status'] != 'failed' && (q['retry_count'] ?? 0) <= 5)
         .map((q) {
           final payload = q['payload'] as Map<String, dynamic>;
           return payload['id'] as String;
@@ -2974,7 +2979,7 @@ class GymRepository extends ChangeNotifier {
 
   List<Staff> _mergeStaffList(List<Staff> serverList) {
     final pendingIds = _crudQueue
-        .where((q) => q['table'] == 'staff')
+        .where((q) => q['table'] == 'staff' && q['sync_status'] != 'failed' && (q['retry_count'] ?? 0) <= 5)
         .map((q) {
           final payload = q['payload'] as Map<String, dynamic>;
           return payload['id'] as String;
@@ -2995,7 +3000,7 @@ class GymRepository extends ChangeNotifier {
 
   List<FinanceTransaction> _mergeTransactionsList(List<FinanceTransaction> serverList) {
     final pendingIds = _crudQueue
-        .where((q) => q['table'] == 'finance_transactions')
+        .where((q) => q['table'] == 'finance_transactions' && q['sync_status'] != 'failed' && (q['retry_count'] ?? 0) <= 5)
         .map((q) {
           final payload = q['payload'] as Map<String, dynamic>;
           return payload['id'] as String;

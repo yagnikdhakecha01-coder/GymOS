@@ -135,7 +135,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     Navigator.pushAndRemoveUntil(
       context,
-      AppRouter.scaleRoute(shouldSync ? DataSyncScreen(targetScreen: targetScreen) : targetScreen),
+      AppRouter.scaleRoute(targetScreen),
       (route) => false,
     );
   }

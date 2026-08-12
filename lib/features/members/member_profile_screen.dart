@@ -1315,6 +1315,17 @@ Thank you.''';
   Widget _buildHistoryTab(MembersViewModel membersVm, Member member) {
     final transactions = membersVm.getMemberTransactions(member.id);
 
+    String expiryDateStr = '—';
+    final exp = member.extraFields['expiryDate'] as String?;
+    if (exp != null && exp.isNotEmpty) {
+      try {
+        final expiryDate = DateTime.parse(exp);
+        expiryDateStr = DateFormat('dd MMM yyyy').format(expiryDate);
+      } catch (_) {
+        expiryDateStr = exp;
+      }
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1327,7 +1338,7 @@ Thank you.''';
               ListTile(
                 leading: const Icon(Icons.card_membership_rounded, color: AppTheme.primary),
                 title: Text(membersVm.getMemberPlan(member.membershipPlanId)?.title ?? 'Gold Membership', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 13)),
-                subtitle: Text('Start: ${member.joinDate} • End: 12 Apr 2026', style: GoogleFonts.inter(fontSize: 11)),
+                subtitle: Text('Start: ${member.joinDate} • End: $expiryDateStr', style: GoogleFonts.inter(fontSize: 11)),
                 trailing: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(color: Colors.green.withOpacity(0.1), borderRadius: BorderRadius.circular(20)),

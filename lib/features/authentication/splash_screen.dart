@@ -116,7 +116,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
           }
           Navigator.pushReplacement(
             context,
-            AppRouter.scaleRoute(shouldSync ? DataSyncScreen(targetScreen: targetScreen) : targetScreen),
+            AppRouter.scaleRoute(targetScreen),
           );
         }
       }

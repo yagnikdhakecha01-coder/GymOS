@@ -1,10 +1,16 @@
 -- =========================================================================
 -- DATABASE MIGRATION: fix_member_received_amount_sync.sql
--- Run this script in your Supabase SQL Editor to sync received/pending amounts
--- and deploy the automatic sync trigger.
+-- Run this script in your Supabase SQL Editor to:
+-- 1. Add missing created_by_info column to finance_transactions table
+-- 2. Sync received/pending amounts
+-- 3. Deploy automatic calculation and protection triggers.
 -- =========================================================================
 
--- 1. Redeploy the automatic sync trigger function to include total_received_amount
+-- 1. Ensure created_by_info column exists on finance_transactions table
+ALTER TABLE public.finance_transactions 
+ADD COLUMN IF NOT EXISTS created_by_info TEXT;
+
+-- 2. Redeploy the automatic sync trigger function to include total_received_amount
 CREATE OR REPLACE FUNCTION public.fn_sync_member_payment_status()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -46,15 +52,36 @@ AFTER INSERT OR UPDATE OR DELETE ON public.member_memberships
 FOR EACH ROW
 EXECUTE FUNCTION public.fn_sync_member_payment_status();
 
--- 2. One-time update to synchronize existing members' received and pending balances
+-- 3. CREATE BEFORE TRIGGER ON members TABLE TO PREVENT CLIENT OVERWRITES
+CREATE OR REPLACE FUNCTION public.fn_force_member_payment_recalc()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Recalculate total remaining dues for this member from member_memberships
+    SELECT COALESCE(SUM(GREATEST(0.0, COALESCE(total_amount, 0.0) - COALESCE(paid_amount, 0.0))), 0.0)
+    INTO NEW.pending_amount
+    FROM public.member_memberships
+    WHERE member_id = NEW.id;
+
+    -- Recalculate total received amount for this member from member_memberships
+    SELECT COALESCE(SUM(COALESCE(paid_amount, 0.0)), 0.0)
+    INTO NEW.total_received_amount
+    FROM public.member_memberships
+    WHERE member_id = NEW.id;
+
+    NEW.payment_status := CASE WHEN NEW.pending_amount <= 0 THEN 'Paid' ELSE 'Pending' END;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Attach trigger BEFORE INSERT OR UPDATE on members table
+DROP TRIGGER IF EXISTS trg_force_member_payment_recalc ON public.members;
+CREATE TRIGGER trg_force_member_payment_recalc
+BEFORE INSERT OR UPDATE ON public.members
+FOR EACH ROW
+EXECUTE FUNCTION public.fn_force_member_payment_recalc();
+
+-- 4. One-time update to synchronize existing members' received and pending balances
+-- (This will also fire the BEFORE UPDATE trigger, correcting all database records instantly)
 UPDATE public.members m
-SET total_received_amount = COALESCE((
-        SELECT SUM(COALESCE(paid_amount, 0.0))
-        FROM public.member_memberships mm
-        WHERE mm.member_id = m.id
-    ), 0.0),
-    pending_amount = COALESCE((
-        SELECT SUM(GREATEST(0.0, COALESCE(total_amount, 0.0) - COALESCE(paid_amount, 0.0)))
-        FROM public.member_memberships mm
-        WHERE mm.member_id = m.id
-    ), 0.0);
+SET name = name; 
