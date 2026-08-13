@@ -440,12 +440,127 @@ class AuthViewModel extends ChangeNotifier {
       _selectedRole = null;
       _currentProfile = null;
       _gymInfo = null;
+      _userAssociations = [];
+      _activeAssociation = null;
+      _staffRecord = null;
       await _storage.clearAll();
       _gymRepository.clearAllData();
       notifyListeners();
     } finally {
       _setLoading(false);
     }
+  }
+
+  /// Returns true and logs out if the account was unlinked or deactivated.
+  Future<bool> forceLogoutIfUnlinked() async {
+    final reason = await getUnlinkBlockReason();
+    if (reason == null) return false;
+    await logout();
+    return true;
+  }
+
+  /// Returns logout dialog title/message if account was unlinked or deactivated.
+  /// Returns null when access is still valid.
+  Future<Map<String, String>?> getUnlinkBlockReason() async {
+    if (!isLoggedIn || !SupabaseService.isInitialized) return null;
+
+    final user = currentUser;
+    if (user == null) return null;
+
+    await loadCurrentProfile();
+
+    final gymId = activeAssociation?.gymId ?? gymInfo?['id'];
+    final role = selectedRole ?? currentProfile?.role.name ?? '';
+
+    if (_userAssociations.isEmpty) {
+      return {
+        'title': 'Account Unlinked',
+        'message': 'Gym Owner unlinked your account.',
+      };
+    }
+
+    if (gymId == null || gymId.isEmpty) return null;
+
+    try {
+      final isLinked = await SupabaseService.client.rpc(
+        'is_user_linked_to_gym',
+        params: {
+          'p_user_id': user.id,
+          'p_gym_id': gymId,
+          'p_role': role == 'member' ? 'member' : 'staff',
+        },
+      );
+
+      if (isLinked == false) {
+        return {
+          'title': 'Account Unlinked',
+          'message': 'Gym Owner unlinked your account.',
+        };
+      }
+    } catch (e) {
+      // Fallback when RPC not deployed yet
+      print('is_user_linked_to_gym RPC unavailable, using direct check: $e');
+
+      if (role == 'staff') {
+        final staffData = await SupabaseService.client
+            .from('staff')
+            .select('status')
+            .eq('user_id', user.id)
+            .eq('gym_id', gymId)
+            .maybeSingle();
+
+        if (staffData == null) {
+          return {
+            'title': 'Account Unlinked',
+            'message': 'Gym Owner unlinked your account.',
+          };
+        }
+
+        final status = staffData['status']?.toString() ?? '';
+        if (status == 'Inactive') {
+          return {
+            'title': 'Account Inactive',
+            'message': 'Your account has been deactivated by the gym owner.',
+          };
+        }
+        if (status != 'Active') {
+          return {
+            'title': 'Account Unlinked',
+            'message': 'Your account is no longer linked to this gym.',
+          };
+        }
+      } else if (role == 'member') {
+        final memberData = await SupabaseService.client
+            .from('members')
+            .select('status')
+            .eq('user_id', user.id)
+            .eq('gym_id', gymId)
+            .maybeSingle();
+
+        if (memberData == null) {
+          return {
+            'title': 'Account Unlinked',
+            'message': 'Gym Owner unlinked your account.',
+          };
+        }
+
+        final status = memberData['status']?.toString() ?? '';
+        if (status == 'Inactive') {
+          return {
+            'title': 'Account Inactive',
+            'message': 'Your account has been deactivated by the gym owner.',
+          };
+        }
+        if (status != 'Active') {
+          return {
+            'title': 'Account Unlinked',
+            'message': 'Your account is no longer linked to this gym.',
+          };
+        }
+      }
+    }
+
+    return null;
   }
 
   /// Real Google Sign-In trigger (Native Google Sign-In on Mobile, OAuth on Web)
@@ -679,6 +794,17 @@ class AuthViewModel extends ChangeNotifier {
                 .maybeSingle();
             if (res != null) {
               _staffRecord = Staff.fromJson(res);
+            } else {
+              // Staff was unlinked — remove stale association for this gym
+              _userAssociations = _userAssociations
+                  .where((a) => !(a.gymId == assoc.gymId && a.role == UserRole.staff))
+                  .toList();
+              _staffRecord = null;
+              if (_userAssociations.isEmpty) {
+                _activeAssociation = null;
+                _gymInfo = null;
+                await _storage.remove(LocalStorageService.keyUserGymInfo);
+              }
             }
           } catch (e) {
             print('Error loading staff record in loadCurrentProfile: $e');

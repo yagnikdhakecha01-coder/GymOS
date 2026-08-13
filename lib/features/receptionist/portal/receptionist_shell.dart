@@ -11,9 +11,7 @@ import 'receptionist_finance_screen.dart';
 import 'receptionist_more_screen.dart';
 
 import 'dart:async';
-import 'package:google_fonts/google_fonts.dart';
-import '../../../core/services/supabase_service.dart';
-import '../../authentication/role_selection_screen.dart';
+import '../../../core/services/unlink_guard.dart';
 
 class ReceptionistShell extends StatefulWidget {
   const ReceptionistShell({super.key});
@@ -25,7 +23,7 @@ class ReceptionistShell extends StatefulWidget {
 class _ReceptionistShellState extends State<ReceptionistShell> {
   int _currentIndex = 0;
   Timer? _syncTimer;
-  bool _isLoggingOut = false;
+  bool _isRedirecting = false;
 
   @override
   void initState() {
@@ -33,8 +31,7 @@ class _ReceptionistShellState extends State<ReceptionistShell> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkUnlinkedStatus();
     });
-    // Check every 15 seconds
-    _syncTimer = Timer.periodic(const Duration(seconds: 15), (timer) {
+    _syncTimer = Timer.periodic(const Duration(seconds: 3), (_) {
       _checkUnlinkedStatus();
     });
   }
@@ -46,70 +43,25 @@ class _ReceptionistShellState extends State<ReceptionistShell> {
   }
 
   Future<void> _checkUnlinkedStatus() async {
-    if (!mounted || _isLoggingOut) return;
-    try {
-      final authVm = Provider.of<AuthViewModel>(context, listen: false);
-      if (authVm.isLoggedIn) {
-        await authVm.loadCurrentProfile();
-        
-        final user = SupabaseService.client.auth.currentUser;
-        if (user != null) {
-          final staffData = await SupabaseService.client
-              .from('staff')
-              .select('status')
-              .eq('user_id', user.id)
-              .maybeSingle();
-
-          if (authVm.userAssociations.isEmpty) {
-            _triggerLogout('Account Unlinked', 'Gym Owner unlinked your account.');
-          } else if (staffData != null && staffData['status'] == 'Inactive') {
-            _triggerLogout('Account Inactive', 'Your account has been deactivated by the gym owner.');
-          }
-        }
-      }
-    } catch (e) {
-      print('Error checking unlinked status: $e');
-    }
-  }
-
-  void _triggerLogout(String title, String message) {
-    if (_isLoggingOut) return;
-    _isLoggingOut = true;
-    _syncTimer?.cancel();
-
+    if (!mounted || _isRedirecting) return;
     final authVm = Provider.of<AuthViewModel>(context, listen: false);
+    if (!authVm.isLoggedIn) return;
 
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogCtx) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: Text(title, style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-          content: Text(message, style: GoogleFonts.inter()),
-          actions: [
-            TextButton(
-              onPressed: () async {
-                Navigator.pop(dialogCtx);
-                await authVm.logout();
-                if (mounted) {
-                  Navigator.pushAndRemoveUntil(
-                    context,
-                    MaterialPageRoute(builder: (_) => const RoleSelectionScreen()),
-                    (route) => false,
-                  );
-                }
-              },
-              child: const Text('OK', style: TextStyle(fontWeight: FontWeight.bold, color: AppTheme.primary)),
-            ),
-          ],
-        );
-      },
-    );
+    final blocked = await UnlinkGuard.checkAndForceLogout(context, authVm);
+    if (blocked && mounted) {
+      setState(() => _isRedirecting = true);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_isRedirecting) {
+      return const Scaffold(
+        backgroundColor: Colors.white,
+        body: Center(child: CircularProgressIndicator(color: AppTheme.primary)),
+      );
+    }
+
     final authVm = Provider.of<AuthViewModel>(context);
     final staffUserId = authVm.currentUser?.id ?? '';
     final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'] ?? '';

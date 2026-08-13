@@ -3111,36 +3111,59 @@ class GymRepository extends ChangeNotifier {
 
     if (SupabaseService.isInitialized && gymId != null) {
       try {
+        // Prefer atomic RPC so association + user_id both get cleared
+        await SupabaseService.client.rpc(
+          'unlink_gym_account',
+          params: {
+            'p_record_id': recordId,
+            'p_is_staff': isStaff,
+          },
+        );
+
         final record = await SupabaseService.client
             .from(isStaff ? 'staff' : 'members')
-            .select('user_id, name, phone')
+            .select('name, phone')
             .eq('id', recordId)
             .maybeSingle();
 
         if (record != null) {
           name = record['name'] ?? '';
           phone = record['phone'] ?? '';
-          final linkedUserId = record['user_id'];
-
-          if (linkedUserId != null) {
-            await SupabaseService.client
-                .from('user_gym_associations')
-                .delete()
-                .eq('user_id', linkedUserId)
-                .eq('gym_id', gymId)
-                .eq('role', isStaff ? 'staff' : 'member');
-          }
         }
-
-        await SupabaseService.client
-            .from(isStaff ? 'staff' : 'members')
-            .update({
-              'user_id': null,
-              'status': 'Pending Activation',
-            })
-            .eq('id', recordId);
       } catch (e) {
-        print('unlinkAccount Supabase error: $e');
+        print('unlink_gym_account RPC failed, falling back to direct update: $e');
+        try {
+          final record = await SupabaseService.client
+              .from(isStaff ? 'staff' : 'members')
+              .select('user_id, name, phone')
+              .eq('id', recordId)
+              .maybeSingle();
+
+          if (record != null) {
+            name = record['name'] ?? '';
+            phone = record['phone'] ?? '';
+            final linkedUserId = record['user_id'];
+
+            if (linkedUserId != null) {
+              await SupabaseService.client
+                  .from('user_gym_associations')
+                  .delete()
+                  .eq('user_id', linkedUserId)
+                  .eq('gym_id', gymId)
+                  .eq('role', isStaff ? 'staff' : 'member');
+            }
+          }
+
+          await SupabaseService.client
+              .from(isStaff ? 'staff' : 'members')
+              .update({
+                'user_id': null,
+                'status': 'Pending Activation',
+              })
+              .eq('id', recordId);
+        } catch (e2) {
+          print('unlinkAccount Supabase error: $e2');
+        }
       }
     }
 

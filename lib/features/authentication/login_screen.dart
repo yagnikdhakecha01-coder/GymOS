@@ -64,7 +64,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (mounted) {
         setState(() => _isLoading = false);
-        _navigateToRoleDashboard(authVm);
+        await _navigateToRoleDashboard(authVm);
       }
     } catch (e) {
       if (mounted) {
@@ -85,7 +85,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  void _navigateToRoleDashboard(AuthViewModel authVm) {
+  Future<void> _navigateToRoleDashboard(AuthViewModel authVm) async {
     if (!mounted) return;
 
     if (authVm.userAssociations.length > 1) {
@@ -99,15 +99,36 @@ class _LoginScreenState extends State<LoginScreen> {
 
     Widget targetScreen;
     bool shouldSync = false;
-    
+
     if (authVm.userAssociations.isEmpty) {
       if (authVm.selectedRole == 'owner') {
         targetScreen = const FirstTimeSetupScreen();
       } else {
-        targetScreen = const MemberCodeScreen();
+        await authVm.logout();
+        if (!mounted) return;
+        Navigator.pushAndRemoveUntil(
+          context,
+          AppRouter.scaleRoute(const RoleSelectionScreen()),
+          (route) => false,
+        );
+        return;
       }
     } else {
       final profile = authVm.currentProfile!;
+
+      if (profile.role == UserRole.staff || profile.role == UserRole.member) {
+        final unlinked = await authVm.forceLogoutIfUnlinked();
+        if (unlinked) {
+          if (!mounted) return;
+          Navigator.pushAndRemoveUntil(
+            context,
+            AppRouter.scaleRoute(const RoleSelectionScreen()),
+            (route) => false,
+          );
+          return;
+        }
+      }
+
       switch (profile.role) {
         case UserRole.owner:
           if (profile.setupCompleted) {
@@ -191,7 +212,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       }
                       await authVm.signInWithGoogle();
                       if (mounted && !kIsWeb) {
-                        _navigateToRoleDashboard(authVm);
+                        await _navigateToRoleDashboard(authVm);
                       }
                     } catch (e) {
                       if (mounted) {

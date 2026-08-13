@@ -33,10 +33,14 @@ BEGIN
         COALESCE(m.phone, '')::text AS member_phone,
         COALESCE(m.avatar, '')::text AS member_avatar,
         m.status::text AS member_status,
-        ('PT - ' || COALESCE(pa.commission_percentage, 0)::text || '% Comm.')::text AS program,
-        pa.assignment_status::text AS assignment_status,
-        COALESCE(pa.pt_start_date::text, '')::text AS pt_start_date,
-        m.membership_plan_id AS membership_plan_id,
+        ('PT - ' || COALESCE(pa.commission_percentage, s.commission_percentage, 0)::text || '% Comm.')::text AS program,
+        COALESCE(pa.assignment_status, 'Active')::text AS assignment_status,
+        COALESCE(pa.pt_start_date::text, m.join_date::text, '')::text AS pt_start_date,
+        (CASE 
+            WHEN m.membership_plan_id IS NOT NULL AND m.membership_plan_id ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' 
+            THEN m.membership_plan_id::uuid 
+            ELSE NULL 
+         END) AS membership_plan_id,
         COALESCE(m.medical_details, '')::text AS medical_details,
         COALESCE(m.notes, '')::text AS notes,
         COALESCE(m.total_received_amount, 0)::numeric AS total_received_amount,
@@ -44,8 +48,12 @@ BEGIN
         COALESCE(m.discount_amount, 0)::numeric AS discount_amount,
         COALESCE(m.payment_status, 'Pending')::text AS payment_status,
         COALESCE(m.extra_fields, '{}'::jsonb) AS extra_fields
-    FROM public.pt_assignments pa
-    JOIN public.members m ON pa.member_id = m.id
-    WHERE pa.staff_id = p_staff_id;
+    FROM public.members m
+    JOIN public.staff s ON s.id = p_staff_id
+    LEFT JOIN public.pt_assignments pa ON pa.member_id = m.id AND pa.staff_id = p_staff_id AND pa.assignment_status = 'Active'
+    WHERE (m.pt_trainer = p_staff_id AND m.pt_member = true)
+       OR (pa.id IS NOT NULL);
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+GRANT EXECUTE ON FUNCTION public.get_trainer_clients(UUID) TO anon, authenticated, service_role;

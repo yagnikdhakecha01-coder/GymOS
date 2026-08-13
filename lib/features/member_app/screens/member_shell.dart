@@ -5,9 +5,7 @@ import 'package:provider/provider.dart';
 import '../../../core/theme/theme.dart';
 import '../../../core/navigation/app_router.dart';
 import '../../authentication/auth_viewmodel.dart';
-import '../../authentication/role_selection_screen.dart';
-import '../member_app_viewmodel.dart';
-import '../../../core/services/supabase_service.dart';
+import '../../../core/services/unlink_guard.dart';
 import 'member_dashboard_screen.dart';
 import 'member_attendance_screen.dart';
 import 'member_scan_qr_screen.dart';
@@ -24,7 +22,7 @@ class MemberShell extends StatefulWidget {
 class _MemberShellState extends State<MemberShell> {
   int _currentIndex = 0;
   Timer? _syncTimer;
-  bool _isLoggingOut = false;
+  bool _isRedirecting = false;
 
   @override
   void initState() {
@@ -32,8 +30,7 @@ class _MemberShellState extends State<MemberShell> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkUnlinkedStatus();
     });
-    // Start periodic background check every 60 seconds
-    _syncTimer = Timer.periodic(const Duration(seconds: 60), (timer) {
+    _syncTimer = Timer.periodic(const Duration(seconds: 3), (_) {
       _checkUnlinkedStatus();
     });
   }
@@ -45,66 +42,14 @@ class _MemberShellState extends State<MemberShell> {
   }
 
   Future<void> _checkUnlinkedStatus() async {
-    if (!mounted || _isLoggingOut) return;
-    try {
-      final authVm = Provider.of<AuthViewModel>(context, listen: false);
-      if (authVm.isLoggedIn) {
-        await authVm.loadCurrentProfile();
-        
-        final user = SupabaseService.client.auth.currentUser;
-        if (user != null) {
-          final memberData = await SupabaseService.client
-              .from('members')
-              .select('status')
-              .eq('user_id', user.id)
-              .maybeSingle();
-
-          if (authVm.userAssociations.isEmpty) {
-            _triggerLogout('Account Unlinked', 'Gym Owner unlinked your account.');
-          } else if (memberData != null && memberData['status'] == 'Inactive') {
-            _triggerLogout('Account Inactive', 'Your account has been deactivated by the gym owner.');
-          }
-        }
-      }
-    } catch (e) {
-      print('Error checking unlinked status: $e');
-    }
-  }
-
-  void _triggerLogout(String title, String message) {
-    if (_isLoggingOut) return;
-    _isLoggingOut = true;
-    _syncTimer?.cancel();
-
+    if (!mounted || _isRedirecting) return;
     final authVm = Provider.of<AuthViewModel>(context, listen: false);
+    if (!authVm.isLoggedIn) return;
 
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogCtx) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: Text(title, style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-          content: Text(message, style: GoogleFonts.inter()),
-          actions: [
-            TextButton(
-              onPressed: () async {
-                Navigator.pop(dialogCtx);
-                await authVm.logout();
-                if (mounted) {
-                  Navigator.pushAndRemoveUntil(
-                    context,
-                    AppRouter.scaleRoute(const RoleSelectionScreen()),
-                    (route) => false,
-                  );
-                }
-              },
-              child: Text('OK', style: GoogleFonts.inter(fontWeight: FontWeight.bold, color: AppTheme.primary)),
-            ),
-          ],
-        );
-      },
-    );
+    final blocked = await UnlinkGuard.checkAndForceLogout(context, authVm);
+    if (blocked && mounted) {
+      setState(() => _isRedirecting = true);
+    }
   }
 
   final Map<int, GlobalKey<NavigatorState>> _navigatorKeys = {
@@ -138,6 +83,13 @@ class _MemberShellState extends State<MemberShell> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isRedirecting) {
+      return const Scaffold(
+        backgroundColor: Colors.white,
+        body: Center(child: CircularProgressIndicator(color: AppTheme.primary)),
+      );
+    }
+
     return WillPopScope(
       onWillPop: _onWillPop,
       child: Scaffold(

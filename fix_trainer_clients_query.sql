@@ -33,7 +33,11 @@ BEGIN
         ('PT - ' || COALESCE(pa.commission_percentage, s.commission_percentage, 0)::text || '% Comm.')::text AS program,
         COALESCE(pa.assignment_status, 'Active')::text AS assignment_status,
         COALESCE(pa.pt_start_date::text, m.join_date::text, '')::text AS pt_start_date,
-        m.membership_plan_id AS membership_plan_id,
+        (CASE 
+            WHEN m.membership_plan_id IS NOT NULL AND m.membership_plan_id ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' 
+            THEN m.membership_plan_id::uuid 
+            ELSE NULL 
+         END) AS membership_plan_id,
         COALESCE(m.medical_details, '')::text AS medical_details,
         COALESCE(m.notes, '')::text AS notes,
         COALESCE(m.total_received_amount, 0)::numeric AS total_received_amount,
@@ -44,7 +48,8 @@ BEGIN
     FROM public.members m
     JOIN public.staff s ON s.id = p_staff_id
     LEFT JOIN public.pt_assignments pa ON pa.member_id = m.id AND pa.staff_id = p_staff_id AND pa.assignment_status = 'Active'
-    WHERE m.pt_trainer = p_staff_id AND m.pt_member = true;
+    WHERE (m.pt_trainer = p_staff_id AND m.pt_member = true)
+       OR (pa.id IS NOT NULL);
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 

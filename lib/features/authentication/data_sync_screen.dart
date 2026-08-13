@@ -6,6 +6,8 @@ import '../../core/theme/theme.dart';
 import '../../core/services/supabase_service.dart';
 import '../../core/repository/gym_repository.dart';
 import '../member_app/member_app_viewmodel.dart';
+import '../../core/navigation/app_router.dart';
+import 'role_selection_screen.dart';
 import 'auth_viewmodel.dart';
 
 class DataSyncScreen extends StatefulWidget {
@@ -86,6 +88,18 @@ class _DataSyncScreenState extends State<DataSyncScreen> with SingleTickerProvid
 
       if (profile == null || role == null) {
         throw Exception('User profile configuration missing.');
+      }
+
+      if (role == 'staff' || role == 'member') {
+        final unlinked = await authVm.forceLogoutIfUnlinked();
+        if (unlinked && mounted) {
+          Navigator.pushAndRemoveUntil(
+            context,
+            AppRouter.scaleRoute(const RoleSelectionScreen()),
+            (route) => false,
+          );
+          return;
+        }
       }
 
       if (role == 'member') {

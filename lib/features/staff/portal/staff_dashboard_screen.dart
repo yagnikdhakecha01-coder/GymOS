@@ -8,12 +8,12 @@ import '../../../core/services/announcements_service.dart';
 import '../../more/notifications_screen.dart';
 import '../../../../core/navigation/app_router.dart';
 import '../../authentication/auth_viewmodel.dart';
-import '../../authentication/role_selection_screen.dart';
 import '../../dashboard/gym_switcher_bottom_sheet.dart';
 import '../../../core/repository/gym_repository.dart';
 import '../staff_viewmodel.dart';
 import '../../../core/models/staff.dart';
 import '../../../core/services/supabase_service.dart';
+import '../../../core/services/unlink_guard.dart';
 import '../../../core/theme/responsive.dart';
 import '../../../core/widgets/sidebar_drawer.dart';
 
@@ -50,47 +50,9 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
 
   Future<void> _checkUnlinkedStatus() async {
     if (!mounted) return;
-    try {
-      final authVm = Provider.of<AuthViewModel>(context, listen: false);
-      if (authVm.isLoggedIn) {
-        if (authVm.currentProfile == null) {
-          await authVm.loadCurrentProfile().timeout(const Duration(seconds: 3));
-        }
-        if (authVm.userAssociations.isEmpty) {
-          if (mounted) {
-            showDialog(
-              context: context,
-              barrierDismissible: false,
-              builder: (dialogCtx) {
-                return AlertDialog(
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  title: Text('Account Unlinked', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-                  content: Text('Gym Owner unlinked your account.', style: GoogleFonts.inter()),
-                  actions: [
-                    TextButton(
-                      onPressed: () async {
-                        Navigator.pop(dialogCtx);
-                        await authVm.logout();
-                        if (mounted) {
-                          Navigator.pushAndRemoveUntil(
-                            context,
-                            AppRouter.scaleRoute(const RoleSelectionScreen()),
-                            (route) => false,
-                          );
-                        }
-                      },
-                      child: Text('OK', style: GoogleFonts.inter(fontWeight: FontWeight.bold, color: AppTheme.primary)),
-                    ),
-                  ],
-                );
-              },
-            );
-          }
-        }
-      }
-    } catch (e) {
-      print('Error checking staff unlinked status: $e');
-    }
+    final authVm = Provider.of<AuthViewModel>(context, listen: false);
+    if (!authVm.isLoggedIn) return;
+    await UnlinkGuard.checkAndForceLogout(context, authVm);
   }
 
   Future<void> _loadAnnouncements() async {

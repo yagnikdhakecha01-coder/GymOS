@@ -70,10 +70,23 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   Future<void> _verifyAndRoute(BuildContext context) async {
     try {
       final authVm = Provider.of<AuthViewModel>(context, listen: false);
-      await authVm.loadCurrentProfile(); // Sync profile state
-      
+      await authVm.loadCurrentProfile();
+
+      // Already-unlinked staff/member: force logout and go to login immediately
+      if (authVm.currentProfile?.role == UserRole.staff ||
+          authVm.currentProfile?.role == UserRole.member) {
+        final unlinked = await authVm.forceLogoutIfUnlinked();
+        if (unlinked && mounted) {
+          Navigator.pushReplacement(
+            context,
+            AppRouter.scaleRoute(const RoleSelectionScreen()),
+          );
+          return;
+        }
+      }
+
       Widget nextScreen;
-      
+
       if (authVm.userAssociations.length > 1 && authVm.activeAssociation == null) {
         nextScreen = const GymRoleSelectorScreen();
       } else if (authVm.userAssociations.isEmpty) {
@@ -81,7 +94,8 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
         if (role == 'owner') {
           nextScreen = const FirstTimeSetupScreen();
         } else {
-          nextScreen = const MemberCodeScreen();
+          await authVm.logout();
+          nextScreen = const RoleSelectionScreen();
         }
       } else {
         final profile = authVm.currentProfile!;
