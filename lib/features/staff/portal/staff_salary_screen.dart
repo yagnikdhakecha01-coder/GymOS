@@ -6,7 +6,7 @@ import '../../../core/theme/theme.dart';
 import '../../../core/models/staff.dart';
 import '../staff_viewmodel.dart';
 import '../staff_profile_screen.dart';
-import 'pay_salary_screen.dart';
+import '../pay_salary_screen.dart';
 
 /// Read-only salary view for staff — breakdown, advances, history.
 class StaffSalaryScreen extends StatefulWidget {
