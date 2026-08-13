@@ -14,7 +14,8 @@ import '../staff_viewmodel.dart';
 import '../../../core/models/staff.dart';
 import '../../../core/services/supabase_service.dart';
 import '../../../core/services/unlink_guard.dart';
-import '../../../core/theme/responsive.dart';
+import '../../../core/models/attendance.dart';
+import '../../../core/widgets/sidebar_drawer.dart';
 import '../../../core/utils/staff_day_attendance_status.dart';
 
 class StaffDashboardScreen extends StatefulWidget {
