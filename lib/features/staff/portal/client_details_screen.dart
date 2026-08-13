@@ -51,7 +51,7 @@ class _ClientDetailsScreenState extends State<ClientDetailsScreen> {
     }
     
     final matchingStaff = repo.getStaff().where((s) => s.userId == profileUserId).toList();
-    final staff = matchingStaff.isNotEmpty ? matchingStaff.first : null;
+    final staff = matchingStaff.isNotEmpty ? matchingStaff.first : authVm.staffRecord;
     
     if (staff != null) {
       final list = await repo.fetchStaffCommissions(staff.id, pendingOnly: false);

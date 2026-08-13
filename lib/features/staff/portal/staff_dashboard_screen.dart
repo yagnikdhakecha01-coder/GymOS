@@ -87,27 +87,27 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
       if (profileUserId != null) {
         // Find current staff
         final list = repo.getStaff();
-        final staff = list.firstWhere(
-          (s) => s.userId == profileUserId,
-          orElse: () => Staff(
-            id: '',
-            name: authVm.currentProfile?.fullName ?? 'Staff',
-            email: authVm.currentProfile?.email ?? '',
-            phone: '',
-            role: 'Trainer',
-            department: 'Training',
-            status: 'Active',
-            joinDate: '',
-            shift: '',
-            experience: '',
-            rating: 5.0,
-            sessionsCount: 0,
-            membersTrained: 0,
-            salary: 0.0,
-            salaryDue: 0.0,
-            avatar: authVm.currentProfile?.photoUrl ?? '',
-          ),
-        );
+        final matchingStaff = list.where((s) => s.userId == profileUserId).toList();
+        final staff = matchingStaff.isNotEmpty
+            ? matchingStaff.first
+            : authVm.staffRecord ?? Staff(
+                id: '',
+                name: authVm.currentProfile?.fullName ?? 'Staff',
+                email: authVm.currentProfile?.email ?? '',
+                phone: '',
+                role: 'Trainer',
+                department: 'Training',
+                status: 'Active',
+                joinDate: '',
+                shift: '',
+                experience: '',
+                rating: 5.0,
+                sessionsCount: 0,
+                membersTrained: 0,
+                salary: 0.0,
+                salaryDue: 0.0,
+                avatar: authVm.currentProfile?.photoUrl ?? '',
+              );
 
         // Fetch salary advances
         double advanceSum = 0.0;

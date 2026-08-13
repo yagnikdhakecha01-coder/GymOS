@@ -42,9 +42,9 @@ class _StaffClientsScreenState extends State<StaffClientsScreen> {
     }
 
     final matchingStaff = repo.getStaff().where((s) => s.userId == profileUserId).toList();
-    final staff = matchingStaff.isNotEmpty ? matchingStaff.first : null;
+    final staff = matchingStaff.isNotEmpty ? matchingStaff.first : authVm.staffRecord;
 
-    if (staff == null) {
+    if (staff == null || staff.id.isEmpty) {
       if (mounted) setState(() => _isLoading = false);
       return;
     }
