@@ -171,6 +171,8 @@ class StaffViewModel extends ChangeNotifier {
   }
 
   final Map<String, List<Map<String, dynamic>>> _draftsByMonth = {};
+  final Map<String, double> _payableByStaff = {};
+  String _payableCacheMonth = '';
 
   List<Map<String, dynamic>> getDraftsForMonth(String month) {
     return _draftsByMonth[month] ?? [];
@@ -211,7 +213,114 @@ class StaffViewModel extends ChangeNotifier {
   }
 
   List<Staff> getPendingSalaryStaff(String month) {
-    return allStaff.where((s) => !isSalaryPaid(s.id, month)).toList();
+    return allStaff.where((s) {
+      if (isSalaryPaid(s.id, month)) return false;
+      final payable = getStaffCachedPayable(s.id);
+      return payable > 0;
+    }).toList();
+  }
+
+  /// Cached pending payable (same as Pay Salary → Pending Payable).
+  double getStaffCachedPayable(String staffId) => _payableByStaff[staffId] ?? 0.0;
+
+  double get totalPendingPayableForMonth =>
+      _payableByStaff.values.fold(0.0, (sum, v) => sum + v);
+
+  bool _advanceMatchesMonth(Map<String, dynamic> advance, String month) {
+    final mStr = (advance['salary_month'] ?? '').toString().trim().toLowerCase();
+    final givenDate = advance['given_date'] != null
+        ? DateTime.tryParse(advance['given_date'].toString())
+        : null;
+    final calculatedMonth =
+        givenDate != null ? DateFormat('MMMM yyyy').format(givenDate) : '';
+    return mStr == month.trim().toLowerCase() ||
+        (mStr.isEmpty && calculatedMonth.trim().toLowerCase() == month.trim().toLowerCase());
+  }
+
+  double _sumAdvanceDeduction(List<Map<String, dynamic>> advances, String month, {double draftAdvance = 0}) {
+    double listSum = 0;
+    for (final a in advances) {
+      if (!_advanceMatchesMonth(a, month)) continue;
+      final s = (a['status']?.toString() ?? '').toLowerCase();
+      if (s == 'approved' || s == 'pending' || s == 'given') {
+        final amt = a['remaining_amount'] ?? a['advance_amount'] ?? a['amount'];
+        if (amt is num) listSum += amt.toDouble();
+      }
+    }
+    if (listSum > 0) return listSum;
+    return draftAdvance;
+  }
+
+  /// Single source of truth — mirrors PaySalaryScreen._totalPayable exactly.
+  Future<double> getStaffPendingPayable({
+    required String gymId,
+    required Staff staff,
+    required String salaryMonth,
+  }) async {
+    if (isSalaryPaid(staff.id, salaryMonth)) return 0;
+
+    final draft = await getOrCreateSalaryDraft(gymId, staff.id, salaryMonth);
+    if (draft != null && draft.status.toLowerCase() == 'paid') {
+      markSalaryAsPaid(staff.id, salaryMonth);
+      return 0;
+    }
+
+    final commissions = await fetchStaffCommissions(staff.id, pendingOnly: true);
+    final liveCommission = commissions.fold<double>(
+      0,
+      (sum, c) => sum + ((c['amount'] as num?)?.toDouble() ?? 0),
+    );
+    final commission = liveCommission > 0 ? liveCommission : (draft?.commissionAmount ?? 0);
+
+    List<SalaryAdjustment> adjustments = [];
+    final draftId = draft?.id ?? '';
+    if (draftId.isNotEmpty && !draftId.startsWith('draft_')) {
+      adjustments = await fetchSalaryAdjustments(draftId);
+    }
+    final additions = adjustments.where((a) => a.type == 'Addition').fold(0.0, (s, a) => s + a.amount);
+    final deductions = adjustments.where((a) => a.type == 'Deduction').fold(0.0, (s, a) => s + a.amount);
+    final netAdjustment = additions - deductions;
+
+    final advances = await fetchSalaryAdvances(staff.id);
+    final advanceDeduction = _sumAdvanceDeduction(
+      advances,
+      salaryMonth,
+      draftAdvance: draft?.advanceDeduction ?? 0,
+    );
+
+    final fixedSalary = (draft?.baseSalary ?? 0) > 0 ? draft!.baseSalary : staff.salary;
+    final gross = fixedSalary + commission + netAdjustment;
+    final payable = gross - advanceDeduction;
+    return payable > 0 ? payable : 0;
+  }
+
+  Future<void> refreshStaffPayablesForMonth(String gymId, String month) async {
+    _payableCacheMonth = month;
+    _payableByStaff.clear();
+    notifyListeners();
+
+    await fetchSalaryDraftsForMonth(month);
+    await fetchPaidSalariesForMonth(month);
+    await fetchGymSalaryAdvances(gymId);
+
+    for (final staff in allStaff.where((s) => s.status == 'Active')) {
+      try {
+        _payableByStaff[staff.id] = await getStaffPendingPayable(
+          gymId: gymId,
+          staff: staff,
+          salaryMonth: month,
+        );
+      } catch (e) {
+        print('refreshStaffPayables error for ${staff.id}: $e');
+        _payableByStaff[staff.id] = 0;
+      }
+    }
+    notifyListeners();
+  }
+
+  void invalidateStaffPayable(String staffId) {
+    _payableByStaff.remove(staffId);
+    notifyListeners();
   }
 
   // Helper methods to filter transactions and attendance by staff ID
@@ -534,6 +643,7 @@ class StaffViewModel extends ChangeNotifier {
       paymentMode: paymentMode,
       notes: notes,
     );
+    _payableByStaff.clear();
     notifyListeners();
   }
 

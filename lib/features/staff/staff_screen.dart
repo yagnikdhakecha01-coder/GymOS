@@ -30,12 +30,47 @@ class StaffScreen extends StatefulWidget {
 class _StaffScreenState extends State<StaffScreen> {
   late ScrollController _scrollController;
   double _scrollOffset = 0.0;
+  List<Map<String, dynamic>> _staffCardsRpc = [];
+  bool _cardsLoading = true;
 
   @override
   void initState() {
     super.initState();
     _scrollController = ScrollController();
     _scrollController.addListener(_onScroll);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadStaffPayrollData());
+  }
+
+  Future<void> _loadStaffPayrollData() async {
+    if (!mounted) return;
+    final staffVm = Provider.of<StaffViewModel>(context, listen: false);
+    final authVm = Provider.of<AuthViewModel>(context, listen: false);
+    final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
+    final month = DateFormat('MMMM yyyy').format(DateTime.now());
+
+    if (gymId != null) {
+      await staffVm.refreshStaffPayablesForMonth(gymId, month);
+    }
+
+    if (SupabaseService.isInitialized && gymId != null) {
+      try {
+        final response = await SupabaseService.client.rpc('get_owner_staff_cards_v1', params: {
+          'p_gym_id': gymId,
+          'p_date': DateFormat('yyyy-MM-dd').format(DateTime.now()),
+        });
+        if (mounted && response is List) {
+          setState(() {
+            _staffCardsRpc = List<Map<String, dynamic>>.from(response);
+            _cardsLoading = false;
+          });
+          return;
+        }
+      } catch (e) {
+        print('get_owner_staff_cards_v1 error: $e');
+      }
+    }
+
+    if (mounted) setState(() => _cardsLoading = false);
   }
 
   @override
@@ -141,23 +176,13 @@ class _StaffScreenState extends State<StaffScreen> {
                             label: 'Present Today',
                           ),
                           FutureBuilder<dynamic>(
-                            future: () {
-                              if (!SupabaseService.isInitialized) return Future<dynamic>.value(0.0);
-                              final authVm = Provider.of<AuthViewModel>(context, listen: false);
-                              final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
-                              return SupabaseService.client.rpc('get_total_salary_due', params: {
-                                'p_gym_id': gymId,
-                              }) as Future<dynamic>;
-                            }(),
+                            future: Future.value(staffVm.totalPendingPayableForMonth),
                             builder: (context, snapshot) {
-                              double dueVal = 0.0;
-                              if (snapshot.hasData && snapshot.data != null) {
-                                dueVal = (snapshot.data as num).toDouble();
-                              }
+                              final dueVal = staffVm.totalPendingPayableForMonth;
                               return StatCard(
                                 icon: Icons.payments_outlined,
                                 iconColor: AppTheme.danger,
-                                value: '₹${dueVal.toInt()}',
+                                value: '₹${NumberFormat('#,##,###').format(dueVal)}',
                                 label: 'Salary Due',
                               );
                             },
@@ -251,56 +276,42 @@ class _StaffScreenState extends State<StaffScreen> {
                 delegate: SliverChildBuilderDelegate(
                   (context, index) {
                     final staff = allStaff[index];
-                    return FutureBuilder<dynamic>(
-                      future: (() async {
-                        if (!SupabaseService.isInitialized) return null;
-                        final authVm = Provider.of<AuthViewModel>(context, listen: false);
-                        final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
-                        if (gymId == null) return null;
-                        try {
-                          final response = await SupabaseService.client.rpc('get_owner_staff_cards_v1', params: {
-                            'p_gym_id': gymId,
-                            'p_date': DateFormat('yyyy-MM-dd').format(DateTime.now()),
-                          });
-                          if (response is List) {
-                            final match = response.firstWhere(
-                              (e) => e['staff_id'].toString() == staff.id.toString(),
-                              orElse: () => null,
-                            );
-                            return match;
-                          }
-                        } catch (e) {
-                          print('RPC error in staff screen: $e');
-                        }
-                        return null;
-                      })(),
-                      builder: (context, snapshot) {
-                        Map<String, dynamic> staffData;
-                        if (snapshot.hasData && snapshot.data != null && snapshot.data is Map) {
-                          staffData = Map<String, dynamic>.from(snapshot.data as Map);
-                        } else {
-                          staffData = {
-                            'staff_id': staff.id,
-                            'name': staff.name,
-                            'role': staff.role,
-                            'avatar': staff.avatar,
-                            'status': staff.status,
-                            'salary_pending': staff.salaryDue,
-                            'present_days': 0,
-                            'leave_days': 0,
-                            'early_exit_count': 0,
-                            'last_check_in': 'N/A',
-                            'is_checked_in': staff.status == 'Active',
-                            'current_date_str': DateFormat('dd MMM yyyy').format(DateTime.now()),
-                          };
-                        }
+                    Map<String, dynamic>? rpcMatch;
+                    for (final row in _staffCardsRpc) {
+                      if (row['staff_id']?.toString() == staff.id.toString()) {
+                        rpcMatch = Map<String, dynamic>.from(row);
+                        break;
+                      }
+                    }
 
-                        return OwnerStaffCard(
-                          staffData: staffData,
-                          onTap: () {
-                            Navigator.push(context, AppRouter.slideRoute(StaffProfileScreen(staff: staff)));
-                          },
-                        );
+                    final payable = staffVm.getStaffCachedPayable(staff.id);
+                    final isPaid = payable <= 0 && (rpcMatch?['is_salary_paid'] == true);
+
+                    final staffData = rpcMatch ?? {
+                      'staff_id': staff.id,
+                      'name': staff.name,
+                      'role': staff.role,
+                      'avatar': staff.avatar,
+                      'status': staff.status,
+                      'present_days': 0,
+                      'leave_days': 0,
+                      'early_exit_count': 0,
+                      'last_check_in': 'N/A',
+                      'is_checked_in': staff.status == 'Active',
+                      'current_date_str': DateFormat('dd MMM yyyy').format(DateTime.now()),
+                    };
+
+                    staffData['salary_pending'] = payable;
+                    staffData['is_salary_paid'] = isPaid;
+                    if (isPaid && rpcMatch != null) {
+                      staffData['paid_amount'] = rpcMatch['paid_amount'] ?? payable;
+                    }
+
+                    return OwnerStaffCard(
+                      staffData: staffData,
+                      onTap: () async {
+                        await Navigator.push(context, AppRouter.slideRoute(StaffProfileScreen(staff: staff)));
+                        if (context.mounted) _loadStaffPayrollData();
                       },
                     );
                   },

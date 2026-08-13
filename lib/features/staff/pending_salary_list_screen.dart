@@ -32,11 +32,12 @@ class _PendingSalaryListScreenState extends State<PendingSalaryListScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final authVm = Provider.of<AuthViewModel>(context, listen: false);
       final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
+      final staffVm = Provider.of<StaffViewModel>(context, listen: false);
       if (gymId != null) {
-        Provider.of<StaffViewModel>(context, listen: false).fetchGymSalaryAdvances(gymId);
+        staffVm.fetchGymSalaryAdvances(gymId);
+        staffVm.refreshStaffPayablesForMonth(gymId, _selectedMonth);
       }
-      Provider.of<StaffViewModel>(context, listen: false)
-          .fetchPaidSalariesForMonth(_selectedMonth);
+      staffVm.fetchPaidSalariesForMonth(_selectedMonth);
     });
   }
 
@@ -99,10 +100,10 @@ class _PendingSalaryListScreenState extends State<PendingSalaryListScreen> {
                             final authVm = Provider.of<AuthViewModel>(context, listen: false);
                             final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
                             if (gymId != null) {
-                              Provider.of<StaffViewModel>(context, listen: false).fetchGymSalaryAdvances(gymId);
+                              staffVm.fetchGymSalaryAdvances(gymId);
+                              staffVm.refreshStaffPayablesForMonth(gymId, newValue);
                             }
-                            Provider.of<StaffViewModel>(context, listen: false)
-                                .fetchPaidSalariesForMonth(newValue);
+                            staffVm.fetchPaidSalariesForMonth(newValue);
                           }
                         },
                         items: _months.map<DropdownMenuItem<String>>((String value) {
@@ -168,29 +169,8 @@ class _PendingSalaryListScreenState extends State<PendingSalaryListScreen> {
                         itemCount: pendingStaff.length,
                         itemBuilder: (context, index) {
                           final staff = pendingStaff[index];
-                          
-                          // Retrieve dynamically calculated totals from database drafts if available
-                          final drafts = staffVm.getDraftsForMonth(_selectedMonth);
-                          Map<String, dynamic>? draft;
-                          for (var d in drafts) {
-                            if (d['staff_id'].toString() == staff.id.toString()) {
-                              draft = d;
-                              break;
-                            }
-                          }
-                          final double totalPayable = draft != null
-                              ? (draft['net_salary'] as num).toDouble()
-                              : () {
-                                  final advances = staffVm.getStaffAdvancesForMonth(staff.id, _selectedMonth);
-                                  final double totalAdvance = advances.fold<double>(0.0, (sum, adv) {
-                                    final status = adv['status'] as String?;
-                                    if (status == 'Approved' || status == 'Given' || status == 'Pending') {
-                                      return sum + ((adv['remaining_amount'] ?? adv['advance_amount'] ?? adv['amount'] ?? 0.0) as num).toDouble();
-                                    }
-                                    return sum;
-                                  });
-                                  return (staff.salary - totalAdvance).clamp(0.0, double.infinity);
-                                }();
+
+                          final double totalPayable = staffVm.getStaffCachedPayable(staff.id);
 
                           return GestureDetector(
                             onTap: () {

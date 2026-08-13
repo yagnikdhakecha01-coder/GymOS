@@ -12,6 +12,7 @@ import 'staff_salary_screen.dart';
 import '../../more/help_support_screen.dart';
 import '../../more/settings_screen.dart';
 import '../../../core/models/staff.dart';
+import '../../../core/repository/gym_repository.dart';
 import '../../dashboard/gym_switcher_bottom_sheet.dart';
 
 class StaffMoreScreen extends StatelessWidget {
@@ -50,8 +51,27 @@ class StaffMoreScreen extends StatelessWidget {
     );
   }
 
-  void _showScheduleDialog(BuildContext context, Staff staff) {
-    final isBothShift = staff.shiftType == 'both' || staff.shift.toLowerCase().contains('both');
+  Future<void> _showScheduleDialog(BuildContext context, Staff staff) async {
+    final authVm = Provider.of<AuthViewModel>(context, listen: false);
+    final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id']?.toString() ?? staff.gymId;
+    final repo = Provider.of<GymRepository>(context, listen: false);
+
+    Map<String, dynamic>? schedule;
+    if (gymId.isNotEmpty) {
+      schedule = await repo.fetchStaffWorkSchedule(staff.id, gymId);
+    }
+
+    final isBothShift = schedule?['is_both_shift'] == true ||
+        staff.shiftType == 'both' ||
+        staff.shift.toLowerCase().contains('both');
+    final shiftLabel = schedule?['shift_label']?.toString() ??
+        (isBothShift ? 'Both Shifts (Double)' : (staff.shift.isNotEmpty ? staff.shift : 'Single Shift'));
+    final shift1Start = schedule?['shift1_start']?.toString() ?? staff.shift1Start;
+    final shift1End = schedule?['shift1_end']?.toString() ?? staff.shift1End;
+    final shift2Start = schedule?['shift2_start']?.toString() ?? staff.shift2Start;
+    final shift2End = schedule?['shift2_end']?.toString() ?? staff.shift2End;
+
+    if (!context.mounted) return;
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -61,23 +81,30 @@ class StaffMoreScreen extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Shift: ${isBothShift ? 'Both Shifts (Double)' : (staff.shift.isNotEmpty ? staff.shift : 'Single Shift')}',
+              'Shift: $shiftLabel',
               style: GoogleFonts.inter(fontWeight: FontWeight.bold),
             ),
+            if (schedule != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Timings from your staff profile',
+                style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted, fontStyle: FontStyle.italic),
+              ),
+            ],
             const SizedBox(height: 6),
             if (isBothShift) ...[
               Text(
-                'Shift 1: ${staff.shift1Start.isNotEmpty ? staff.shift1Start : '09:00 AM'} - ${staff.shift1End.isNotEmpty ? staff.shift1End : '05:00 PM'}',
+                'Shift 1: ${shift1Start.isNotEmpty ? shift1Start : '09:00 AM'} - ${shift1End.isNotEmpty ? shift1End : '01:00 PM'}',
                 style: GoogleFonts.inter(color: AppTheme.textSecondary, fontSize: 13),
               ),
               const SizedBox(height: 2),
               Text(
-                'Shift 2: ${staff.shift2Start.isNotEmpty ? staff.shift2Start : '04:00 PM'} - ${staff.shift2End.isNotEmpty ? staff.shift2End : '09:00 PM'}',
+                'Shift 2: ${shift2Start.isNotEmpty ? shift2Start : '04:00 PM'} - ${shift2End.isNotEmpty ? shift2End : '09:00 PM'}',
                 style: GoogleFonts.inter(color: AppTheme.textSecondary, fontSize: 13),
               ),
             ] else ...[
               Text(
-                'Timing: ${staff.shift1Start.isNotEmpty ? staff.shift1Start : '09:00 AM'} - ${staff.shift1End.isNotEmpty ? staff.shift1End : '05:00 PM'}',
+                'Timing: ${shift1Start.isNotEmpty ? shift1Start : '09:00 AM'} - ${shift1End.isNotEmpty ? shift1End : '05:00 PM'}',
                 style: GoogleFonts.inter(color: AppTheme.textSecondary, fontSize: 13),
               ),
             ],

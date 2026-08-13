@@ -60,27 +60,18 @@ BEGIN
         RETURN 0;
     END IF;
 
-    -- Use draft net_salary if draft exists (includes commission/advance/adjustments)
-    SELECT sd.id, sd.net_salary
-    INTO v_draft_id, v_draft_net
+    SELECT sd.id INTO v_draft_id
     FROM public.salary_drafts sd
     WHERE sd.staff_id = p_staff_id
       AND trim(sd.salary_month) = v_month
     LIMIT 1;
 
-    IF v_draft_id IS NOT NULL AND COALESCE(v_draft_net, 0) > 0 THEN
-        RETURN GREATEST(0, v_draft_net);
-    END IF;
-
-    -- Live calculation (same logic as fn_calculate_salary_draft_totals trigger)
-    SELECT COALESCE(SUM(cl.amount), 0)
-    INTO v_commission
+    SELECT COALESCE(SUM(cl.amount), 0) INTO v_commission
     FROM public.commission_ledger cl
     WHERE cl.staff_id = p_staff_id
       AND cl.status = 'Pending'::public.commission_status;
 
-    SELECT COALESCE(SUM(sa.remaining_amount), 0)
-    INTO v_advances
+    SELECT COALESCE(SUM(sa.remaining_amount), 0) INTO v_advances
     FROM public.salary_advance_ledger sa
     WHERE sa.staff_id = p_staff_id
       AND sa.status IN ('Approved'::public.advance_status, 'Given'::public.advance_status, 'Pending'::public.advance_status)
@@ -93,16 +84,14 @@ BEGIN
       );
 
     IF v_draft_id IS NOT NULL THEN
-        SELECT COALESCE(SUM(amount), 0) INTO v_additions
-        FROM public.salary_adjustments
+        SELECT COALESCE(SUM(amount), 0) INTO v_additions FROM public.salary_adjustments
         WHERE salary_draft_id = v_draft_id AND type = 'Addition'::public.adjustment_type;
-
-        SELECT COALESCE(SUM(amount), 0) INTO v_deductions
-        FROM public.salary_adjustments
+        SELECT COALESCE(SUM(amount), 0) INTO v_deductions FROM public.salary_adjustments
         WHERE salary_draft_id = v_draft_id AND type = 'Deduction'::public.adjustment_type;
     END IF;
 
-    RETURN GREATEST(0, (v_base + v_commission + v_additions) - (v_advances + v_deductions));
+    -- Always live-calculate (matches Pay Salary Pending Payable)
+    RETURN GREATEST(0, (v_base + v_commission + v_additions - v_deductions) - v_advances);
 END;
 $$;
 

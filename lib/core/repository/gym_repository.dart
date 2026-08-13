@@ -4169,6 +4169,25 @@ class GymRepository extends ChangeNotifier {
     }
   }
 
+  Future<Map<String, dynamic>?> fetchStaffWorkSchedule(String staffId, String gymId) async {
+    if (!SupabaseService.isInitialized) return null;
+    try {
+      final response = await SupabaseService.client.rpc(
+        'get_staff_work_schedule',
+        params: {
+          'p_staff_id': staffId,
+          'p_gym_id': gymId,
+        },
+      );
+      if (response != null && response is Map) {
+        return Map<String, dynamic>.from(response as Map);
+      }
+    } catch (e) {
+      print('fetchStaffWorkSchedule RPC error: $e');
+    }
+    return null;
+  }
+
   Future<void> fetchTodayAttendanceDetails(String userId, String gymId) async {
     _loadTodayDetailsFromStorage();
     if (!SupabaseService.isInitialized) return;

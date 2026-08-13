@@ -70,44 +70,21 @@ class _StaffProfileScreenState extends State<StaffProfileScreen> {
 
   Future<void> _fetchDbTabsData() async {
     final staffVm = Provider.of<StaffViewModel>(context, listen: false);
+    final authVm = Provider.of<AuthViewModel>(context, listen: false);
+    final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
     final data = await staffVm.getStaffDashboardData(widget.staff.id);
     
     double pendingSalary = 0.0;
     final currentMonthStr = DateFormat('MMMM yyyy').format(DateTime.now());
-    try {
-      if (SupabaseService.isInitialized) {
-        final res = await SupabaseService.client.rpc(
-          'get_staff_pending_salary_for_month',
-          params: {'p_staff_id': widget.staff.id, 'p_salary_month': currentMonthStr},
-        );
-        if (res != null) pendingSalary = (res as num).toDouble();
-      }
-    } catch (e) {
-      print('Error fetching pending salary from DB: $e');
-      try {
-        final res = await SupabaseService.client.rpc('get_staff_pending_salary', params: {
-          'p_staff_id': widget.staff.id,
-        });
-        if (res != null) pendingSalary = (res as num).toDouble();
-      } catch (_) {
-        pendingSalary = widget.staff.salary;
-      }
-    }
-
-    final salaryHist = data['salaryHistory'] as List? ?? [];
-    final isCurrentMonthPaid = salaryHist.any((s) {
-      final month = (s['salary_month'] ?? s['month'] ?? '').toString().trim().toLowerCase();
-      final status = (s['status'] ?? '').toString().toLowerCase();
-      return month == currentMonthStr.toLowerCase() && status == 'paid';
-    });
-
-    if (isCurrentMonthPaid) {
-      pendingSalary = 0.0;
+    if (gymId != null) {
+      pendingSalary = await staffVm.getStaffPendingPayable(
+        gymId: gymId,
+        staff: widget.staff,
+        salaryMonth: currentMonthStr,
+      );
     }
 
     try {
-      final authVm = Provider.of<AuthViewModel>(context, listen: false);
-      final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
       if (gymId != null) {
         final settingsRes = await SupabaseService.client
             .from('gym_shift_settings')
@@ -122,6 +99,8 @@ class _StaffProfileScreenState extends State<StaffProfileScreen> {
     } catch (e) {
       print('Error fetching gym shift mode: $e');
     }
+
+    final salaryHist = data['salaryHistory'] as List? ?? [];
 
     if (mounted) {
       setState(() {
@@ -787,8 +766,17 @@ Thank you.''';
                     Icons.currency_rupee,
                     'Pay\nSalary',
                     const Color(0xFF16A34A),
-                    () {
-                      Navigator.push(context, MaterialPageRoute(builder: (_) => PaySalaryScreen(staff: staff, selectedMonth: DateFormat('MMMM yyyy').format(DateTime.now()))));
+                    () async {
+                      await Navigator.push(context, MaterialPageRoute(builder: (_) => PaySalaryScreen(staff: staff, selectedMonth: DateFormat('MMMM yyyy').format(DateTime.now()))));
+                      if (mounted) {
+                        final authVm = Provider.of<AuthViewModel>(context, listen: false);
+                        final staffVm = Provider.of<StaffViewModel>(context, listen: false);
+                        final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
+                        if (gymId != null) {
+                          await staffVm.refreshStaffPayablesForMonth(gymId, DateFormat('MMMM yyyy').format(DateTime.now()));
+                        }
+                        _fetchDbTabsData();
+                      }
                     },
                   ),
                 ),
