@@ -1,5 +1,5 @@
--- SQL STEP 4: Half day logic for weekly summary (run after STEP 1-2)
--- Both shift: 1 shift absent = 0.5 (half day), 2 shifts absent = 1.0 full absent
+-- SQL STEP 4: Half day weekly summary (run after STEP 1-2)
+-- Orange/half = ONLY when 1 absent + 1 present in DB same day (true half absent)
 
 CREATE OR REPLACE FUNCTION public.get_staff_weekly_summary_v1(
     p_user_id UUID,
@@ -88,21 +88,21 @@ BEGIN
         END LOOP;
 
         IF v_is_both THEN
-            IF v_absent_shifts >= 2 THEN
+            IF v_half_shifts > 0 THEN
+                v_present_count := v_present_count + 0.5;
+                v_absent_count := v_absent_count + 0.5;
+            ELSIF v_absent_shifts >= 2 THEN
                 v_absent_count := v_absent_count + 1.0;
-            ELSIF v_absent_shifts = 1 THEN
-                v_absent_count := v_absent_count + 0.5;
-            ELSIF v_half_shifts > 0 THEN
+            ELSIF v_absent_shifts = 1 AND v_present_shifts >= 1 THEN
                 v_absent_count := v_absent_count + 0.5;
                 v_present_count := v_present_count + 0.5;
-            END IF;
-
-            IF v_present_shifts >= 2 THEN
+            ELSIF v_present_shifts >= 1 AND v_absent_shifts = 0 THEN
                 v_present_count := v_present_count + 1.0;
-            ELSIF v_present_shifts = 1 AND v_absent_shifts = 0 THEN
-                v_present_count := v_present_count + 0.5;
-            ELSIF v_present_shifts = 1 AND v_absent_shifts = 1 THEN
-                v_present_count := v_present_count + 0.5;
+            ELSIF v_absent_shifts = 1 AND v_present_shifts = 0
+                  AND v_day.log_date = (now() AT TIME ZONE 'Asia/Kolkata')::DATE THEN
+                v_absent_count := v_absent_count + 0.5;
+            ELSIF v_absent_shifts = 1 AND v_present_shifts = 0 THEN
+                v_absent_count := v_absent_count + 0.5;
             END IF;
         ELSE
             IF v_half_shifts > 0 THEN
