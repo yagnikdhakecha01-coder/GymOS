@@ -15,11 +15,13 @@ import '../../core/repository/gym_repository.dart';
 class PaySalaryScreen extends StatefulWidget {
   final Staff staff;
   final String selectedMonth;
+  final bool readOnly;
 
   const PaySalaryScreen({
     super.key,
     required this.staff,
     required this.selectedMonth,
+    this.readOnly = false,
   });
 
   @override
@@ -180,15 +182,26 @@ class _PaySalaryScreenState extends State<PaySalaryScreen> {
           _leaves = List<Map<String, dynamic>>.from(localLeaves);
           _attendanceLogs = List<Map<String, dynamic>>.from(leaveDetails?['attendance_logs'] ?? []);
 
-          // Load advances from local repository to include newly approved ones instantly!
+          // Load advances: merge remote fetch + local cache
+          final remoteAdvances = results[3] as List<Map<String, dynamic>>;
           final localAdvances = gymRepository.salaryAdvances.where((a) {
             final isOwn = a['staff_id'] == widget.staff.id;
-            final isApproved = a['status'] == 'Approved';
-            final isMonth = a['salary_month'] == widget.selectedMonth;
-            return isOwn && isApproved && isMonth;
+            final status = (a['status']?.toString() ?? '').toLowerCase();
+            final isActive = status == 'approved' || status == 'given' || status == 'pending';
+            final month = a['salary_month']?.toString() ?? '';
+            final givenMonth = a['given_date'] != null
+                ? DateFormat('MMMM yyyy').format(DateTime.tryParse(a['given_date'].toString()) ?? DateTime.now())
+                : '';
+            final isMonth = month == widget.selectedMonth || givenMonth == widget.selectedMonth;
+            return isOwn && isActive && isMonth;
           }).toList();
 
-          _advances = List<Map<String, dynamic>>.from(localAdvances);
+          final mergedAdvances = <String, Map<String, dynamic>>{};
+          for (final a in [...remoteAdvances, ...localAdvances]) {
+            final id = a['id']?.toString() ?? '${a['given_date']}_${a['advance_amount']}';
+            mergedAdvances[id] = Map<String, dynamic>.from(a);
+          }
+          _advances = mergedAdvances.values.toList();
           _isLoading = false;
         });
 
@@ -483,35 +496,14 @@ class _PaySalaryScreenState extends State<PaySalaryScreen> {
   @override
   Widget build(BuildContext context) {
     final String formattedDate = DateFormat('dd MMM yyyy').format(_paymentDate);
-
-    return Scaffold(
-      backgroundColor: const Color(0xFFF9FAFB),
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        iconTheme: const IconThemeData(color: AppTheme.textPrimary),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Pay Salary',
-              style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
-            ),
-            Text(
-              widget.selectedMonth,
-              style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary),
-            ),
-          ],
-        ),
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: AppTheme.primary))
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
+    final body = _isLoading
+        ? const Center(child: CircularProgressIndicator(color: AppTheme.primary))
+        : SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
             // 1. Staff Profile Header Card
+            if (!widget.readOnly)
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -572,7 +564,7 @@ class _PaySalaryScreenState extends State<PaySalaryScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: 12),
+            if (!widget.readOnly) const SizedBox(height: 12),
 
             if (_isPaid) ...[
               Container(
@@ -708,7 +700,7 @@ class _PaySalaryScreenState extends State<PaySalaryScreen> {
                           maxLines: 1,
                         ),
                       ),
-                      if (!_isPaid)
+                      if (!_isPaid && !widget.readOnly)
                         TextButton.icon(
                           onPressed: _addAdjustmentDialog,
                           icon: const Icon(Icons.add, size: 14, color: AppTheme.primary),
@@ -789,7 +781,7 @@ class _PaySalaryScreenState extends State<PaySalaryScreen> {
                               color: isAddition ? Colors.green : Colors.red,
                             ),
                           ),
-                          if (!_isPaid) ...[
+                          if (!_isPaid && !widget.readOnly) ...[
                             const SizedBox(width: 8),
                             IconButton(
                               icon: const Icon(Icons.delete_outline, color: Colors.red, size: 18),
@@ -866,6 +858,7 @@ class _PaySalaryScreenState extends State<PaySalaryScreen> {
             ),
             const SizedBox(height: 12),
 
+            if (!widget.readOnly) ...[
             // 6. Payment Details Card
             Container(
               padding: const EdgeInsets.all(16),
@@ -977,9 +970,37 @@ class _PaySalaryScreenState extends State<PaySalaryScreen> {
               textAlign: TextAlign.center,
               style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary),
             ),
+            ],
+          ],
+        ),
+      );
+
+    if (widget.readOnly) {
+      return body;
+    }
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF9FAFB),
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        iconTheme: const IconThemeData(color: AppTheme.textPrimary),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Pay Salary',
+              style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+            ),
+            Text(
+              widget.selectedMonth,
+              style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary),
+            ),
           ],
         ),
       ),
+      body: body,
     );
   }
 

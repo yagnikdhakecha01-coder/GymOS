@@ -185,7 +185,7 @@ class _PendingSalaryListScreenState extends State<PendingSalaryListScreen> {
                                   final double totalAdvance = advances.fold<double>(0.0, (sum, adv) {
                                     final status = adv['status'] as String?;
                                     if (status == 'Approved' || status == 'Given' || status == 'Pending') {
-                                      return sum + ((adv['advance_amount'] ?? adv['amount'] ?? 0.0) as num).toDouble();
+                                      return sum + ((adv['remaining_amount'] ?? adv['advance_amount'] ?? adv['amount'] ?? 0.0) as num).toDouble();
                                     }
                                     return sum;
                                   });

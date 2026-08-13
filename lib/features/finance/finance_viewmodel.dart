@@ -11,6 +11,9 @@ class FinanceViewModel extends ChangeNotifier {
   double _dbTotalRevenue = 0.0;
   double _dbTotalExpense = 0.0;
   double _dbNetProfit = 0.0;
+  double _dbMemberPendingTotal = 0.0;
+  double _dbSalaryDueTotal = 0.0;
+  bool _pendingTotalsLoaded = false;
   List<double> _dbMonthlyRevenueData = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
   bool _loadingFinanceStats = false;
 
@@ -93,12 +96,43 @@ class FinanceViewModel extends ChangeNotifier {
           _dbMonthlyRevenueData = rawData.map((e) => (e as num).toDouble()).toList();
         }
       }
+
+      await _fetchPendingTotalsFromDb(gymId);
     } catch (e) {
       print('Error fetching finance summary: $e');
     } finally {
       _loadingFinanceStats = false;
       notifyListeners();
     }
+  }
+
+  Future<void> _fetchPendingTotalsFromDb(String gymId) async {
+    if (!SupabaseService.isInitialized) return;
+    try {
+      final memberPending = await SupabaseService.client.rpc(
+        'get_gym_member_pending_total',
+        params: {'p_gym_id': gymId},
+      );
+      if (memberPending != null) {
+        _dbMemberPendingTotal = (memberPending as num).toDouble();
+      }
+    } catch (e) {
+      print('get_gym_member_pending_total error: $e');
+      _dbMemberPendingTotal = _repository.getMembers().fold(0.0, (sum, m) => sum + m.pendingAmount);
+    }
+    try {
+      final salaryDue = await SupabaseService.client.rpc(
+        'get_total_salary_due',
+        params: {'p_gym_id': gymId},
+      );
+      if (salaryDue != null) {
+        _dbSalaryDueTotal = (salaryDue as num).toDouble();
+      }
+    } catch (e) {
+      print('get_total_salary_due error: $e');
+      _dbSalaryDueTotal = _repository.getStaff().fold(0.0, (sum, s) => sum + s.salaryDue);
+    }
+    _pendingTotalsLoaded = true;
   }
 
   List<FinanceTransaction> get transactions {
@@ -120,13 +154,13 @@ class FinanceViewModel extends ChangeNotifier {
   }
 
   double get totalPendingPayments {
-    return _repository.getMembers()
-        .fold(0.0, (sum, m) => sum + m.pendingAmount);
+    if (_pendingTotalsLoaded) return _dbMemberPendingTotal;
+    return _repository.getMembers().fold(0.0, (sum, m) => sum + m.pendingAmount);
   }
 
   double get totalSalaryDue {
-    return _repository.getStaff()
-        .fold(0.0, (sum, s) => sum + s.salaryDue);
+    if (_pendingTotalsLoaded) return _dbSalaryDueTotal;
+    return _repository.getStaff().fold(0.0, (sum, s) => sum + s.salaryDue);
   }
 
   Future<void> addTransaction({

@@ -316,10 +316,6 @@ class _ClientDetailsScreenState extends State<ClientDetailsScreen> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text('Membership Dates', style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.bold)),
-            IconButton(
-              icon: const Icon(Icons.edit_outlined, color: AppTheme.primary, size: 18),
-              onPressed: _showEditPlanValidityBottomSheet,
-            ),
           ],
         ),
         const SizedBox(height: 8),

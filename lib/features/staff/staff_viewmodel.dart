@@ -448,6 +448,8 @@ class StaffViewModel extends ChangeNotifier {
       return {
         'id': sal['id'],
         'month': sal['salary_month'] ?? 'N/A',
+        'salary_month': sal['salary_month'] ?? 'N/A',
+        'status': sal['status'] ?? 'Paid',
         'paidOn': DateFormat('dd MMM yyyy').format(created),
         'amount': netSalary,
         'gross_salary': grossSalary,

@@ -73,16 +73,36 @@ class _StaffProfileScreenState extends State<StaffProfileScreen> {
     final data = await staffVm.getStaffDashboardData(widget.staff.id);
     
     double pendingSalary = 0.0;
+    final currentMonthStr = DateFormat('MMMM yyyy').format(DateTime.now());
     try {
-      final res = await SupabaseService.client.rpc('get_staff_pending_salary', params: {
-        'p_staff_id': widget.staff.id,
-      });
-      if (res != null) {
-        pendingSalary = (res as num).toDouble();
+      if (SupabaseService.isInitialized) {
+        final res = await SupabaseService.client.rpc(
+          'get_staff_pending_salary_for_month',
+          params: {'p_staff_id': widget.staff.id, 'p_salary_month': currentMonthStr},
+        );
+        if (res != null) pendingSalary = (res as num).toDouble();
       }
     } catch (e) {
       print('Error fetching pending salary from DB: $e');
-      pendingSalary = widget.staff.salary;
+      try {
+        final res = await SupabaseService.client.rpc('get_staff_pending_salary', params: {
+          'p_staff_id': widget.staff.id,
+        });
+        if (res != null) pendingSalary = (res as num).toDouble();
+      } catch (_) {
+        pendingSalary = widget.staff.salary;
+      }
+    }
+
+    final salaryHist = data['salaryHistory'] as List? ?? [];
+    final isCurrentMonthPaid = salaryHist.any((s) {
+      final month = (s['salary_month'] ?? s['month'] ?? '').toString().trim().toLowerCase();
+      final status = (s['status'] ?? '').toString().toLowerCase();
+      return month == currentMonthStr.toLowerCase() && status == 'paid';
+    });
+
+    if (isCurrentMonthPaid) {
+      pendingSalary = 0.0;
     }
 
     try {
@@ -94,25 +114,13 @@ class _StaffProfileScreenState extends State<StaffProfileScreen> {
             .select('mode')
             .eq('gym_id', gymId)
             .maybeSingle();
-            
+
         if (settingsRes != null) {
           _gymShiftMode = settingsRes['mode'] ?? 'Single Shift';
         }
       }
     } catch (e) {
       print('Error fetching gym shift mode: $e');
-    }
-
-    final salaryHist = data['salaryHistory'] as List? ?? [];
-    final currentMonthStr = DateFormat('MMMM yyyy').format(DateTime.now());
-    final isCurrentMonthPaid = salaryHist.any((s) {
-      final month = (s['salary_month'] ?? s['month'] ?? '').toString().trim().toLowerCase();
-      final status = (s['status'] ?? '').toString().toLowerCase();
-      return month == currentMonthStr.toLowerCase() && status == 'paid';
-    });
-
-    if (isCurrentMonthPaid) {
-      pendingSalary = 0.0;
     }
 
     if (mounted) {

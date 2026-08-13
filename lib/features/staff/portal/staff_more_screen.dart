@@ -8,6 +8,7 @@ import '../../authentication/role_selection_screen.dart';
 import '../../../core/navigation/app_router.dart';
 import '../staff_viewmodel.dart';
 import '../staff_profile_screen.dart';
+import 'staff_salary_screen.dart';
 import '../../more/help_support_screen.dart';
 import '../../more/settings_screen.dart';
 import '../../../core/models/staff.dart';
@@ -195,6 +196,14 @@ class StaffMoreScreen extends StatelessWidget {
                     label: 'Profile',
                     onTap: () {
                       Navigator.push(context, AppRouter.slideRoute(StaffProfileScreen(staff: staff, isOwnerView: false)));
+                    },
+                  ),
+                  const Divider(height: 1, color: Color(0xFFF3F4F6), indent: 16, endIndent: 16),
+                  _buildMenuItem(
+                    icon: Icons.account_balance_wallet_outlined,
+                    label: 'My Salary',
+                    onTap: () {
+                      Navigator.push(context, AppRouter.slideRoute(StaffSalaryScreen(staff: staff)));
                     },
                   ),
                   const Divider(height: 1, color: Color(0xFFF3F4F6), indent: 16, endIndent: 16),
