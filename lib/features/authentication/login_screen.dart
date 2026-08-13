@@ -105,14 +105,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (authVm.selectedRole == 'owner') {
         targetScreen = const FirstTimeSetupScreen();
       } else {
-        await authVm.logout();
-        if (!mounted) return;
-        Navigator.pushAndRemoveUntil(
-          context,
-          AppRouter.scaleRoute(RoleSelectionScreen()),
-          (route) => false,
-        );
-        return;
+        targetScreen = const MemberCodeScreen();
       }
     } else {
       final profile = authVm.currentProfile!;

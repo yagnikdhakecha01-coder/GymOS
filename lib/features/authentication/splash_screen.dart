@@ -94,8 +94,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
         if (role == 'owner') {
           nextScreen = const FirstTimeSetupScreen();
         } else {
-          await authVm.logout();
-          nextScreen = const RoleSelectionScreen();
+          nextScreen = const MemberCodeScreen();
         }
       } else {
         final profile = authVm.currentProfile!;
