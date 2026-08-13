@@ -80,6 +80,7 @@ class _StaffClientsScreenState extends State<StaffClientsScreen> {
             'email': item['member_email'],
             'phone': item['member_phone'],
             'avatar': item['member_avatar'] ?? '',
+            'join_date': item['pt_start_date'] ?? '',
             'status': item['member_status'],
             'membership_plan_id': item['membership_plan_id'],
             'pt_member': true,

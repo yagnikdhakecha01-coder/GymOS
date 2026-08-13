@@ -4482,6 +4482,49 @@ class GymRepository extends ChangeNotifier {
     );
   }
 
+  Future<Map<String, dynamic>?> fetchTrainerClientDetail(String staffId, String memberId) async {
+    if (!SupabaseService.isInitialized) return null;
+    try {
+      final response = await SupabaseService.client.rpc(
+        'get_trainer_client_detail',
+        params: {'p_staff_id': staffId, 'p_member_id': memberId},
+      );
+      if (response == null) return null;
+      if (response is Map<String, dynamic>) return response;
+      if (response is Map) return Map<String, dynamic>.from(response);
+      return null;
+    } catch (e) {
+      print('fetchTrainerClientDetail error: $e');
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>> updateMemberMeasurements(
+    String staffId,
+    String memberId,
+    Map<String, dynamic> measurements,
+  ) async {
+    if (!SupabaseService.isInitialized) {
+      throw Exception('Supabase not initialized');
+    }
+    try {
+      final response = await SupabaseService.client.rpc(
+        'update_member_measurements',
+        params: {
+          'p_staff_id': staffId,
+          'p_member_id': memberId,
+          'p_measurements': measurements,
+        },
+      );
+      if (response is Map<String, dynamic>) return response;
+      if (response is Map) return Map<String, dynamic>.from(response);
+      return {'measurements': measurements};
+    } catch (e) {
+      print('updateMemberMeasurements error: $e');
+      rethrow;
+    }
+  }
+
   Future<List<Map<String, dynamic>>> fetchStaffCommissions(String staffId, {bool pendingOnly = true}) async {
     if (!SupabaseService.isInitialized) return [];
     try {

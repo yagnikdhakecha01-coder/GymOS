@@ -4,10 +4,10 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../../core/theme/theme.dart';
 import '../../../core/widgets/custom_card.dart';
-import '../../../core/widgets/custom_button.dart';
 import '../../../core/repository/gym_repository.dart';
 import '../../../core/models/member.dart';
-import '../../../core/models/membership_plan.dart';
+import '../../../core/models/staff.dart';
+import '../../../core/services/supabase_service.dart';
 import '../../authentication/auth_viewmodel.dart';
 
 class ClientDetailsScreen extends StatefulWidget {
@@ -29,31 +29,107 @@ class ClientDetailsScreen extends StatefulWidget {
 class _ClientDetailsScreenState extends State<ClientDetailsScreen> {
   late Member _currentMember;
   List<Map<String, dynamic>> _commissions = [];
+  bool _loading = true;
   bool _loadingCommissions = false;
+
+  // Loaded from database RPC
+  double _commissionRate = 0;
+  double _commissionEarned = 0;
+  double _commissionPending = 0;
+  double _memberPaymentsReceived = 0;
+  String _planName = '';
+  String _expiryDate = '';
+  String _ptStartDate = '';
 
   @override
   void initState() {
     super.initState();
     _currentMember = widget.member;
-    _loadCommissionHistory();
+    _parseCommissionFromProgram();
+    _loadClientDetail();
   }
 
-  Future<void> _loadCommissionHistory() async {
+  void _parseCommissionFromProgram() {
+    final match = RegExp(r'([\d.]+)\s*%\s*Comm').firstMatch(widget.program);
+    if (match != null) {
+      _commissionRate = double.tryParse(match.group(1) ?? '0') ?? 0;
+    }
+  }
+
+  Map<String, dynamic> _safeMap(dynamic raw) {
+    if (raw == null) return {};
+    if (raw is Map<String, dynamic>) return raw;
+    if (raw is Map) return Map<String, dynamic>.from(raw);
+    return {};
+  }
+
+  Future<Staff?> _resolveStaff() async {
+    final authVm = Provider.of<AuthViewModel>(context, listen: false);
+    final repo = Provider.of<GymRepository>(context, listen: false);
+    final profileUserId = authVm.currentProfile?.id ?? authVm.currentUser?.id;
+    final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
+
+    Staff? staff = authVm.staffRecord;
+    if (staff == null || staff.id.isEmpty) {
+      final matching = repo.getStaff().where((s) {
+        if (s.userId != profileUserId) return false;
+        if (gymId != null && gymId.isNotEmpty && s.gymId.isNotEmpty) return s.gymId == gymId;
+        return true;
+      }).toList();
+      staff = matching.isNotEmpty ? matching.first : null;
+    }
+    return staff;
+  }
+
+  Future<void> _loadClientDetail() async {
+    if (!mounted) return;
+    setState(() => _loading = true);
+
+    final staff = await _resolveStaff();
+    final repo = Provider.of<GymRepository>(context, listen: false);
+
+    if (staff != null && SupabaseService.isInitialized) {
+      try {
+        final detail = await repo.fetchTrainerClientDetail(staff.id, _currentMember.id);
+        if (detail != null && mounted) {
+          final extra = _safeMap(detail['extra_fields']);
+          setState(() {
+            _commissionRate = (detail['commission_rate'] as num?)?.toDouble() ?? _commissionRate;
+            _commissionEarned = (detail['commission_earned'] as num?)?.toDouble() ?? 0;
+            _commissionPending = (detail['commission_pending'] as num?)?.toDouble() ?? 0;
+            _memberPaymentsReceived = (detail['member_payments_received'] as num?)?.toDouble() ?? _currentMember.totalReceivedAmount;
+            _planName = detail['membership_plan_name']?.toString() ?? _planName;
+            _expiryDate = detail['expiry_date']?.toString() ?? extra['expiryDate']?.toString() ?? '';
+            _ptStartDate = detail['pt_start_date']?.toString() ?? detail['join_date']?.toString() ?? _currentMember.joinDate;
+            _currentMember = _currentMember.copyWith(
+              name: detail['member_name']?.toString() ?? _currentMember.name,
+              email: detail['member_email']?.toString() ?? _currentMember.email,
+              phone: detail['member_phone']?.toString() ?? _currentMember.phone,
+              avatar: detail['member_avatar']?.toString() ?? _currentMember.avatar,
+              joinDate: detail['join_date']?.toString() ?? _currentMember.joinDate,
+              medicalDetails: detail['medical_details']?.toString() ?? _currentMember.medicalDetails,
+              notes: detail['notes']?.toString() ?? _currentMember.notes,
+              totalReceivedAmount: _memberPaymentsReceived,
+              paymentStatus: detail['payment_status']?.toString() ?? _currentMember.paymentStatus,
+              extraFields: extra,
+            );
+          });
+        }
+      } catch (e) {
+        print('Error loading client detail: $e');
+      }
+    }
+
+    await _loadCommissionHistory(staff);
+    if (mounted) setState(() => _loading = false);
+  }
+
+  Future<void> _loadCommissionHistory(Staff? staff) async {
     if (!mounted) return;
     setState(() => _loadingCommissions = true);
-    final repo = Provider.of<GymRepository>(context, listen: false);
-    final authVm = Provider.of<AuthViewModel>(context, listen: false);
-    final profileUserId = authVm.currentProfile?.id ?? authVm.currentUser?.id;
-    
-    if (profileUserId == null) {
-      if (mounted) setState(() => _loadingCommissions = false);
-      return;
-    }
-    
-    final matchingStaff = repo.getStaff().where((s) => s.userId == profileUserId).toList();
-    final staff = matchingStaff.isNotEmpty ? matchingStaff.first : authVm.staffRecord;
-    
+
     if (staff != null) {
+      final repo = Provider.of<GymRepository>(context, listen: false);
       final list = await repo.fetchStaffCommissions(staff.id, pendingOnly: false);
       if (mounted) {
         setState(() {
@@ -61,9 +137,7 @@ class _ClientDetailsScreenState extends State<ClientDetailsScreen> {
         });
       }
     }
-    if (mounted) {
-      setState(() => _loadingCommissions = false);
-    }
+    if (mounted) setState(() => _loadingCommissions = false);
   }
 
   String _formatDate(String rawDate) {
@@ -78,30 +152,28 @@ class _ClientDetailsScreenState extends State<ClientDetailsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final repo = Provider.of<GymRepository>(context, listen: false);
-    final plans = repo.getMemberships();
-    final plan = plans.firstWhere(
-      (p) => p.id == _currentMember.membershipPlanId,
-      orElse: () => MembershipPlan(
-        id: '',
-        title: 'Standard Plan',
-        price: 3000.0,
-        durationMonths: 1,
-        durationDays: 30,
-        ptIncluded: false,
-        dietIncluded: false,
-        workoutIncluded: false,
-        freezeDays: 0,
-        reminderDays: 0,
-      ),
-    );
+    if (_loading) {
+      return Scaffold(
+        backgroundColor: AppTheme.background,
+        appBar: AppBar(
+          elevation: 0,
+          backgroundColor: Colors.white,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: AppTheme.textPrimary),
+            onPressed: () => Navigator.pop(context),
+          ),
+          title: Text('Client Details', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold)),
+        ),
+        body: const Center(child: CircularProgressIndicator(color: AppTheme.primary)),
+      );
+    }
 
     final avatarUrl = _currentMember.avatar.isNotEmpty
         ? _currentMember.avatar
         : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=150';
 
     return DefaultTabController(
-      length: 5,
+      length: 4,
       child: Scaffold(
         backgroundColor: AppTheme.background,
         appBar: AppBar(
@@ -119,35 +191,22 @@ class _ClientDetailsScreenState extends State<ClientDetailsScreen> {
         body: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Profile Card Header
             Container(
               color: Colors.white,
               padding: const EdgeInsets.only(bottom: 16, left: 16, right: 16),
               child: Row(
                 children: [
-                  CircleAvatar(
-                    radius: 28,
-                    backgroundImage: NetworkImage(avatarUrl),
-                  ),
+                  CircleAvatar(radius: 28, backgroundImage: NetworkImage(avatarUrl)),
                   const SizedBox(width: 14),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          _currentMember.name,
-                          style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
-                        ),
+                        Text(_currentMember.name, style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold)),
                         const SizedBox(height: 3),
-                        Text(
-                          _currentMember.phone.isNotEmpty ? _currentMember.phone : 'No Phone Number',
-                          style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary),
-                        ),
+                        Text(_currentMember.phone.isNotEmpty ? _currentMember.phone : 'No Phone', style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary)),
                         const SizedBox(height: 2),
-                        Text(
-                          widget.program,
-                          style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted),
-                        ),
+                        Text(widget.program, style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted)),
                       ],
                     ),
                   ),
@@ -155,8 +214,6 @@ class _ClientDetailsScreenState extends State<ClientDetailsScreen> {
                 ],
               ),
             ),
-
-            // Tab selector
             Container(
               color: Colors.white,
               child: TabBar(
@@ -168,23 +225,19 @@ class _ClientDetailsScreenState extends State<ClientDetailsScreen> {
                 dividerColor: const Color(0xFFF3F4F6),
                 tabs: const [
                   Tab(text: 'Overview'),
-                  Tab(text: 'Attendance'),
-                  Tab(text: 'Progress'),
-                  Tab(text: 'Plan'),
-                  Tab(text: 'Payments'),
+                  Tab(text: 'Body'),
+                  Tab(text: 'Membership'),
+                  Tab(text: 'Commission'),
                 ],
               ),
             ),
-
-            // Tab body
             Expanded(
               child: TabBarView(
                 children: [
-                  _buildOverviewTab(plan),
-                  _buildAttendanceTab(repo),
+                  _buildOverviewTab(),
                   _buildProgressTab(),
-                  _buildPlanTab(repo),
-                  _buildPaymentsTab(plan),
+                  _buildMembershipTab(),
+                  _buildCommissionTab(),
                 ],
               ),
             ),
@@ -194,15 +247,14 @@ class _ClientDetailsScreenState extends State<ClientDetailsScreen> {
     );
   }
 
-  Widget _buildOverviewTab(MembershipPlan plan) {
-    final joined = _formatDate(_currentMember.joinDate);
-    final expiry = _formatDate(_currentMember.extraFields['expiryDate']?.toString() ?? '');
+  Widget _buildOverviewTab() {
+    final joined = _formatDate(_ptStartDate.isNotEmpty ? _ptStartDate : _currentMember.joinDate);
+    final expiry = _formatDate(_expiryDate.isNotEmpty ? _expiryDate : _currentMember.extraFields['expiryDate']?.toString() ?? '');
     final goal = _currentMember.extraFields['goal']?.toString() ?? 'General Fitness';
 
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        // Joined / Sessions info card
         CustomCard(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -210,8 +262,8 @@ class _ClientDetailsScreenState extends State<ClientDetailsScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  _buildDetailsStat('Joined On', joined),
-                  _buildDetailsStat('Next Expiry', expiry),
+                  _buildDetailsStat('Membership Start', joined),
+                  _buildDetailsStat('Membership Expiry', expiry),
                 ],
               ),
               const SizedBox(height: 16),
@@ -220,160 +272,162 @@ class _ClientDetailsScreenState extends State<ClientDetailsScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  _buildDetailsStat('Medical Details', _currentMember.medicalDetails.isNotEmpty ? _currentMember.medicalDetails : 'None'),
-                  _buildDetailsStat('Discount Applied', '₹${_currentMember.discountAmount.toInt()}'),
+                  _buildDetailsStat('Plan', _planName.isNotEmpty ? _planName : '—'),
+                  _buildDetailsStat('PT Goal', goal),
                 ],
               ),
             ],
           ),
         ),
         const SizedBox(height: 16),
-
-        // Program Details card
-        Text(
-          'Program Details',
-          style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
-        ),
-        const SizedBox(height: 10),
         CustomCard(
           padding: const EdgeInsets.all(16),
           child: Column(
             children: [
-              _buildProgramRow('Assigned PT Goal', goal),
+              _buildProgramRow('Your Commission Rate', '${_commissionRate.toStringAsFixed(1)}%'),
               const Divider(height: 1, color: Color(0xFFF3F4F6)),
-              _buildProgramRow('Membership Plan', plan.title),
+              _buildProgramRow('Commission Earned', '₹${_commissionEarned.toStringAsFixed(0)}', valueColor: AppTheme.primary),
               const Divider(height: 1, color: Color(0xFFF3F4F6)),
-              _buildProgramRow('Plan Duration', '${plan.durationMonths} Months (${plan.durationDays} Days)'),
-              const Divider(height: 1, color: Color(0xFFF3F4F6)),
-              _buildProgramRow('Email Address', _currentMember.email.isNotEmpty ? _currentMember.email : 'No Email Provided'),
+              _buildProgramRow('Medical Details', _currentMember.medicalDetails.isNotEmpty ? _currentMember.medicalDetails : 'None'),
             ],
           ),
         ),
         if (_currentMember.notes.isNotEmpty) ...[
           const SizedBox(height: 16),
-          Text(
-            'Special Notes',
-            style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
-          ),
+          Text('Notes', style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.bold)),
           const SizedBox(height: 10),
           CustomCard(
             padding: const EdgeInsets.all(16),
-            child: Text(
-              _currentMember.notes,
-              style: GoogleFonts.inter(fontSize: 12.5, color: AppTheme.textSecondary, height: 1.4),
-            ),
+            child: Text(_currentMember.notes, style: GoogleFonts.inter(fontSize: 12.5, color: AppTheme.textSecondary, height: 1.4)),
           ),
         ],
       ],
     );
   }
 
-  Widget _buildAttendanceTab(GymRepository repo) {
-    final logs = repo.getAttendance().where((r) => r.userId == _currentMember.id && r.userType == 'Member').toList();
+  Widget _buildMembershipTab() {
+    final joined = _formatDate(_ptStartDate.isNotEmpty ? _ptStartDate : _currentMember.joinDate);
+    final expiry = _formatDate(_expiryDate.isNotEmpty ? _expiryDate : _currentMember.extraFields['expiryDate']?.toString() ?? '');
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    return ListView(
+      padding: const EdgeInsets.all(16),
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('Membership Dates', style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.bold)),
+            IconButton(
+              icon: const Icon(Icons.edit_outlined, color: AppTheme.primary, size: 18),
+              onPressed: _showEditPlanValidityBottomSheet,
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        CustomCard(
+          padding: const EdgeInsets.all(16),
+          child: Column(
             children: [
-              Text(
-                'Attendance Logs (${logs.length})',
-                style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
-              ),
-              TextButton.icon(
-                icon: const Icon(Icons.add, size: 16),
-                label: const Text('Add Log', style: TextStyle(fontSize: 12)),
-                style: TextButton.styleFrom(
-                  backgroundColor: AppTheme.primary.withOpacity(0.1),
-                  foregroundColor: AppTheme.primary,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                ),
-                onPressed: _showMarkAttendanceBottomSheet,
-              ),
+              _buildProgramRow('Start Date', joined),
+              const Divider(height: 1, color: Color(0xFFF3F4F6)),
+              _buildProgramRow('Expiry Date', expiry),
+              const Divider(height: 1, color: Color(0xFFF3F4F6)),
+              _buildProgramRow('Plan Name', _planName.isNotEmpty ? _planName : '—'),
+              const Divider(height: 1, color: Color(0xFFF3F4F6)),
+              _buildProgramRow('PT Program', widget.program),
             ],
           ),
-        ),
-        Expanded(
-          child: logs.isEmpty
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24.0),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.calendar_today_outlined, size: 40, color: Colors.grey[400]),
-                        const SizedBox(height: 12),
-                        Text(
-                          'No attendance logs recorded.',
-                          style: GoogleFonts.inter(fontSize: 13, color: AppTheme.textMuted),
-                        ),
-                      ],
-                    ),
-                  ),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  itemCount: logs.length,
-                  itemBuilder: (context, index) {
-                    final log = logs[index];
-                    final timeStr = log.checkInTime.isNotEmpty ? log.checkInTime : '—';
-                    final statusColor = log.status == 'Present' ? Colors.green : Colors.red;
-
-                    return CustomCard(
-                      margin: const EdgeInsets.only(bottom: 10),
-                      padding: const EdgeInsets.all(12),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Row(
-                            children: [
-                              const Icon(Icons.circle, size: 10, color: AppTheme.primary),
-                              const SizedBox(width: 12),
-                              Text(
-                                log.date,
-                                style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textPrimary),
-                              ),
-                            ],
-                          ),
-                          Row(
-                            children: [
-                              Text(
-                                'In: $timeStr',
-                                style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary),
-                              ),
-                              const SizedBox(width: 14),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: statusColor.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Text(
-                                  log.status,
-                                  style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.bold, color: statusColor),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
         ),
       ],
     );
   }
 
+  Widget _buildCommissionTab() {
+    final calculatedFromReceived = _memberPaymentsReceived > 0 && _commissionRate > 0
+        ? (_memberPaymentsReceived * _commissionRate / 100)
+        : 0.0;
+    final displayEarned = _commissionEarned > 0 ? _commissionEarned : calculatedFromReceived;
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        CustomCard(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Your PT Earnings', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 4),
+              Text(
+                'Commission is calculated on payments received by gym — not total membership price.',
+                style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted, height: 1.3),
+              ),
+              const SizedBox(height: 16),
+              _buildProgramRow('Commission Rate', '${_commissionRate.toStringAsFixed(1)}%'),
+              _buildProgramRow('Member Payments Received', '₹${_memberPaymentsReceived.toStringAsFixed(0)}'),
+              _buildProgramRow('Your Commission (Calculated)', '₹${displayEarned.toStringAsFixed(0)}', valueColor: AppTheme.primary),
+              _buildProgramRow('Pending Payout', '₹${_commissionPending.toStringAsFixed(0)}', valueColor: Colors.orange),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
+        Text('Commission History', style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 10),
+        _loadingCommissions
+            ? const Center(child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator(color: AppTheme.primary)))
+            : _commissions.isEmpty
+                ? CustomCard(
+                    padding: const EdgeInsets.all(20),
+                    child: Center(
+                      child: Text(
+                        'No commission entries yet.\nWhen member pays, your ${_commissionRate.toStringAsFixed(0)}% commission will appear here.',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.inter(fontSize: 12.5, color: AppTheme.textMuted),
+                      ),
+                    ),
+                  )
+                : Column(
+                    children: _commissions.map((comm) {
+                      final receivedAmt = (comm['payment_received'] as num?)?.toDouble() ?? 0.0;
+                      final earnedAmt = (comm['amount'] as num?)?.toDouble() ?? 0.0;
+                      final rate = (comm['commission_rate'] as num?)?.toDouble() ?? _commissionRate;
+                      final payoutStatus = comm['status']?.toString() ?? 'Pending';
+                      final isPaid = payoutStatus == 'Paid';
+
+                      return CustomCard(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text('Payment Entry', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold)),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: isPaid ? Colors.green.withOpacity(0.1) : Colors.orange.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(isPaid ? 'Paid' : 'Pending', style: GoogleFonts.inter(fontSize: 9.5, fontWeight: FontWeight.bold, color: isPaid ? Colors.green : Colors.orange)),
+                                ),
+                              ],
+                            ),
+                            const Divider(height: 16),
+                            _buildProgramRow('Payment Received', '₹${receivedAmt.toStringAsFixed(0)}'),
+                            _buildProgramRow('Commission Rate', '${rate.toStringAsFixed(1)}%'),
+                            _buildProgramRow('You Earned', '₹${earnedAmt.toStringAsFixed(0)}', valueColor: AppTheme.primary),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                  ),
+      ],
+    );
+  }
+
   Widget _buildProgressTab() {
-    final Map<String, dynamic> extra = _currentMember.extraFields;
-    final Map<String, dynamic> measurements = (extra['measurements'] is Map<String, dynamic>)
-        ? extra['measurements'] as Map<String, dynamic>
-        : {};
+    final extra = _safeMap(_currentMember.extraFields);
+    final measurements = _safeMap(extra['measurements']);
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -427,232 +481,6 @@ class _ClientDetailsScreenState extends State<ClientDetailsScreen> {
                   ],
                 ),
               ),
-      ],
-    );
-  }
-
-  Widget _buildPlanTab(GymRepository repo) {
-    final workouts = repo.getWorkouts();
-    final diets = repo.getDiets();
-
-    final workout = workouts.firstWhere(
-      (w) => w.id == _currentMember.assignedWorkoutId,
-      orElse: () => workouts.isNotEmpty ? workouts.first : null as dynamic,
-    );
-
-    final diet = diets.firstWhere(
-      (d) => d.id == _currentMember.assignedDietId,
-      orElse: () => diets.isNotEmpty ? diets.first : null as dynamic,
-    );
-
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              'Plan Validity Details',
-              style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
-            ),
-            IconButton(
-              icon: const Icon(Icons.calendar_month_outlined, color: AppTheme.primary, size: 18),
-              onPressed: _showEditPlanValidityBottomSheet,
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        CustomCard(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              _buildProgramRow('Start Date', _formatDate(_currentMember.joinDate)),
-              const Divider(height: 1, color: Color(0xFFF3F4F6)),
-              _buildProgramRow('Expiry Date', _formatDate(_currentMember.extraFields['expiryDate']?.toString() ?? '')),
-            ],
-          ),
-        ),
-        const SizedBox(height: 20),
-        Text(
-          'Workout Schedule',
-          style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
-        ),
-        const SizedBox(height: 10),
-        CustomCard(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                workout != null ? workout.title : 'No Workout Assigned',
-                style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
-              ),
-              if (workout != null && workout.description.isNotEmpty) ...[
-                const SizedBox(height: 6),
-                Text(
-                  workout.description,
-                  style: GoogleFonts.inter(fontSize: 11.5, color: AppTheme.textSecondary),
-                ),
-              ],
-            ],
-          ),
-        ),
-        const SizedBox(height: 20),
-        Text(
-          'Diet & Nutrition Plan',
-          style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
-        ),
-        const SizedBox(height: 10),
-        CustomCard(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                diet != null ? diet.title : 'No Diet Plan Assigned',
-                style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
-              ),
-              if (diet != null && diet.notes.isNotEmpty) ...[
-                const SizedBox(height: 6),
-                Text(
-                  diet.notes,
-                  style: GoogleFonts.inter(fontSize: 11.5, color: AppTheme.textSecondary),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildPaymentsTab(MembershipPlan plan) {
-    final double totalAmount = plan.price - _currentMember.discountAmount;
-    final statusColor = _currentMember.paymentStatus == 'Paid'
-        ? Colors.green
-        : (_currentMember.paymentStatus == 'Partial' ? Colors.orange : Colors.red);
-
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        CustomCard(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Payment Status',
-                    style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: statusColor.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      _currentMember.paymentStatus,
-                      style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: statusColor),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 18),
-              const Divider(height: 1, color: Color(0xFFF3F4F6)),
-              const SizedBox(height: 18),
-              _buildProgramRow('Base Plan Price', '₹${plan.price.toInt()}'),
-              _buildProgramRow('Discount Applied', '- ₹${_currentMember.discountAmount.toInt()}', valueColor: Colors.red),
-              const Divider(height: 1, color: Color(0xFFF3F4F6)),
-              const SizedBox(height: 8),
-              _buildProgramRow('Net Receivable', '₹${totalAmount.toInt()}'),
-              _buildProgramRow('Total Received', '₹${_currentMember.totalReceivedAmount.toInt()}', valueColor: Colors.green),
-              _buildProgramRow('Pending Balance', '₹${_currentMember.pendingAmount.toInt()}', valueColor: Colors.orange),
-            ],
-          ),
-        ),
-        const SizedBox(height: 24),
-        Text(
-          'Your PT Commission History',
-          style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
-        ),
-        const SizedBox(height: 10),
-        _loadingCommissions
-            ? const Center(child: Padding(padding: EdgeInsets.all(16.0), child: CircularProgressIndicator(color: AppTheme.primary)))
-            : _commissions.isEmpty
-                ? CustomCard(
-                    padding: const EdgeInsets.all(20),
-                    child: Center(
-                      child: Text(
-                        'No commissions recorded for this member.',
-                        style: GoogleFonts.inter(fontSize: 12.5, color: AppTheme.textMuted),
-                      ),
-                    ),
-                  )
-                : Column(
-                    children: _commissions.map((comm) {
-                      final receivedAmt = (comm['payment_received'] as num?)?.toDouble() ?? 0.0;
-                      final earnedAmt = (comm['amount'] as num?)?.toDouble() ?? 0.0;
-                      final rate = (comm['commission_rate'] as num?)?.toDouble() ?? 0.0;
-                      final payoutStatus = comm['status']?.toString() ?? 'Pending';
-                      final isPaid = payoutStatus == 'Paid';
-                      final payMonth = comm['payment_month']?.toString() ?? 'This Month';
-                      
-                      return CustomCard(
-                        margin: const EdgeInsets.only(bottom: 10),
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  payMonth,
-                                  style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
-                                ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: isPaid ? Colors.green.withOpacity(0.1) : Colors.orange.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: Text(
-                                    isPaid ? 'Paid in Salary' : 'Pending Payout',
-                                    style: GoogleFonts.inter(fontSize: 9.5, fontWeight: FontWeight.bold, color: isPaid ? Colors.green : Colors.orange),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const Divider(height: 16),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text('Received by Gym', style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary)),
-                                Text('₹ ${receivedAmt.toStringAsFixed(0)}', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
-                              ],
-                            ),
-                            const SizedBox(height: 6),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text('Commission Rate', style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary)),
-                                Text('${rate.toStringAsFixed(1)} %', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
-                              ],
-                            ),
-                            const SizedBox(height: 6),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text('Commission Earned', style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary)),
-                                Text('₹ ${earnedAmt.toStringAsFixed(0)}', style: GoogleFonts.inter(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppTheme.primary)),
-                              ],
-                            ),
-                          ],
-                        ),
-                      );
-                    }).toList(),
-                  ),
       ],
     );
   }
@@ -920,10 +748,8 @@ class _ClientDetailsScreenState extends State<ClientDetailsScreen> {
   }
 
   void _showUpdateMeasurementsBottomSheet() {
-    final Map<String, dynamic> extra = _currentMember.extraFields;
-    final Map<String, dynamic> measurements = (extra['measurements'] is Map<String, dynamic>)
-        ? Map<String, dynamic>.from(extra['measurements'] as Map<String, dynamic>)
-        : {};
+    final extra = _safeMap(_currentMember.extraFields);
+    final measurements = _safeMap(extra['measurements']);
 
     final weightController = TextEditingController(text: measurements['weight']?.toString() ?? '');
     final heightController = TextEditingController(text: measurements['height']?.toString() ?? '');
@@ -1092,22 +918,28 @@ class _ClientDetailsScreenState extends State<ClientDetailsScreen> {
 
                           try {
                             final repo = Provider.of<GymRepository>(context, listen: false);
-                            final updatedExtra = Map<String, dynamic>.from(_currentMember.extraFields);
-                            updatedExtra['measurements'] = updatedMeasurements;
-                            
-                            if (newWeight != null) updatedExtra['weight'] = newWeight;
-                            if (newHeight != null) updatedExtra['height'] = newHeight;
+                            final staff = await _resolveStaff();
 
-                            final updatedMember = _currentMember.copyWith(
-                              extraFields: updatedExtra,
-                            );
+                            Map<String, dynamic> updatedExtra;
+                            if (staff != null && SupabaseService.isInitialized) {
+                              updatedExtra = await repo.updateMemberMeasurements(
+                                staff.id,
+                                _currentMember.id,
+                                updatedMeasurements,
+                              );
+                            } else {
+                              updatedExtra = Map<String, dynamic>.from(_currentMember.extraFields);
+                              updatedExtra['measurements'] = updatedMeasurements;
+                              if (newWeight != null) updatedExtra['weight'] = newWeight;
+                              if (newHeight != null) updatedExtra['height'] = newHeight;
+                              final updatedMember = _currentMember.copyWith(extraFields: updatedExtra);
+                              await repo.saveMember(updatedMember);
+                            }
 
-                            await repo.saveMember(updatedMember);
-                            
                             if (mounted) {
-                              Navigator.pop(context); // Close loader
+                              Navigator.pop(context);
                               setState(() {
-                                _currentMember = updatedMember;
+                                _currentMember = _currentMember.copyWith(extraFields: updatedExtra);
                               });
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(content: Text('✅ Measurements updated successfully!'), backgroundColor: AppTheme.success),
@@ -1136,10 +968,12 @@ class _ClientDetailsScreenState extends State<ClientDetailsScreen> {
   }
 
   void _showEditPlanValidityBottomSheet() {
-    DateTime joinDate = DateTime.tryParse(_currentMember.joinDate) ?? DateTime.now();
+    DateTime joinDate = DateTime.tryParse(_ptStartDate.isNotEmpty ? _ptStartDate : _currentMember.joinDate) ?? DateTime.now();
     DateTime expiryDate = DateTime.now();
-    
-    final exp = _currentMember.extraFields['expiryDate'] as String?;
+
+    final exp = _expiryDate.isNotEmpty
+        ? _expiryDate
+        : _currentMember.extraFields['expiryDate']?.toString();
     if (exp != null && exp.isNotEmpty) {
       expiryDate = DateTime.tryParse(exp) ?? DateTime.now().add(const Duration(days: 30));
     } else {
@@ -1254,9 +1088,13 @@ class _ClientDetailsScreenState extends State<ClientDetailsScreen> {
                           await repo.saveMember(updatedMember);
 
                           if (mounted) {
-                            Navigator.pop(context); // Close loader
+                            Navigator.pop(context);
+                            final joinStr = joinDate.toIso8601String().substring(0, 10);
+                            final expiryStr = expiryDate.toIso8601String().substring(0, 10);
                             setState(() {
                               _currentMember = updatedMember;
+                              _ptStartDate = joinStr;
+                              _expiryDate = expiryStr;
                             });
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(content: Text('✅ Plan validity updated successfully!'), backgroundColor: AppTheme.success),

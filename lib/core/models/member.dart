@@ -45,6 +45,13 @@ class Member {
     this.createdAt,
   });
 
+  static Map<String, dynamic> _parseExtraFields(dynamic raw) {
+    if (raw == null) return const {};
+    if (raw is Map<String, dynamic>) return raw;
+    if (raw is Map) return Map<String, dynamic>.from(raw);
+    return const {};
+  }
+
   factory Member.fromJson(Map<String, dynamic> json) {
     return Member(
       id: json['id'] as String,
@@ -66,7 +73,7 @@ class Member {
       discountAmount: ((json['discount_amount'] ?? json['discountAmount']) as num?)?.toDouble() ?? 0.0,
       totalReceivedAmount: ((json['total_received_amount'] ?? json['totalReceivedAmount']) as num?)?.toDouble() ?? 0.0,
       paymentStatus: (json['payment_status'] ?? json['paymentStatus']) as String? ?? 'Pending',
-      extraFields: (json['extra_fields'] ?? json['extraFields']) as Map<String, dynamic>? ?? const {},
+      extraFields: _parseExtraFields(json['extra_fields'] ?? json['extraFields']),
       createdAt: json['created_at'] as String?,
     );
   }
