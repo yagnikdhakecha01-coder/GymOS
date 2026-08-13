@@ -122,6 +122,16 @@ class _FirstTimeSetupScreenState extends State<FirstTimeSetupScreen> with Single
 
     // Populate current auth user email and owner details if available
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (SupabaseService.client.auth.currentSession == null) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          AppRouter.scaleRoute(const RoleSelectionScreen()),
+          (route) => false,
+        );
+        return;
+      }
+
       final authVm = Provider.of<AuthViewModel>(context, listen: false);
       if (authVm.currentUser != null) {
         _ownerEmailController.text = authVm.currentUser!.email ?? '';

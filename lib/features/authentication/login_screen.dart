@@ -24,6 +24,7 @@ import '../member_app/screens/member_code_screen.dart';
 import 'data_sync_screen.dart';
 import 'role_selection_screen.dart';
 import '../../core/widgets/app_branding_header.dart';
+import '../../core/services/supabase_service.dart';
 
 class LoginScreen extends StatefulWidget {
   final String role;
@@ -53,14 +54,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       final authVm = Provider.of<AuthViewModel>(context, listen: false);
-      if (widget.role == 'Gym Owner') {
-        await authVm.selectRole('owner');
-      } else if (widget.role == 'Gym Staff') {
-        await authVm.selectRole('staff');
-      } else if (widget.role == 'Gym Member') {
-        await authVm.selectRole('member');
-      }
-      
+      await _applySelectedRole(authVm);
       await authVm.login(_emailController.text, _passwordController.text);
 
       if (mounted) {
@@ -86,8 +80,23 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> _applySelectedRole(AuthViewModel authVm) async {
+    if (widget.role == 'Gym Owner') {
+      await authVm.selectRole('owner');
+    } else if (widget.role == 'Gym Staff') {
+      await authVm.selectRole('staff');
+    } else if (widget.role == 'Gym Member') {
+      await authVm.selectRole('member');
+    }
+  }
+
   Future<void> _navigateToRoleDashboard(AuthViewModel authVm) async {
     if (!mounted) return;
+
+    if (!authVm.isLoggedIn ||
+        SupabaseService.client.auth.currentSession == null) {
+      return;
+    }
 
     if (authVm.userAssociations.length > 1) {
       Navigator.pushAndRemoveUntil(
@@ -197,15 +206,11 @@ class _LoginScreenState extends State<LoginScreen> {
                     setState(() => _isLoading = true);
                     try {
                       final authVm = Provider.of<AuthViewModel>(context, listen: false);
-                      if (widget.role == 'Gym Owner') {
-                        await authVm.selectRole('owner');
-                      } else if (widget.role == 'Gym Staff') {
-                        await authVm.selectRole('staff');
-                      } else if (widget.role == 'Gym Member') {
-                        await authVm.selectRole('member');
-                      }
-                      await authVm.signInWithGoogle();
-                      if (mounted && !kIsWeb) {
+                      final signedIn = await authVm.signInWithGoogle();
+                      if (!signedIn || !mounted) return;
+
+                      await _applySelectedRole(authVm);
+                      if (!kIsWeb) {
                         await _navigateToRoleDashboard(authVm);
                       }
                     } catch (e) {
