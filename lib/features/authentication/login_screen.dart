@@ -108,7 +108,7 @@ class _LoginScreenState extends State<LoginScreen> {
         if (!mounted) return;
         Navigator.pushAndRemoveUntil(
           context,
-          AppRouter.scaleRoute(const RoleSelectionScreen()),
+          AppRouter.scaleRoute(RoleSelectionScreen()),
           (route) => false,
         );
         return;
@@ -122,7 +122,7 @@ class _LoginScreenState extends State<LoginScreen> {
           if (!mounted) return;
           Navigator.pushAndRemoveUntil(
             context,
-            AppRouter.scaleRoute(const RoleSelectionScreen()),
+            AppRouter.scaleRoute(RoleSelectionScreen()),
             (route) => false,
           );
           return;
