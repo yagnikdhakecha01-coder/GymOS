@@ -9,6 +9,7 @@ import '../../../core/repository/gym_repository.dart';
 import '../../../core/services/supabase_service.dart';
 import 'client_details_screen.dart';
 import '../../../core/models/member.dart';
+import '../../../core/models/staff.dart';
 
 class StaffClientsScreen extends StatefulWidget {
   const StaffClientsScreen({super.key});
