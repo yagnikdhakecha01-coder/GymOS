@@ -15,7 +15,7 @@ import '../../../core/models/staff.dart';
 import '../../../core/services/supabase_service.dart';
 import '../../../core/services/unlink_guard.dart';
 import '../../../core/theme/responsive.dart';
-import '../../../core/widgets/sidebar_drawer.dart';
+import '../../../core/utils/staff_day_attendance_status.dart';
 
 class StaffDashboardScreen extends StatefulWidget {
   const StaffDashboardScreen({super.key});
@@ -30,8 +30,8 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
   bool _isLoadingAnnouncements = true;
 
   Staff? _currentStaff;
-  int _presentDays = 0;
-  int _absentDays = 0;
+  double _presentDays = 0;
+  double _absentDays = 0;
   String _workingHours = '0h 0m';
   double _advanceSalary = 0.0;
   List<Map<String, dynamic>> _dotAttendance = [];
@@ -132,12 +132,34 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
             .where((r) => (r.userId == profileUserId || r.userId == staff.id) && r.userType == 'Staff')
             .toList();
 
-        // Calculate Present & Absent days
-        final presentCount = staffAttendance.where((r) => 
-          r.status == 'Present' || r.status == 'Late' || r.status == 'Early Exit' || r.status == 'Overtime'
-        ).length;
-        
-        final absentCount = staffAttendance.where((r) => r.status == 'Absent').length;
+        final isBothShift = StaffDayAttendanceStatus.isBothShiftStaff(
+          shiftType: staff.shiftType,
+          shift: staff.shift,
+        );
+
+        // Group logs by date for day-level status (both shift = half day if 1 shift absent)
+        final Map<String, List<AttendanceRecord>> logsByDate = {};
+        for (final r in staffAttendance) {
+          logsByDate.putIfAbsent(r.date, () => []).add(r);
+        }
+
+        double presentCount = 0;
+        double absentCount = 0;
+        final nowForMonth = DateTime.now();
+        logsByDate.forEach((dateStr, logs) {
+          try {
+            final d = DateFormat('dd-MM-yyyy').parse(dateStr);
+            if (d.year != nowForMonth.year || d.month != nowForMonth.month) return;
+            final dayStatus = StaffDayAttendanceStatus.deriveDayStatus(
+              dayLogs: logs,
+              targetDate: d,
+              isBothShift: isBothShift,
+              now: nowForMonth,
+            );
+            presentCount += StaffDayAttendanceStatus.presentWeight(dayStatus);
+            absentCount += StaffDayAttendanceStatus.absentWeight(dayStatus);
+          } catch (_) {}
+        });
 
         // Calculate total working minutes
         final totalMins = staffAttendance.fold(0, (sum, r) => sum + r.workingMinutes);
@@ -166,8 +188,6 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
           final targetDate = sunday.add(Duration(days: i));
           final formattedTarget = DateFormat('dd-MM-yyyy').format(targetDate);
           final matchingLogs = staffAttendance.where((r) => r.date == formattedTarget).toList();
-          final log = matchingLogs.isNotEmpty ? matchingLogs.first : null;
-          
           bool isBeforeJoinDate = false;
           if (joinDateTime != null) {
             final targetDateOnly = DateTime(targetDate.year, targetDate.month, targetDate.day);
@@ -177,33 +197,19 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
             }
           }
 
-          String dotStatus = 'absent';
-          if (log != null) {
-            if (log.status == 'Present' || log.status == 'Late' || log.status == 'Early Exit' || log.status == 'Overtime') {
-              dotStatus = 'present';
-            } else if (log.status == 'Half Day' || log.status == 'Half Leave') {
-              dotStatus = 'half day';
-            } else if (log.status == 'Holiday') {
-              dotStatus = 'holiday';
-            } else if (log.status == 'Absent') {
-              dotStatus = 'absent';
-            } else {
-              dotStatus = 'holiday'; // Other leave types
-            }
+          String dotStatus;
+          if (isBeforeJoinDate) {
+            dotStatus = 'holiday';
+          } else if (targetDate.weekday == DateTime.sunday) {
+            dotStatus = 'holiday';
           } else {
-            if (isBeforeJoinDate) {
-              dotStatus = 'holiday'; // Render as grey dot (not joined yet)
-            } else if (targetDate.weekday == DateTime.sunday) {
-              dotStatus = 'holiday';
-            } else {
-              final todayDateOnly = DateTime(now.year, now.month, now.day);
-              final targetDateOnly = DateTime(targetDate.year, targetDate.month, targetDate.day);
-              if (targetDateOnly.isAfter(todayDateOnly) || targetDateOnly.isAtSameMomentAs(todayDateOnly)) {
-                dotStatus = 'pending';
-              } else {
-                dotStatus = 'absent';
-              }
-            }
+            dotStatus = StaffDayAttendanceStatus.deriveDayStatus(
+              dayLogs: matchingLogs,
+              targetDate: targetDate,
+              isBothShift: isBothShift,
+              now: now,
+              isBeforeJoinDate: isBeforeJoinDate,
+            );
           }
 
           dots.add({
@@ -423,8 +429,8 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
                         runSpacing: 12,
                         childAspectRatio: context.selectValue(mobile: 1.35, smallMobile: 1.12, tablet: 1.55),
                         children: [
-                          _buildSummaryCard('Present Days', '$_presentDays', Icons.calendar_today_rounded, Colors.green),
-                          _buildSummaryCard('Absent Days', '$_absentDays', Icons.cancel_outlined, Colors.red),
+                          _buildSummaryCard('Present Days', _presentDays % 1 == 0 ? '$_presentDays' : _presentDays.toStringAsFixed(1), Icons.calendar_today_rounded, Colors.green),
+                          _buildSummaryCard('Absent Days', _absentDays % 1 == 0 ? '$_absentDays' : _absentDays.toStringAsFixed(1), Icons.cancel_outlined, Colors.red),
                           _buildSummaryCard('Working Hours', _workingHours, Icons.hourglass_empty_rounded, Colors.blue),
                           _buildSummaryCard('Advance Salary', '₹${NumberFormat('#,##,###').format(_advanceSalary)}', Icons.payments_outlined, Colors.orange),
                         ],

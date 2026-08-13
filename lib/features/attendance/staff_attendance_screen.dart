@@ -12,6 +12,7 @@ import '../authentication/auth_viewmodel.dart';
 import '../../core/services/supabase_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/models/attendance.dart';
+import '../../core/utils/staff_day_attendance_status.dart';
 
 class StaffAttendanceScreen extends StatefulWidget {
   const StaffAttendanceScreen({super.key});
@@ -532,29 +533,48 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
           double lateCount = 0.0;
           final isTwoShifts = _shiftHours == 'Both Shifts' || _shiftHours == 'Two Shifts';
 
-          for (var log in matchingLogs) {
-            final status = (log['status'] ?? '').toString();
-            final lateMins = log['late_minutes'] as int? ?? 0;
-            final weight = isTwoShifts ? 0.5 : 1.0;
-
-            if (status == 'Half Leave') {
-              present += 0.5;
-              absent += 0.5;
-            } else if (status == 'Absent' || status == 'Leave' || status == 'On Leave') {
-              absent += weight;
-            } else if (status == 'Late' || lateMins > 0) {
-              present += weight;
-              lateCount += weight;
-            } else {
-              present += weight;
+          final byDate = <String, List<Map<String, dynamic>>>{};
+          for (final log in matchingLogs) {
+            String dateStr = log['date']?.toString() ?? '';
+            if (dateStr.isEmpty && log['check_in'] != null) {
+              try {
+                dateStr = DateFormat('dd-MM-yyyy').format(DateTime.parse(log['check_in'].toString()).toLocal());
+              } catch (_) {}
             }
+            if (dateStr.isEmpty) continue;
+            byDate.putIfAbsent(dateStr, () => []).add(log);
           }
+
+          final nowLocal = DateTime.now();
+          byDate.forEach((dateStr, logs) {
+            DateTime dayDate;
+            try {
+              dayDate = DateFormat('dd-MM-yyyy').parse(dateStr);
+            } catch (_) {
+              return;
+            }
+            final records = logs.map((l) => AttendanceRecord.fromJson(l)).toList();
+            final dayStatus = StaffDayAttendanceStatus.deriveDayStatus(
+              dayLogs: records,
+              targetDate: dayDate,
+              isBothShift: isTwoShifts,
+              now: nowLocal,
+            );
+            present += StaffDayAttendanceStatus.presentWeight(dayStatus);
+            absent += StaffDayAttendanceStatus.absentWeight(dayStatus);
+            for (final log in logs) {
+              final lateMins = log['late_minutes'] as int? ?? 0;
+              if (log['status'] == 'Late' || lateMins > 0) {
+                lateCount += isTwoShifts ? 0.5 : 1.0;
+              }
+            }
+          });
 
           if (matchingLogs.isEmpty && repo.todayAttendanceDetails?['first_shift_check_in'] != null) {
             present = 1.0;
           }
 
-          final totalCount = matchingLogs.isNotEmpty ? matchingLogs.length : (present > 0 ? present : 1.0);
+          final totalCount = byDate.isNotEmpty ? byDate.length.toDouble() : (present > 0 ? present : 1.0);
           return {
             'present': present,
             'absent': absent,
