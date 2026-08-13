@@ -22,6 +22,7 @@ import 'gym_role_selector_screen.dart';
 import '../member_app/member_app_viewmodel.dart';
 import '../member_app/screens/member_code_screen.dart';
 import 'data_sync_screen.dart';
+import 'role_selection_screen.dart';
 import '../../core/widgets/app_branding_header.dart';
 
 class LoginScreen extends StatefulWidget {
