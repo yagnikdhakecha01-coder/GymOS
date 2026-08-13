@@ -41,8 +41,19 @@ class _StaffClientsScreenState extends State<StaffClientsScreen> {
       return;
     }
 
-    final matchingStaff = repo.getStaff().where((s) => s.userId == profileUserId).toList();
-    final staff = matchingStaff.isNotEmpty ? matchingStaff.first : authVm.staffRecord;
+    final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
+
+    Staff? staff = authVm.staffRecord;
+    if (staff == null || staff.id.isEmpty) {
+      final matchingStaff = repo.getStaff().where((s) {
+        if (s.userId != profileUserId) return false;
+        if (gymId != null && gymId.isNotEmpty && s.gymId.isNotEmpty) {
+          return s.gymId == gymId;
+        }
+        return true;
+      }).toList();
+      staff = matchingStaff.isNotEmpty ? matchingStaff.first : null;
+    }
 
     if (staff == null || staff.id.isEmpty) {
       if (mounted) setState(() => _isLoading = false);
@@ -51,34 +62,7 @@ class _StaffClientsScreenState extends State<StaffClientsScreen> {
 
     final cacheKey = 'gymos_pt_clients_${staff.id}';
 
-    // 1. Load cached data first for instant UI response
-    final cachedData = repo.storage.getString(cacheKey);
-    if (cachedData != null) {
-      try {
-        final List decoded = jsonDecode(cachedData);
-        final List<Map<String, dynamic>> clients = [];
-        for (var item in decoded) {
-          final member = Member.fromJson(item['member']);
-          clients.add({
-            'member': member,
-            'program': item['program'] as String,
-            'status': item['status'] as String,
-            'name': member.name,
-            'image': member.avatar.isNotEmpty ? member.avatar : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=150',
-            'phone': member.phone,
-          });
-        }
-        if (mounted) {
-          setState(() {
-            _ptClients = clients;
-          });
-        }
-      } catch (e) {
-        print('Error reading cached clients: $e');
-      }
-    }
-
-    // 2. Fetch live data if online
+    // Online: always fetch fresh from database (pehle se assigned members turant dikhen)
     if (SupabaseService.isInitialized) {
       try {
         final response = await SupabaseService.client
@@ -127,7 +111,6 @@ class _StaffClientsScreenState extends State<StaffClientsScreen> {
           });
         }
 
-        // Cache the fetched data
         await repo.storage.setString(cacheKey, jsonEncode(cacheList));
 
         if (mounted) {
@@ -137,11 +120,42 @@ class _StaffClientsScreenState extends State<StaffClientsScreen> {
         }
       } catch (e) {
         print('Error loading PT clients from database: $e');
+        // Offline fallback: use cached data
+        _loadFromCache(repo, cacheKey);
       }
+    } else {
+      _loadFromCache(repo, cacheKey);
     }
 
     if (mounted) {
       setState(() => _isLoading = false);
+    }
+  }
+
+  void _loadFromCache(GymRepository repo, String cacheKey) {
+    final cachedData = repo.storage.getString(cacheKey);
+    if (cachedData == null) return;
+    try {
+      final List decoded = jsonDecode(cachedData);
+      final List<Map<String, dynamic>> clients = [];
+      for (var item in decoded) {
+        final member = Member.fromJson(item['member']);
+        clients.add({
+          'member': member,
+          'program': item['program'] as String,
+          'status': item['status'] as String,
+          'name': member.name,
+          'image': member.avatar.isNotEmpty ? member.avatar : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=150',
+          'phone': member.phone,
+        });
+      }
+      if (mounted) {
+        setState(() {
+          _ptClients = clients;
+        });
+      }
+    } catch (e) {
+      print('Error reading cached clients: $e');
     }
   }
 
