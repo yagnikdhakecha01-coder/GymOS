@@ -84,7 +84,7 @@ class _SupportTicketsScreenState extends State<SupportTicketsScreen> {
     setState(() => _submitting = true);
 
     try {
-      await SupabaseService.client.from('support_tickets').insert({
+      final List res = await SupabaseService.client.from('support_tickets').insert({
         'title': title,
         'description': desc,
         'priority': _selectedPriority,
@@ -92,7 +92,17 @@ class _SupportTicketsScreenState extends State<SupportTicketsScreen> {
         'gym_id': gymId,
         'gym_name': gymName,
         'owner_id': ownerId,
-      });
+      }).select();
+
+      if (res.isNotEmpty && res.first['id'] != null) {
+        final ticketId = res.first['id'];
+        await SupabaseService.client.from('support_messages').insert({
+          'ticket_id': ticketId,
+          'sender_id': ownerId,
+          'sender_role': 'owner',
+          'message': desc,
+        });
+      }
 
       _titleController.clear();
       _descController.clear();

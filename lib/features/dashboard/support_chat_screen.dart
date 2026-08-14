@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
@@ -22,18 +23,43 @@ class _SupportChatScreenState extends State<SupportChatScreen> {
   List<Map<String, dynamic>> _messages = [];
   bool _loading = true;
   bool _sending = false;
+  Timer? _refreshTimer;
 
   @override
   void initState() {
     super.initState();
     _fetchMessages();
+    _refreshTimer = Timer.periodic(const Duration(seconds: 4), (_) => _fetchMessagesQuietly());
   }
 
   @override
   void dispose() {
+    _refreshTimer?.cancel();
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  Future<void> _fetchMessagesQuietly() async {
+    if (!SupabaseService.isInitialized || !mounted) return;
+    try {
+      final response = await SupabaseService.client
+          .from('support_messages')
+          .select()
+          .eq('ticket_id', widget.ticket['id'])
+          .order('created_at', ascending: true);
+
+      if (mounted) {
+        final newMsgs = List<Map<String, dynamic>>.from(response);
+        if (newMsgs.length != _messages.length) {
+          setState(() {
+            _messages = newMsgs;
+          });
+          _scrollToBottom();
+          _markMessagesAsRead();
+        }
+      }
+    } catch (_) {}
   }
 
   Future<void> _fetchMessages() async {
