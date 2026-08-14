@@ -99,6 +99,38 @@ class _ReceptionistFinanceScreenState extends State<ReceptionistFinanceScreen> w
           style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
         ),
         centerTitle: true,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded, color: AppTheme.primary, size: 22),
+            tooltip: 'Sync & Refresh Database',
+            onPressed: () async {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Syncing latest database records...'),
+                  duration: Duration(seconds: 1),
+                ),
+              );
+              await _fetchTransactions();
+              final gymRepo = Provider.of<GymRepository>(context, listen: false);
+              final financeVm = Provider.of<FinanceViewModel>(context, listen: false);
+              final gymId = vm.staffRecord?.gymId ?? gymRepo.storage.getGymInfo()?['id'];
+              await gymRepo.fetchTransactionsFromSupabase();
+              if (gymId != null && gymId.isNotEmpty) {
+                await financeVm.fetchFinanceSummary(gymId, DateTime.now());
+              }
+              await vm.fetchDashboardStats();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Finance data updated from database!'),
+                    backgroundColor: Colors.green,
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              }
+            },
+          ),
+        ],
         bottom: TabBar(
           controller: _tabController,
           labelColor: AppTheme.primary,
@@ -458,48 +490,20 @@ class _ReceptionistFinanceScreenState extends State<ReceptionistFinanceScreen> w
                           createdByInfo: 'Receptionist - ${vm.staffRecord?.name ?? ''}',
                         );
 
-                        // 1. Instantly update local cache & notify all listeners (0ms delay!)
+                        // 1. Single unified transaction save (updates local cache, performs single upsert to DB, no duplicates!)
                         await gymRepo.saveTransaction(tx);
 
-                        // 2. Direct Supabase insert call with safe payload
-                        try {
-                          if (SupabaseService.isInitialized && gymId.isNotEmpty) {
-                            final payload = <String, dynamic>{
-                              'gym_id': gymId,
-                              'amount': amt,
-                              'type': type,
-                              'category': selectedCategory,
-                              'payment_method': 'Cash',
-                              'transaction_date': nowIso,
-                              'expense_date': todayDateStr,
-                              'revenue_date': todayDateStr,
-                              'entry_date': todayDateStr,
-                              'created_by_info': 'Receptionist - ${vm.staffRecord?.name ?? ''}',
-                              'notes': title,
-                            };
-
-                            final currentUserId = SupabaseService.client.auth.currentUser?.id;
-                            if (currentUserId != null && currentUserId.isNotEmpty) {
-                              payload['created_by'] = currentUserId;
-                            }
-
-                            await SupabaseService.client
-                                .from('finance_transactions')
-                                .insert(payload)
-                                .timeout(const Duration(seconds: 3));
-                          }
-                        } catch (_) {
-                          // GymRepository._crudQueue automatically handles offline/background sync
-                        }
-
-                        // 3. Log activity, refresh state & show success dialog
+                        // 2. Log activity, refresh all viewmodels, close modal & show success dialog
                         vm.logActivity('$type Added: $title ($selectedCategory - ₹${NumberFormat('#,##,###').format(amt)})', 'finance');
                         
                         if (context.mounted) {
                           Navigator.pop(context);
                           _fetchTransactions();
                           vm.fetchDashboardStats();
-                          financeVm.fetchTransactions();
+                          await gymRepo.fetchTransactionsFromSupabase();
+                          if (gymId.isNotEmpty) {
+                            await financeVm.fetchFinanceSummary(gymId, DateTime.now());
+                          }
 
                           SuccessDialog.show(
                             context,

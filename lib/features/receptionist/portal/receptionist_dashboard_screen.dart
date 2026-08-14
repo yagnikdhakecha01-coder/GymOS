@@ -110,6 +110,46 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
                         ],
                       ),
                     ),
+                    // Refresh Database Sync Button
+                    Container(
+                      margin: const EdgeInsets.only(right: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: AppTheme.border),
+                      ),
+                      child: IconButton(
+                        icon: const Icon(Icons.refresh_rounded, color: AppTheme.primary, size: 20),
+                        tooltip: 'Sync & Refresh Database',
+                        onPressed: () async {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Syncing latest database records...'),
+                              duration: Duration(seconds: 1),
+                            ),
+                          );
+                          final gymRepo = Provider.of<GymRepository>(context, listen: false);
+                          final financeVm = Provider.of<FinanceViewModel>(context, listen: false);
+                          final gymId = gymRepo.storage.getGymInfo()?['id'] ?? vm.staffRecord?.gymId;
+
+                          await gymRepo.fetchTransactionsFromSupabase();
+                          if (gymId != null && gymId.isNotEmpty) {
+                            await financeVm.fetchFinanceSummary(gymId, DateTime.now());
+                          }
+                          await vm.fetchDashboardStats();
+
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Database synced & updated across all screens!'),
+                                backgroundColor: Colors.green,
+                                duration: Duration(seconds: 2),
+                              ),
+                            );
+                          }
+                        },
+                      ),
+                    ),
                     // Notification Button
                     Stack(
                       clipBehavior: Clip.none,
@@ -1453,47 +1493,19 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
                                 createdByInfo: 'Receptionist - ${vm.staffRecord?.name ?? ''}',
                               );
 
-                              // 1. Instantly update local GymRepository cache & notify listeners across entire app (0ms UI delay!)
+                              // 1. Single unified transaction save (updates local cache, performs single upsert to DB, no duplicates!)
                               await gymRepo.saveTransaction(tx);
 
-                              // 2. Direct Supabase insert call with safe payload (no null UUID errors)
-                              try {
-                                if (SupabaseService.isInitialized && gymId.isNotEmpty) {
-                                  final payload = <String, dynamic>{
-                                    'gym_id': gymId,
-                                    'amount': amt,
-                                    'type': type,
-                                    'category': selectedCategory,
-                                    'payment_method': 'Cash',
-                                    'transaction_date': nowIso,
-                                    'expense_date': todayDateStr,
-                                    'revenue_date': todayDateStr,
-                                    'entry_date': todayDateStr,
-                                    'created_by_info': 'Receptionist - ${vm.staffRecord?.name ?? ''}',
-                                    'notes': title,
-                                  };
-
-                                  final currentUserId = SupabaseService.client.auth.currentUser?.id;
-                                  if (currentUserId != null && currentUserId.isNotEmpty) {
-                                    payload['created_by'] = currentUserId;
-                                  }
-
-                                  await SupabaseService.client
-                                      .from('finance_transactions')
-                                      .insert(payload)
-                                      .timeout(const Duration(seconds: 3));
-                                }
-                              } catch (_) {
-                                // Background CRUD queue in GymRepository automatically syncs if direct HTTP request fails
-                              }
-
-                              // 3. Log activity, refresh all providers, close modal & show success dialog
+                              // 2. Log activity, refresh all viewmodels, close modal & show success dialog
                               vm.logActivity('$type Added: $title ($selectedCategory - ₹${NumberFormat('#,##,###').format(amt)})', 'finance');
                               
                               if (context.mounted) {
                                 Navigator.pop(context);
                                 vm.fetchDashboardStats();
-                                financeVm.fetchTransactions();
+                                await gymRepo.fetchTransactionsFromSupabase();
+                                if (gymId.isNotEmpty) {
+                                  await financeVm.fetchFinanceSummary(gymId, DateTime.now());
+                                }
 
                                 SuccessDialog.show(
                                   context,

@@ -2642,8 +2642,8 @@ class GymRepository extends ChangeNotifier {
   }
 
   Future<void> saveTransaction(FinanceTransaction tx) async {
-    final gymId = _storage.getGymInfo()?['id'];
-    if (gymId == null) {
+    final gymId = _storage.getGymInfo()?['id'] ?? (tx.gymId.isNotEmpty ? tx.gymId : null);
+    if (gymId == null || gymId.isEmpty) {
       throw Exception('Active Gym ID not found.');
     }
 
@@ -2664,43 +2664,92 @@ class GymRepository extends ChangeNotifier {
     await _storage.setString(LocalStorageService.keyTransactions, jsonEncode(_transactions.map((e) => e.toJson()).toList()));
     notifyListeners();
 
-    // 2. Queue transaction payload for sync
-    final Map<String, dynamic> data = {
-      'id': resolvedId,
-      'gym_id': gymId,
-      'amount': updatedTx.amount,
-      'type': updatedTx.type,
-      'category': updatedTx.category,
-      'payment_method': updatedTx.paymentMethod,
-      'reference_id': updatedTx.referenceId,
-      'created_by': updatedTx.createdBy.isNotEmpty ? updatedTx.createdBy : null,
-      'created_by_info': updatedTx.createdByInfo.isNotEmpty ? updatedTx.createdByInfo : 'Owner',
-      'notes': updatedTx.notes,
-    };
-    if (updatedTx.transactionDate.isNotEmpty) {
-      data['transaction_date'] = updatedTx.transactionDate;
-    }
-    if (updatedTx.expenseDate.isNotEmpty) {
-      data['expense_date'] = updatedTx.expenseDate;
-    }
-    if (updatedTx.revenueDate.isNotEmpty) {
-      data['revenue_date'] = updatedTx.revenueDate;
-    }
-    if (updatedTx.entryDate.isNotEmpty) {
-      data['entry_date'] = updatedTx.entryDate;
+    // 2. Perform SINGLE database upsert with explicit ID
+    bool isDirectlyInserted = false;
+    if (SupabaseService.isInitialized) {
+      try {
+        final Map<String, dynamic> data = {
+          'id': resolvedId,
+          'gym_id': gymId,
+          'amount': updatedTx.amount,
+          'type': updatedTx.type,
+          'category': updatedTx.category,
+          'payment_method': updatedTx.paymentMethod,
+          'reference_id': updatedTx.referenceId,
+          'created_by_info': updatedTx.createdByInfo.isNotEmpty ? updatedTx.createdByInfo : 'Staff',
+          'notes': updatedTx.notes,
+        };
+
+        if (updatedTx.createdBy.isNotEmpty && _isValidUUID(updatedTx.createdBy)) {
+          data['created_by'] = updatedTx.createdBy;
+        } else {
+          final currentUserId = SupabaseService.client.auth.currentUser?.id;
+          if (currentUserId != null && currentUserId.isNotEmpty) {
+            data['created_by'] = currentUserId;
+          }
+        }
+
+        if (updatedTx.transactionDate.isNotEmpty) {
+          data['transaction_date'] = updatedTx.transactionDate;
+        }
+        if (updatedTx.expenseDate.isNotEmpty) {
+          data['expense_date'] = updatedTx.expenseDate;
+        }
+        if (updatedTx.revenueDate.isNotEmpty) {
+          data['revenue_date'] = updatedTx.revenueDate;
+        }
+        if (updatedTx.entryDate.isNotEmpty) {
+          data['entry_date'] = updatedTx.entryDate;
+        }
+
+        await SupabaseService.client
+            .from('finance_transactions')
+            .upsert(data, onConflict: 'id')
+            .timeout(const Duration(seconds: 4));
+        isDirectlyInserted = true;
+      } catch (e) {
+        print('Direct transaction upsert failed, queueing for background sync: $e');
+      }
     }
 
-    _crudQueue.add({
-      'uuid': _generateUuidV4(),
-      'table': 'finance_transactions',
-      'action': 'insert',
-      'payload': data,
-      'created_at': DateTime.now().toIso8601String(),
-      'retry_count': 0,
-      'error_message': null,
-    });
-    await _saveQueuesToStorage();
-    triggerBackgroundSync();
+    // 3. Queue ONLY if offline or direct upsert failed to prevent duplicates
+    if (!isDirectlyInserted) {
+      final Map<String, dynamic> data = {
+        'id': resolvedId,
+        'gym_id': gymId,
+        'amount': updatedTx.amount,
+        'type': updatedTx.type,
+        'category': updatedTx.category,
+        'payment_method': updatedTx.paymentMethod,
+        'reference_id': updatedTx.referenceId,
+        'created_by_info': updatedTx.createdByInfo.isNotEmpty ? updatedTx.createdByInfo : 'Staff',
+        'notes': updatedTx.notes,
+      };
+      if (updatedTx.transactionDate.isNotEmpty) {
+        data['transaction_date'] = updatedTx.transactionDate;
+      }
+      if (updatedTx.expenseDate.isNotEmpty) {
+        data['expense_date'] = updatedTx.expenseDate;
+      }
+      if (updatedTx.revenueDate.isNotEmpty) {
+        data['revenue_date'] = updatedTx.revenueDate;
+      }
+      if (updatedTx.entryDate.isNotEmpty) {
+        data['entry_date'] = updatedTx.entryDate;
+      }
+
+      _crudQueue.add({
+        'uuid': _generateUuidV4(),
+        'table': 'finance_transactions',
+        'action': 'insert',
+        'payload': data,
+        'created_at': DateTime.now().toIso8601String(),
+        'retry_count': 0,
+        'error_message': null,
+      });
+      await _saveQueuesToStorage();
+      triggerBackgroundSync();
+    }
   }
 
   Future<void> deleteTransaction(String id) async {
