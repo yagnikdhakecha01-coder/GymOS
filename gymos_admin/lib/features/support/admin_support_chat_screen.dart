@@ -204,6 +204,74 @@ class _AdminSupportChatScreenState extends State<AdminSupportChatScreen> {
     }
   }
 
+  void _showImagePreviewDialog(BuildContext context, String imageUrl) {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierColor: Colors.black.withOpacity(0.85),
+      builder: (ctx) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.all(16),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: InteractiveViewer(
+                  panEnabled: true,
+                  minScale: 0.5,
+                  maxScale: 4.0,
+                  child: Image.network(
+                    imageUrl,
+                    fit: BoxFit.contain,
+                    loadingBuilder: (context, child, loadingProgress) {
+                      if (loadingProgress == null) return child;
+                      return const SizedBox(
+                        height: 200,
+                        width: 200,
+                        child: Center(
+                          child: CircularProgressIndicator(color: Colors.white),
+                        ),
+                      );
+                    },
+                    errorBuilder: (context, error, stackTrace) => Container(
+                      padding: const EdgeInsets.all(24),
+                      color: Colors.grey[900],
+                      child: const Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.broken_image_rounded, color: Colors.white70, size: 48),
+                          SizedBox(height: 12),
+                          Text(
+                            'Failed to load image',
+                            style: TextStyle(color: Colors.white70, fontSize: 14),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 10,
+                right: 10,
+                child: Material(
+                  color: Colors.black54,
+                  shape: const CircleBorder(),
+                  child: IconButton(
+                    icon: const Icon(Icons.close_rounded, color: Colors.white, size: 24),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isClosed = _currentStatus.toLowerCase() == 'closed';
@@ -403,16 +471,62 @@ class _AdminSupportChatScreenState extends State<AdminSupportChatScreen> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     if (hasImage) ...[
-                                      ClipRRect(
-                                        borderRadius: BorderRadius.circular(6),
-                                        child: Image.network(
-                                          msg['image_url'],
-                                          fit: BoxFit.cover,
-                                          height: 250,
-                                          errorBuilder: (context, error, stackTrace) => Container(
-                                            height: 200,
-                                            color: Colors.grey[200],
-                                            child: const Icon(Icons.broken_image, color: Colors.grey),
+                                      GestureDetector(
+                                        onTap: () => _showImagePreviewDialog(context, msg['image_url']),
+                                        child: MouseRegion(
+                                          cursor: SystemMouseCursors.click,
+                                          child: Stack(
+                                            alignment: Alignment.center,
+                                            children: [
+                                              ClipRRect(
+                                                borderRadius: BorderRadius.circular(8),
+                                                child: Image.network(
+                                                  msg['image_url'],
+                                                  fit: BoxFit.cover,
+                                                  height: 240,
+                                                  width: double.infinity,
+                                                  loadingBuilder: (context, child, loadingProgress) {
+                                                    if (loadingProgress == null) return child;
+                                                    return Container(
+                                                      height: 200,
+                                                      width: double.infinity,
+                                                      color: Colors.grey[200],
+                                                      child: const Center(
+                                                        child: CircularProgressIndicator(strokeWidth: 2, color: AdminTheme.primary),
+                                                      ),
+                                                    );
+                                                  },
+                                                  errorBuilder: (context, error, stackTrace) => Container(
+                                                    height: 200,
+                                                    width: double.infinity,
+                                                    color: Colors.grey[200],
+                                                    child: const Icon(Icons.broken_image_rounded, color: Colors.grey, size: 36),
+                                                  ),
+                                                ),
+                                              ),
+                                              Positioned(
+                                                bottom: 8,
+                                                right: 8,
+                                                child: Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.black.withOpacity(0.7),
+                                                    borderRadius: BorderRadius.circular(12),
+                                                  ),
+                                                  child: const Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      Icon(Icons.zoom_in_rounded, size: 14, color: Colors.white),
+                                                      SizedBox(width: 4),
+                                                      Text(
+                                                        'Click to view full image',
+                                                        style: TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
                                           ),
                                         ),
                                       ),
