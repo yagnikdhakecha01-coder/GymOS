@@ -335,10 +335,7 @@ class _ReceptionistMembersScreenState extends State<ReceptionistMembersScreen> w
                 MaterialPageRoute(
                   builder: (_) => MemberProfileScreen(member: member),
                 ),
-              ).then((_) {
-                // If they edit a member or take action, log it
-                vm.logActivity('Member Profile Viewed', 'members', targetMember: member.name);
-              });
+              );
             },
           ),
         );

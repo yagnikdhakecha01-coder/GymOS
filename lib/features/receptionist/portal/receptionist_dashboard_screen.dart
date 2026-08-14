@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -5,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../../../core/theme/theme.dart';
 import '../../../core/widgets/custom_card.dart';
 import '../../../core/services/supabase_service.dart';
+import '../../../core/services/gym_logo_cache_service.dart';
 import '../../authentication/auth_viewmodel.dart';
 import '../../attendance/owner_scanner_screen.dart';
 import '../../attendance/manual_attendance_screen.dart';
@@ -59,24 +61,7 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
                       icon: const Icon(Icons.menu_rounded, color: AppTheme.textPrimary, size: 26),
                       onPressed: () => _scaffoldKey.currentState?.openDrawer(),
                     ),
-                    const SizedBox(width: 8),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(20),
-                      child: Image.network(
-                        staff?.avatar ?? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200',
-                        width: 40,
-                        height: 40,
-                        fit: BoxFit.cover,
-                        gaplessPlayback: true,
-                        errorBuilder: (_, __, ___) => Container(
-                          width: 40,
-                          height: 40,
-                          color: AppTheme.primaryLight,
-                          child: const Icon(Icons.person, color: AppTheme.primary, size: 20),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 4),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -85,12 +70,12 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
                             _getGreeting(),
                             style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary),
                           ),
-                          const SizedBox(height: 2),
+                          const SizedBox(height: 1),
                           Text(
-                            staff?.name ?? 'Receptionist',
+                            gymName,
                             style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
                           ),
-                          const SizedBox(height: 2),
+                          const SizedBox(height: 1),
                           GestureDetector(
                             onTap: () {
                               GymSwitcherBottomSheet.show(context);
@@ -101,14 +86,14 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Text(
-                                    'Receptionist • $gymName',
-                                    style: GoogleFonts.inter(fontSize: 11, color: AppTheme.primary, fontWeight: FontWeight.w600),
+                                    'Receptionist • ${staff?.name ?? "Receptionist"}',
+                                    style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted),
                                   ),
                                   const SizedBox(width: 4),
                                   const Icon(
                                     Icons.arrow_drop_down_rounded,
                                     size: 16,
-                                    color: AppTheme.primary,
+                                    color: AppTheme.textMuted,
                                   ),
                                 ],
                               ),
@@ -164,6 +149,42 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
                             ),
                           ),
                       ],
+                    ),
+                    const SizedBox(width: 8),
+                    // Gym Logo Avatar Header
+                    Builder(
+                      builder: (context) {
+                        final gymLogo = authVm.gymInfo?['logo'] ?? authVm.gymInfo?['logo_url'] ?? '';
+                        final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id']?.toString();
+                        final cachedBase64 = GymLogoCacheService.getCachedLogoBase64(authVm.storage, gymId, gymLogo);
+
+                        if (cachedBase64 != null && cachedBase64.isNotEmpty) {
+                          return ClipRRect(
+                            borderRadius: BorderRadius.circular(18),
+                            child: Image.memory(
+                              base64Decode(cachedBase64),
+                              width: 36,
+                              height: 36,
+                              fit: BoxFit.cover,
+                              gaplessPlayback: true,
+                              errorBuilder: (_, __, ___) => _buildDefaultGymLogo(),
+                            ),
+                          );
+                        } else if (gymLogo.isNotEmpty && (gymLogo.startsWith('http') || gymLogo.startsWith('https'))) {
+                          return ClipRRect(
+                            borderRadius: BorderRadius.circular(18),
+                            child: Image.network(
+                              gymLogo,
+                              width: 36,
+                              height: 36,
+                              fit: BoxFit.cover,
+                              gaplessPlayback: true,
+                              errorBuilder: (_, __, ___) => _buildDefaultGymLogo(),
+                            ),
+                          );
+                        }
+                        return _buildDefaultGymLogo();
+                      },
                     ),
                   ],
                 ),
@@ -569,37 +590,46 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
     return ResponsiveGrid(
       crossAxisCountMobile: 4,
       crossAxisCountTablet: 8,
-      spacing: 10,
-      runSpacing: 10,
-      childAspectRatio: context.selectValue(mobile: 0.9, smallMobile: 0.78, tablet: 1.1),
+      spacing: 8,
+      runSpacing: 8,
+      childAspectRatio: context.selectValue(mobile: 1.05, smallMobile: 0.92, tablet: 1.25),
       children: List.generate(activeActions.length, (idx) {
         final act = activeActions[idx];
+        final color = act['color'] as Color;
         return GestureDetector(
           onTap: act['action'] as VoidCallback,
           child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: color.withOpacity(0.08),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppTheme.border),
+              border: Border.all(color: color.withOpacity(0.12)),
             ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: (act['color'] as Color).withOpacity(0.08),
+                  padding: const EdgeInsets.all(7),
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(act['icon'] as IconData, size: 20, color: act['color'] as Color),
+                  child: Icon(act['icon'] as IconData, color: color, size: 18),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  act['label'] as String,
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                const SizedBox(height: 6),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 2),
+                  child: Text(
+                    act['label'] as String,
+                    style: GoogleFonts.inter(
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.textPrimary,
+                    ),
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ],
             ),
@@ -1017,6 +1047,23 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
           ],
         );
       },
+    );
+  }
+
+  Widget _buildDefaultGymLogo() {
+    return Container(
+      width: 36,
+      height: 36,
+      decoration: BoxDecoration(
+        color: AppTheme.primary.withOpacity(0.1),
+        shape: BoxShape.circle,
+        border: Border.all(color: AppTheme.primary.withOpacity(0.3), width: 1.5),
+      ),
+      child: const Icon(
+        Icons.fitness_center_rounded,
+        color: AppTheme.primary,
+        size: 18,
+      ),
     );
   }
 }

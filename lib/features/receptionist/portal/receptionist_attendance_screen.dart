@@ -100,11 +100,8 @@ class _ReceptionistAttendanceScreenState extends State<ReceptionistAttendanceScr
                       Navigator.push(
                         context,
                         MaterialPageRoute(builder: (_) => const OwnerQRScannerScreen(isCheckIn: true)),
-                      ).then((_) {
-                        vm.logActivity('Attendance Scanner Opened', 'attendance');
                         _fetchTodayLogs();
                         vm.fetchDashboardStats();
-                      });
                     },
                     child: Container(
                       height: 180,

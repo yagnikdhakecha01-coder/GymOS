@@ -185,9 +185,15 @@ class ReceptionistViewModel extends ChangeNotifier {
               .select()
               .eq('gym_id', gymId)
               .order('created_at', ascending: false)
-              .limit(10)
+              .limit(30)
               .timeout(const Duration(seconds: 3));
-          _recentActivities = List<Map<String, dynamic>>.from(logsRes);
+
+          final filteredLogs = (logsRes as List<dynamic>).where((log) {
+            final action = (log['action'] ?? '').toString().toLowerCase();
+            return !action.contains('viewed') && !action.contains('opened');
+          }).take(10).toList();
+
+          _recentActivities = List<Map<String, dynamic>>.from(filteredLogs);
         } catch (_) {}
       }
 
