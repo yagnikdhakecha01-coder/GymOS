@@ -20,6 +20,10 @@ import 'receptionist_activity_log_screen.dart';
 import '../../dashboard/gym_switcher_bottom_sheet.dart';
 import '../../../core/widgets/sidebar_drawer.dart';
 import '../../more/notifications_screen.dart';
+import '../../finance/pending_payments_screen.dart';
+import '../../members/member_profile_screen.dart';
+import '../../members/members_viewmodel.dart';
+import '../../../core/models/member.dart';
 
 class ReceptionistDashboardScreen extends StatefulWidget {
   const ReceptionistDashboardScreen({super.key});
@@ -544,7 +548,10 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
         'icon': Icons.payments_outlined,
         'color': Colors.blue,
         'action': () {
-          _showSearchMemberDialog(context, vm, 'Take Payment');
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const PendingPaymentsScreen()),
+          );
         }
       },
       {
@@ -781,15 +788,14 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
                               subtitle: Text(member['phone']),
                               onTap: () {
                                 Navigator.pop(context);
-                                if (taskType == 'Renew Membership') {
-                                  vm.logActivity('Membership Renewed', 'members', targetMember: member['name']);
-                                } else if (taskType == 'Take Payment') {
-                                  vm.logActivity('Payment Collected', 'finance', targetMember: member['name']);
-                                } else if (taskType == 'Send Reminder') {
-                                  vm.logActivity('Reminder Sent', 'members', targetMember: member['name']);
-                                }
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('Successfully processed $taskType for ${member['name']}')),
+                                final membersVm = Provider.of<MembersViewModel>(context, listen: false);
+                                final matchingMember = membersVm.allMembers.firstWhere(
+                                  (m) => m.id == member['id'] || m.phone == member['phone'],
+                                  orElse: () => Member.fromJson(Map<String, dynamic>.from(member)),
+                                );
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(builder: (_) => MemberProfileScreen(member: matchingMember)),
                                 );
                               },
                             );
