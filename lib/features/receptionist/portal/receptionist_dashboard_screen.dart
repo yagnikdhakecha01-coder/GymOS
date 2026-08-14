@@ -21,6 +21,8 @@ import '../../dashboard/gym_switcher_bottom_sheet.dart';
 import '../../../core/widgets/sidebar_drawer.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../core/widgets/success_dialog.dart';
+import '../../../core/models/finance.dart';
+import '../../finance/finance_viewmodel.dart';
 import '../../more/notifications_screen.dart';
 import '../../finance/pending_payments_screen.dart';
 import '../../members/member_profile_screen.dart';
@@ -1427,45 +1429,77 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
                                 isSaving = true;
                               });
 
+                              final gymRepo = Provider.of<GymRepository>(context, listen: false);
+                              final financeVm = Provider.of<FinanceViewModel>(context, listen: false);
+
+                              final nowIso = DateTime.now().toIso8601String();
+                              final todayDateStr = nowIso.substring(0, 10);
+                              final gymId = vm.staffRecord?.gymId ?? '';
+
+                              final tx = FinanceTransaction(
+                                id: '',
+                                gymId: gymId,
+                                title: title,
+                                amount: amt,
+                                type: type,
+                                category: selectedCategory,
+                                paymentMethod: 'Cash',
+                                date: DateFormat('dd MMM yyyy').format(DateTime.now()),
+                                transactionDate: nowIso,
+                                expenseDate: todayDateStr,
+                                revenueDate: todayDateStr,
+                                entryDate: todayDateStr,
+                                notes: title,
+                                createdByInfo: 'Receptionist - ${vm.staffRecord?.name ?? ''}',
+                              );
+
+                              // 1. Instantly update local GymRepository cache & notify listeners across entire app (0ms UI delay!)
+                              await gymRepo.saveTransaction(tx);
+
+                              // 2. Direct Supabase insert call with safe payload (no null UUID errors)
                               try {
-                                if (SupabaseService.isInitialized) {
-                                  await SupabaseService.client.from('finance_transactions').insert({
-                                    'gym_id': vm.staffRecord!.gymId,
+                                if (SupabaseService.isInitialized && gymId.isNotEmpty) {
+                                  final payload = <String, dynamic>{
+                                    'gym_id': gymId,
                                     'amount': amt,
                                     'type': type,
                                     'category': selectedCategory,
                                     'payment_method': 'Cash',
-                                    'transaction_date': DateTime.now().toIso8601String(),
-                                    'expense_date': DateTime.now().toIso8601String().substring(0, 10),
-                                    'revenue_date': DateTime.now().toIso8601String().substring(0, 10),
-                                    'entry_date': DateTime.now().toIso8601String().substring(0, 10),
-                                    'created_by': SupabaseService.client.auth.currentUser?.id,
-                                    'created_by_info': 'Receptionist - ${vm.staffRecord!.name}',
+                                    'transaction_date': nowIso,
+                                    'expense_date': todayDateStr,
+                                    'revenue_date': todayDateStr,
+                                    'entry_date': todayDateStr,
+                                    'created_by_info': 'Receptionist - ${vm.staffRecord?.name ?? ''}',
                                     'notes': title,
-                                  }).timeout(const Duration(seconds: 3));
-                                }
+                                  };
 
-                                vm.logActivity('$type Added: $title ($selectedCategory)', 'finance');
-                                if (context.mounted) {
-                                  Navigator.pop(context);
-                                  vm.fetchDashboardStats();
-                                  SuccessDialog.show(
-                                    context,
-                                    title: '$type Saved Successfully!',
-                                    message: '₹${NumberFormat('#,##,###').format(amt)} recorded for $title ($selectedCategory).',
-                                  );
+                                  final currentUserId = SupabaseService.client.auth.currentUser?.id;
+                                  if (currentUserId != null && currentUserId.isNotEmpty) {
+                                    payload['created_by'] = currentUserId;
+                                  }
+
+                                  await SupabaseService.client
+                                      .from('finance_transactions')
+                                      .insert(payload)
+                                      .timeout(const Duration(seconds: 3));
                                 }
-                              } catch (e) {
-                                vm.logActivity('$type Added (Offline): $title', 'finance');
-                                if (context.mounted) {
-                                  Navigator.pop(context);
-                                  vm.fetchDashboardStats();
-                                  SuccessDialog.show(
-                                    context,
-                                    title: '$type Saved Successfully!',
-                                    message: '₹${NumberFormat('#,##,###').format(amt)} recorded for $title ($selectedCategory).',
-                                  );
-                                }
+                              } catch (_) {
+                                // Background CRUD queue in GymRepository automatically syncs if direct HTTP request fails
+                              }
+
+                              // 3. Log activity, refresh all providers, close modal & show success dialog
+                              vm.logActivity('$type Added: $title ($selectedCategory - ₹${NumberFormat('#,##,###').format(amt)})', 'finance');
+                              
+                              if (context.mounted) {
+                                Navigator.pop(context);
+                                vm.fetchDashboardStats();
+                                financeVm.fetchTransactions();
+
+                                SuccessDialog.show(
+                                  context,
+                                  title: '$type Saved Successfully!',
+                                  message: '₹${NumberFormat('#,##,###').format(amt)} recorded for $title ($selectedCategory).',
+                                );
                               }
                             },
                       child: isSaving

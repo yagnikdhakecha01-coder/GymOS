@@ -4,6 +4,10 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../../core/theme/theme.dart';
 import '../../../core/services/supabase_service.dart';
+import '../../../core/repository/gym_repository.dart';
+import '../../../core/models/finance.dart';
+import '../../../core/widgets/success_dialog.dart';
+import '../../finance/finance_viewmodel.dart';
 import '../receptionist_viewmodel.dart';
 import 'widgets/receptionist_restricted_widget.dart';
 
@@ -423,35 +427,84 @@ class _ReceptionistFinanceScreenState extends State<ReceptionistFinanceScreen> w
                       onPressed: () async {
                         final amt = double.tryParse(amountController.text) ?? 0.0;
                         final title = titleController.text.trim();
-                        if (title.isNotEmpty && amt > 0) {
-                          try {
-                            await SupabaseService.client.from('finance_transactions').insert({
-                              'gym_id': vm.staffRecord!.gymId,
+                        if (title.isEmpty || amt <= 0) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Please enter a valid title and amount greater than 0.')),
+                          );
+                          return;
+                        }
+
+                        final gymRepo = Provider.of<GymRepository>(context, listen: false);
+                        final financeVm = Provider.of<FinanceViewModel>(context, listen: false);
+
+                        final nowIso = DateTime.now().toIso8601String();
+                        final todayDateStr = nowIso.substring(0, 10);
+                        final gymId = vm.staffRecord?.gymId ?? '';
+
+                        final tx = FinanceTransaction(
+                          id: '',
+                          gymId: gymId,
+                          title: title,
+                          amount: amt,
+                          type: type,
+                          category: selectedCategory,
+                          paymentMethod: 'Cash',
+                          date: DateFormat('dd MMM yyyy').format(DateTime.now()),
+                          transactionDate: nowIso,
+                          expenseDate: todayDateStr,
+                          revenueDate: todayDateStr,
+                          entryDate: todayDateStr,
+                          notes: title,
+                          createdByInfo: 'Receptionist - ${vm.staffRecord?.name ?? ''}',
+                        );
+
+                        // 1. Instantly update local cache & notify all listeners (0ms delay!)
+                        await gymRepo.saveTransaction(tx);
+
+                        // 2. Direct Supabase insert call with safe payload
+                        try {
+                          if (SupabaseService.isInitialized && gymId.isNotEmpty) {
+                            final payload = <String, dynamic>{
+                              'gym_id': gymId,
                               'amount': amt,
                               'type': type,
                               'category': selectedCategory,
                               'payment_method': 'Cash',
-                              'transaction_date': DateTime.now().toIso8601String(),
-                              'expense_date': DateTime.now().toIso8601String().substring(0, 10),
-                              'revenue_date': DateTime.now().toIso8601String().substring(0, 10),
-                              'entry_date': DateTime.now().toIso8601String().substring(0, 10),
-                              'created_by': SupabaseService.client.auth.currentUser?.id,
-                              'created_by_info': 'Receptionist - ${vm.staffRecord!.name}',
+                              'transaction_date': nowIso,
+                              'expense_date': todayDateStr,
+                              'revenue_date': todayDateStr,
+                              'entry_date': todayDateStr,
+                              'created_by_info': 'Receptionist - ${vm.staffRecord?.name ?? ''}',
                               'notes': title,
-                            });
-                            
-                            vm.logActivity('$type Added: $title ($selectedCategory)', 'finance');
-                            Navigator.pop(context);
-                            _fetchTransactions();
-                            vm.fetchDashboardStats();
-                          } catch (e) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Error adding transaction: $e')),
-                            );
+                            };
+
+                            final currentUserId = SupabaseService.client.auth.currentUser?.id;
+                            if (currentUserId != null && currentUserId.isNotEmpty) {
+                              payload['created_by'] = currentUserId;
+                            }
+
+                            await SupabaseService.client
+                                .from('finance_transactions')
+                                .insert(payload)
+                                .timeout(const Duration(seconds: 3));
                           }
-                        } else {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Please enter a valid title and amount')),
+                        } catch (_) {
+                          // GymRepository._crudQueue automatically handles offline/background sync
+                        }
+
+                        // 3. Log activity, refresh state & show success dialog
+                        vm.logActivity('$type Added: $title ($selectedCategory - ₹${NumberFormat('#,##,###').format(amt)})', 'finance');
+                        
+                        if (context.mounted) {
+                          Navigator.pop(context);
+                          _fetchTransactions();
+                          vm.fetchDashboardStats();
+                          financeVm.fetchTransactions();
+
+                          SuccessDialog.show(
+                            context,
+                            title: '$type Saved Successfully!',
+                            message: '₹${NumberFormat('#,##,###').format(amt)} recorded for $title ($selectedCategory).',
                           );
                         }
                       },
