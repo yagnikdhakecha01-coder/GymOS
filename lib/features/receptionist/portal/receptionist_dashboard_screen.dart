@@ -782,11 +782,11 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
             bgColor: const Color(0xFFFFF2ED),
             title: "${expiringOrExpired.length} Memberships Expiring / Expired",
             subtitle: "Follow-up & renew membership to keep workouts active",
+            avatars: expiringOrExpired.map((m) => m.avatar).where((a) => a.isNotEmpty && a.startsWith('http')).take(3).toList(),
             onTap: () {
               _showSearchMemberDialog(context, vm, 'Renew Membership');
             },
           ),
-          const SizedBox(height: 8),
         ],
         if (canTakePayment && pendingDues.isNotEmpty) ...[
           _buildAlertCardItem(
@@ -795,6 +795,7 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
             bgColor: const Color(0xFFFFECEF),
             title: "${pendingDues.length} Members with Pending Dues (₹${NumberFormat('#,##,###').format(totalPendingAmt)})",
             subtitle: "Collect pending fees & record payment entries",
+            avatars: pendingDues.map((m) => m.avatar).where((a) => a.isNotEmpty && a.startsWith('http')).take(3).toList(),
             onTap: () {
               Navigator.push(
                 context,
@@ -802,7 +803,6 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
               );
             },
           ),
-          const SizedBox(height: 8),
         ],
         const SizedBox(height: 8),
       ],
@@ -815,34 +815,80 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
     required Color bgColor,
     required String title,
     required String subtitle,
+    List<String>? avatars,
     required VoidCallback onTap,
   }) {
     return Container(
+      margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
         color: bgColor,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: iconColor.withOpacity(0.2)),
+        border: Border(
+          left: BorderSide(color: iconColor, width: 4),
+        ),
       ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-        leading: Container(
-          padding: const EdgeInsets.all(8),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            shape: BoxShape.circle,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(icon, color: iconColor, size: 16),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: GoogleFonts.inter(fontSize: 10, color: AppTheme.textSecondary, fontWeight: FontWeight.w500),
+                      ),
+                    ],
+                  ),
+                ),
+                if (avatars != null && avatars.isNotEmpty) ...[
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: avatars.map((url) => Align(
+                      widthFactor: 0.6,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 1.5),
+                        ),
+                        child: CircleAvatar(
+                          radius: 10,
+                          backgroundImage: NetworkImage(
+                            url.isNotEmpty 
+                                ? url 
+                                : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=100',
+                          ),
+                        ),
+                      ),
+                    )).toList(),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                Icon(Icons.arrow_forward_ios_rounded, color: iconColor, size: 12),
+              ],
+            ),
           ),
-          child: Icon(icon, color: iconColor, size: 20),
         ),
-        title: Text(
-          title,
-          style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
-        ),
-        subtitle: Text(
-          subtitle,
-          style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary),
-        ),
-        trailing: Icon(Icons.arrow_forward_ios_rounded, color: iconColor, size: 14),
-        onTap: onTap,
       ),
     );
   }
