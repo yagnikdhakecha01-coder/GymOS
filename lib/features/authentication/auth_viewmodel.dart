@@ -13,6 +13,8 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 
+import '../../core/services/gym_logo_cache_service.dart';
+
 class AuthViewModel extends ChangeNotifier {
   final LocalStorageService _storage;
   final GymRepository _gymRepository;
@@ -44,6 +46,7 @@ class AuthViewModel extends ChangeNotifier {
   }
 
   // Getters
+  LocalStorageService get storage => _storage;
   int get unreadNotificationsCount => _unreadNotificationsCount;
   String? get selectedRole => _selectedRole;
   bool get isLoggedIn => _isLoggedIn;
@@ -113,6 +116,7 @@ class AuthViewModel extends ChangeNotifier {
         final bytes = await response.fold<List<int>>([], (list, element) => list..addAll(element));
         final base64Str = base64Encode(bytes);
         await _storage.setCachedImage(key, base64Str);
+        await GymLogoCacheService.cacheLogoBase64(_storage, activeAssociation?.gymId ?? gymInfo?['id']?.toString(), base64Str);
         notifyListeners();
       }
     } catch (e) {

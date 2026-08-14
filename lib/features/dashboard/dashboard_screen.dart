@@ -7,6 +7,7 @@ import '../../core/repository/gym_repository.dart';
 import '../../core/theme/theme.dart';
 import '../../core/widgets/custom_card.dart';
 import '../../core/services/supabase_service.dart';
+import '../../core/services/gym_logo_cache_service.dart';
 import '../../core/widgets/sparkline.dart';
 import '../../core/widgets/sparkline_chart.dart';
 import '../authentication/auth_viewmodel.dart';
@@ -430,10 +431,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     child: Builder(
                       builder: (context) {
                         final gymLogo = authVm.gymInfo?['logo'] ?? authVm.gymInfo?['logo_url'] ?? '';
-                        final gymId = authVm.gymInfo?['id'];
-                        final cachedBase64 = gymId != null ? authVm.getCachedImage('gym_logo_$gymId') : null;
+                        final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id']?.toString();
+                        final cachedBase64 = GymLogoCacheService.getCachedLogoBase64(authVm.storage, gymId, gymLogo);
 
-                        if (cachedBase64 != null) {
+                        if (cachedBase64 != null && cachedBase64.isNotEmpty) {
                           return ClipRRect(
                             borderRadius: BorderRadius.circular(18),
                             child: Image.memory(
@@ -446,6 +447,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             ),
                           );
                         } else if (gymLogo.isNotEmpty && (gymLogo.startsWith('http') || gymLogo.startsWith('https'))) {
+                          GymLogoCacheService.preloadAndCacheLogo(authVm.storage, gymId, gymLogo);
                           return ClipRRect(
                             borderRadius: BorderRadius.circular(18),
                             child: Image.network(

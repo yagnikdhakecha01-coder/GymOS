@@ -1,9 +1,11 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 import '../theme/theme.dart';
 import '../services/supabase_service.dart';
+import '../services/gym_logo_cache_service.dart';
 import '../../features/authentication/auth_viewmodel.dart';
 import '../../features/authentication/role_selection_screen.dart';
 import '../config/app_config.dart';
@@ -801,13 +803,32 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
               padding: const EdgeInsets.all(24.0),
               child: Row(
                 children: [
-                  CircleAvatar(
-                    radius: 26,
-                    backgroundColor: AppTheme.primaryLight,
-                    backgroundImage: logoUrl.isNotEmpty ? NetworkImage(logoUrl) : null,
-                    child: logoUrl.isEmpty
-                        ? const Icon(Icons.fitness_center_rounded, color: AppTheme.primary, size: 28)
-                        : null,
+                  Builder(
+                    builder: (context) {
+                      final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id']?.toString();
+                      final cachedBase64 = GymLogoCacheService.getCachedLogoBase64(authVm.storage, gymId, logoUrl);
+                      if (logoUrl.isNotEmpty && (cachedBase64 == null || cachedBase64.isEmpty)) {
+                        GymLogoCacheService.preloadAndCacheLogo(authVm.storage, gymId, logoUrl);
+                      }
+
+                      ImageProvider? imageProvider;
+                      if (cachedBase64 != null && cachedBase64.isNotEmpty) {
+                        try {
+                          imageProvider = MemoryImage(base64Decode(cachedBase64));
+                        } catch (_) {}
+                      } else if (logoUrl.isNotEmpty) {
+                        imageProvider = NetworkImage(logoUrl);
+                      }
+
+                      return CircleAvatar(
+                        radius: 26,
+                        backgroundColor: AppTheme.primaryLight,
+                        backgroundImage: imageProvider,
+                        child: imageProvider == null
+                            ? const Icon(Icons.fitness_center_rounded, color: AppTheme.primary, size: 28)
+                            : null,
+                      );
+                    },
                   ),
                   const SizedBox(width: 16),
                   Expanded(

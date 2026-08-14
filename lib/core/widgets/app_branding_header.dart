@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../features/authentication/auth_viewmodel.dart';
+import '../services/gym_logo_cache_service.dart';
 import '../theme/theme.dart';
 
 class AppBrandingHeader extends StatelessWidget {
@@ -32,8 +33,11 @@ class AppBrandingHeader extends StatelessWidget {
         ? logoUrl
         : (authVm.gymInfo?['logo'] ?? authVm.gymInfo?['logo_url'] ?? '');
 
+    final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id']?.toString();
+    final cachedBase64 = GymLogoCacheService.getCachedLogoBase64(authVm.storage, gymId, displayLogoUrl);
+
     Widget logoWidget;
-    if (isBrandingEnabled && (logoBase64 != null && logoBase64.isNotEmpty)) {
+    if (cachedBase64 != null && cachedBase64.isNotEmpty) {
       try {
         logoWidget = Container(
           decoration: BoxDecoration(
@@ -43,7 +47,7 @@ class AppBrandingHeader extends StatelessWidget {
           child: ClipRRect(
             borderRadius: BorderRadius.circular(logoSize * 0.25),
             child: Image.memory(
-              base64Decode(logoBase64),
+              base64Decode(cachedBase64),
               width: logoSize,
               height: logoSize,
               fit: BoxFit.cover,
@@ -54,6 +58,9 @@ class AppBrandingHeader extends StatelessWidget {
         logoWidget = _buildDefaultLogo();
       }
     } else if (displayLogoUrl.isNotEmpty) {
+      // Trigger background pre-caching so next app launch loads instantly
+      GymLogoCacheService.preloadAndCacheLogo(authVm.storage, gymId, displayLogoUrl);
+
       logoWidget = Container(
         decoration: BoxDecoration(
           boxShadow: AppTheme.cardShadow,
