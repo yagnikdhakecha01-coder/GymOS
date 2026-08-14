@@ -125,14 +125,26 @@ class AppBrandingHeader extends StatelessWidget {
       width: logoSize,
       height: logoSize,
       decoration: BoxDecoration(
-        color: AppTheme.primary,
+        color: const Color(0xFF070D18),
         borderRadius: BorderRadius.circular(logoSize * 0.25),
         boxShadow: AppTheme.cardShadow,
       ),
-      child: Icon(
-        Icons.fitness_center_rounded,
-        color: Colors.white,
-        size: logoSize * 0.5,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(logoSize * 0.25),
+        child: Padding(
+          padding: EdgeInsets.all(logoSize * 0.1),
+          child: Image.asset(
+            'assets/images/logo.png',
+            width: logoSize,
+            height: logoSize,
+            fit: BoxFit.contain,
+            errorBuilder: (context, error, stackTrace) => Icon(
+              Icons.fitness_center_rounded,
+              color: Colors.white,
+              size: logoSize * 0.5,
+            ),
+          ),
+        ),
       ),
     );
   }
