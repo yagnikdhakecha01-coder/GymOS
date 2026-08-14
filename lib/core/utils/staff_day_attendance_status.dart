@@ -55,22 +55,16 @@ class StaffDayAttendanceStatus {
     if (leaveCount > 0) return 'holiday';
     if (halfCount > 0) return 'half day';
 
-    // Full absent = both shifts missed in DB
-    if (absentCount >= 2) return 'absent';
-
-    // Half absent ONLY: 1 absent + at least 1 present (one shift missed, one worked)
-    if (absentCount == 1 && presentCount >= 1) return 'half day';
-
-    // Today only: 1 absent, other shift not logged yet = partial day so far
-    if (absentCount == 1 && presentCount == 0 && targetOnly.isAtSameMomentAs(todayOnly)) {
-      return 'half day';
+    // Zero present shifts worked = staff has NOT attended any shift at all!
+    if (presentCount == 0) {
+      if (absentCount >= 1) return 'absent';
+      if (!targetOnly.isBefore(todayOnly)) return 'pending';
+      return 'absent';
     }
 
-    // Any present log(s), no absent = full present (even if only 1 log in DB)
+    // At least 1 present shift worked:
+    if (absentCount >= 1 && presentCount >= 1) return 'half day';
     if (presentCount >= 1 && absentCount == 0) return 'present';
-
-    // Past day: single absent log only (other shift never logged) = half absent
-    if (absentCount == 1 && presentCount == 0) return 'half day';
 
     if (!targetOnly.isBefore(todayOnly)) return 'pending';
     return 'absent';
