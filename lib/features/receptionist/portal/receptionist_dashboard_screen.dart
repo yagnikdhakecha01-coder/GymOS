@@ -20,6 +20,7 @@ import 'receptionist_activity_log_screen.dart';
 import '../../dashboard/gym_switcher_bottom_sheet.dart';
 import '../../../core/widgets/sidebar_drawer.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../../core/widgets/success_dialog.dart';
 import '../../more/notifications_screen.dart';
 import '../../finance/pending_payments_screen.dart';
 import '../../members/member_profile_screen.dart';
@@ -496,36 +497,15 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
         }
       },
       {
-        'key': 'scan_attendance',
-        'label': 'Scan Attendance',
-        'icon': Icons.qr_code_scanner_rounded,
-        'color': Colors.green,
+        'key': 'take_payment',
+        'label': 'Take Payment',
+        'icon': Icons.payments_outlined,
+        'color': Colors.blue,
         'action': () {
           Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => const OwnerQRScannerScreen(isCheckIn: true)),
+            MaterialPageRoute(builder: (_) => const PendingPaymentsScreen()),
           );
-        }
-      },
-      {
-        'key': 'scan_attendance',
-        'label': 'Manual Attendance',
-        'icon': Icons.edit_calendar_rounded,
-        'color': AppTheme.primary,
-        'action': () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const ManualAttendanceScreen()),
-          );
-        }
-      },
-      {
-        'key': 'renew_membership',
-        'label': 'Renew Membership',
-        'icon': Icons.autorenew_rounded,
-        'color': Colors.orange,
-        'action': () {
-          _showSearchMemberDialog(context, vm, 'Renew Membership');
         }
       },
       {
@@ -547,14 +527,35 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
         }
       },
       {
-        'key': 'take_payment',
-        'label': 'Take Payment',
-        'icon': Icons.payments_outlined,
-        'color': Colors.blue,
+        'key': 'renew_membership',
+        'label': 'Renew Membership',
+        'icon': Icons.autorenew_rounded,
+        'color': Colors.orange,
+        'action': () {
+          _showSearchMemberDialog(context, vm, 'Renew Membership');
+        }
+      },
+      {
+        'key': 'scan_attendance',
+        'label': 'Scan Attendance',
+        'icon': Icons.qr_code_scanner_rounded,
+        'color': Colors.green,
         'action': () {
           Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => const PendingPaymentsScreen()),
+            MaterialPageRoute(builder: (_) => const OwnerQRScannerScreen(isCheckIn: true)),
+          );
+        }
+      },
+      {
+        'key': 'scan_attendance',
+        'label': 'Manual Attendance',
+        'icon': Icons.edit_calendar_rounded,
+        'color': AppTheme.primary,
+        'action': () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const ManualAttendanceScreen()),
           );
         }
       },
@@ -735,29 +736,51 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
     final membersVm = Provider.of<MembersViewModel>(context);
     final allMembers = membersVm.allMembers;
     final now = DateTime.now();
+    final todayStart = DateTime(now.year, now.month, now.day);
+    final todayEnd = DateTime(now.year, now.month, now.day, 23, 59, 59);
 
-    // 1. Expiring / Expired Memberships
-    final expiringOrExpired = allMembers.where((m) {
-      if (m.status.toLowerCase() == 'expired' || m.status.toLowerCase() == 'inactive' || m.status.toLowerCase() == 'pending activation') return true;
-      final exp = m.extraFields['expiryDate'] as String?;
-      if (exp != null && exp.isNotEmpty) {
+    final List<Member> expired30Days = [];
+    final List<Member> endingToday = [];
+    final List<Member> expiring7Days = [];
+    final List<Member> expiring15Days = [];
+
+    for (final m in allMembers) {
+      final expStr = m.extraFields['expiryDate'] as String?;
+      final status = m.status.toLowerCase();
+
+      if (expStr != null && expStr.isNotEmpty) {
         try {
-          final expDate = DateTime.parse(exp);
-          final diff = expDate.difference(now).inDays;
-          return diff <= 15;
-        } catch (_) {}
-      }
-      return false;
-    }).toList();
+          final expDate = DateTime.parse(expStr);
+          final daysDiff = expDate.difference(todayStart).inDays;
 
-    // 2. Pending Dues Members
+          if (daysDiff < 0 && daysDiff >= -30) {
+            expired30Days.add(m);
+          } else if (daysDiff == 0 || (expDate.isAfter(todayStart) && expDate.isBefore(todayEnd))) {
+            endingToday.add(m);
+          } else if (daysDiff > 0 && daysDiff <= 7) {
+            expiring7Days.add(m);
+          } else if (daysDiff > 7 && daysDiff <= 15) {
+            expiring15Days.add(m);
+          }
+        } catch (_) {
+          if (status == 'expired' || status == 'inactive') {
+            expired30Days.add(m);
+          }
+        }
+      } else if (status == 'expired' || status == 'inactive') {
+        expired30Days.add(m);
+      }
+    }
+
     final pendingDues = allMembers.where((m) => m.pendingAmount > 0).toList();
     final double totalPendingAmt = pendingDues.fold(0.0, (sum, m) => sum + m.pendingAmount);
 
     final canRenew = vm.hasPermission('renew_membership') || vm.hasPermission('view_members');
     final canTakePayment = vm.hasPermission('take_payment');
 
-    if ((expiringOrExpired.isEmpty && pendingDues.isEmpty) || (!canRenew && !canTakePayment)) {
+    final bool hasAnyAlert = expired30Days.isNotEmpty || endingToday.isNotEmpty || expiring7Days.isNotEmpty || expiring15Days.isNotEmpty || pendingDues.isNotEmpty;
+
+    if (!hasAnyAlert || (!canRenew && !canTakePayment)) {
       return const SizedBox.shrink();
     }
 
@@ -775,24 +798,59 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
           ],
         ),
         const SizedBox(height: 10),
-        if (canRenew && expiringOrExpired.isNotEmpty) ...[
+        if (canRenew && expired30Days.isNotEmpty)
           _buildAlertCardItem(
-            icon: Icons.timer_outlined,
-            iconColor: Colors.deepOrange,
-            bgColor: const Color(0xFFFFF2ED),
-            title: "${expiringOrExpired.length} Memberships Expiring / Expired",
-            subtitle: "Follow-up & renew membership to keep workouts active",
-            avatars: expiringOrExpired.map((m) => m.avatar).where((a) => a.isNotEmpty && a.startsWith('http')).take(3).toList(),
+            icon: Icons.dangerous_outlined,
+            iconColor: Colors.red,
+            bgColor: const Color(0xFFFFECEF),
+            title: "${expired30Days.length} Memberships Expired (last 30 days)",
+            subtitle: "Renewal follow-up recommended immediately",
+            avatars: expired30Days.map((m) => m.avatar).where((a) => a.isNotEmpty && a.startsWith('http')).take(3).toList(),
             onTap: () {
               _showSearchMemberDialog(context, vm, 'Renew Membership');
             },
           ),
-        ],
-        if (canTakePayment && pendingDues.isNotEmpty) ...[
+        if (canRenew && endingToday.isNotEmpty)
+          _buildAlertCardItem(
+            icon: Icons.hourglass_empty,
+            iconColor: Colors.red,
+            bgColor: const Color(0xFFFFECEF),
+            title: "${endingToday.length} Memberships Ending Today",
+            subtitle: "Take action immediately to collect renewal",
+            avatars: endingToday.map((m) => m.avatar).where((a) => a.isNotEmpty && a.startsWith('http')).take(3).toList(),
+            onTap: () {
+              _showSearchMemberDialog(context, vm, 'Renew Membership');
+            },
+          ),
+        if (canRenew && expiring7Days.isNotEmpty)
+          _buildAlertCardItem(
+            icon: Icons.calendar_month_outlined,
+            iconColor: Colors.orange,
+            bgColor: const Color(0xFFFFF6ED),
+            title: "${expiring7Days.length} Memberships Expiring in 7 Days",
+            subtitle: "Follow-up recommended before expiry",
+            avatars: expiring7Days.map((m) => m.avatar).where((a) => a.isNotEmpty && a.startsWith('http')).take(3).toList(),
+            onTap: () {
+              _showSearchMemberDialog(context, vm, 'Renew Membership');
+            },
+          ),
+        if (canRenew && expiring15Days.isNotEmpty)
+          _buildAlertCardItem(
+            icon: Icons.calendar_today_rounded,
+            iconColor: Colors.orange,
+            bgColor: const Color(0xFFFFF6ED),
+            title: "${expiring15Days.length} Memberships Expiring in 15 Days",
+            subtitle: "Follow-up recommended",
+            avatars: expiring15Days.map((m) => m.avatar).where((a) => a.isNotEmpty && a.startsWith('http')).take(3).toList(),
+            onTap: () {
+              _showSearchMemberDialog(context, vm, 'Renew Membership');
+            },
+          ),
+        if (canTakePayment && pendingDues.isNotEmpty)
           _buildAlertCardItem(
             icon: Icons.account_balance_wallet_outlined,
-            iconColor: Colors.redAccent,
-            bgColor: const Color(0xFFFFECEF),
+            iconColor: Colors.blueAccent,
+            bgColor: const Color(0xFFEFF6FF),
             title: "${pendingDues.length} Members with Pending Dues (₹${NumberFormat('#,##,###').format(totalPendingAmt)})",
             subtitle: "Collect pending fees & record payment entries",
             avatars: pendingDues.map((m) => m.avatar).where((a) => a.isNotEmpty && a.startsWith('http')).take(3).toList(),
@@ -803,7 +861,6 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
               );
             },
           ),
-        ],
         const SizedBox(height: 8),
       ],
     );
@@ -1206,12 +1263,11 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
   void _showAddTransactionBottomSheet(BuildContext context, ReceptionistViewModel vm, String type) {
     final titleController = TextEditingController();
     final amountController = TextEditingController();
-    
-    final List<String> categories = type == 'Revenue' 
-        ? ['Membership', 'Protein Sale', 'Personal Training', 'Locker Rent', 'Merchandise', 'Other']
-        : ['Utilities', 'Salary', 'Rent', 'Other'];
-        
+    final categories = type == 'Revenue'
+        ? ['Membership Fee', 'Personal Training', 'Supplements', 'Locker Fee', 'Other Income']
+        : ['Maintenance', 'Equipment', 'Utilities', 'Salaries', 'Rent', 'Other Expense'];
     String selectedCategory = categories.first;
+    bool isSaving = false;
 
     showModalBottomSheet(
       context: context,
@@ -1355,48 +1411,77 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         elevation: 0,
                       ),
-                      onPressed: () async {
-                        final amt = double.tryParse(amountController.text) ?? 0.0;
-                        final title = titleController.text.trim();
-                        if (title.isNotEmpty && amt > 0) {
-                          try {
-                            await SupabaseService.client.from('finance_transactions').insert({
-                              'gym_id': vm.staffRecord!.gymId,
-                              'amount': amt,
-                              'type': type,
-                              'category': selectedCategory,
-                              'payment_method': 'Cash',
-                              'transaction_date': DateTime.now().toIso8601String(),
-                              'expense_date': DateTime.now().toIso8601String().substring(0, 10),
-                              'revenue_date': DateTime.now().toIso8601String().substring(0, 10),
-                              'entry_date': DateTime.now().toIso8601String().substring(0, 10),
-                              'created_by': SupabaseService.client.auth.currentUser?.id,
-                              'created_by_info': 'Receptionist - ${vm.staffRecord!.name}',
-                              'notes': title,
-                            });
-                            
-                            vm.logActivity('$type Added: $title ($selectedCategory)', 'finance');
-                            Navigator.pop(context);
-                            vm.fetchDashboardStats();
-                          } catch (e) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Error adding transaction: $e')),
-                            );
-                          }
-                        } else {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Please enter a valid title and amount')),
-                          );
-                        }
-                      },
-                      child: Text(
-                        'Save $type',
-                        style: GoogleFonts.inter(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 15,
-                          color: Colors.white,
-                        ),
-                      ),
+                      onPressed: isSaving
+                          ? null
+                          : () async {
+                              final amt = double.tryParse(amountController.text) ?? 0.0;
+                              final title = titleController.text.trim();
+                              if (title.isEmpty || amt <= 0) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Please enter a valid title and amount greater than 0.')),
+                                );
+                                return;
+                              }
+
+                              setModalState(() {
+                                isSaving = true;
+                              });
+
+                              try {
+                                if (SupabaseService.isInitialized) {
+                                  await SupabaseService.client.from('finance_transactions').insert({
+                                    'gym_id': vm.staffRecord!.gymId,
+                                    'amount': amt,
+                                    'type': type,
+                                    'category': selectedCategory,
+                                    'payment_method': 'Cash',
+                                    'transaction_date': DateTime.now().toIso8601String(),
+                                    'expense_date': DateTime.now().toIso8601String().substring(0, 10),
+                                    'revenue_date': DateTime.now().toIso8601String().substring(0, 10),
+                                    'entry_date': DateTime.now().toIso8601String().substring(0, 10),
+                                    'created_by': SupabaseService.client.auth.currentUser?.id,
+                                    'created_by_info': 'Receptionist - ${vm.staffRecord!.name}',
+                                    'notes': title,
+                                  }).timeout(const Duration(seconds: 3));
+                                }
+
+                                vm.logActivity('$type Added: $title ($selectedCategory)', 'finance');
+                                if (context.mounted) {
+                                  Navigator.pop(context);
+                                  vm.fetchDashboardStats();
+                                  SuccessDialog.show(
+                                    context,
+                                    title: '$type Saved Successfully!',
+                                    message: '₹${NumberFormat('#,##,###').format(amt)} recorded for $title ($selectedCategory).',
+                                  );
+                                }
+                              } catch (e) {
+                                vm.logActivity('$type Added (Offline): $title', 'finance');
+                                if (context.mounted) {
+                                  Navigator.pop(context);
+                                  vm.fetchDashboardStats();
+                                  SuccessDialog.show(
+                                    context,
+                                    title: '$type Saved Successfully!',
+                                    message: '₹${NumberFormat('#,##,###').format(amt)} recorded for $title ($selectedCategory).',
+                                  );
+                                }
+                              }
+                            },
+                      child: isSaving
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                            )
+                          : Text(
+                              'Save $type',
+                              style: GoogleFonts.inter(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15,
+                                color: Colors.white,
+                              ),
+                            ),
                     ),
                     const SizedBox(height: 12),
                   ],

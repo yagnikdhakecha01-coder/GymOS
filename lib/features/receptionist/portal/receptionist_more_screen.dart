@@ -12,6 +12,8 @@ import '../../dashboard/gym_switcher_bottom_sheet.dart';
 import '../../staff/portal/staff_requests_screen.dart';
 import '../../dashboard/support_tickets_screen.dart';
 
+import '../../more/settings_screen.dart';
+
 class ReceptionistMoreScreen extends StatelessWidget {
   const ReceptionistMoreScreen({super.key});
 
@@ -72,19 +74,6 @@ class ReceptionistMoreScreen extends StatelessWidget {
               color: Colors.white,
               child: Column(
                 children: [
-                  _buildMenuRow(
-                    icon: Icons.task_alt_rounded,
-                    title: 'Tasks',
-                    onTap: () {},
-                  ),
-                  _divider(),
-                  _buildMenuRow(
-                    icon: Icons.message_outlined,
-                    title: 'Messages',
-                    badge: '3',
-                    onTap: () {},
-                  ),
-                  _divider(),
                   _buildMenuRow(
                     icon: Icons.history_edu_rounded,
                     title: 'Activity Log',
@@ -152,7 +141,12 @@ class ReceptionistMoreScreen extends StatelessWidget {
                   _buildMenuRow(
                     icon: Icons.settings_outlined,
                     title: 'Settings',
-                    onTap: () {},
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                      );
+                    },
                   ),
                   _divider(),
                   _buildMenuRow(
