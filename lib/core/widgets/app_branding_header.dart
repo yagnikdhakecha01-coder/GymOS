@@ -51,6 +51,7 @@ class AppBrandingHeader extends StatelessWidget {
               width: logoSize,
               height: logoSize,
               fit: BoxFit.cover,
+              gaplessPlayback: true,
             ),
           ),
         );
@@ -58,9 +59,6 @@ class AppBrandingHeader extends StatelessWidget {
         logoWidget = _buildDefaultLogo();
       }
     } else if (displayLogoUrl.isNotEmpty) {
-      // Trigger background pre-caching so next app launch loads instantly
-      GymLogoCacheService.preloadAndCacheLogo(authVm.storage, gymId, displayLogoUrl);
-
       logoWidget = Container(
         decoration: BoxDecoration(
           boxShadow: AppTheme.cardShadow,

@@ -6,6 +6,7 @@ import 'local_storage.dart';
 
 class GymLogoCacheService {
   static final Map<String, String> _memoryCache = {};
+  static final Set<String> _pendingDownloads = {};
 
   /// Get cached base64 logo string instantly from memory or local storage
   static String? getCachedLogoBase64(LocalStorageService storage, String? gymId, String? logoUrl) {
@@ -29,9 +30,10 @@ class GymLogoCacheService {
       return generalCached;
     }
     
-    // Asynchronously pre-download in background if URL is available
-    if (logoUrl != null && logoUrl.startsWith('http')) {
-      preloadAndCacheLogo(storage, gymId, logoUrl);
+    // Safe background pre-download (only once per URL, no build loop trigger)
+    if (logoUrl != null && logoUrl.startsWith('http') && !_pendingDownloads.contains(logoUrl)) {
+      _pendingDownloads.add(logoUrl);
+      Future.microtask(() => preloadAndCacheLogo(storage, gymId, logoUrl));
     }
     return null;
   }
@@ -68,6 +70,8 @@ class GymLogoCacheService {
       }
     } catch (e) {
       // Ignore background network errors gracefully
+    } finally {
+      _pendingDownloads.remove(logoUrl);
     }
   }
 

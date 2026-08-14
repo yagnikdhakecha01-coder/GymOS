@@ -420,7 +420,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                     ),
                   ),
-                  // User avatar
+                  // Gym Logo Avatar Header
                   GestureDetector(
                     onTap: () {
                       Navigator.push(
@@ -447,7 +447,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             ),
                           );
                         } else if (gymLogo.isNotEmpty && (gymLogo.startsWith('http') || gymLogo.startsWith('https'))) {
-                          GymLogoCacheService.preloadAndCacheLogo(authVm.storage, gymId, gymLogo);
                           return ClipRRect(
                             borderRadius: BorderRadius.circular(18),
                             child: Image.network(
