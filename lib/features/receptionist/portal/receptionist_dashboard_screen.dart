@@ -19,6 +19,7 @@ import '../../../core/theme/responsive.dart';
 import 'receptionist_activity_log_screen.dart';
 import '../../dashboard/gym_switcher_bottom_sheet.dart';
 import '../../../core/widgets/sidebar_drawer.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../more/notifications_screen.dart';
 import '../../finance/pending_payments_screen.dart';
 import '../../members/member_profile_screen.dart';
@@ -284,6 +285,9 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
                   ],
                 ),
                 const SizedBox(height: 20),
+
+                // 2.5 Alerts (Action Required) Section
+                _buildAlertsSection(context, vm),
 
                 // 3. Quick Actions
                 Row(
@@ -727,24 +731,333 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
     );
   }
 
-  void _showSearchMemberDialog(BuildContext context, ReceptionistViewModel vm, String taskType) {
-    // Search member sheet to select member for Payment, Renewal, or Reminder
+  Widget _buildAlertsSection(BuildContext context, ReceptionistViewModel vm) {
+    final membersVm = Provider.of<MembersViewModel>(context);
+    final allMembers = membersVm.allMembers;
+    final now = DateTime.now();
+
+    // 1. Expiring / Expired Memberships
+    final expiringOrExpired = allMembers.where((m) {
+      if (m.status.toLowerCase() == 'expired' || m.status.toLowerCase() == 'inactive' || m.status.toLowerCase() == 'pending activation') return true;
+      final exp = m.extraFields['expiryDate'] as String?;
+      if (exp != null && exp.isNotEmpty) {
+        try {
+          final expDate = DateTime.parse(exp);
+          final diff = expDate.difference(now).inDays;
+          return diff <= 15;
+        } catch (_) {}
+      }
+      return false;
+    }).toList();
+
+    // 2. Pending Dues Members
+    final pendingDues = allMembers.where((m) => m.pendingAmount > 0).toList();
+    final double totalPendingAmt = pendingDues.fold(0.0, (sum, m) => sum + m.pendingAmount);
+
+    final canRenew = vm.hasPermission('renew_membership') || vm.hasPermission('view_members');
+    final canTakePayment = vm.hasPermission('take_payment');
+
+    if ((expiringOrExpired.isEmpty && pendingDues.isEmpty) || (!canRenew && !canTakePayment)) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.notifications_active_outlined, color: AppTheme.danger, size: 18),
+            const SizedBox(width: 6),
+            Text(
+              "Alerts (Action Required)",
+              style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.textPrimary),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        if (canRenew && expiringOrExpired.isNotEmpty) ...[
+          _buildAlertCardItem(
+            icon: Icons.timer_outlined,
+            iconColor: Colors.deepOrange,
+            bgColor: const Color(0xFFFFF2ED),
+            title: "${expiringOrExpired.length} Memberships Expiring / Expired",
+            subtitle: "Follow-up & renew membership to keep workouts active",
+            onTap: () {
+              _showSearchMemberDialog(context, vm, 'Renew Membership');
+            },
+          ),
+          const SizedBox(height: 8),
+        ],
+        if (canTakePayment && pendingDues.isNotEmpty) ...[
+          _buildAlertCardItem(
+            icon: Icons.account_balance_wallet_outlined,
+            iconColor: Colors.redAccent,
+            bgColor: const Color(0xFFFFECEF),
+            title: "${pendingDues.length} Members with Pending Dues (₹${NumberFormat('#,##,###').format(totalPendingAmt)})",
+            subtitle: "Collect pending fees & record payment entries",
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const PendingPaymentsScreen()),
+              );
+            },
+          ),
+          const SizedBox(height: 8),
+        ],
+        const SizedBox(height: 8),
+      ],
+    );
+  }
+
+  Widget _buildAlertCardItem({
+    required IconData icon,
+    required Color iconColor,
+    required Color bgColor,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: iconColor.withOpacity(0.2)),
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+        leading: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+          ),
+          child: Icon(icon, color: iconColor, size: 20),
+        ),
+        title: Text(
+          title,
+          style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+        ),
+        subtitle: Text(
+          subtitle,
+          style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary),
+        ),
+        trailing: Icon(Icons.arrow_forward_ios_rounded, color: iconColor, size: 14),
+        onTap: onTap,
+      ),
+    );
+  }
+
+  void _showSendReminderSheet(BuildContext context, Member member, ReceptionistViewModel vm) {
+    final authVm = Provider.of<AuthViewModel>(context, listen: false);
+    final gymName = authVm.gymInfo?['name'] ?? 'Gym';
+
+    String expDateStr = 'Soon';
+    final exp = member.extraFields['expiryDate'] as String?;
+    if (exp != null && exp.isNotEmpty) {
+      try {
+        expDateStr = DateFormat('dd MMM yyyy').format(DateTime.parse(exp));
+      } catch (_) {
+        expDateStr = exp;
+      }
+    }
+
+    String defaultMsg = 'Dear ${member.name},\n\nThis is a friendly reminder that your gym membership at $gymName is expiring on $expDateStr.';
+    if (member.pendingAmount > 0) {
+      defaultMsg += '\nPending Balance: ₹${NumberFormat('#,##,###').format(member.pendingAmount.abs())}.';
+    }
+    defaultMsg += '\nPlease renew your membership to continue your workouts uninterrupted!\n\nThank you,\n$gymName Management';
+
+    final msgController = TextEditingController(text: defaultMsg);
+
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) {
+        return Padding(
+          padding: EdgeInsets.only(
+            left: 20,
+            right: 20,
+            top: 20,
+            bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 22,
+                    backgroundImage: NetworkImage(
+                      member.avatar.isNotEmpty
+                          ? member.avatar
+                          : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Send Renewal Reminder',
+                          style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                        ),
+                        Text(
+                          'To: ${member.name} (${member.phone})',
+                          style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Reminder Message Preview:',
+                style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.textSecondary),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: msgController,
+                maxLines: 5,
+                style: GoogleFonts.inter(fontSize: 13, color: AppTheme.textPrimary),
+                decoration: InputDecoration(
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.primary, width: 1.5)),
+                  fillColor: AppTheme.background,
+                  filled: true,
+                ),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF25D366),
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  elevation: 0,
+                ),
+                icon: const Icon(Icons.chat_bubble_outline_rounded, color: Colors.white, size: 20),
+                label: Text(
+                  'Send via WhatsApp',
+                  style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
+                ),
+                onPressed: () async {
+                  Navigator.pop(context);
+                  vm.logActivity('Reminder Sent: ${member.name}', 'members', targetMember: member.name);
+
+                  String rawPhone = member.phone.replaceAll(RegExp(r'[^\d]'), '');
+                  if (rawPhone.length == 10) {
+                    rawPhone = '91$rawPhone';
+                  }
+
+                  final message = msgController.text.trim();
+                  final url = Uri.parse("https://wa.me/$rawPhone?text=${Uri.encodeComponent(message)}");
+
+                  try {
+                    if (await canLaunchUrl(url)) {
+                      await launchUrl(url, mode: LaunchMode.externalApplication);
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Could not launch WhatsApp. Please check if WhatsApp is installed.')),
+                      );
+                    }
+                  } catch (e) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Error launching WhatsApp: $e')),
+                    );
+                  }
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showSearchMemberDialog(BuildContext context, ReceptionistViewModel vm, String taskType) {
+    final membersVm = Provider.of<MembersViewModel>(context, listen: false);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (context) {
         String query = '';
         return StatefulBuilder(
           builder: (context, setStateSheet) {
+            final now = DateTime.now();
+
+            // Filter members from MembersViewModel
+            List<Member> processedMembers = membersVm.allMembers.where((m) {
+              final matchesQuery = m.name.toLowerCase().contains(query.toLowerCase()) || m.phone.contains(query);
+              if (!matchesQuery) return false;
+
+              if (taskType == 'Renew Membership') {
+                final status = m.status.toLowerCase();
+                bool isExpiredOrExpiring = status == 'expired' || status == 'inactive' || status == 'pending activation';
+                final exp = m.extraFields['expiryDate'] as String?;
+                if (!isExpiredOrExpiring && exp != null && exp.isNotEmpty) {
+                  try {
+                    final expDate = DateTime.parse(exp);
+                    final diff = expDate.difference(now).inDays;
+                    if (diff <= 30) {
+                      isExpiredOrExpiring = true;
+                    }
+                  } catch (_) {}
+                }
+                return isExpiredOrExpiring;
+              } else if (taskType == 'Send Reminder') {
+                final status = m.status.toLowerCase();
+                final bool isExpiredOrPending = status == 'expired' || status == 'inactive' || m.pendingAmount > 0;
+                final exp = m.extraFields['expiryDate'] as String?;
+                bool expiringSoon = false;
+                if (exp != null && exp.isNotEmpty) {
+                  try {
+                    final expDate = DateTime.parse(exp);
+                    final diff = expDate.difference(now).inDays;
+                    if (diff <= 15) expiringSoon = true;
+                  } catch (_) {}
+                }
+                return isExpiredOrPending || expiringSoon;
+              }
+
+              return true;
+            }).toList();
+
+            if (taskType == 'Renew Membership' || taskType == 'Send Reminder') {
+              // Sort: Most recently expired / soonest expiring members AT THE TOP
+              processedMembers.sort((a, b) {
+                DateTime dateA = DateTime(1970);
+                DateTime dateB = DateTime(1970);
+
+                final expA = a.extraFields['expiryDate'] as String?;
+                final expB = b.extraFields['expiryDate'] as String?;
+                if (expA != null && expA.isNotEmpty) {
+                  try { dateA = DateTime.parse(expA); } catch (_) {}
+                }
+                if (expB != null && expB.isNotEmpty) {
+                  try { dateB = DateTime.parse(expB); } catch (_) {}
+                }
+
+                // Descending by date so recent expired / soonest expiring members are on top
+                return dateB.compareTo(dateA);
+              });
+            }
+
             return Container(
               padding: const EdgeInsets.all(16),
-              height: 400,
+              height: 480,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
-                    'Select Member to $taskType',
-                    style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                    taskType == 'Renew Membership'
+                        ? 'Select Expired / Expiring Member to Renew'
+                        : 'Select Member to $taskType',
+                    style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
                   ),
                   const SizedBox(height: 12),
                   TextField(
@@ -755,55 +1068,86 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
                     },
                     decoration: InputDecoration(
                       hintText: 'Search by name or phone...',
-                      prefixIcon: const Icon(Icons.search),
+                      prefixIcon: const Icon(Icons.search, size: 20),
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     ),
                   ),
                   const SizedBox(height: 12),
                   Expanded(
-                    child: FutureBuilder(
-                      future: SupabaseService.client
-                          .from('members')
-                          .select()
-                          .eq('gym_id', vm.staffRecord!.gymId)
-                          .or('name.ilike.%$query%,phone.ilike.%$query%')
-                          .limit(20),
-                      builder: (context, AsyncSnapshot<List> snapshot) {
-                        if (snapshot.connectionState == ConnectionState.waiting) {
-                          return const Center(child: CircularProgressIndicator());
-                        }
-                        final list = snapshot.data ?? [];
-                        if (list.isEmpty) {
-                          return const Center(child: Text('No members found.'));
-                        }
-                        return ListView.builder(
-                          itemCount: list.length,
-                          itemBuilder: (context, index) {
-                            final member = list[index];
-                            return ListTile(
-                              leading: CircleAvatar(
-                                backgroundImage: NetworkImage(member['avatar'] ?? 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200'),
-                              ),
-                              title: Text(member['name']),
-                              subtitle: Text(member['phone']),
-                              onTap: () {
-                                Navigator.pop(context);
-                                final membersVm = Provider.of<MembersViewModel>(context, listen: false);
-                                final matchingMember = membersVm.allMembers.firstWhere(
-                                  (m) => m.id == member['id'] || m.phone == member['phone'],
-                                  orElse: () => Member.fromJson(Map<String, dynamic>.from(member)),
-                                );
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(builder: (_) => MemberProfileScreen(member: matchingMember)),
-                                );
-                              },
-                            );
-                          },
-                        );
-                      },
-                    ),
-                  )
+                    child: processedMembers.isEmpty
+                        ? Center(
+                            child: Text(
+                              taskType == 'Renew Membership'
+                                  ? 'No expired or expiring members found.'
+                                  : 'No members found.',
+                              style: GoogleFonts.inter(fontSize: 13, color: AppTheme.textSecondary),
+                            ),
+                          )
+                        : ListView.builder(
+                            itemCount: processedMembers.length,
+                            itemBuilder: (context, index) {
+                              final member = processedMembers[index];
+                              
+                              String expSub = 'No expiry date';
+                              final exp = member.extraFields['expiryDate'] as String?;
+                              if (exp != null && exp.isNotEmpty) {
+                                try {
+                                  expSub = 'Expires: ${DateFormat('dd MMM yyyy').format(DateTime.parse(exp))}';
+                                } catch (_) {
+                                  expSub = 'Expires: $exp';
+                                }
+                              }
+
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.background,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: ListTile(
+                                  leading: CircleAvatar(
+                                    backgroundImage: NetworkImage(
+                                      member.avatar.isNotEmpty
+                                          ? member.avatar
+                                          : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
+                                    ),
+                                  ),
+                                  title: Text(
+                                    member.name,
+                                    style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                                  ),
+                                  subtitle: Text(
+                                    '${member.phone} • $expSub',
+                                    style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary),
+                                  ),
+                                  trailing: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: (member.status == 'Active' ? Colors.green : Colors.red).withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      member.status,
+                                      style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.bold, color: member.status == 'Active' ? Colors.green : Colors.red),
+                                    ),
+                                  ),
+                                  onTap: () {
+                                    Navigator.pop(context);
+                                    if (taskType == 'Send Reminder') {
+                                      _showSendReminderSheet(context, member, vm);
+                                    } else {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(builder: (_) => MemberProfileScreen(member: member)),
+                                      );
+                                    }
+                                  },
+                                ),
+                              );
+                            },
+                          ),
+                  ),
                 ],
               ),
             );
