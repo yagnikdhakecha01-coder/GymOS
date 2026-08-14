@@ -769,6 +769,24 @@ class GymRepository extends ChangeNotifier {
 
     final List<Map<String, dynamic>> toProcess = List.from(_crudQueue);
 
+    // Sort queue by table dependency weight so parent records (members, staff, gyms) are always synced first
+    int getTablePriority(String table) {
+      if (table == 'gyms') return 1;
+      if (table == 'members') return 2;
+      if (table == 'staff') return 2;
+      if (table == 'membership_plans') return 2;
+      if (table == 'member_memberships') return 3;
+      if (table == 'pt_assignments') return 3;
+      if (table == 'finance_transactions') return 4;
+      return 5;
+    }
+
+    toProcess.sort((a, b) {
+      final pA = getTablePriority(a['table']?.toString() ?? '');
+      final pB = getTablePriority(b['table']?.toString() ?? '');
+      return pA.compareTo(pB);
+    });
+
     for (var item in toProcess) {
       if ((item['retry_count'] ?? 0) > 5) continue;
 

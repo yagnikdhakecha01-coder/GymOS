@@ -23,6 +23,7 @@ import 'expiring_memberships_screen.dart';
 import '../attendance/attendance_screen.dart';
 import '../attendance/owner_scanner_screen.dart';
 import '../members/add_member_wizard_screen.dart';
+import '../members/trial_members_screen.dart';
 import '../../core/widgets/add_member_selection_sheet.dart';
 import '../staff/staff_screen.dart';
 import '../finance/pending_payments_screen.dart';
@@ -634,134 +635,153 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ],
               ),
               const SizedBox(height: 8),
-              if (_dbExpiringToday == 0 && _dbExpiring15Days == 0 && _dbExpired1Month == 0 && _dbPendingLeaves == 0 && _dbPendingHolidays == 0 && _dbPendingAdvances == 0)
-                Container(
-                  padding: const EdgeInsets.symmetric(vertical: 24),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(AppTheme.radiusCard),
-                    border: Border.all(color: AppTheme.border),
-                  ),
-                  child: Center(
-                    child: Text(
-                      'No active alerts',
-                      style: GoogleFonts.inter(color: AppTheme.textSecondary, fontSize: 13),
-                    ),
-                  ),
-                )
-              else ...[
-                Builder(
-                  builder: (context) {
-                    final endingTodayAvatars = _getAvatars(repo.dashboardAlertsData['memberships_ending_today']?['avatars']);
-                    final expiring15Avatars = [
-                      ..._getAvatars(repo.dashboardAlertsData['memberships_expiring_1_day']?['avatars']),
-                      ..._getAvatars(repo.dashboardAlertsData['memberships_expiring_3_days']?['avatars']),
-                      ..._getAvatars(repo.dashboardAlertsData['memberships_expiring_7_days']?['avatars']),
-                      ..._getAvatars(repo.dashboardAlertsData['memberships_expiring_15_days']?['avatars']),
-                    ];
-                    final expired1MonthAvatars = expired1MonthMembers.map((m) => m.avatar).where((a) => a.isNotEmpty && a.startsWith('http')).take(3).toList();
-                    final leaveAvatars = _getAvatars(repo.dashboardAlertsData['staff_leave_requests']?['avatars']);
-                    final holidayAvatars = _getAvatars(repo.dashboardAlertsData['holiday_requests']?['avatars']);
-                    final advanceAvatars = _getAvatars(repo.dashboardAlertsData['staff_advance_requests']?['avatars']);
+              Builder(
+                builder: (context) {
+                  final expiringTrials = repo.getTrialMembers().where((t) => t.isExpiringTodayOrExpired).toList();
+                  final expiringTrialCount = expiringTrials.length;
+                  final trialAvatars = expiringTrials.map((t) => t.avatar).where((a) => a.isNotEmpty && a.startsWith('http')).take(3).toList();
 
-                    return Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (_dbExpired1Month > 0)
-                          _buildAlertItem(
-                            Icons.dangerous_outlined,
-                            Colors.red,
-                            const Color(0xFFFFECEF),
-                            '$_dbExpired1Month Memberships',
-                            'expired. Renewal follow-up recommended',
-                            avatars: expired1MonthAvatars,
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(builder: (_) => const ExpiringMembershipsScreen(initialTabIndex: 3)),
-                              );
-                            },
-                          ),
-                        if (_dbExpiringToday > 0)
-                          _buildAlertItem(
-                            Icons.hourglass_empty,
-                            Colors.red,
-                            const Color(0xFFFFECEF),
-                            '$_dbExpiringToday Memberships',
-                            'ending today. Take action immediately',
-                            avatars: endingTodayAvatars,
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(builder: (_) => const ExpiringMembershipsScreen(initialTabIndex: 2)),
-                              );
-                            },
-                          ),
-                        if (_dbExpiring15Days > 0)
-                          _buildAlertItem(
-                            Icons.calendar_today_rounded,
-                            Colors.orange,
-                            const Color(0xFFFFF6ED),
-                            '$_dbExpiring15Days Memberships',
-                            'expiring in 15 days. Follow-up recommended',
-                            avatars: expiring15Avatars,
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(builder: (_) => const ExpiringMembershipsScreen(initialTabIndex: 0)),
-                              );
-                            },
-                          ),
-                        if (_dbPendingLeaves > 0)
-                          _buildAlertItem(
-                            Icons.description_outlined,
-                            Colors.blue,
-                            const Color(0xFFEFF6FF),
-                            '$_dbPendingLeaves Staff Leave Requests',
-                            'awaiting approval',
-                            avatars: leaveAvatars,
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(builder: (_) => const AlertsScreen()),
-                              );
-                            },
-                          ),
-                        if (_dbPendingHolidays > 0)
-                          _buildAlertItem(
-                            Icons.beach_access_outlined,
-                            Colors.purple,
-                            const Color(0xFFFAF5FF),
-                            '$_dbPendingHolidays Holiday Requests',
-                            'from staff',
-                            avatars: holidayAvatars,
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(builder: (_) => const AlertsScreen()),
-                              );
-                            },
-                          ),
-                        if (_dbPendingAdvances > 0)
-                          _buildAlertItem(
-                            Icons.account_balance_wallet_outlined,
-                            Colors.deepPurple,
-                            const Color(0xFFF5F3FF),
-                            '$_dbPendingAdvances Staff Advance Requests',
-                            'awaiting approval',
-                            avatars: advanceAvatars,
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(builder: (_) => const AlertsScreen()),
-                              );
-                            },
-                          ),
-                      ],
+                  if (_dbExpiringToday == 0 && _dbExpiring15Days == 0 && _dbExpired1Month == 0 && _dbPendingLeaves == 0 && _dbPendingHolidays == 0 && _dbPendingAdvances == 0 && expiringTrialCount == 0) {
+                    return Container(
+                      padding: const EdgeInsets.symmetric(vertical: 24),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(AppTheme.radiusCard),
+                        border: Border.all(color: AppTheme.border),
+                      ),
+                      child: Center(
+                        child: Text(
+                          'No active alerts',
+                          style: GoogleFonts.inter(color: AppTheme.textSecondary, fontSize: 13),
+                        ),
+                      ),
                     );
                   }
-                ),
-              ],
+
+                  final endingTodayAvatars = _getAvatars(repo.dashboardAlertsData['memberships_ending_today']?['avatars']);
+                  final expiring15Avatars = [
+                    ..._getAvatars(repo.dashboardAlertsData['memberships_expiring_1_day']?['avatars']),
+                    ..._getAvatars(repo.dashboardAlertsData['memberships_expiring_3_days']?['avatars']),
+                    ..._getAvatars(repo.dashboardAlertsData['memberships_expiring_7_days']?['avatars']),
+                    ..._getAvatars(repo.dashboardAlertsData['memberships_expiring_15_days']?['avatars']),
+                  ];
+                  final expired1MonthAvatars = expired1MonthMembers.map((m) => m.avatar).where((a) => a.isNotEmpty && a.startsWith('http')).take(3).toList();
+                  final leaveAvatars = _getAvatars(repo.dashboardAlertsData['staff_leave_requests']?['avatars']);
+                  final holidayAvatars = _getAvatars(repo.dashboardAlertsData['holiday_requests']?['avatars']);
+                  final advanceAvatars = _getAvatars(repo.dashboardAlertsData['staff_advance_requests']?['avatars']);
+
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (expiringTrialCount > 0)
+                        _buildAlertItem(
+                          Icons.timer_outlined,
+                          Colors.deepOrange,
+                          const Color(0xFFFFF2ED),
+                          '$expiringTrialCount Trial Memberships',
+                          'expiring today or expired. Convert to full member',
+                          avatars: trialAvatars,
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const TrialMembersScreen(initialFilter: 'Expiring / Expired')),
+                            );
+                          },
+                        ),
+                      if (_dbExpired1Month > 0)
+                        _buildAlertItem(
+                          Icons.dangerous_outlined,
+                          Colors.red,
+                          const Color(0xFFFFECEF),
+                          '$_dbExpired1Month Memberships',
+                          'expired. Renewal follow-up recommended',
+                          avatars: expired1MonthAvatars,
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const ExpiringMembershipsScreen(initialTabIndex: 3)),
+                            );
+                          },
+                        ),
+                      if (_dbExpiringToday > 0)
+                        _buildAlertItem(
+                          Icons.hourglass_empty,
+                          Colors.red,
+                          const Color(0xFFFFECEF),
+                          '$_dbExpiringToday Memberships',
+                          'ending today. Take action immediately',
+                          avatars: endingTodayAvatars,
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const ExpiringMembershipsScreen(initialTabIndex: 2)),
+                            );
+                          },
+                        ),
+                      if (_dbExpiring15Days > 0)
+                        _buildAlertItem(
+                          Icons.calendar_today_rounded,
+                          Colors.orange,
+                          const Color(0xFFFFF6ED),
+                          '$_dbExpiring15Days Memberships',
+                          'expiring in 15 days. Follow-up recommended',
+                          avatars: expiring15Avatars,
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const ExpiringMembershipsScreen(initialTabIndex: 0)),
+                            );
+                          },
+                        ),
+                      if (_dbPendingLeaves > 0)
+                        _buildAlertItem(
+                          Icons.description_outlined,
+                          Colors.blue,
+                          const Color(0xFFEFF6FF),
+                          '$_dbPendingLeaves Staff Leave Requests',
+                          'awaiting approval',
+                          avatars: leaveAvatars,
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const AlertsScreen()),
+                            );
+                          },
+                        ),
+                      if (_dbPendingHolidays > 0)
+                        _buildAlertItem(
+                          Icons.beach_access_outlined,
+                          Colors.purple,
+                          const Color(0xFFFAF5FF),
+                          '$_dbPendingHolidays Holiday Requests',
+                          'from staff',
+                          avatars: holidayAvatars,
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const AlertsScreen()),
+                            );
+                          },
+                        ),
+                      if (_dbPendingAdvances > 0)
+                        _buildAlertItem(
+                          Icons.account_balance_wallet_outlined,
+                          Colors.deepPurple,
+                          const Color(0xFFF5F3FF),
+                          '$_dbPendingAdvances Staff Advance Requests',
+                          'awaiting approval',
+                          avatars: advanceAvatars,
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const AlertsScreen()),
+                            );
+                          },
+                        ),
+                    ],
+                  );
+                }
+              ),
               const SizedBox(height: 20),
 
               // 5. Quick Actions Panel

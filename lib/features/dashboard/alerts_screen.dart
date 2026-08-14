@@ -8,6 +8,7 @@ import '../authentication/auth_viewmodel.dart';
 import '../../core/services/supabase_service.dart';
 import '../../core/repository/gym_repository.dart';
 import 'expiring_memberships_screen.dart';
+import '../members/trial_members_screen.dart';
 import '../members/members_viewmodel.dart';
 import '../../core/models/member.dart';
 import '../staff/portal/staff_request_approval_screen.dart';
@@ -407,9 +408,36 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          if (endingToday > 0 || expiring1 > 0 || expiring3 > 0 || expiring7 > 0 || expiring15 > 0 || expired1Month > 0) ...[
-            _buildSectionHeader('Membership Alerts'),
-            const SizedBox(height: 8),
+          Builder(
+            builder: (context) {
+              final repo = Provider.of<GymRepository>(context, listen: false);
+              final expiringTrials = repo.getTrialMembers().where((t) => t.isExpiringTodayOrExpired).toList();
+              final expiringTrialCount = expiringTrials.length;
+              final trialAvatars = expiringTrials.map((t) => t.avatar).where((a) => a.isNotEmpty && a.startsWith('http')).take(3).toList();
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (expiringTrialCount > 0 || endingToday > 0 || expiring1 > 0 || expiring3 > 0 || expiring7 > 0 || expiring15 > 0 || expired1Month > 0) ...[
+                    _buildSectionHeader('Membership Alerts'),
+                    const SizedBox(height: 8),
+                    if (expiringTrialCount > 0)
+                      _buildAlertCard(
+                        Icons.timer_outlined,
+                        Colors.deepOrange,
+                        const Color(0xFFFFF2ED),
+                        '$expiringTrialCount Trial Memberships',
+                        'expiring today or expired',
+                        'Convert to full member',
+                        avatars: trialAvatars,
+                        badgeText: _getBadgeText(expiringTrialCount, trialAvatars),
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const TrialMembersScreen(initialFilter: 'Expiring / Expired')),
+                          );
+                        },
+                      ),
             if (endingToday > 0)
               _buildAlertCard(
                 Icons.hourglass_empty,
@@ -571,8 +599,12 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
             const SizedBox(height: 16),
           ],
         ],
-      ),
-    );
+      );
+    },
+  ),
+],
+),
+);
   }
 
   Widget _buildMembershipAlertsTab({

@@ -40,16 +40,28 @@ class TrialMember {
   double get finalAmount => (fee - discount).clamp(0.0, double.infinity);
   double get remainingAmount => (finalAmount - receivedAmount).clamp(0.0, double.infinity);
 
-  String get calculatedStatus {
-    if (status == 'Converted') return 'Converted';
-    
+  int get daysUntilExpiry {
     try {
       final today = DateTime.now();
       final todayDate = DateTime(today.year, today.month, today.day);
       final end = DateTime.parse(endDate);
       final endDateOnly = DateTime(end.year, end.month, end.day);
-      
-      if (todayDate.isAfter(endDateOnly)) {
+      return endDateOnly.difference(todayDate).inDays;
+    } catch (_) {
+      return 999;
+    }
+  }
+
+  bool get isExpiringTodayOrExpired {
+    if (status == 'Converted') return false;
+    return daysUntilExpiry <= 0;
+  }
+
+  String get calculatedStatus {
+    if (status == 'Converted') return 'Converted';
+    
+    try {
+      if (isExpiringTodayOrExpired) {
         return 'Expired';
       }
     } catch (_) {

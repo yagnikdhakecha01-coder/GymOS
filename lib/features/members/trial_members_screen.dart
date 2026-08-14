@@ -13,7 +13,8 @@ import 'add_member_wizard_screen.dart';
 import '../authentication/auth_viewmodel.dart';
 
 class TrialMembersScreen extends StatefulWidget {
-  const TrialMembersScreen({super.key});
+  final String? initialFilter;
+  const TrialMembersScreen({super.key, this.initialFilter});
 
   @override
   State<TrialMembersScreen> createState() => _TrialMembersScreenState();
@@ -21,6 +22,18 @@ class TrialMembersScreen extends StatefulWidget {
 
 class _TrialMembersScreenState extends State<TrialMembersScreen> {
   final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialFilter != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          Provider.of<TrialMembersViewModel>(context, listen: false).setFilter(widget.initialFilter!);
+        }
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -177,6 +190,7 @@ class _TrialMembersScreenState extends State<TrialMembersScreen> {
                 child: Row(
                   children: [
                     _buildFilterChip('All', vm),
+                    _buildFilterChip('Expiring / Expired', vm),
                     _buildFilterChip('Active', vm),
                     _buildFilterChip('Expired', vm),
                     _buildFilterChip('Converted', vm),

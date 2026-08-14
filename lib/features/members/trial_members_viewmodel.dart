@@ -55,8 +55,9 @@ class TrialMembersViewModel extends ChangeNotifier {
       switch (_selectedFilter) {
         case 'Active':
           return effStatus == 'Active';
+        case 'Expiring / Expired':
         case 'Expired':
-          return effStatus == 'Expired';
+          return trial.isExpiringTodayOrExpired || effStatus == 'Expired';
         case 'Converted':
           return effStatus == 'Converted';
         case 'Free Trial':

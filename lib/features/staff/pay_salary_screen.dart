@@ -94,8 +94,10 @@ class _PaySalaryScreenState extends State<PaySalaryScreen> {
                 'status': 'Draft',
               }, onConflict: 'staff_id,salary_month')
               .select()
-              .single();
-          draft = SalaryDraft.fromJson(upsertResponse);
+              .maybeSingle();
+          if (upsertResponse != null) {
+            draft = SalaryDraft.fromJson(upsertResponse);
+          }
         } catch (_) {}
       }
       

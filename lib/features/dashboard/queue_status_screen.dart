@@ -79,9 +79,10 @@ class _QueueStatusScreenState extends State<QueueStatusScreen> {
     }
 
     // Sort queue by created_at descending
+    final fallbackTime = DateTime.fromMillisecondsSinceEpoch(0);
     combinedQueue.sort((a, b) {
-      final tA = a['created_at'] != null ? DateTime.tryParse(a['created_at'].toString()) ?? DateTime.now() : DateTime.now();
-      final tB = b['created_at'] != null ? DateTime.tryParse(b['created_at'].toString()) ?? DateTime.now() : DateTime.now();
+      final tA = a['created_at'] != null ? DateTime.tryParse(a['created_at'].toString()) ?? fallbackTime : fallbackTime;
+      final tB = b['created_at'] != null ? DateTime.tryParse(b['created_at'].toString()) ?? fallbackTime : fallbackTime;
       return tB.compareTo(tA);
     });
 
