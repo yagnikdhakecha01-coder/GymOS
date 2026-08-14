@@ -1822,6 +1822,25 @@ class GymRepository extends ChangeNotifier {
     _loadShiftSettings();
     _loadDashboardStats();
     _loadReportsAnalytics();
+    _loadRecentActivities();
+  }
+
+  String get _recentActivitiesKey => 'gymos_recent_activities_${_storage.getGymInfo()?['id'] ?? 'default'}';
+
+  void _loadRecentActivities() {
+    final raw = _storage.getString(_recentActivitiesKey);
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        final List decoded = jsonDecode(raw);
+        _recentActivities = decoded.map((e) => RecentActivity.fromJson(e)).toList();
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _saveRecentActivitiesToStorage() async {
+    try {
+      await _storage.setString(_recentActivitiesKey, jsonEncode(_recentActivities.map((e) => e.toJson()).toList()));
+    } catch (_) {}
   }
 
   void _loadReportsAnalytics() {
@@ -2892,7 +2911,46 @@ class GymRepository extends ChangeNotifier {
 
   // --- Custom Fields ---
   List<CustomField> getCustomFields() => List.unmodifiable(_customFields);
-  List<RecentActivity> getRecentActivities() => List.unmodifiable(_recentActivities);
+  List<RecentActivity> getRecentActivities() {
+    if (_recentActivities.isNotEmpty) {
+      return List.unmodifiable(_recentActivities);
+    }
+    final List<RecentActivity> fallback = [];
+    for (final tx in _transactions.take(5)) {
+      DateTime txTime;
+      try {
+        txTime = DateTime.parse(tx.transactionDate);
+      } catch (_) {
+        txTime = DateTime.now();
+      }
+      fallback.add(RecentActivity(
+        id: tx.id,
+        gymId: tx.gymId,
+        title: tx.title.isNotEmpty ? tx.title : 'Payment Received ₹${tx.amount.toInt()}',
+        description: '${tx.category} (${tx.paymentMethod})',
+        activityType: 'Payment',
+        createdAt: txTime,
+      ));
+    }
+    for (final m in _members.take(5)) {
+      DateTime mTime;
+      try {
+        mTime = DateTime.parse(m.createdAt ?? '');
+      } catch (_) {
+        mTime = DateTime.now();
+      }
+      fallback.add(RecentActivity(
+        id: m.id,
+        gymId: '',
+        title: 'New Member: ${m.name}',
+        description: 'Joined on ${m.joinDate}',
+        activityType: 'Membership',
+        createdAt: mTime,
+      ));
+    }
+    fallback.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return List.unmodifiable(fallback.take(8).toList());
+  }
 
   void _loadCustomFields() {
     final raw = _storage.getString(_customFieldsKey);
@@ -3838,6 +3896,7 @@ class GymRepository extends ChangeNotifier {
               .order('created_at', ascending: false)
               .limit(10);
           _recentActivities = response.map((e) => RecentActivity.fromJson(e)).toList();
+          await _saveRecentActivitiesToStorage();
           notifyListeners();
         } catch (e) {
           _handleNetworkError('fetchRecentActivitiesFromSupabase', e);

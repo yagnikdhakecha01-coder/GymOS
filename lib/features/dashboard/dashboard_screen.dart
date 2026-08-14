@@ -902,6 +902,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       );
                     },
                   ),
+                  _buildQuickActionBtn(
+                    Icons.assignment_ind_outlined,
+                    const Color(0xFFF97316),
+                    'Trial Members',
+                    fontSize: 8.0,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        AppRouter.slideRoute(const TrialMembersScreen()),
+                      );
+                    },
+                  ),
                 ],
               ),
               const SizedBox(height: 24),

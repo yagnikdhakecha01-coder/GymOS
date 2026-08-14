@@ -213,58 +213,7 @@ class MoreScreen extends StatelessWidget {
                   ),
                   const Divider(height: 1),
 
-                  // Trial Members
-                  _buildSettingTile(
-                    context,
-                    icon: Icons.assignment_ind_outlined,
-                    color: Colors.deepOrange,
-                    title: 'Trial Members',
-                    subtitle: 'Manage free and paid member trials',
-                    onTap: () {
-                      Navigator.push(context, AppRouter.slideRoute(const TrialMembersScreen()));
-                    },
-                  ),
-                  const Divider(height: 1),
 
-                  // Gym Holidays
-                  _buildSettingTile(
-                    context,
-                    icon: Icons.event_busy_rounded,
-                    color: Colors.purple,
-                    title: 'Gym Holidays',
-                    subtitle: 'Declare holidays, notify all members & staff',
-                    onTap: () {
-                      Navigator.push(context, AppRouter.slideRoute(const HolidaysScreen()));
-                    },
-                  ),
-                  const Divider(height: 1),
-
-                  // Staff Activity Logs
-                  _buildSettingTile(
-                    context,
-                    icon: Icons.history_edu_rounded,
-                    color: Colors.amber,
-                    title: 'Staff Activity Logs',
-                    subtitle: 'Audit actions taken by receptionist/staff',
-                    onTap: () {
-                      final gymId = authVm.activeAssociation?.gymId ?? gym['id'] ?? '';
-                      Navigator.push(context, AppRouter.slideRoute(ReceptionistActivityLogScreen(gymId: gymId)));
-                    },
-                  ),
-                  const Divider(height: 1),
-
-                  // 6. Notifications
-                  _buildSettingTile(
-                    context,
-                    icon: Icons.notifications_none_rounded,
-                    color: AppTheme.danger,
-                    title: 'Notifications',
-                    subtitle: 'View recent system messages & alerts',
-                    onTap: () {
-                      Navigator.push(context, AppRouter.slideRoute(const NotificationsScreen()));
-                    },
-                  ),
-                  const Divider(height: 1),
 
                   // 7. Backup & Restore (Future)
                   _buildSettingTile(
