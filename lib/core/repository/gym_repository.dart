@@ -809,6 +809,12 @@ class GymRepository extends ChangeNotifier {
           }
         }
 
+        // Auto-heal finance_transactions category strings to match database check constraint
+        if (table == 'finance_transactions' && payload.containsKey('category')) {
+          final rawCategory = payload['category']?.toString() ?? 'Other';
+          payload['category'] = _sanitizeCategory(rawCategory);
+        }
+
         // Auto-heal corrupt attendance updates missing check_in
         if (table == 'attendance_logs') {
           final checkIn = payload['check_in'];
@@ -2248,6 +2254,27 @@ class GymRepository extends ChangeNotifier {
     return regExp.hasMatch(str);
   }
 
+  String _sanitizeCategory(String category) {
+    switch (category) {
+      case 'Membership Fee':
+        return 'Membership';
+      case 'Supplements':
+        return 'Protein Sale';
+      case 'Locker Fee':
+        return 'Locker Rent';
+      case 'Other Income':
+        return 'Other';
+      case 'Salaries':
+        return 'Salary';
+      case 'Equipment':
+        return 'Maintenance';
+      case 'Other Expense':
+        return 'Other';
+      default:
+        return category;
+    }
+  }
+
   Future<void> deleteMember(String id) async {
     if (_isValidUUID(id)) {
       _members.removeWhere((m) => m.id == id);
@@ -2664,7 +2691,8 @@ class GymRepository extends ChangeNotifier {
     await _storage.setString(LocalStorageService.keyTransactions, jsonEncode(_transactions.map((e) => e.toJson()).toList()));
     notifyListeners();
 
-    // 2. Perform SINGLE database upsert with explicit ID
+    // 2. Perform SINGLE database upsert with explicit ID & sanitized category
+    final safeCategory = _sanitizeCategory(updatedTx.category);
     bool isDirectlyInserted = false;
     if (SupabaseService.isInitialized) {
       try {
@@ -2673,7 +2701,7 @@ class GymRepository extends ChangeNotifier {
           'gym_id': gymId,
           'amount': updatedTx.amount,
           'type': updatedTx.type,
-          'category': updatedTx.category,
+          'category': safeCategory,
           'payment_method': updatedTx.paymentMethod,
           'reference_id': updatedTx.referenceId,
           'created_by_info': updatedTx.createdByInfo.isNotEmpty ? updatedTx.createdByInfo : 'Staff',
@@ -2719,7 +2747,7 @@ class GymRepository extends ChangeNotifier {
         'gym_id': gymId,
         'amount': updatedTx.amount,
         'type': updatedTx.type,
-        'category': updatedTx.category,
+        'category': safeCategory,
         'payment_method': updatedTx.paymentMethod,
         'reference_id': updatedTx.referenceId,
         'created_by_info': updatedTx.createdByInfo.isNotEmpty ? updatedTx.createdByInfo : 'Staff',

@@ -309,10 +309,11 @@ class _ReceptionistFinanceScreenState extends State<ReceptionistFinanceScreen> w
     final vm = Provider.of<ReceptionistViewModel>(context, listen: false);
     
     final List<String> categories = type == 'Revenue' 
-        ? ['Membership', 'Protein Sale', 'Personal Training', 'Locker Rent', 'Merchandise', 'Other']
-        : ['Utilities', 'Salary', 'Rent', 'Other'];
+        ? ['Membership', 'Personal Training', 'Protein Sale', 'Locker Rent', 'Merchandise', 'Other']
+        : ['Salary', 'Rent', 'Utilities', 'Maintenance', 'Equipment', 'Other'];
         
     String selectedCategory = categories.first;
+    DateTime selectedTxDate = DateTime.now();
 
     showModalBottomSheet(
       context: context,
@@ -355,6 +356,54 @@ class _ReceptionistFinanceScreenState extends State<ReceptionistFinanceScreen> w
                       ],
                     ),
                     const SizedBox(height: 16),
+
+                    // DATE SELECTION FIELD (REVENUE DATE / EXPENSE DATE)
+                    Text(
+                      type == 'Revenue' ? 'REVENUE DATE' : 'EXPENSE DATE',
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.textSecondary,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    InkWell(
+                      borderRadius: BorderRadius.circular(10),
+                      onTap: () async {
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: selectedTxDate,
+                          firstDate: DateTime(2020),
+                          lastDate: DateTime(2035),
+                        );
+                        if (picked != null) {
+                          setModalState(() {
+                            selectedTxDate = picked;
+                          });
+                        }
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: AppTheme.background,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: AppTheme.border),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              DateFormat('dd MMMM yyyy').format(selectedTxDate),
+                              style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.textPrimary),
+                            ),
+                            const Icon(Icons.calendar_month_rounded, color: AppTheme.primary, size: 20),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
                     Text(
                       'TITLE',
                       style: GoogleFonts.inter(
@@ -469,8 +518,15 @@ class _ReceptionistFinanceScreenState extends State<ReceptionistFinanceScreen> w
                         final gymRepo = Provider.of<GymRepository>(context, listen: false);
                         final financeVm = Provider.of<FinanceViewModel>(context, listen: false);
 
-                        final nowIso = DateTime.now().toIso8601String();
-                        final todayDateStr = nowIso.substring(0, 10);
+                        final selectedDateStr = DateFormat('yyyy-MM-dd').format(selectedTxDate);
+                        final txDateIso = DateTime(
+                          selectedTxDate.year,
+                          selectedTxDate.month,
+                          selectedTxDate.day,
+                          DateTime.now().hour,
+                          DateTime.now().minute,
+                          DateTime.now().second,
+                        ).toIso8601String();
                         final gymId = vm.staffRecord?.gymId ?? '';
 
                         final tx = FinanceTransaction(
@@ -481,11 +537,11 @@ class _ReceptionistFinanceScreenState extends State<ReceptionistFinanceScreen> w
                           type: type,
                           category: selectedCategory,
                           paymentMethod: 'Cash',
-                          date: DateFormat('dd MMM yyyy').format(DateTime.now()),
-                          transactionDate: nowIso,
-                          expenseDate: todayDateStr,
-                          revenueDate: todayDateStr,
-                          entryDate: todayDateStr,
+                          date: DateFormat('dd MMM yyyy').format(selectedTxDate),
+                          transactionDate: txDateIso,
+                          expenseDate: selectedDateStr,
+                          revenueDate: selectedDateStr,
+                          entryDate: selectedDateStr,
                           notes: title,
                           createdByInfo: 'Receptionist - ${vm.staffRecord?.name ?? ''}',
                         );
@@ -502,13 +558,13 @@ class _ReceptionistFinanceScreenState extends State<ReceptionistFinanceScreen> w
                           vm.fetchDashboardStats();
                           await gymRepo.fetchTransactionsFromSupabase();
                           if (gymId.isNotEmpty) {
-                            await financeVm.fetchFinanceSummary(gymId, DateTime.now());
+                            await financeVm.fetchFinanceSummary(gymId, selectedTxDate);
                           }
 
                           SuccessDialog.show(
                             context,
                             title: '$type Saved Successfully!',
-                            message: '₹${NumberFormat('#,##,###').format(amt)} recorded for $title ($selectedCategory).',
+                            message: '₹${NumberFormat('#,##,###').format(amt)} recorded for $title ($selectedCategory) on ${DateFormat('dd MMM yyyy').format(selectedTxDate)}.',
                           );
                         }
                       },
