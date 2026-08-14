@@ -471,6 +471,13 @@ class _OwnerQrSettingsScreenState extends State<OwnerQrSettingsScreen> {
                                 ],
                               ),
                                actions: [
+                                TextButton.icon(
+                                  onPressed: () {
+                                    launchUrl(Uri.parse(link), mode: LaunchMode.externalApplication);
+                                  },
+                                  icon: const Icon(Icons.open_in_new_rounded, size: 16, color: AppTheme.primary),
+                                  label: const Text('Open Link', style: TextStyle(color: AppTheme.primary, fontWeight: FontWeight.bold)),
+                                ),
                                 TextButton(
                                   onPressed: () {
                                     Clipboard.setData(ClipboardData(text: link));
