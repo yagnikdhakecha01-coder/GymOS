@@ -46,6 +46,9 @@ dependencies:
   # Image Picker
   image_picker: ^1.1.2
 
+  # HTTP (for Google Drive API)
+  http: ^1.2.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

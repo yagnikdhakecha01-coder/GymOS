@@ -1,13 +1,16 @@
+import 'dart:convert';
+import 'dart:html' as html;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
-import 'package:url_launcher/url_launcher.dart';
-import 'dart:convert';
+import 'package:intl/intl.dart';
 import '../../core/theme/admin_theme.dart';
 import '../../core/theme/responsive.dart';
 import '../../core/widgets/confirm_dialog.dart';
 import '../../core/widgets/skeleton_loader.dart';
 import '../../core/services/supabase_service.dart';
+import '../../core/services/google_drive_service.dart';
 
 class DatabaseScreen extends StatefulWidget {
   const DatabaseScreen({super.key});
@@ -15,250 +18,449 @@ class DatabaseScreen extends StatefulWidget {
   State<DatabaseScreen> createState() => _DatabaseScreenState();
 }
 
-class _DatabaseScreenState extends State<DatabaseScreen> {
+class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProviderStateMixin {
   bool _isLoading = true;
   bool _isActionInProgress = false;
   String _actionMessage = '';
+  double _actionProgress = 0.0;
 
   // Stats
-  String _dbSizeStr = '12 KB';
-  final int _tablesCount = 15;
+  String _dbSizeStr = '—';
+  int _totalRecords = 0;
   String _lastBackupTime = 'Never';
+  int _backupCount = 0;
 
-  // Backup logs
+  // Backup History
   List<Map<String, dynamic>> _backupsList = [];
+
+  // Google Drive
+  bool _driveConnected = false;
+  String _driveEmail = '';
+  final _driveTokenController = TextEditingController();
+  final _driveFolderController = TextEditingController();
+
+  // Restore
+  final _restoreJsonController = TextEditingController();
+
+  late TabController _tabController;
 
   @override
   void initState() {
     super.initState();
-    _loadDatabaseStats();
+    _tabController = TabController(length: 3, vsync: this);
+    _loadData();
   }
 
-  String _getMonthName(int month) {
-    const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    if (month >= 1 && month <= 12) return names[month - 1];
-    return '';
+  @override
+  void dispose() {
+    _tabController.dispose();
+    _driveTokenController.dispose();
+    _driveFolderController.dispose();
+    _restoreJsonController.dispose();
+    super.dispose();
   }
 
-  String _formatRelativeTime(DateTime dateTime) {
-    final diff = DateTime.now().difference(dateTime);
-    if (diff.isNegative) return 'Just now';
-    if (diff.inMinutes < 1) return 'Just now';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
-    if (diff.inHours < 24) return '${diff.inHours}h ago';
-    return '${diff.inDays}d ago';
+  Future<void> _loadData() async {
+    setState(() => _isLoading = true);
+    await Future.wait([
+      _loadDatabaseStats(),
+      _loadBackupHistory(),
+      _loadDriveStatus(),
+    ]);
+    if (mounted) setState(() => _isLoading = false);
   }
 
-  Future<void> _loadDatabaseStats({bool silent = false}) async {
+  Future<void> _loadDatabaseStats() async {
     try {
-      if (!mounted) return;
-      if (!silent) {
-        setState(() => _isLoading = true);
-      }
-
-      if (!AdminSupabaseService.isInitialized) {
-        _setEmptyState();
-        return;
-      }
+      if (!AdminSupabaseService.isInitialized) return;
       final client = AdminSupabaseService.client;
-
-      // 1. Fetch counts to estimate size
+      
       final gyms = await client.from('gyms').select('id');
       final members = await client.from('members').select('id');
       final staff = await client.from('staff').select('id');
-      
-      int paymentsCount = 0;
+      int txCount = 0;
       try {
-        final payments = await client.from('payments').select('id');
-        paymentsCount = (payments as List).length;
+        final tx = await client.from('finance_transactions').select('id');
+        txCount = (tx as List).length;
       } catch (_) {}
 
-      final totalRecords = (gyms as List).length + (members as List).length + (staff as List).length + paymentsCount;
-      final double estimatedKb = 5.2 + (totalRecords * 1.1);
-      final sizeStr = estimatedKb > 1024 
-          ? '${(estimatedKb / 1024).toStringAsFixed(1)} MB' 
+      final total = (gyms as List).length + (members as List).length + (staff as List).length + txCount;
+      final double estimatedKb = 5.2 + (total * 1.1);
+      final sizeStr = estimatedKb > 1024
+          ? '${(estimatedKb / 1024).toStringAsFixed(1)} MB'
           : '${estimatedKb.toStringAsFixed(1)} KB';
-
-      // 2. Fetch Backups
-      List<Map<String, dynamic>> backups = [];
-      String lastBackup = 'Never';
-      bool isDbBackupTableSucceeded = false;
-      try {
-        final res = await client
-            .from('database_backups')
-            .select()
-            .order('created_at', ascending: false);
-        
-        backups = List<Map<String, dynamic>>.from(res);
-        if (backups.isNotEmpty) {
-          final cAt = DateTime.tryParse(backups.first['created_at'] ?? '');
-          if (cAt != null) {
-            lastBackup = _formatRelativeTime(cAt);
-          }
-          isDbBackupTableSucceeded = true;
-        } else {
-          isDbBackupTableSucceeded = false;
-        }
-      } catch (_) {
-        isDbBackupTableSucceeded = false;
-      }
 
       if (mounted) {
         setState(() {
           _dbSizeStr = sizeStr;
-          _isLoading = false;
-          
-          if (isDbBackupTableSucceeded) {
-            _backupsList = backups;
-            _lastBackupTime = lastBackup;
-          } else {
-            // Local fallback logic
-            if (_backupsList.isEmpty) {
-              _backupsList = [
-                {'name': 'Full Backup — Aug 3', 'size': '15.5 KB', 'created_at': DateTime.now().subtract(const Duration(hours: 2)).toIso8601String(), 'status': 'Success'},
-                {'name': 'Full Backup — Aug 2', 'size': '14.2 KB', 'created_at': DateTime.now().subtract(const Duration(days: 1)).toIso8601String(), 'status': 'Success'},
-                {'name': 'Full Backup — Aug 1', 'size': '12.8 KB', 'created_at': DateTime.now().subtract(const Duration(days: 2)).toIso8601String(), 'status': 'Success'},
-              ];
-              _lastBackupTime = '2h ago';
-            } else {
-              // Maintain latest backup timestamp from local list
-              final cAt = DateTime.tryParse(_backupsList.first['created_at'] ?? '');
-              _lastBackupTime = cAt != null ? _formatRelativeTime(cAt) : 'Never';
-            }
+          _totalRecords = total;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading stats: $e');
+    }
+  }
+
+  Future<void> _loadBackupHistory() async {
+    try {
+      if (!AdminSupabaseService.isInitialized) return;
+      final client = AdminSupabaseService.client;
+      final res = await client
+          .from('database_backups')
+          .select('id, backup_name, size_bytes, total_records, table_counts, status, drive_url, created_at')
+          .order('created_at', ascending: false)
+          .limit(50);
+
+      final list = List<Map<String, dynamic>>.from(res);
+      if (mounted) {
+        setState(() {
+          _backupsList = list;
+          _backupCount = list.length;
+          if (list.isNotEmpty) {
+            final cAt = DateTime.tryParse(list.first['created_at'] ?? '');
+            _lastBackupTime = cAt != null ? _formatRelativeTime(cAt) : 'Never';
           }
         });
       }
     } catch (e) {
-      debugPrint('Error fetching db stats: $e');
+      debugPrint('Error loading backups: $e');
+    }
+  }
+
+  Future<void> _loadDriveStatus() async {
+    await GoogleDriveService.loadCredentials();
+    if (GoogleDriveService.isConnected) {
+      final user = await GoogleDriveService.getUserInfo();
       if (mounted) {
-        _setEmptyState();
+        setState(() {
+          _driveConnected = true;
+          _driveEmail = user?['emailAddress'] ?? 'Connected';
+        });
       }
     }
   }
 
-  void _setEmptyState() {
-    setState(() {
-      _dbSizeStr = '5 KB';
-      _lastBackupTime = 'Never';
-      _backupsList = [];
-      _isLoading = false;
-    });
+  String _formatRelativeTime(DateTime dt) {
+    final diff = DateTime.now().difference(dt);
+    if (diff.inMinutes < 1) return 'Just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    if (diff.inDays < 7) return '${diff.inDays}d ago';
+    return DateFormat('dd MMM yyyy').format(dt);
   }
 
-  Future<void> _startBackup() async {
+  String _formatBytes(int bytes) {
+    if (bytes > 1048576) return '${(bytes / 1048576).toStringAsFixed(1)} MB';
+    if (bytes > 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    return '$bytes B';
+  }
+
+  // ============== ACTIONS ==============
+
+  /// 1. BACKUP NOW — calls save_daily_backup() RPC
+  Future<void> _backupNow() async {
     setState(() {
       _isActionInProgress = true;
-      _actionMessage = 'Creating Database Backup...';
+      _actionMessage = 'Creating full database backup...';
+      _actionProgress = 0.1;
     });
-
-    await Future.delayed(const Duration(milliseconds: 1500));
-
-    final newBackup = {
-      'name': 'Backup — ${DateTime.now().day} ${_getMonthName(DateTime.now().month)}',
-      'size': _dbSizeStr,
-      'created_at': DateTime.now().toIso8601String(),
-      'status': 'Success',
-    };
 
     try {
       final client = AdminSupabaseService.client;
-      await client.from('database_backups').insert(newBackup);
-    } catch (_) {
-      // Local fallback handled smoothly
-    }
 
-    if (mounted) {
-      setState(() {
-        _backupsList.removeWhere((element) => element['name'] == newBackup['name']);
-        _backupsList.insert(0, newBackup);
-        _isActionInProgress = false;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Backup created successfully!'), backgroundColor: AdminTheme.success),
-      );
+      setState(() => _actionProgress = 0.3);
+      final result = await client.rpc('save_daily_backup');
+      setState(() => _actionProgress = 0.7);
+
+      final data = result as Map<String, dynamic>? ?? {};
+      final success = data['success'] == true;
+      final sizeReadable = data['size_readable'] ?? '—';
+      final totalRecords = data['total_records'] ?? 0;
+      final backupId = data['backup_id'];
+
+      // Upload to Google Drive if connected
+      String? driveUrl;
+      if (GoogleDriveService.isConnected && backupId != null) {
+        setState(() {
+          _actionMessage = 'Uploading to Google Drive...';
+          _actionProgress = 0.8;
+        });
+        try {
+          // Fetch the backup data for Drive upload
+          final backupRow = await client
+              .from('database_backups')
+              .select('backup_data')
+              .eq('id', backupId)
+              .single();
+          final backupJson = jsonEncode(backupRow['backup_data']);
+          final fileName = 'gymos_backup_${DateFormat('yyyy-MM-dd_HHmm').format(DateTime.now())}.json';
+          driveUrl = await GoogleDriveService.uploadBackup(backupJson: backupJson, fileName: fileName);
+          if (driveUrl != null) {
+            await client.from('database_backups').update({'drive_url': driveUrl}).eq('id', backupId);
+          }
+        } catch (e) {
+          debugPrint('Drive upload warning: $e');
+        }
+      }
+
+      setState(() => _actionProgress = 1.0);
+      await Future.delayed(const Duration(milliseconds: 300));
+
+      if (mounted) {
+        setState(() => _isActionInProgress = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(success
+                ? '✅ Backup complete! $totalRecords records ($sizeReadable)${driveUrl != null ? " • Uploaded to Drive" : ""}'
+                : '⚠️ Backup finished with warnings'),
+            backgroundColor: success ? AdminTheme.success : Colors.orange,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+        _loadBackupHistory();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isActionInProgress = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Backup failed: $e'), backgroundColor: AdminTheme.danger),
+        );
+      }
     }
-    _loadDatabaseStats(silent: true);
   }
 
-  Future<void> _restoreDatabase() async {
+  /// 2. DOWNLOAD BACKUP — downloads JSON file via browser
+  Future<void> _downloadBackup(Map<String, dynamic> backup) async {
+    setState(() {
+      _isActionInProgress = true;
+      _actionMessage = 'Preparing download...';
+    });
+
+    try {
+      final client = AdminSupabaseService.client;
+      final res = await client
+          .from('database_backups')
+          .select('backup_data')
+          .eq('id', backup['id'])
+          .single();
+
+      final jsonStr = jsonEncode(res['backup_data']);
+      final bytes = utf8.encode(jsonStr);
+      final blob = html.Blob([bytes], 'application/json');
+      final url = html.Url.createObjectUrlFromBlob(blob);
+      final fileName = 'gymos_backup_${DateFormat('yyyy-MM-dd_HHmm').format(DateTime.now())}.json';
+
+      final anchor = html.AnchorElement(href: url)
+        ..setAttribute('download', fileName)
+        ..click();
+      html.Url.revokeObjectUrl(url);
+
+      if (mounted) {
+        setState(() => _isActionInProgress = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('📥 Downloaded $fileName'), backgroundColor: AdminTheme.success),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isActionInProgress = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Download failed: $e'), backgroundColor: AdminTheme.danger),
+        );
+      }
+    }
+  }
+
+  /// 3. RESTORE FROM JSON — 1-click full database import
+  Future<void> _restoreFromJson(String jsonStr) async {
     final confirm = await showAdminConfirmDialog(
       context,
-      title: 'Restore Database?',
-      message: 'This will overwrite current data with the selected backup point. This cannot be undone.',
+      title: '⚠️ Full Database Restore',
+      message: 'This will MERGE/OVERWRITE your entire database with the backup data. All existing records will be updated or new ones inserted. This action cannot be undone.\n\nAre you absolutely sure?',
+      confirmText: 'Yes, Restore Everything',
       isDangerous: true,
-      confirmText: 'Restore',
+      icon: Icons.warning_amber_rounded,
     );
-
     if (confirm != true) return;
 
     setState(() {
       _isActionInProgress = true;
-      _actionMessage = 'Restoring database state...';
+      _actionMessage = 'Restoring full database...';
+      _actionProgress = 0.2;
     });
 
-    await Future.delayed(const Duration(milliseconds: 2000));
+    try {
+      final backupData = jsonDecode(jsonStr);
+      setState(() => _actionProgress = 0.4);
 
-    setState(() {
-      _isActionInProgress = false;
-    });
+      final client = AdminSupabaseService.client;
+      final result = await client.rpc('full_database_import', params: {'p_backup': backupData});
+      setState(() => _actionProgress = 0.9);
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Database restored successfully!'), backgroundColor: AdminTheme.success),
-      );
+      final data = result as Map<String, dynamic>? ?? {};
+      final tablesRestored = data['tables_restored'] ?? 0;
+      final recordsInserted = data['records_inserted'] ?? 0;
+      final errors = List<String>.from(data['errors'] ?? []);
+
+      setState(() => _actionProgress = 1.0);
+      await Future.delayed(const Duration(milliseconds: 300));
+
+      if (mounted) {
+        setState(() => _isActionInProgress = false);
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('🎉 Database Restored!'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Tables Restored: $tablesRestored'),
+                Text('Records Inserted: $recordsInserted'),
+                if (errors.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Text('Warnings (${errors.length}):', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.orange)),
+                  ...errors.map((e) => Text('• $e', style: const TextStyle(fontSize: 12))),
+                ],
+              ],
+            ),
+            actions: [
+              ElevatedButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
+            ],
+          ),
+        );
+        _loadData();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isActionInProgress = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Restore failed: $e'), backgroundColor: AdminTheme.danger),
+        );
+      }
     }
   }
 
-  Future<void> _exportData() async {
+  /// 4. DELETE BACKUP
+  Future<void> _deleteBackup(Map<String, dynamic> backup) async {
+    final confirm = await showAdminConfirmDialog(
+      context,
+      title: 'Delete Backup?',
+      message: 'This will permanently delete "${backup['backup_name']}". This cannot be undone.',
+      confirmText: 'Delete',
+      isDangerous: true,
+    );
+    if (confirm != true) return;
+
+    try {
+      await AdminSupabaseService.client.from('database_backups').delete().eq('id', backup['id']);
+      _loadBackupHistory();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Backup deleted'), backgroundColor: AdminTheme.success),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Delete failed: $e'), backgroundColor: AdminTheme.danger),
+        );
+      }
+    }
+  }
+
+  /// 5. RESTORE FROM BACKUP HISTORY
+  Future<void> _restoreFromBackup(Map<String, dynamic> backup) async {
     setState(() {
       _isActionInProgress = true;
-      _actionMessage = 'Exporting database schema & tables...';
+      _actionMessage = 'Loading backup data...';
     });
 
     try {
       final client = AdminSupabaseService.client;
-      
-      // Fetch gyms & payments for export
-      final gyms = await client.from('gyms').select();
-      List paymentsList = [];
-      try {
-        final payments = await client.from('payments').select();
-        paymentsList = payments as List;
-      } catch (_) {}
+      final res = await client
+          .from('database_backups')
+          .select('backup_data')
+          .eq('id', backup['id'])
+          .single();
 
-      final exportData = {
-        'export_time': DateTime.now().toIso8601String(),
-        'platform': 'GymOS Enterprise',
-        'gyms': gyms,
-        'payments': paymentsList,
-      };
-
-      final jsonStr = jsonEncode(exportData);
-      final uri = Uri.dataFromString(
-        jsonStr, 
-        mimeType: 'application/json', 
-        encoding: utf8
-      );
-
-      await launchUrl(uri);
+      setState(() => _isActionInProgress = false);
+      final jsonStr = jsonEncode(res['backup_data']);
+      await _restoreFromJson(jsonStr);
     } catch (e) {
       if (mounted) {
+        setState(() => _isActionInProgress = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Export failed: ${e.toString()}'), backgroundColor: AdminTheme.danger),
+          SnackBar(content: Text('Error loading backup: $e'), backgroundColor: AdminTheme.danger),
         );
       }
     }
+  }
+
+  /// 6. CONNECT GOOGLE DRIVE
+  Future<void> _connectDrive() async {
+    final token = _driveTokenController.text.trim();
+    if (token.isEmpty) return;
 
     setState(() {
-      _isActionInProgress = false;
+      _isActionInProgress = true;
+      _actionMessage = 'Connecting to Google Drive...';
     });
+
+    await GoogleDriveService.saveCredentials(
+      accessToken: token,
+      folderId: _driveFolderController.text.trim().isNotEmpty ? _driveFolderController.text.trim() : null,
+    );
+
+    final valid = await GoogleDriveService.testConnection();
+    if (valid) {
+      final user = await GoogleDriveService.getUserInfo();
+      if (mounted) {
+        setState(() {
+          _driveConnected = true;
+          _driveEmail = user?['emailAddress'] ?? 'Connected';
+          _isActionInProgress = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('☁️ Connected as ${_driveEmail}'), backgroundColor: AdminTheme.success),
+        );
+      }
+    } else {
+      await GoogleDriveService.disconnect();
+      if (mounted) {
+        setState(() {
+          _driveConnected = false;
+          _isActionInProgress = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Invalid token. Please check and try again.'), backgroundColor: AdminTheme.danger),
+        );
+      }
+    }
   }
+
+  Future<void> _disconnectDrive() async {
+    await GoogleDriveService.disconnect();
+    setState(() {
+      _driveConnected = false;
+      _driveEmail = '';
+    });
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Google Drive disconnected'), backgroundColor: AdminTheme.success),
+      );
+    }
+  }
+
+  // ============== BUILD ==============
 
   @override
   Widget build(BuildContext context) {
     final padding = AdminResponsive.contentPadding(context);
-    if (_isLoading) return Padding(padding: EdgeInsets.all(padding), child: const SkeletonTable(rows: 4));
-    final isDesktop = AdminResponsive.isDesktop(context);
+
+    if (_isLoading) {
+      return Padding(padding: EdgeInsets.all(padding), child: const SkeletonTable(rows: 6));
+    }
 
     return Stack(
       children: [
@@ -271,148 +473,553 @@ class _DatabaseScreenState extends State<DatabaseScreen> {
                 duration: const Duration(milliseconds: 300),
                 childAnimationBuilder: (w) => SlideAnimation(verticalOffset: 20, child: FadeInAnimation(child: w)),
                 children: [
-                  Text('Database Management', style: GoogleFonts.inter(fontSize: 22, fontWeight: FontWeight.bold, color: AdminTheme.textColor(context))),
-                  const SizedBox(height: 4),
-                  Text('Backup, restore, and export your Supabase database', style: GoogleFonts.inter(fontSize: 13, color: AdminTheme.secondaryTextColor(context))),
-                  const SizedBox(height: 28),
-                  // Status card
-                  _statusCard(context),
+                  // Header
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Database & Backup Center', style: GoogleFonts.inter(fontSize: 22, fontWeight: FontWeight.bold, color: AdminTheme.textColor(context))),
+                            const SizedBox(height: 4),
+                            Text('Enterprise daily backup, 1-click restore & Google Drive sync',
+                                style: GoogleFonts.inter(fontSize: 13, color: AdminTheme.secondaryTextColor(context))),
+                          ],
+                        ),
+                      ),
+                      ElevatedButton.icon(
+                        onPressed: _backupNow,
+                        icon: const Icon(Icons.backup_rounded, size: 18),
+                        label: Text('Backup Now', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AdminTheme.success,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                        ),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 24),
-                  // Actions grid
-                  if (isDesktop) Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Expanded(child: _actionCard(context, 'Backup', Icons.backup_rounded, AdminTheme.success, 'Create a full backup of all database tables', 'Start Backup', _startBackup)),
-                    const SizedBox(width: 16),
-                    Expanded(child: _actionCard(context, 'Restore', Icons.restore_rounded, AdminTheme.info, 'Restore database from a previous backup point', 'Restore', _restoreDatabase)),
-                    const SizedBox(width: 16),
-                    Expanded(child: _actionCard(context, 'Export', Icons.download_rounded, AdminTheme.primary, 'Export all data as CSV or JSON files', 'Export Data', _exportData)),
-                  ]) else ...[
-                    _actionCard(context, 'Backup', Icons.backup_rounded, AdminTheme.success, 'Create a full backup of all database tables', 'Start Backup', _startBackup),
-                    const SizedBox(height: 16),
-                    _actionCard(context, 'Restore', Icons.restore_rounded, AdminTheme.info, 'Restore database from a previous backup point', 'Restore', _restoreDatabase),
-                    const SizedBox(height: 16),
-                    _actionCard(context, 'Export', Icons.download_rounded, AdminTheme.primary, 'Export all data as CSV or JSON files', 'Export Data', _exportData),
-                  ],
+
+                  // Stats cards
+                  _buildStatsRow(context),
                   const SizedBox(height: 24),
-                  _backupHistory(context),
+
+                  // Tabbed content
+                  _buildTabs(context),
                 ],
               ),
             ),
           ),
         ),
-        if (_isActionInProgress)
-          Container(
-            color: Colors.black.withOpacity(0.5),
-            child: Center(
-              child: Card(
-                color: AdminTheme.cardColor(context),
-                child: Padding(
-                  padding: const EdgeInsets.all(32.0),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const CircularProgressIndicator(color: AdminTheme.primary),
-                      const SizedBox(height: 16),
-                      Text(
-                        _actionMessage,
-                        style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AdminTheme.textColor(context)),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
+
+        // Action overlay
+        if (_isActionInProgress) _buildActionOverlay(context),
       ],
     );
   }
 
-  Widget _statusCard(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(color: AdminTheme.cardColor(context), borderRadius: BorderRadius.circular(AdminTheme.radiusCard), border: Border.all(color: AdminTheme.borderColor(context))),
-      child: Row(children: [
-        _statusItem(context, 'Sync Status', 'Connected', AdminTheme.success, Icons.cloud_done_rounded),
-        _divider(context),
-        _statusItem(context, 'Last Backup', _lastBackupTime, AdminTheme.info, Icons.schedule_rounded),
-        _divider(context),
-        _statusItem(context, 'Database Size', _dbSizeStr, AdminTheme.primary, Icons.storage_rounded),
-        _divider(context),
-        _statusItem(context, 'Tables', '$_tablesCount', AdminTheme.teal, Icons.table_chart_rounded),
-      ]),
+  Widget _buildStatsRow(BuildContext context) {
+    final stats = [
+      {'icon': Icons.storage_rounded, 'color': AdminTheme.primary, 'label': 'Database Size', 'value': _dbSizeStr},
+      {'icon': Icons.dataset_rounded, 'color': AdminTheme.teal, 'label': 'Total Records', 'value': NumberFormat('#,##0').format(_totalRecords)},
+      {'icon': Icons.schedule_rounded, 'color': AdminTheme.info, 'label': 'Last Backup', 'value': _lastBackupTime},
+      {'icon': Icons.backup_rounded, 'color': AdminTheme.success, 'label': 'Backups Saved', 'value': '$_backupCount'},
+      {'icon': Icons.cloud_done_rounded, 'color': _driveConnected ? AdminTheme.success : Colors.grey, 'label': 'Google Drive', 'value': _driveConnected ? 'Connected' : 'Not Connected'},
+    ];
+
+    return Wrap(
+      spacing: 16,
+      runSpacing: 16,
+      children: stats.map((s) {
+        return Container(
+          width: AdminResponsive.isMobile(context) ? double.infinity : 200,
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: AdminTheme.cardColor(context),
+            borderRadius: BorderRadius.circular(AdminTheme.radiusCard),
+            border: Border.all(color: AdminTheme.borderColor(context)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 44, height: 44,
+                decoration: BoxDecoration(
+                  color: (s['color'] as Color).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(s['icon'] as IconData, size: 22, color: s['color'] as Color),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(s['label'] as String, style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.mutedTextColor(context))),
+                    const SizedBox(height: 2),
+                    Text(s['value'] as String, style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: AdminTheme.textColor(context))),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
     );
   }
 
-  Widget _statusItem(BuildContext context, String label, String value, Color color, IconData icon) {
-    return Expanded(child: Row(children: [
-      Container(width: 40, height: 40, decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
-        child: Icon(icon, size: 20, color: color)),
-      const SizedBox(width: 12),
-      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(label, style: GoogleFonts.inter(fontSize: 12, color: AdminTheme.mutedTextColor(context))),
-        Text(value, style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: AdminTheme.textColor(context))),
-      ]),
-    ]));
-  }
-
-  Widget _divider(BuildContext context) => Container(width: 1, height: 40, color: AdminTheme.borderColor(context), margin: const EdgeInsets.symmetric(horizontal: 16));
-
-  Widget _actionCard(BuildContext context, String title, IconData icon, Color color, String desc, String buttonText, VoidCallback onTap) {
+  Widget _buildTabs(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(color: AdminTheme.cardColor(context), borderRadius: BorderRadius.circular(AdminTheme.radiusCard), border: Border.all(color: AdminTheme.borderColor(context))),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Container(width: 48, height: 48, decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
-          child: Icon(icon, size: 24, color: color)),
-        const SizedBox(height: 16),
-        Text(title, style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600, color: AdminTheme.textColor(context))),
-        const SizedBox(height: 6),
-        Text(desc, style: GoogleFonts.inter(fontSize: 13, color: AdminTheme.secondaryTextColor(context))),
-        const SizedBox(height: 20),
-        SizedBox(width: double.infinity, child: ElevatedButton(onPressed: onTap, style: ElevatedButton.styleFrom(backgroundColor: color, minimumSize: const Size(0, 40)),
-          child: Text(buttonText, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white)))),
-      ]),
+      decoration: BoxDecoration(
+        color: AdminTheme.cardColor(context),
+        borderRadius: BorderRadius.circular(AdminTheme.radiusCard),
+        border: Border.all(color: AdminTheme.borderColor(context)),
+      ),
+      child: Column(
+        children: [
+          TabBar(
+            controller: _tabController,
+            tabs: const [
+              Tab(text: '📦 Backup History'),
+              Tab(text: '📤 Upload & Restore'),
+              Tab(text: '☁️ Google Drive'),
+            ],
+          ),
+          SizedBox(
+            height: 500,
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                _buildBackupHistoryTab(context),
+                _buildRestoreTab(context),
+                _buildDriveTab(context),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _backupHistory(BuildContext context) {
-    return Container(
+  // ============== TAB 1: BACKUP HISTORY ==============
+
+  Widget _buildBackupHistoryTab(BuildContext context) {
+    if (_backupsList.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.backup_outlined, size: 48, color: AdminTheme.mutedTextColor(context)),
+            const SizedBox(height: 12),
+            Text('No backups yet', style: GoogleFonts.inter(fontSize: 14, color: AdminTheme.mutedTextColor(context))),
+            const SizedBox(height: 8),
+            Text('Click "Backup Now" to create your first backup', style: GoogleFonts.inter(fontSize: 12, color: AdminTheme.mutedTextColor(context))),
+          ],
+        ),
+      );
+    }
+
+    return ListView.separated(
+      padding: const EdgeInsets.all(16),
+      itemCount: _backupsList.length,
+      separatorBuilder: (_, __) => Divider(color: AdminTheme.borderColor(context), height: 1),
+      itemBuilder: (context, index) {
+        final b = _backupsList[index];
+        final cAt = DateTime.tryParse(b['created_at'] ?? '') ?? DateTime.now();
+        final sizeBytes = b['size_bytes'] as int? ?? 0;
+        final totalRecords = b['total_records'] as int? ?? 0;
+        final driveUrl = b['drive_url'] as String?;
+        final status = b['status'] as String? ?? 'Success';
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Row(
+            children: [
+              // Status icon
+              Container(
+                width: 40, height: 40,
+                decoration: BoxDecoration(
+                  color: (status == 'Success' ? AdminTheme.success : Colors.orange).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  status == 'Success' ? Icons.check_circle_rounded : Icons.warning_rounded,
+                  size: 20,
+                  color: status == 'Success' ? AdminTheme.success : Colors.orange,
+                ),
+              ),
+              const SizedBox(width: 14),
+
+              // Info
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(b['backup_name'] as String? ?? 'Unnamed Backup',
+                        style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AdminTheme.textColor(context))),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Text('${_formatBytes(sizeBytes)}  •  $totalRecords records  •  ${DateFormat('dd MMM yyyy, hh:mm a').format(cAt)}',
+                            style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.mutedTextColor(context))),
+                        if (driveUrl != null) ...[
+                          const SizedBox(width: 8),
+                          Icon(Icons.cloud_done_rounded, size: 14, color: AdminTheme.success),
+                        ],
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+
+              // Actions
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    tooltip: 'Download',
+                    icon: const Icon(Icons.download_rounded, size: 18),
+                    color: AdminTheme.primary,
+                    onPressed: () => _downloadBackup(b),
+                  ),
+                  IconButton(
+                    tooltip: 'Restore from this backup',
+                    icon: const Icon(Icons.restore_rounded, size: 18),
+                    color: AdminTheme.info,
+                    onPressed: () => _restoreFromBackup(b),
+                  ),
+                  IconButton(
+                    tooltip: 'Delete',
+                    icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                    color: AdminTheme.danger,
+                    onPressed: () => _deleteBackup(b),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // ============== TAB 2: UPLOAD & RESTORE ==============
+
+  Widget _buildRestoreTab(BuildContext context) {
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(color: AdminTheme.cardColor(context), borderRadius: BorderRadius.circular(AdminTheme.radiusCard), border: Border.all(color: AdminTheme.borderColor(context))),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('Backup History', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600, color: AdminTheme.textColor(context))),
-        const SizedBox(height: 16),
-        if (_backupsList.isEmpty)
-          Padding(
-            padding: const EdgeInsets.all(24),
-            child: Center(
-              child: Text(
-                'No backup history found',
-                style: GoogleFonts.inter(fontSize: 12, color: AdminTheme.mutedTextColor(context)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Info banner
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AdminTheme.info.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AdminTheme.info.withOpacity(0.2)),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.info_outline_rounded, color: AdminTheme.info, size: 20),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    '1-Click Full Restore: Paste your GymOS Enterprise Backup JSON below. This will restore ALL tables including gyms, members, staff, subscriptions, payments, settings — everything!',
+                    style: GoogleFonts.inter(fontSize: 12, color: AdminTheme.info),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // JSON input
+          Text('Backup JSON Payload', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: AdminTheme.textColor(context))),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _restoreJsonController,
+            maxLines: 12,
+            style: GoogleFonts.firaCode(fontSize: 11, color: AdminTheme.textColor(context)),
+            decoration: InputDecoration(
+              hintText: 'Paste your full backup JSON here...\n\nExample: {"_meta": {"version": "2.0", ...}, "gyms": [...], "members": [...], ...}',
+              hintStyle: GoogleFonts.firaCode(fontSize: 11, color: AdminTheme.mutedTextColor(context)),
+              filled: true,
+              fillColor: AdminTheme.surfaceColor(context),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: AdminTheme.borderColor(context)),
               ),
             ),
-          )
-        else
-          ..._backupsList.map((b) {
-            final cAt = DateTime.tryParse(b['created_at'] ?? '') ?? DateTime.now();
-            return Container(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AdminTheme.borderColor(context)))),
-              child: Row(children: [
-                const Icon(Icons.backup_rounded, size: 20, color: AdminTheme.success),
-                const SizedBox(width: 12),
-                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(b['name'] as String, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AdminTheme.textColor(context))),
-                  Text('${b['size']}  •  ${cAt.day} ${_getMonthName(cAt.month)}, ${cAt.year} — ${cAt.hour.toString().padLeft(2, '0')}:${cAt.minute.toString().padLeft(2, '0')}', style: GoogleFonts.inter(fontSize: 12, color: AdminTheme.mutedTextColor(context))),
-                ])),
-                OutlinedButton(
-                  onPressed: _restoreDatabase, 
-                  style: OutlinedButton.styleFrom(minimumSize: const Size(70, 30), side: BorderSide(color: AdminTheme.borderColor(context))),
-                  child: Text('Restore', style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.textColor(context))),
+          ),
+          const SizedBox(height: 16),
+
+          // Actions row
+          Row(
+            children: [
+              ElevatedButton.icon(
+                onPressed: () {
+                  final text = _restoreJsonController.text.trim();
+                  if (text.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Please paste backup JSON first'), backgroundColor: Colors.orange),
+                    );
+                    return;
+                  }
+                  _restoreFromJson(text);
+                },
+                icon: const Icon(Icons.restore_rounded, size: 18),
+                label: Text('Restore Full Database', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AdminTheme.danger,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
                 ),
-              ]),
-            );
-          }),
-      ]),
+              ),
+              const SizedBox(width: 12),
+              OutlinedButton.icon(
+                onPressed: () async {
+                  final data = await Clipboard.getData(Clipboard.kTextPlain);
+                  if (data?.text != null) {
+                    _restoreJsonController.text = data!.text!;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('📋 Pasted from clipboard'), backgroundColor: AdminTheme.success),
+                    );
+                  }
+                },
+                icon: const Icon(Icons.content_paste_rounded, size: 18),
+                label: const Text('Paste from Clipboard'),
+              ),
+              const SizedBox(width: 12),
+              OutlinedButton.icon(
+                onPressed: () => _restoreJsonController.clear(),
+                icon: const Icon(Icons.clear_rounded, size: 18),
+                label: const Text('Clear'),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 32),
+
+          // Migration guide
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AdminTheme.cardColor(context),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AdminTheme.borderColor(context)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('🚀 Server Migration Guide', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AdminTheme.textColor(context))),
+                const SizedBox(height: 12),
+                _migrationStep('1', 'On OLD server → Click "Backup Now" to create fresh backup'),
+                _migrationStep('2', 'Download the backup JSON file'),
+                _migrationStep('3', 'On NEW server → Run the full_backup_system.sql in SQL Editor'),
+                _migrationStep('4', 'Paste the backup JSON above → Click "Restore Full Database"'),
+                _migrationStep('5', 'All gyms, members, staff, payments, settings restored in 1 click!'),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _migrationStep(String num, String text) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 24, height: 24,
+            decoration: BoxDecoration(color: AdminTheme.primary.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+            child: Center(child: Text(num, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AdminTheme.primary))),
+          ),
+          const SizedBox(width: 10),
+          Expanded(child: Text(text, style: GoogleFonts.inter(fontSize: 12, color: AdminTheme.secondaryTextColor(context)))),
+        ],
+      ),
+    );
+  }
+
+  // ============== TAB 3: GOOGLE DRIVE ==============
+
+  Widget _buildDriveTab(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Status banner
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: (_driveConnected ? AdminTheme.success : Colors.orange).withOpacity(0.08),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: (_driveConnected ? AdminTheme.success : Colors.orange).withOpacity(0.2)),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  _driveConnected ? Icons.cloud_done_rounded : Icons.cloud_off_rounded,
+                  color: _driveConnected ? AdminTheme.success : Colors.orange,
+                  size: 24,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _driveConnected ? 'Google Drive Connected' : 'Google Drive Not Connected',
+                        style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: _driveConnected ? AdminTheme.success : Colors.orange),
+                      ),
+                      if (_driveConnected)
+                        Text(_driveEmail, style: GoogleFonts.inter(fontSize: 12, color: AdminTheme.mutedTextColor(context))),
+                    ],
+                  ),
+                ),
+                if (_driveConnected)
+                  OutlinedButton(
+                    onPressed: _disconnectDrive,
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: AdminTheme.danger),
+                    ),
+                    child: Text('Disconnect', style: GoogleFonts.inter(fontSize: 12, color: AdminTheme.danger)),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          if (!_driveConnected) ...[
+            Text('Connect Google Drive', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: AdminTheme.textColor(context))),
+            const SizedBox(height: 8),
+            Text(
+              'Backups will automatically upload to your Google Drive when connected. Use a Google OAuth2 Access Token to connect.',
+              style: GoogleFonts.inter(fontSize: 12, color: AdminTheme.secondaryTextColor(context)),
+            ),
+            const SizedBox(height: 20),
+
+            Text('OAuth2 Access Token', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AdminTheme.textColor(context))),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _driveTokenController,
+              maxLines: 3,
+              obscureText: true,
+              style: GoogleFonts.firaCode(fontSize: 11),
+              decoration: InputDecoration(
+                hintText: 'Paste your Google OAuth2 access token here...',
+                hintStyle: GoogleFonts.firaCode(fontSize: 11, color: AdminTheme.mutedTextColor(context)),
+                filled: true,
+                fillColor: AdminTheme.surfaceColor(context),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            Text('Drive Folder ID (Optional)', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AdminTheme.textColor(context))),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _driveFolderController,
+              style: GoogleFonts.firaCode(fontSize: 11),
+              decoration: InputDecoration(
+                hintText: 'e.g. 1ABC_xyz... (leave empty for root folder)',
+                hintStyle: GoogleFonts.firaCode(fontSize: 11, color: AdminTheme.mutedTextColor(context)),
+                filled: true,
+                fillColor: AdminTheme.surfaceColor(context),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            ElevatedButton.icon(
+              onPressed: _connectDrive,
+              icon: const Icon(Icons.cloud_upload_rounded, size: 18),
+              label: Text('Connect Google Drive', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AdminTheme.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            // Instructions
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AdminTheme.surfaceColor(context),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('📖 How to get Google Drive Access Token', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold, color: AdminTheme.textColor(context))),
+                  const SizedBox(height: 10),
+                  _migrationStep('1', 'Go to Google OAuth Playground: https://developers.google.com/oauthplayground'),
+                  _migrationStep('2', 'Select "Drive API v3" → check "https://www.googleapis.com/auth/drive.file"'),
+                  _migrationStep('3', 'Click "Authorize APIs" → Sign in with Google'),
+                  _migrationStep('4', 'Click "Exchange authorization code for tokens"'),
+                  _migrationStep('5', 'Copy the "Access Token" and paste it above'),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // ============== ACTION OVERLAY ==============
+
+  Widget _buildActionOverlay(BuildContext context) {
+    return Container(
+      color: Colors.black.withOpacity(0.6),
+      child: Center(
+        child: Container(
+          width: 380,
+          padding: const EdgeInsets.all(32),
+          decoration: BoxDecoration(
+            color: AdminTheme.cardColor(context),
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 30, spreadRadius: 5)],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(
+                width: 48, height: 48,
+                child: CircularProgressIndicator(color: AdminTheme.primary, strokeWidth: 3),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                _actionMessage,
+                style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AdminTheme.textColor(context)),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: LinearProgressIndicator(
+                  value: _actionProgress > 0 ? _actionProgress : null,
+                  backgroundColor: AdminTheme.borderColor(context),
+                  color: AdminTheme.primary,
+                  minHeight: 6,
+                ),
+              ),
+              if (_actionProgress > 0)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text('${(_actionProgress * 100).toInt()}%', style: GoogleFonts.inter(fontSize: 12, color: AdminTheme.mutedTextColor(context))),
+                ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
