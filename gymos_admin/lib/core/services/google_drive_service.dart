@@ -7,6 +7,7 @@ class DriveUploadResult {
   final bool success;
   final String? driveUrl;
   final String? fileId;
+  final String? folderId;
   final String? error;
   final String? details;
 
@@ -14,6 +15,7 @@ class DriveUploadResult {
     required this.success,
     this.driveUrl,
     this.fileId,
+    this.folderId,
     this.error,
     this.details,
   });
@@ -217,6 +219,82 @@ class GoogleDriveService {
     return null;
   }
 
+  /// Finds or creates a dedicated 'GYM OS BACKUP' folder inside Google Drive
+  static Future<String?> getOrCreateBackupFolder(String token) async {
+    // 1. If user provided a specific folder ID, test if accessible
+    if (_folderId != null && _folderId!.isNotEmpty) {
+      try {
+        final testRes = await http.get(
+          Uri.parse('https://www.googleapis.com/drive/v3/files/$_folderId?fields=id,name,trashed'),
+          headers: {'Authorization': 'Bearer $token'},
+        );
+        if (testRes.statusCode == 200) {
+          final data = jsonDecode(testRes.body);
+          if (data['trashed'] != true) {
+            return _folderId;
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 2. Search if 'GYM OS BACKUP' folder already exists
+    try {
+      final searchRes = await http.get(
+        Uri.parse('https://www.googleapis.com/drive/v3/files?q=${Uri.encodeComponent("name = 'GYM OS BACKUP' and mimeType = 'application/vnd.google-apps.folder' and trashed = false")}&fields=files(id,name)'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (searchRes.statusCode == 200) {
+        final searchData = jsonDecode(searchRes.body);
+        final files = searchData['files'] as List?;
+        if (files != null && files.isNotEmpty) {
+          final existingId = files.first['id'] as String?;
+          if (existingId != null) {
+            _folderId = existingId;
+            return existingId;
+          }
+        }
+      }
+    } catch (_) {}
+
+    // 3. Automatically create 'GYM OS BACKUP' folder in Google Drive
+    try {
+      final createFolderRes = await http.post(
+        Uri.parse('https://www.googleapis.com/drive/v3/files?fields=id,name'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json; charset=UTF-8',
+        },
+        body: jsonEncode({
+          'name': 'GYM OS BACKUP',
+          'mimeType': 'application/vnd.google-apps.folder',
+        }),
+      );
+
+      if (createFolderRes.statusCode == 200 || createFolderRes.statusCode == 201) {
+        final folderData = jsonDecode(createFolderRes.body);
+        final createdId = folderData['id'] as String?;
+        if (createdId != null) {
+          _folderId = createdId;
+          // save into platform settings
+          if (AdminSupabaseService.isInitialized) {
+            await saveCredentials(
+              accessToken: _accessToken ?? token,
+              refreshToken: _refreshToken,
+              clientId: _clientId,
+              clientSecret: _clientSecret,
+              folderId: createdId,
+            );
+          }
+          return createdId;
+        }
+      }
+    } catch (e) {
+      debugPrint('Error creating backup folder: $e');
+    }
+
+    return _folderId;
+  }
+
   /// Run complete step-by-step diagnostic test
   static Future<List<String>> runDiagnostics() async {
     final List<String> logs = [];
@@ -259,43 +337,31 @@ class GoogleDriveService {
       return logs;
     }
 
-    // Step 3: Check Target Folder
-    if (_folderId != null && _folderId!.isNotEmpty) {
-      logs.add('[${nowStr()}] 📁 Checking Folder ID: $_folderId...');
-      try {
-        final folderRes = await http.get(
-          Uri.parse('https://www.googleapis.com/drive/v3/files/$_folderId?fields=id,name,mimeType'),
-          headers: {'Authorization': 'Bearer $token'},
-        );
-        if (folderRes.statusCode == 200) {
-          final folderData = jsonDecode(folderRes.body);
-          logs.add('[${nowStr()}] ✅ Folder Found: "${folderData['name']}" [HTTP 200 OK]');
-        } else {
-          logs.add('[${nowStr()}] ⚠️ Folder Access Warning (${folderRes.statusCode}): ${folderRes.body}');
-          logs.add('[${nowStr()}] ℹ️ Note: If folder was created separately, the token scope may need to be "https://www.googleapis.com/auth/drive". System will fallback to Root folder if needed.');
-        }
-      } catch (e) {
-        logs.add('[${nowStr()}] ⚠️ Folder check error: $e');
-      }
+    // Step 3: Check / Ensure 'GYM OS BACKUP' Folder
+    logs.add('[${nowStr()}] 📁 Locating / Ensuring "GYM OS BACKUP" Folder in your Drive...');
+    final activeFolderId = await getOrCreateBackupFolder(token);
+    if (activeFolderId != null && activeFolderId.isNotEmpty) {
+      logs.add('[${nowStr()}] ✅ Target Folder Ready: "GYM OS BACKUP" (ID: $activeFolderId)');
     } else {
-      logs.add('[${nowStr()}] 📁 Target Folder: Root Directory (Default)');
+      logs.add('[${nowStr()}] ⚠️ Notice: Folder creation fallback to Root');
     }
 
-    // Step 4: Test Upload a test ping file
-    logs.add('[${nowStr()}] 📤 Testing Test File Upload (gymos_diagnostic_ping.json)...');
+    // Step 4: Test Upload a test ping file directly into the folder
+    logs.add('[${nowStr()}] 📤 Testing Upload into "GYM OS BACKUP" folder...');
     try {
       final pingResult = await uploadBackup(
         backupJson: jsonEncode({
           'test': true,
           'system': 'GymOS Enterprise Drive Diagnostic',
+          'folder_target': 'GYM OS BACKUP',
           'timestamp': DateTime.now().toIso8601String(),
         }),
         fileName: 'gymos_diagnostic_ping.json',
       );
 
       if (pingResult.success) {
-        logs.add('[${nowStr()}] 🎉 SUCCESS: Test file uploaded to Google Drive!');
-        logs.add('[${nowStr()}] 🔗 View URL: ${pingResult.driveUrl}');
+        logs.add('[${nowStr()}] 🎉 SUCCESS: Test file uploaded inside "GYM OS BACKUP" folder!');
+        logs.add('[${nowStr()}] 🔗 File Link: ${pingResult.driveUrl}');
       } else {
         logs.add('[${nowStr()}] ❌ UPLOAD FAILED: ${pingResult.error}');
         if (pingResult.details != null) {
@@ -309,7 +375,7 @@ class GoogleDriveService {
     return logs;
   }
 
-  /// Upload backup JSON to Google Drive (2-Step Method with Full Diagnostics)
+  /// Upload backup JSON into 'GYM OS BACKUP' folder
   static Future<DriveUploadResult> uploadBackup({
     required String backupJson,
     required String fileName,
@@ -322,17 +388,20 @@ class GoogleDriveService {
       );
     }
 
-    // 1. Try uploading to folder if specified
+    // Ensure we have the target folder ID (auto-create if needed)
+    final targetFolder = await getOrCreateBackupFolder(token);
+
+    // Upload directly into the folder
     DriveUploadResult res = await _executeTwoStepUpload(
       token: token,
       backupJson: backupJson,
       fileName: fileName,
-      targetFolderId: _folderId,
+      targetFolderId: targetFolder,
     );
 
-    // 2. Fallback to Drive root if folder was rejected (e.g. 403 / 404 / insufficient scope for folder)
-    if (!res.success && _folderId != null && _folderId!.isNotEmpty) {
-      debugPrint('Folder upload failed (${res.error}), falling back to Google Drive Root...');
+    // If specific folder failed, fallback to root
+    if (!res.success && targetFolder != null && targetFolder.isNotEmpty) {
+      debugPrint('Folder upload failed (${res.error}), trying root...');
       res = await _executeTwoStepUpload(
         token: token,
         backupJson: backupJson,
@@ -362,7 +431,7 @@ class GoogleDriveService {
       }
 
       final createRes = await http.post(
-        Uri.parse('https://www.googleapis.com/drive/v3/files?fields=id,webViewLink,name'),
+        Uri.parse('https://www.googleapis.com/drive/v3/files?fields=id,webViewLink,name,parents'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json; charset=UTF-8',
@@ -413,7 +482,7 @@ class GoogleDriveService {
         );
       }
 
-      debugPrint('✅ Google Drive 2-Step Upload Success! File ID: $fileId');
+      debugPrint('✅ Google Drive Upload Success into folder $targetFolderId! File ID: $fileId');
 
       // Make link accessible
       try {
@@ -432,6 +501,7 @@ class GoogleDriveService {
         success: true,
         driveUrl: finalUrl,
         fileId: fileId,
+        folderId: targetFolderId,
       );
     } catch (e) {
       debugPrint('Exception in 2-step Drive upload: $e');
