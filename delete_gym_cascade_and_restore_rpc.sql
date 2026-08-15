@@ -3,9 +3,14 @@
 -- RUN THIS ENTIRE SCRIPT IN SUPABASE SQL EDITOR
 -- =========================================================================
 
--- 1. FIX GYM STATUS CHECK CONSTRAINT (Allows Active, Suspended, free_trial, Trial, etc.)
+-- 1. FIX GYMS & SUBSCRIPTIONS STATUS CHECK CONSTRAINTS
 ALTER TABLE public.gyms DROP CONSTRAINT IF EXISTS gyms_status_check;
 ALTER TABLE public.gyms ADD CONSTRAINT gyms_status_check CHECK (
+    status IN ('Active', 'active', 'Suspended', 'suspended', 'Disabled', 'disabled', 'Grace Period', 'grace_period', 'Trial', 'trial', 'free_trial', 'Expired', 'expired')
+);
+
+ALTER TABLE public.subscriptions DROP CONSTRAINT IF EXISTS subscriptions_status_check;
+ALTER TABLE public.subscriptions ADD CONSTRAINT subscriptions_status_check CHECK (
     status IN ('Active', 'active', 'Suspended', 'suspended', 'Disabled', 'disabled', 'Grace Period', 'grace_period', 'Trial', 'trial', 'free_trial', 'Expired', 'expired')
 );
 
@@ -67,6 +72,7 @@ BEGIN
     DELETE FROM public.notifications WHERE gym_id = p_gym_id;
     DELETE FROM public.support_tickets WHERE gym_id = p_gym_id;
     DELETE FROM public.gym_backups WHERE gym_id = p_gym_id;
+    DELETE FROM public.subscriptions WHERE gym_id = p_gym_id;
 
     -- Unlink and delete profiles associated with this gym
     DELETE FROM public.profiles WHERE gym_id = p_gym_id;
