@@ -8,7 +8,7 @@
 -- =============================================
 CREATE TABLE IF NOT EXISTS public.database_backups (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    backup_name TEXT NOT NULL,
+    backup_name TEXT NOT NULL DEFAULT 'Full Backup',
     backup_data JSONB NOT NULL DEFAULT '{}',
     size_bytes BIGINT DEFAULT 0,
     total_records INT DEFAULT 0,
@@ -18,9 +18,21 @@ CREATE TABLE IF NOT EXISTS public.database_backups (
     created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Add missing columns if table already exists
+-- Upgrade columns safely if old table structure exists
 DO $$
 BEGIN
+    -- Handle rename if column was named 'name'
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'database_backups' AND column_name = 'name') 
+       AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'database_backups' AND column_name = 'backup_name') THEN
+        ALTER TABLE public.database_backups RENAME COLUMN name TO backup_name;
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'database_backups' AND column_name = 'backup_name') THEN
+        ALTER TABLE public.database_backups ADD COLUMN backup_name TEXT DEFAULT 'Full Backup';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'database_backups' AND column_name = 'backup_data') THEN
+        ALTER TABLE public.database_backups ADD COLUMN backup_data JSONB DEFAULT '{}';
+    END IF;
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'database_backups' AND column_name = 'total_records') THEN
         ALTER TABLE public.database_backups ADD COLUMN total_records INT DEFAULT 0;
     END IF;
@@ -32,6 +44,9 @@ BEGIN
     END IF;
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'database_backups' AND column_name = 'size_bytes') THEN
         ALTER TABLE public.database_backups ADD COLUMN size_bytes BIGINT DEFAULT 0;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'database_backups' AND column_name = 'status') THEN
+        ALTER TABLE public.database_backups ADD COLUMN status TEXT DEFAULT 'Success';
     END IF;
 END $$;
 
@@ -50,63 +65,52 @@ CREATE OR REPLACE FUNCTION public.full_database_export()
 RETURNS JSONB AS $$
 DECLARE
     v_result JSONB;
-    v_gyms JSONB;
-    v_profiles JSONB;
-    v_members JSONB;
-    v_staff JSONB;
-    v_subscriptions JSONB;
-    v_transactions JSONB;
-    v_finance_transactions JSONB;
-    v_attendance_logs JSONB;
-    v_member_memberships JSONB;
-    v_salary_drafts JSONB;
-    v_salary_advance_ledger JSONB;
-    v_leave_requests JSONB;
-    v_workout_plans JSONB;
-    v_diet_plans JSONB;
-    v_goals JSONB;
-    v_custom_fields JSONB;
-    v_attendance_settings JSONB;
-    v_activity_logs JSONB;
-    v_notifications JSONB;
-    v_support_tickets JSONB;
-    v_platform_settings JSONB;
-    v_gym_backups JSONB;
+    v_gyms JSONB := '[]'::jsonb;
+    v_profiles JSONB := '[]'::jsonb;
+    v_members JSONB := '[]'::jsonb;
+    v_staff JSONB := '[]'::jsonb;
+    v_subscriptions JSONB := '[]'::jsonb;
+    v_transactions JSONB := '[]'::jsonb;
+    v_finance_transactions JSONB := '[]'::jsonb;
+    v_attendance_logs JSONB := '[]'::jsonb;
+    v_member_memberships JSONB := '[]'::jsonb;
+    v_salary_drafts JSONB := '[]'::jsonb;
+    v_salary_advance_ledger JSONB := '[]'::jsonb;
+    v_leave_requests JSONB := '[]'::jsonb;
+    v_workout_plans JSONB := '[]'::jsonb;
+    v_diet_plans JSONB := '[]'::jsonb;
+    v_goals JSONB := '[]'::jsonb;
+    v_custom_fields JSONB := '[]'::jsonb;
+    v_attendance_settings JSONB := '[]'::jsonb;
+    v_activity_logs JSONB := '[]'::jsonb;
+    v_notifications JSONB := '[]'::jsonb;
+    v_support_tickets JSONB := '[]'::jsonb;
+    v_platform_settings JSONB := '[]'::jsonb;
     v_total INT := 0;
     v_counts JSONB;
 BEGIN
-    -- Export each table as JSON array
-    SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_gyms FROM public.gyms t;
-    SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_profiles FROM public.profiles t;
-    SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_members FROM public.members t;
-    SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_staff FROM public.staff t;
-    
-    -- Tables that may or may not exist — wrapped in exception handlers
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_subscriptions FROM public.subscriptions t; EXCEPTION WHEN undefined_table THEN v_subscriptions := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_transactions FROM public.transactions t; EXCEPTION WHEN undefined_table THEN v_transactions := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_finance_transactions FROM public.finance_transactions t; EXCEPTION WHEN undefined_table THEN v_finance_transactions := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_attendance_logs FROM public.attendance_logs t; EXCEPTION WHEN undefined_table THEN v_attendance_logs := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_member_memberships FROM public.member_memberships t; EXCEPTION WHEN undefined_table THEN v_member_memberships := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_salary_drafts FROM public.salary_drafts t; EXCEPTION WHEN undefined_table THEN v_salary_drafts := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_salary_advance_ledger FROM public.salary_advance_ledger t; EXCEPTION WHEN undefined_table THEN v_salary_advance_ledger := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_leave_requests FROM public.leave_requests t; EXCEPTION WHEN undefined_table THEN v_leave_requests := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_workout_plans FROM public.workout_plans t; EXCEPTION WHEN undefined_table THEN v_workout_plans := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_diet_plans FROM public.diet_plans t; EXCEPTION WHEN undefined_table THEN v_diet_plans := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_goals FROM public.goals t; EXCEPTION WHEN undefined_table THEN v_goals := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_custom_fields FROM public.custom_fields t; EXCEPTION WHEN undefined_table THEN v_custom_fields := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_attendance_settings FROM public.attendance_settings t; EXCEPTION WHEN undefined_table THEN v_attendance_settings := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_activity_logs FROM public.activity_logs t; EXCEPTION WHEN undefined_table THEN v_activity_logs := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_notifications FROM public.notifications t; EXCEPTION WHEN undefined_table THEN v_notifications := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_support_tickets FROM public.support_tickets t; EXCEPTION WHEN undefined_table THEN v_support_tickets := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_platform_settings FROM public.platform_settings t; EXCEPTION WHEN undefined_table THEN v_platform_settings := '[]'::jsonb; END;
-
-    -- Gym backups metadata only (not the data payloads themselves to avoid recursion)
-    BEGIN 
-        SELECT COALESCE(jsonb_agg(jsonb_build_object(
-            'id', t.id, 'backup_name', t.backup_name, 'size_bytes', t.size_bytes,
-            'total_records', t.total_records, 'status', t.status, 'drive_url', t.drive_url, 'created_at', t.created_at
-        )), '[]'::jsonb) INTO v_gym_backups FROM public.database_backups t;
-    EXCEPTION WHEN undefined_table THEN v_gym_backups := '[]'::jsonb; END;
+    -- Export each table as JSON array (each safely caught)
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_gyms FROM public.gyms t; EXCEPTION WHEN OTHERS THEN v_gyms := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_profiles FROM public.profiles t; EXCEPTION WHEN OTHERS THEN v_profiles := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_members FROM public.members t; EXCEPTION WHEN OTHERS THEN v_members := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_staff FROM public.staff t; EXCEPTION WHEN OTHERS THEN v_staff := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_subscriptions FROM public.subscriptions t; EXCEPTION WHEN OTHERS THEN v_subscriptions := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_transactions FROM public.transactions t; EXCEPTION WHEN OTHERS THEN v_transactions := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_finance_transactions FROM public.finance_transactions t; EXCEPTION WHEN OTHERS THEN v_finance_transactions := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_attendance_logs FROM public.attendance_logs t; EXCEPTION WHEN OTHERS THEN v_attendance_logs := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_member_memberships FROM public.member_memberships t; EXCEPTION WHEN OTHERS THEN v_member_memberships := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_salary_drafts FROM public.salary_drafts t; EXCEPTION WHEN OTHERS THEN v_salary_drafts := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_salary_advance_ledger FROM public.salary_advance_ledger t; EXCEPTION WHEN OTHERS THEN v_salary_advance_ledger := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_leave_requests FROM public.leave_requests t; EXCEPTION WHEN OTHERS THEN v_leave_requests := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_workout_plans FROM public.workout_plans t; EXCEPTION WHEN OTHERS THEN v_workout_plans := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_diet_plans FROM public.diet_plans t; EXCEPTION WHEN OTHERS THEN v_diet_plans := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_goals FROM public.goals t; EXCEPTION WHEN OTHERS THEN v_goals := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_custom_fields FROM public.custom_fields t; EXCEPTION WHEN OTHERS THEN v_custom_fields := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_attendance_settings FROM public.attendance_settings t; EXCEPTION WHEN OTHERS THEN v_attendance_settings := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_activity_logs FROM public.activity_logs t; EXCEPTION WHEN OTHERS THEN v_activity_logs := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_notifications FROM public.notifications t; EXCEPTION WHEN OTHERS THEN v_notifications := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_support_tickets FROM public.support_tickets t; EXCEPTION WHEN OTHERS THEN v_support_tickets := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_platform_settings FROM public.platform_settings t; EXCEPTION WHEN OTHERS THEN v_platform_settings := '[]'::jsonb; END;
 
     -- Count totals
     v_counts := jsonb_build_object(
@@ -173,8 +177,7 @@ BEGIN
         'activity_logs', v_activity_logs,
         'notifications', v_notifications,
         'support_tickets', v_support_tickets,
-        'platform_settings', v_platform_settings,
-        'backup_history', v_gym_backups
+        'platform_settings', v_platform_settings
     );
 
     RETURN v_result;
@@ -204,10 +207,6 @@ BEGIN
     IF v_meta IS NULL THEN
         RETURN jsonb_build_object('success', false, 'message', 'Invalid backup format: Missing _meta header. Make sure this is a GymOS Enterprise Backup v2.0 file.');
     END IF;
-
-    -- ============================================================
-    -- RESTORE ORDER: Parent tables first, then child tables
-    -- ============================================================
 
     -- 1. GYMS (parent of everything)
     IF p_backup->'gyms' IS NOT NULL AND jsonb_array_length(p_backup->'gyms') > 0 THEN
@@ -307,7 +306,7 @@ BEGIN
         END;
     END IF;
 
-    -- 7-21. ALL REMAINING CHILD TABLES (generic upsert pattern)
+    -- 7-21. ALL REMAINING CHILD TABLES
     DECLARE
         v_table_name TEXT;
         v_table_names TEXT[] := ARRAY[
@@ -321,7 +320,6 @@ BEGIN
         FOREACH v_table_name IN ARRAY v_table_names LOOP
             IF p_backup->v_table_name IS NOT NULL AND jsonb_array_length(p_backup->v_table_name) > 0 THEN
                 BEGIN
-                    -- Use dynamic SQL for generic insert
                     EXECUTE format(
                         'INSERT INTO public.%I SELECT * FROM jsonb_populate_recordset(null::public.%I, $1) ON CONFLICT DO NOTHING',
                         v_table_name, v_table_name
@@ -408,22 +406,3 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 GRANT EXECUTE ON FUNCTION public.save_daily_backup() TO anon, authenticated, service_role;
-
-
--- =============================================
--- 5. ENABLE pg_cron FOR DAILY MIDNIGHT BACKUP (Pro Plan Only)
--- =============================================
--- Uncomment below if you are on Supabase Pro plan with pg_cron enabled:
--- 
--- CREATE EXTENSION IF NOT EXISTS pg_cron;
--- SELECT cron.schedule(
---     'daily-gymos-backup',           -- job name
---     '30 18 * * *',                  -- 18:30 UTC = 00:00 IST (midnight)
---     $$SELECT public.save_daily_backup()$$
--- );
---
--- To verify the cron job:
--- SELECT * FROM cron.job;
---
--- To remove the cron job:
--- SELECT cron.unschedule('daily-gymos-backup');
