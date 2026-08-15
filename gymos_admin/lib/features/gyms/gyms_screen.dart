@@ -197,6 +197,61 @@ class _GymsScreenState extends State<GymsScreen> {
     return gyms;
   }
 
+  void _showRestoreDialog(BuildContext context) {
+    final textController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('📥 1-Click Restore Gym from Backup JSON'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Paste the JSON backup payload to restore or upload file:'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: textController,
+              maxLines: 8,
+              decoration: const InputDecoration(
+                hintText: 'Paste backup JSON payload here...',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AdminTheme.primary),
+            onPressed: () async {
+              if (textController.text.trim().isEmpty) return;
+              try {
+                final jsonMap = jsonDecode(textController.text.trim());
+                if (AdminSupabaseService.isInitialized) {
+                  await AdminSupabaseService.client.rpc('restore_gym_backup', params: {'p_backup_data': jsonMap});
+                }
+                if (context.mounted) {
+                  Navigator.pop(ctx);
+                  _fetchGyms();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('✅ Gym restored successfully!'), backgroundColor: AdminTheme.success),
+                  );
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Restore error: $e'), backgroundColor: AdminTheme.danger),
+                  );
+                }
+              }
+            },
+            child: const Text('Restore Gym'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final padding = AdminResponsive.contentPadding(context);
@@ -276,6 +331,18 @@ class _GymsScreenState extends State<GymsScreen> {
             ),
             style: GoogleFonts.inter(fontSize: 13, color: AdminTheme.textColor(context)),
           ),
+        ),
+        const SizedBox(width: 12),
+        ElevatedButton.icon(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AdminTheme.primary,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AdminTheme.radiusSm)),
+          ),
+          icon: const Icon(Icons.upload_file_rounded, size: 18),
+          label: Text('Restore Gym', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold)),
+          onPressed: () => _showRestoreDialog(context),
         ),
       ],
     );
