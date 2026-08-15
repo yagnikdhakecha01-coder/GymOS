@@ -909,7 +909,6 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
             TextField(
               controller: _driveTokenController,
               maxLines: 3,
-              obscureText: true,
               style: GoogleFonts.firaCode(fontSize: 11),
               decoration: InputDecoration(
                 hintText: 'Paste your Google OAuth2 access token here...',
