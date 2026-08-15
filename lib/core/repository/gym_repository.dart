@@ -261,8 +261,9 @@ class GymRepository extends ChangeNotifier {
                 fetchTrialMembersFromSupabase();
               } else if (tableName == 'staff') {
                 fetchStaffFromSupabase();
-              } else if (tableName == 'transactions') {
+              } else if (tableName == 'transactions' || tableName == 'finance_transactions') {
                 fetchTransactionsFromSupabase();
+                fetchMembersFromSupabase();
               } else if (tableName == 'attendance_logs') {
                 fetchAttendanceLogsFromSupabase();
               } else if (tableName == 'workout_plans') {
@@ -280,7 +281,7 @@ class GymRepository extends ChangeNotifier {
               }
 
               // Update stats for live screen dashboard counters only for relevant changes
-              if (tableName == 'members' || tableName == 'attendance_logs' || tableName == 'transactions') {
+              if (tableName == 'members' || tableName == 'attendance_logs' || tableName == 'transactions' || tableName == 'finance_transactions') {
                 final currentGymId = _storage.getGymInfo()?['id'];
                 if (currentGymId != null) {
                   final todayStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
