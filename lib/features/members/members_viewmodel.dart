@@ -248,19 +248,32 @@ class MembersViewModel extends ChangeNotifier {
     final memberName = member?.name?.trim() ?? '';
 
     final results = _repository.getTransactions().where((tx) {
-      // Exclude gym operational expenses (Salary, Rent, Other expenses, etc.)
+      // 1. Exclude all Gym Operational Expenses
       if (tx.type == 'Expense') return false;
 
-      // Match by direct reference_id (app-created member transactions)
-      if (tx.referenceId == memberId) return true;
+      // 2. Direct ID match (referenceId or createdBy matching memberId)
+      if (tx.referenceId == memberId || tx.createdBy == memberId) return true;
 
-      // Match by member name in title or notes for Revenue transactions
+      // 3. Strict Name Match (Exact Title Prefix or Full Name Word Boundary)
       if (memberName.length >= 2) {
         final titleLower = tx.title.toLowerCase();
         final notesLower = tx.notes.toLowerCase();
         final nameLower = memberName.toLowerCase();
-        if (titleLower.contains(nameLower) || notesLower.contains(nameLower)) return true;
+
+        // Title Prefix Match (e.g. "Rahul Sharma - Payment Received")
+        if (titleLower.startsWith('$nameLower -') || 
+            titleLower.startsWith('$nameLower :') ||
+            titleLower == nameLower) {
+          return true;
+        }
+
+        // Full Name Word-Boundary Match (e.g. "Rahul Sharma" as a whole phrase, not partial substrings)
+        final namePattern = RegExp(r'\b' + RegExp.escape(nameLower) + r'\b');
+        if (namePattern.hasMatch(titleLower) || namePattern.hasMatch(notesLower)) {
+          return true;
+        }
       }
+
       return false;
     }).toList();
 
