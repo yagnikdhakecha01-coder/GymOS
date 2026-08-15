@@ -2,16 +2,28 @@
 -- SUPER ADMIN GYM CASCADE DELETE, ONE-CLICK RESTORE & MONTHLY PROFIT RPC
 -- =========================================================================
 
+-- DROP OLD FUNCTIONS FIRST TO ALLOW RETURN TYPE RE-DEFINITION
+DROP FUNCTION IF EXISTS public.delete_gym_cascade(UUID);
+DROP FUNCTION IF EXISTS public.restore_gym_backup(JSONB);
+DROP FUNCTION IF EXISTS public.get_gym_monthly_financial_summary(UUID, INT, INT);
+
 -- 1. CLEAN CASCADE DELETE GYM (Auto-unlinks users, deletes profiles, leaves 0 dummy accounts)
 CREATE OR REPLACE FUNCTION public.delete_gym_cascade(p_gym_id UUID)
-RETURNS BOOLEAN AS $$
+RETURNS JSONB AS $$
 DECLARE
-    r_user RECORD;
+    v_members_count INT := 0;
+    v_staff_count INT := 0;
+    v_users_count INT := 0;
 BEGIN
     -- Check if gym exists
     IF NOT EXISTS (SELECT 1 FROM public.gyms WHERE id = p_gym_id) THEN
-        RETURN FALSE;
+        RETURN jsonb_build_object('success', false, 'message', 'Gym not found');
     END IF;
+
+    -- Count before deletion for summary
+    SELECT COUNT(*) INTO v_members_count FROM public.members WHERE gym_id = p_gym_id;
+    SELECT COUNT(*) INTO v_staff_count FROM public.staff WHERE gym_id = p_gym_id;
+    SELECT COUNT(*) INTO v_users_count FROM public.profiles WHERE gym_id = p_gym_id;
 
     -- Delete all child table records linked to gym_id
     DELETE FROM public.finance_transactions WHERE gym_id = p_gym_id;
@@ -39,7 +51,13 @@ BEGIN
     -- Finally delete the Gym itself
     DELETE FROM public.gyms WHERE id = p_gym_id;
 
-    RETURN TRUE;
+    RETURN jsonb_build_object(
+        'success', true,
+        'members_deleted', v_members_count,
+        'staff_deleted', v_staff_count,
+        'users_logged_out', v_users_count,
+        'message', 'Gym completely wiped cleanly'
+    );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
