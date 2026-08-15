@@ -16,6 +16,16 @@ class GoogleDriveService {
   static bool get isConnected => _isConnected && (_accessToken != null || _refreshToken != null);
   static String? get folderId => _folderId;
 
+  /// Helper to clean folder ID from raw string or full URL
+  static String? _cleanFolderId(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return null;
+    String id = raw.trim();
+    if (id.contains('/folders/')) {
+      id = id.split('/folders/').last.split('?').first.split('/').first.trim();
+    }
+    return id.isNotEmpty ? id : null;
+  }
+
   /// Load saved Drive credentials from platform_settings
   static Future<void> loadCredentials() async {
     try {
@@ -32,7 +42,7 @@ class GoogleDriveService {
         _refreshToken = config['refresh_token'] as String?;
         _clientId = config['client_id'] as String?;
         _clientSecret = config['client_secret'] as String?;
-        _folderId = config['folder_id'] as String?;
+        _folderId = _cleanFolderId(config['folder_id'] as String?);
         _isConnected = (_accessToken != null && _accessToken!.isNotEmpty) ||
             (_refreshToken != null && _refreshToken!.isNotEmpty);
       }
@@ -53,7 +63,7 @@ class GoogleDriveService {
     _refreshToken = refreshToken;
     _clientId = clientId;
     _clientSecret = clientSecret;
-    _folderId = folderId;
+    _folderId = _cleanFolderId(folderId);
     _isConnected = accessToken.isNotEmpty || (refreshToken != null && refreshToken.isNotEmpty);
 
     try {
@@ -65,7 +75,7 @@ class GoogleDriveService {
           'refresh_token': refreshToken ?? '',
           'client_id': clientId ?? '',
           'client_secret': clientSecret ?? '',
-          'folder_id': folderId ?? '',
+          'folder_id': _folderId ?? '',
           'connected_at': DateTime.now().toIso8601String(),
         },
         'updated_at': DateTime.now().toIso8601String(),
@@ -97,9 +107,8 @@ class GoogleDriveService {
 
   /// Get a valid access token (auto-refreshes using refresh_token if needed)
   static Future<String?> getValidAccessToken() async {
-    // 1. If we have a refresh token, try refreshing first or on 401
-    if (_accessToken != null) {
-      // Test if current access token is still alive
+    // 1. If we have an access token, test if it is still alive
+    if (_accessToken != null && _accessToken!.isNotEmpty) {
       final isAlive = await testConnection();
       if (isAlive) return _accessToken;
     }
@@ -199,19 +208,52 @@ class GoogleDriveService {
     required String fileName,
   }) async {
     final token = await getValidAccessToken();
-    if (token == null) return null;
+    if (token == null) {
+      debugPrint('Google Drive upload failed: No valid access token');
+      return null;
+    }
 
+    // Try upload with folder if specified, fallback to root if folder fails
+    String? result = await _executeUpload(
+      token: token,
+      backupJson: backupJson,
+      fileName: fileName,
+      targetFolderId: _folderId,
+    );
+
+    // If failed with folder, retry without folder (upload to Drive root)
+    if (result == null && _folderId != null && _folderId!.isNotEmpty) {
+      debugPrint('Folder upload failed, retrying upload to Google Drive root...');
+      result = await _executeUpload(
+        token: token,
+        backupJson: backupJson,
+        fileName: fileName,
+        targetFolderId: null,
+      );
+    }
+
+    return result;
+  }
+
+  /// Core multipart upload execution
+  static Future<String?> _executeUpload({
+    required String token,
+    required String backupJson,
+    required String fileName,
+    String? targetFolderId,
+  }) async {
     try {
-      final metadata = {
+      final Map<String, dynamic> metadata = {
         'name': fileName,
         'mimeType': 'application/json',
       };
 
-      if (_folderId != null && _folderId!.isNotEmpty) {
-        metadata['parents'] = _folderId!;
+      // Google Drive API expects parents as an Array of strings: ["folderId"]
+      if (targetFolderId != null && targetFolderId.isNotEmpty) {
+        metadata['parents'] = [targetFolderId];
       }
 
-      final boundary = '===gymos_backup_boundary===';
+      const boundary = '-------gymos_backup_boundary_31415926';
       final body = StringBuffer();
       body.write('--$boundary\r\n');
       body.write('Content-Type: application/json; charset=UTF-8\r\n\r\n');
@@ -222,7 +264,7 @@ class GoogleDriveService {
       body.write('\r\n--$boundary--');
 
       final response = await http.post(
-        Uri.parse('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink'),
+        Uri.parse('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink,name'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'multipart/related; boundary=$boundary',
@@ -235,6 +277,9 @@ class GoogleDriveService {
         final fileId = data['id'] as String?;
         final webLink = data['webViewLink'] as String?;
 
+        debugPrint('✅ Google Drive upload successful! File ID: $fileId');
+
+        // Try to make file link viewable
         if (fileId != null) {
           try {
             await http.post(
@@ -253,7 +298,7 @@ class GoogleDriveService {
 
         return webLink ?? 'https://drive.google.com/file/d/$fileId/view';
       } else {
-        debugPrint('Drive upload failed: ${response.statusCode} ${response.body}');
+        debugPrint('Google Drive API Error (${response.statusCode}): ${response.body}');
         return null;
       }
     } catch (e) {
