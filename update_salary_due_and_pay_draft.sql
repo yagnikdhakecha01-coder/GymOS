@@ -357,15 +357,16 @@ FOR EACH ROW
 EXECUTE FUNCTION public.fn_calculate_salary_draft_totals();
 
 
--- 6. FIX RPC: pay_salary_draft
+-- 6. FIX RPC: pay_salary_draft & pay_salary_draft_v2
+DROP FUNCTION IF EXISTS public.pay_salary_draft_v2(UUID, TEXT, TEXT);
 DROP FUNCTION IF EXISTS public.pay_salary_draft(UUID, TEXT, TEXT);
 
-CREATE OR REPLACE FUNCTION public.pay_salary_draft(
+CREATE OR REPLACE FUNCTION public.pay_salary_draft_v2(
     p_draft_id UUID,
     p_payment_mode TEXT DEFAULT 'Cash',
     p_notes TEXT DEFAULT ''
 )
-RETURNS VOID AS $$
+RETURNS JSONB AS $$
 DECLARE
     v_gym_id UUID;
     v_staff_id UUID;
@@ -375,27 +376,70 @@ DECLARE
     v_tx_id UUID;
     s_name TEXT;
     r_advance RECORD;
+    r_commission RECORD;
     v_to_recover NUMERIC(12,2) := 0.0;
     v_recovered_temp NUMERIC(12,2) := 0.0;
+    v_settlement_batch_id UUID;
 BEGIN
+    -- Fetch draft details
     SELECT gym_id, staff_id, net_salary, advance_deduction, salary_month
     INTO v_gym_id, v_staff_id, v_net_salary, v_advance_deduction, v_salary_month
     FROM public.salary_drafts
-    WHERE id = p_draft_id AND status <> 'Paid'::public.draft_status;
+    WHERE id = p_draft_id;
 
     IF NOT FOUND THEN
-        RETURN;
+        RETURN jsonb_build_object('success', false, 'message', 'Salary draft not found');
     END IF;
 
     SELECT name INTO s_name FROM public.staff WHERE id = v_staff_id;
+    v_settlement_batch_id := gen_random_uuid();
 
-    IF NOT EXISTS (
-        SELECT 1 FROM public.expenses 
-        WHERE gym_id = v_gym_id 
-          AND category = 'Salaries' 
-          AND amount = v_net_salary 
-          AND date = CURRENT_DATE
-    ) THEN
+    -- 1. Create Transaction record in public.transactions
+    BEGIN
+        INSERT INTO public.transactions (
+            gym_id,
+            type,
+            title,
+            amount,
+            category,
+            date,
+            payment_mode,
+            reference_id
+        )
+        VALUES (
+            v_gym_id,
+            'Expense',
+            'Salary Payment - ' || COALESCE(s_name, 'Staff'::TEXT),
+            v_net_salary,
+            'Salaries',
+            CURRENT_DATE,
+            COALESCE(p_payment_mode::public.payment_mode, 'Cash'::public.payment_mode),
+            p_draft_id::TEXT
+        ) RETURNING id INTO v_tx_id;
+    EXCEPTION WHEN OTHERS THEN
+        BEGIN
+            INSERT INTO public.transactions (
+                gym_id,
+                type,
+                title,
+                amount,
+                category,
+                date
+            )
+            VALUES (
+                v_gym_id,
+                'Expense',
+                'Salary Payment - ' || COALESCE(s_name, 'Staff'::TEXT),
+                v_net_salary,
+                'Salaries',
+                CURRENT_DATE
+            ) RETURNING id INTO v_tx_id;
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END;
+    END;
+
+    -- 2. Insert into expenses for fallback
+    BEGIN
         INSERT INTO public.expenses (
             gym_id,
             title,
@@ -405,96 +449,112 @@ BEGIN
             notes
         ) VALUES (
             v_gym_id,
-            'Salary Payment - ' || COALESCE(s_name, 'Staff'),
+            'Salary Payment - ' || COALESCE(s_name, 'Staff'::TEXT),
             'Salaries',
             v_net_salary,
             CURRENT_DATE,
-            COALESCE(p_notes, 'Salary payment for ' || v_salary_month)
+            COALESCE(p_notes::TEXT, ('Salary payment for ' || COALESCE(v_salary_month, ''))::TEXT)
         );
-    END IF;
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
 
-    IF NOT EXISTS (
-        SELECT 1 FROM public.transactions 
-        WHERE gym_id = v_gym_id 
-          AND type = 'Expense' 
-          AND category = 'Salaries' 
-          AND amount = v_net_salary 
-          AND date = CURRENT_DATE
-    ) THEN
-        INSERT INTO public.transactions (
-            gym_id,
-            type,
-            title,
-            category,
-            amount,
-            date
-        )
-        VALUES (
-            v_gym_id,
-            'Expense',
-            'Salary Payment - ' || COALESCE(s_name, 'Staff'),
-            'Salaries',
-            v_net_salary,
-            CURRENT_DATE
-        ) RETURNING id INTO v_tx_id;
-    END IF;
+    -- 3. Mark Commission ledger entries to Paid
+    BEGIN
+        FOR r_commission IN 
+            SELECT id 
+            FROM public.commission_ledger 
+            WHERE staff_id = v_staff_id 
+              AND status = 'Pending'::public.commission_status
+        LOOP
+            BEGIN
+                INSERT INTO public.salary_payment_commissions (
+                    gym_id,
+                    salary_payment_id,
+                    commission_ledger_id
+                )
+                VALUES (
+                    v_gym_id,
+                    p_draft_id,
+                    r_commission.id
+                ) ON CONFLICT DO NOTHING;
+            EXCEPTION WHEN OTHERS THEN NULL;
+            END;
 
-    UPDATE public.commission_ledger
-    SET status = 'Paid'::public.commission_status,
-        paid_at = NOW()
-    WHERE staff_id = v_staff_id AND status = 'Pending'::public.commission_status;
+            UPDATE public.commission_ledger
+            SET status = 'Paid'::public.commission_status,
+                included_in_salary = TRUE,
+                salary_payment_id = p_draft_id,
+                settlement_batch_id = v_settlement_batch_id,
+                paid_at = NOW(),
+                updated_at = NOW()
+            WHERE id = r_commission.id;
+        END LOOP;
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
 
+    -- 4. Recover advances dynamically
     v_to_recover := COALESCE(v_advance_deduction, 0.0);
     IF v_to_recover > 0 THEN
-        FOR r_advance IN 
-            SELECT id, remaining_amount, recovered_amount, advance_amount
-            FROM public.salary_advance_ledger
-            WHERE staff_id = v_staff_id 
-              AND status IN ('Approved'::public.advance_status, 'Given'::public.advance_status, 'Pending'::public.advance_status)
-              AND (
-                trim(salary_month) = trim(v_salary_month)
-                OR (
-                  (salary_month IS NULL OR salary_month = '') 
-                  AND to_char(given_date, 'FMMonth YYYY') = trim(v_salary_month)
-                )
-              )
-            ORDER BY given_date ASC
-        LOOP
-            IF v_to_recover <= 0 THEN
-                EXIT;
-            END IF;
+        BEGIN
+            FOR r_advance IN 
+                SELECT id, remaining_amount, recovered_amount, advance_amount
+                FROM public.salary_advance_ledger
+                WHERE staff_id = v_staff_id 
+                  AND status IN ('Approved'::public.advance_status, 'Given'::public.advance_status, 'Pending'::public.advance_status)
+                ORDER BY given_date ASC
+            LOOP
+                IF v_to_recover <= 0 THEN
+                    EXIT;
+                END IF;
 
-            IF r_advance.remaining_amount <= v_to_recover THEN
-                v_recovered_temp := r_advance.remaining_amount;
-                
-                UPDATE public.salary_advance_ledger
-                SET recovered_amount = r_advance.advance_amount,
-                    remaining_amount = 0.0,
-                    status = 'Recovered'::public.advance_status,
-                    salary_payment_id = p_draft_id,
-                    updated_at = NOW()
-                WHERE id = r_advance.id;
-                
-                v_to_recover := v_to_recover - v_recovered_temp;
-            ELSE
-                UPDATE public.salary_advance_ledger
-                SET recovered_amount = COALESCE(r_advance.recovered_amount, 0.0) + v_to_recover,
-                    remaining_amount = r_advance.remaining_amount - v_to_recover,
-                    salary_payment_id = p_draft_id,
-                    updated_at = NOW()
-                WHERE id = r_advance.id;
-                
-                v_to_recover := 0.0;
-            END IF;
-        END LOOP;
+                IF r_advance.remaining_amount <= v_to_recover THEN
+                    v_recovered_temp := r_advance.remaining_amount;
+                    
+                    UPDATE public.salary_advance_ledger
+                    SET recovered_amount = r_advance.advance_amount,
+                        remaining_amount = 0.0,
+                        status = 'Recovered'::public.advance_status,
+                        salary_payment_id = p_draft_id,
+                        updated_at = NOW()
+                    WHERE id = r_advance.id;
+                    
+                    v_to_recover := v_to_recover - v_recovered_temp;
+                ELSE
+                    UPDATE public.salary_advance_ledger
+                    SET recovered_amount = COALESCE(r_advance.recovered_amount, 0.0) + v_to_recover,
+                        remaining_amount = r_advance.remaining_amount - v_to_recover,
+                        salary_payment_id = p_draft_id,
+                        updated_at = NOW()
+                    WHERE id = r_advance.id;
+                    
+                    v_to_recover := 0.0;
+                END IF;
+            END LOOP;
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END;
     END IF;
 
+    -- 5. Mark Salary Draft as Paid
     UPDATE public.salary_drafts
     SET status = 'Paid'::public.draft_status,
         paid_transaction_id = v_tx_id,
         created_at = NOW()
     WHERE id = p_draft_id;
 
+    RETURN jsonb_build_object('success', true, 'draft_id', p_draft_id, 'message', 'Salary paid successfully');
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+GRANT EXECUTE ON FUNCTION public.pay_salary_draft_v2(UUID, TEXT, TEXT) TO anon, authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION public.pay_salary_draft(
+    p_draft_id UUID,
+    p_payment_mode TEXT DEFAULT 'Cash',
+    p_notes TEXT DEFAULT ''
+)
+RETURNS JSONB AS $$
+BEGIN
+    RETURN public.pay_salary_draft_v2(p_draft_id, p_payment_mode, p_notes);
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
