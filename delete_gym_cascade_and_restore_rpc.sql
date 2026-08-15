@@ -1,13 +1,36 @@
 -- =========================================================================
--- SUPER ADMIN GYM CASCADE DELETE, ONE-CLICK RESTORE & MONTHLY PROFIT RPC
+-- SUPER ADMIN COMPLETE BACKUP, CASCADE DELETE & STATUS FIX MIGRATION
+-- RUN THIS ENTIRE SCRIPT IN SUPABASE SQL EDITOR
 -- =========================================================================
 
--- DROP OLD FUNCTIONS FIRST TO ALLOW RETURN TYPE RE-DEFINITION
+-- 1. FIX GYM STATUS CHECK CONSTRAINT (Allows Active, Suspended, free_trial, Trial, etc.)
+ALTER TABLE public.gyms DROP CONSTRAINT IF EXISTS gyms_status_check;
+ALTER TABLE public.gyms ADD CONSTRAINT gyms_status_check CHECK (
+    status IN ('Active', 'active', 'Suspended', 'suspended', 'Disabled', 'disabled', 'Grace Period', 'grace_period', 'Trial', 'trial', 'free_trial', 'Expired', 'expired')
+);
+
+-- 2. CREATE AND PERMIT GYM BACKUPS TABLE
+CREATE TABLE IF NOT EXISTS public.gym_backups (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    gym_id UUID REFERENCES public.gyms(id) ON DELETE CASCADE,
+    backup_name TEXT NOT NULL,
+    backup_data JSONB NOT NULL,
+    size_bytes BIGINT DEFAULT 0,
+    provider TEXT DEFAULT 'Super Admin Backup System',
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE public.gym_backups ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS gym_backups_admin_policy ON public.gym_backups;
+CREATE POLICY gym_backups_admin_policy ON public.gym_backups FOR ALL USING (true) WITH CHECK (true);
+GRANT ALL ON TABLE public.gym_backups TO anon, authenticated, service_role;
+
+-- 3. DROP OLD FUNCTIONS FIRST TO ALLOW RETURN TYPE & PARAMETER RE-DEFINITION
 DROP FUNCTION IF EXISTS public.delete_gym_cascade(UUID);
 DROP FUNCTION IF EXISTS public.restore_gym_backup(JSONB);
 DROP FUNCTION IF EXISTS public.get_gym_monthly_financial_summary(UUID, INT, INT);
 
--- 1. CLEAN CASCADE DELETE GYM (Auto-unlinks users, deletes profiles, leaves 0 dummy accounts)
+-- 4. CLEAN CASCADE DELETE GYM (Auto-unlinks users, deletes profiles, leaves 0 dummy accounts)
 CREATE OR REPLACE FUNCTION public.delete_gym_cascade(p_gym_id UUID)
 RETURNS JSONB AS $$
 DECLARE
@@ -64,7 +87,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 GRANT EXECUTE ON FUNCTION public.delete_gym_cascade(UUID) TO anon, authenticated, service_role;
 
 
--- 2. ONE-CLICK RESTORE GYM FROM BACKUP JSON BUNDLE
+-- 5. ONE-CLICK RESTORE GYM FROM BACKUP JSON BUNDLE
 CREATE OR REPLACE FUNCTION public.restore_gym_backup(p_backup_data JSONB)
 RETURNS JSONB AS $$
 DECLARE
@@ -143,7 +166,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 GRANT EXECUTE ON FUNCTION public.restore_gym_backup(JSONB) TO anon, authenticated, service_role;
 
 
--- 3. GYM SPECIFIC MONTHLY FINANCIAL PROFIT & REVENUE SUMMARY
+-- 6. GYM SPECIFIC MONTHLY FINANCIAL PROFIT & REVENUE SUMMARY
 CREATE OR REPLACE FUNCTION public.get_gym_monthly_financial_summary(
     p_gym_id UUID, 
     p_year INT, 

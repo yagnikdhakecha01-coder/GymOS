@@ -255,13 +255,17 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
       final jsonStr = jsonEncode(backupData);
       
       // Save backup record to database as well
-      await client.from('gym_backups').insert({
-        'gym_id': gymId,
-        'backup_name': 'Gym Backup ${DateFormat('dd MMM yyyy, hh:mm a').format(DateTime.now())}',
-        'backup_data': backupData,
-        'size_bytes': jsonStr.length,
-        'provider': 'Super Admin Backup System',
-      });
+      try {
+        await client.from('gym_backups').insert({
+          'gym_id': gymId,
+          'backup_name': 'Gym Backup ${DateFormat('dd MMM yyyy, hh:mm a').format(DateTime.now())}',
+          'backup_data': backupData,
+          'size_bytes': jsonStr.length,
+          'provider': 'Super Admin Backup System',
+        });
+      } catch (dbErr) {
+        debugPrint('Warning: Could not save backup to gym_backups table ($dbErr). Exporting local payload anyway.');
+      }
 
       if (mounted) {
         showDialog(
