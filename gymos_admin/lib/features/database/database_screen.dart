@@ -37,6 +37,7 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
   bool _driveConnected = false;
   String _driveEmail = '';
   final _driveTokenController = TextEditingController();
+  final _driveRefreshTokenController = TextEditingController();
   final _driveFolderController = TextEditingController();
 
   // Restore
@@ -55,6 +56,7 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
   void dispose() {
     _tabController.dispose();
     _driveTokenController.dispose();
+    _driveRefreshTokenController.dispose();
     _driveFolderController.dispose();
     _restoreJsonController.dispose();
     super.dispose();
@@ -400,7 +402,8 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
   /// 6. CONNECT GOOGLE DRIVE
   Future<void> _connectDrive() async {
     final token = _driveTokenController.text.trim();
-    if (token.isEmpty) return;
+    final refreshToken = _driveRefreshTokenController.text.trim();
+    if (token.isEmpty && refreshToken.isEmpty) return;
 
     setState(() {
       _isActionInProgress = true;
@@ -409,6 +412,7 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
 
     await GoogleDriveService.saveCredentials(
       accessToken: token,
+      refreshToken: refreshToken.isNotEmpty ? refreshToken : null,
       folderId: _driveFolderController.text.trim().isNotEmpty ? _driveFolderController.text.trim() : null,
     );
 
@@ -908,10 +912,28 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
             const SizedBox(height: 8),
             TextField(
               controller: _driveTokenController,
-              maxLines: 3,
+              maxLines: 2,
               style: GoogleFonts.firaCode(fontSize: 11),
               decoration: InputDecoration(
-                hintText: 'Paste your Google OAuth2 access token here...',
+                hintText: 'Paste your Google OAuth2 access token here (starts with ya29...)...',
+                hintStyle: GoogleFonts.firaCode(fontSize: 11, color: AdminTheme.mutedTextColor(context)),
+                filled: true,
+                fillColor: AdminTheme.surfaceColor(context),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            Text('Refresh Token (Recommended for Permanent Auto-Renewal)', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AdminTheme.textColor(context))),
+            const SizedBox(height: 4),
+            Text('Copy from "Refresh token" in Step 2 of OAuth Playground. With this, token will never expire!', style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.mutedTextColor(context))),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _driveRefreshTokenController,
+              maxLines: 2,
+              style: GoogleFonts.firaCode(fontSize: 11),
+              decoration: InputDecoration(
+                hintText: 'Paste Refresh Token (e.g. 1//04ATsM...) for lifetime auto-renewal...',
                 hintStyle: GoogleFonts.firaCode(fontSize: 11, color: AdminTheme.mutedTextColor(context)),
                 filled: true,
                 fillColor: AdminTheme.surfaceColor(context),
