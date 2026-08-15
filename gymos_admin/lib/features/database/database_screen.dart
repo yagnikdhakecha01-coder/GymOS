@@ -182,6 +182,7 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
 
       // Upload to Google Drive if connected
       String? driveUrl;
+      String? driveError;
       if (GoogleDriveService.isConnected && backupId != null) {
         setState(() {
           _actionMessage = 'Uploading to Google Drive...';
@@ -196,12 +197,16 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
               .single();
           final backupJson = jsonEncode(backupRow['backup_data']);
           final fileName = 'gymos_backup_${DateFormat('yyyy-MM-dd_HHmm').format(DateTime.now())}.json';
-          driveUrl = await GoogleDriveService.uploadBackup(backupJson: backupJson, fileName: fileName);
-          if (driveUrl != null) {
+          final uploadRes = await GoogleDriveService.uploadBackup(backupJson: backupJson, fileName: fileName);
+          if (uploadRes.success && uploadRes.driveUrl != null) {
+            driveUrl = uploadRes.driveUrl;
             await client.from('database_backups').update({'drive_url': driveUrl}).eq('id', backupId);
+          } else {
+            driveError = uploadRes.error ?? 'Upload failed';
           }
         } catch (e) {
-          debugPrint('Drive upload warning: $e');
+          driveError = e.toString();
+          debugPrint('Drive upload error: $e');
         }
       }
 
@@ -210,13 +215,17 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
 
       if (mounted) {
         setState(() => _isActionInProgress = false);
+        String msg = '✅ Backup complete! $totalRecords records ($sizeReadable)';
+        if (driveUrl != null) {
+          msg += ' • ☁️ Uploaded to Google Drive!';
+        } else if (driveError != null) {
+          msg += ' • ⚠️ Drive: $driveError';
+        }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(success
-                ? '✅ Backup complete! $totalRecords records ($sizeReadable)${driveUrl != null ? " • Uploaded to Drive" : ""}'
-                : '⚠️ Backup finished with warnings'),
-            backgroundColor: success ? AdminTheme.success : Colors.orange,
-            duration: const Duration(seconds: 4),
+            content: Text(msg),
+            backgroundColor: driveError != null ? Colors.orange : (success ? AdminTheme.success : Colors.orange),
+            duration: const Duration(seconds: 5),
           ),
         );
         _loadBackupHistory();

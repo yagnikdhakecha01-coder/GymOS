@@ -3,6 +3,20 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'supabase_service.dart';
 
+class DriveUploadResult {
+  final bool success;
+  final String? driveUrl;
+  final String? fileId;
+  final String? error;
+
+  DriveUploadResult({
+    required this.success,
+    this.driveUrl,
+    this.fileId,
+    this.error,
+  });
+}
+
 /// Google Drive integration for automated backup uploads.
 /// Supports both Access Token and Refresh Token (Permanent Auto-Renewal).
 class GoogleDriveService {
@@ -107,13 +121,11 @@ class GoogleDriveService {
 
   /// Get a valid access token (auto-refreshes using refresh_token if needed)
   static Future<String?> getValidAccessToken() async {
-    // 1. If we have an access token, test if it is still alive
     if (_accessToken != null && _accessToken!.isNotEmpty) {
       final isAlive = await testConnection();
       if (isAlive) return _accessToken;
     }
 
-    // 2. If access token expired and we have a refresh token, auto-renew
     if (_refreshToken != null && _refreshToken!.isNotEmpty) {
       final renewed = await _refreshAccessToken();
       if (renewed) return _accessToken;
@@ -150,7 +162,6 @@ class GoogleDriveService {
         final newAccessToken = data['access_token'] as String?;
         if (newAccessToken != null && newAccessToken.isNotEmpty) {
           _accessToken = newAccessToken;
-          // Update in DB
           if (AdminSupabaseService.isInitialized) {
             await saveCredentials(
               accessToken: newAccessToken,
@@ -202,29 +213,28 @@ class GoogleDriveService {
     return null;
   }
 
-  /// Upload backup JSON to Google Drive
-  static Future<String?> uploadBackup({
+  /// Upload backup JSON to Google Drive (2-Step Rock Solid Method)
+  static Future<DriveUploadResult> uploadBackup({
     required String backupJson,
     required String fileName,
   }) async {
     final token = await getValidAccessToken();
     if (token == null) {
-      debugPrint('Google Drive upload failed: No valid access token');
-      return null;
+      return DriveUploadResult(success: false, error: 'No valid access token. Please reconnect Drive.');
     }
 
-    // Try upload with folder if specified, fallback to root if folder fails
-    String? result = await _executeUpload(
+    // 1. Try uploading to folder if specified
+    DriveUploadResult res = await _executeTwoStepUpload(
       token: token,
       backupJson: backupJson,
       fileName: fileName,
       targetFolderId: _folderId,
     );
 
-    // If failed with folder, retry without folder (upload to Drive root)
-    if (result == null && _folderId != null && _folderId!.isNotEmpty) {
-      debugPrint('Folder upload failed, retrying upload to Google Drive root...');
-      result = await _executeUpload(
+    // 2. Fallback to Drive root if folder was rejected (e.g. 403 / 404)
+    if (!res.success && _folderId != null && _folderId!.isNotEmpty) {
+      debugPrint('Folder upload failed (${res.error}), falling back to Google Drive Root...');
+      res = await _executeTwoStepUpload(
         token: token,
         backupJson: backupJson,
         fileName: fileName,
@@ -232,78 +242,86 @@ class GoogleDriveService {
       );
     }
 
-    return result;
+    return res;
   }
 
-  /// Core multipart upload execution
-  static Future<String?> _executeUpload({
+  /// 2-Step Official Google Drive Upload:
+  /// Step 1: Create Metadata record via POST /drive/v3/files
+  /// Step 2: Upload Content via PATCH /upload/drive/v3/files/{id}?uploadType=media
+  static Future<DriveUploadResult> _executeTwoStepUpload({
     required String token,
     required String backupJson,
     required String fileName,
     String? targetFolderId,
   }) async {
     try {
+      // Step 1: Create File Metadata
       final Map<String, dynamic> metadata = {
         'name': fileName,
         'mimeType': 'application/json',
       };
-
-      // Google Drive API expects parents as an Array of strings: ["folderId"]
       if (targetFolderId != null && targetFolderId.isNotEmpty) {
         metadata['parents'] = [targetFolderId];
       }
 
-      const boundary = '-------gymos_backup_boundary_31415926';
-      final body = StringBuffer();
-      body.write('--$boundary\r\n');
-      body.write('Content-Type: application/json; charset=UTF-8\r\n\r\n');
-      body.write(jsonEncode(metadata));
-      body.write('\r\n--$boundary\r\n');
-      body.write('Content-Type: application/json\r\n\r\n');
-      body.write(backupJson);
-      body.write('\r\n--$boundary--');
-
-      final response = await http.post(
-        Uri.parse('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink,name'),
+      final createRes = await http.post(
+        Uri.parse('https://www.googleapis.com/drive/v3/files?fields=id,webViewLink,name'),
         headers: {
           'Authorization': 'Bearer $token',
-          'Content-Type': 'multipart/related; boundary=$boundary',
+          'Content-Type': 'application/json; charset=UTF-8',
         },
-        body: body.toString(),
+        body: jsonEncode(metadata),
       );
 
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final data = jsonDecode(response.body);
-        final fileId = data['id'] as String?;
-        final webLink = data['webViewLink'] as String?;
-
-        debugPrint('✅ Google Drive upload successful! File ID: $fileId');
-
-        // Try to make file link viewable
-        if (fileId != null) {
-          try {
-            await http.post(
-              Uri.parse('https://www.googleapis.com/drive/v3/files/$fileId/permissions'),
-              headers: {
-                'Authorization': 'Bearer $token',
-                'Content-Type': 'application/json',
-              },
-              body: jsonEncode({
-                'role': 'reader',
-                'type': 'anyone',
-              }),
-            );
-          } catch (_) {}
-        }
-
-        return webLink ?? 'https://drive.google.com/file/d/$fileId/view';
-      } else {
-        debugPrint('Google Drive API Error (${response.statusCode}): ${response.body}');
-        return null;
+      if (createRes.statusCode != 200 && createRes.statusCode != 201) {
+        final errBody = createRes.body;
+        debugPrint('Step 1 Metadata Creation Failed: ${createRes.statusCode} $errBody');
+        return DriveUploadResult(success: false, error: 'Metadata Error (${createRes.statusCode}): $errBody');
       }
+
+      final createData = jsonDecode(createRes.body);
+      final fileId = createData['id'] as String?;
+      final webViewLink = createData['webViewLink'] as String?;
+
+      if (fileId == null) {
+        return DriveUploadResult(success: false, error: 'No File ID returned from Google Drive');
+      }
+
+      // Step 2: Upload Content
+      final uploadRes = await http.patch(
+        Uri.parse('https://www.googleapis.com/upload/drive/v3/files/$fileId?uploadType=media'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json; charset=UTF-8',
+        },
+        body: backupJson,
+      );
+
+      if (uploadRes.statusCode != 200 && uploadRes.statusCode != 201) {
+        final uploadErr = uploadRes.body;
+        debugPrint('Step 2 Content Upload Failed: ${uploadRes.statusCode} $uploadErr');
+        return DriveUploadResult(success: false, fileId: fileId, error: 'Content Upload Error: $uploadErr');
+      }
+
+      debugPrint('✅ Google Drive 2-Step Upload Success! File ID: $fileId');
+
+      // Make link accessible
+      try {
+        await http.post(
+          Uri.parse('https://www.googleapis.com/drive/v3/files/$fileId/permissions'),
+          headers: {
+            'Authorization': 'Bearer $token',
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode({'role': 'reader', 'type': 'anyone'}),
+        );
+      } catch (_) {}
+
+      final finalUrl = webViewLink ?? 'https://drive.google.com/file/d/$fileId/view';
+      return DriveUploadResult(success: true, driveUrl: finalUrl, fileId: fileId);
     } catch (e) {
-      debugPrint('Error uploading to Drive: $e');
-      return null;
+      debugPrint('Exception in 2-step Drive upload: $e');
+      return DriveUploadResult(success: false, error: e.toString());
     }
   }
 
