@@ -18,9 +18,21 @@ CREATE TABLE IF NOT EXISTS public.database_backups (
     created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Upgrade columns safely if old table structure exists
+-- Upgrade columns and drop any conflicting NOT NULL constraints from older schema
 DO $$
 BEGIN
+    -- If old 'size' column exists with NOT NULL constraint, drop NOT NULL
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'database_backups' AND column_name = 'size') THEN
+        ALTER TABLE public.database_backups ALTER COLUMN size DROP NOT NULL;
+        ALTER TABLE public.database_backups ALTER COLUMN size SET DEFAULT '';
+    END IF;
+
+    -- If old 'name' column exists with NOT NULL constraint, drop NOT NULL
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'database_backups' AND column_name = 'name') THEN
+        ALTER TABLE public.database_backups ALTER COLUMN name DROP NOT NULL;
+        ALTER TABLE public.database_backups ALTER COLUMN name SET DEFAULT 'Full Backup';
+    END IF;
+
     -- Handle rename if column was named 'name'
     IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'database_backups' AND column_name = 'name') 
        AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'database_backups' AND column_name = 'backup_name') THEN
