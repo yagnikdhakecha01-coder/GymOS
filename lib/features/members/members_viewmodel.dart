@@ -288,6 +288,14 @@ class MembersViewModel extends ChangeNotifier {
     return results;
   }
 
+  Future<List<FinanceTransaction>> fetchMemberTransactionsFromBackend(String memberId) async {
+    final remoteTx = await _repository.fetchMemberTransactionsFromBackend(memberId);
+    if (remoteTx.isNotEmpty) {
+      return remoteTx;
+    }
+    return getMemberTransactions(memberId);
+  }
+
   List<AttendanceRecord> getMemberAttendance(String memberId) {
     return _repository.getAttendance()
         .where((r) => r.userId == memberId && r.userType == 'Member')

@@ -2780,6 +2780,21 @@ class GymRepository extends ChangeNotifier {
     }
   }
 
+  Future<List<FinanceTransaction>> fetchMemberTransactionsFromBackend(String memberId) async {
+    if (SupabaseService.isInitialized) {
+      try {
+        final List response = await SupabaseService.client.rpc(
+          'get_member_payment_transactions',
+          params: {'p_member_id': memberId},
+        );
+        return response.map((e) => FinanceTransaction.fromJson(e)).toList();
+      } catch (e) {
+        print('Backend RPC get_member_payment_transactions error, falling back to local list: $e');
+      }
+    }
+    return [];
+  }
+
   Future<void> deleteTransaction(String id) async {
     if (_isValidUUID(id)) {
       _transactions.removeWhere((t) => t.id == id);
