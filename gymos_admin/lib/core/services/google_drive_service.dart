@@ -8,12 +8,14 @@ class DriveUploadResult {
   final String? driveUrl;
   final String? fileId;
   final String? error;
+  final String? details;
 
   DriveUploadResult({
     required this.success,
     this.driveUrl,
     this.fileId,
     this.error,
+    this.details,
   });
 }
 
@@ -29,6 +31,8 @@ class GoogleDriveService {
 
   static bool get isConnected => _isConnected && (_accessToken != null || _refreshToken != null);
   static String? get folderId => _folderId;
+  static String? get currentAccessToken => _accessToken;
+  static String? get currentRefreshToken => _refreshToken;
 
   /// Helper to clean folder ID from raw string or full URL
   static String? _cleanFolderId(String? raw) {
@@ -213,14 +217,109 @@ class GoogleDriveService {
     return null;
   }
 
-  /// Upload backup JSON to Google Drive (2-Step Rock Solid Method)
+  /// Run complete step-by-step diagnostic test
+  static Future<List<String>> runDiagnostics() async {
+    final List<String> logs = [];
+    final nowStr = () => DateTime.now().toIso8601String().substring(11, 19);
+
+    logs.add('[${nowStr()}] 🔍 Starting Google Drive Diagnostic Suite...');
+
+    // Step 1: Check token presence
+    if (_accessToken == null && _refreshToken == null) {
+      logs.add('[${nowStr()}] ❌ FAILED: No token configured. Please enter Access Token or Refresh Token.');
+      return logs;
+    }
+
+    logs.add('[${nowStr()}] 🔑 Checking Access Token...');
+    final token = await getValidAccessToken();
+    if (token == null || token.isEmpty) {
+      logs.add('[${nowStr()}] ❌ FAILED: Unable to obtain valid Access Token. Refresh token exchange failed.');
+      return logs;
+    }
+    logs.add('[${nowStr()}] ✅ Token obtained (${token.substring(0, 10)}...)');
+
+    // Step 2: Test User Info API
+    logs.add('[${nowStr()}] 👤 Testing User Profile API...');
+    try {
+      final userRes = await http.get(
+        Uri.parse('https://www.googleapis.com/drive/v3/about?fields=user,storageQuota'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (userRes.statusCode == 200) {
+        final data = jsonDecode(userRes.body);
+        final email = data['user']?['emailAddress'] ?? 'Unknown';
+        final displayName = data['user']?['displayName'] ?? '';
+        logs.add('[${nowStr()}] ✅ Authenticated as: $displayName ($email) [HTTP 200 OK]');
+      } else {
+        logs.add('[${nowStr()}] ❌ User API Error (${userRes.statusCode}): ${userRes.body}');
+        return logs;
+      }
+    } catch (e) {
+      logs.add('[${nowStr()}] ❌ Network error checking user: $e');
+      return logs;
+    }
+
+    // Step 3: Check Target Folder
+    if (_folderId != null && _folderId!.isNotEmpty) {
+      logs.add('[${nowStr()}] 📁 Checking Folder ID: $_folderId...');
+      try {
+        final folderRes = await http.get(
+          Uri.parse('https://www.googleapis.com/drive/v3/files/$_folderId?fields=id,name,mimeType'),
+          headers: {'Authorization': 'Bearer $token'},
+        );
+        if (folderRes.statusCode == 200) {
+          final folderData = jsonDecode(folderRes.body);
+          logs.add('[${nowStr()}] ✅ Folder Found: "${folderData['name']}" [HTTP 200 OK]');
+        } else {
+          logs.add('[${nowStr()}] ⚠️ Folder Access Warning (${folderRes.statusCode}): ${folderRes.body}');
+          logs.add('[${nowStr()}] ℹ️ Note: If folder was created separately, the token scope may need to be "https://www.googleapis.com/auth/drive". System will fallback to Root folder if needed.');
+        }
+      } catch (e) {
+        logs.add('[${nowStr()}] ⚠️ Folder check error: $e');
+      }
+    } else {
+      logs.add('[${nowStr()}] 📁 Target Folder: Root Directory (Default)');
+    }
+
+    // Step 4: Test Upload a test ping file
+    logs.add('[${nowStr()}] 📤 Testing Test File Upload (gymos_diagnostic_ping.json)...');
+    try {
+      final pingResult = await uploadBackup(
+        backupJson: jsonEncode({
+          'test': true,
+          'system': 'GymOS Enterprise Drive Diagnostic',
+          'timestamp': DateTime.now().toIso8601String(),
+        }),
+        fileName: 'gymos_diagnostic_ping.json',
+      );
+
+      if (pingResult.success) {
+        logs.add('[${nowStr()}] 🎉 SUCCESS: Test file uploaded to Google Drive!');
+        logs.add('[${nowStr()}] 🔗 View URL: ${pingResult.driveUrl}');
+      } else {
+        logs.add('[${nowStr()}] ❌ UPLOAD FAILED: ${pingResult.error}');
+        if (pingResult.details != null) {
+          logs.add('[${nowStr()}] 📋 Details: ${pingResult.details}');
+        }
+      }
+    } catch (e) {
+      logs.add('[${nowStr()}] ❌ Upload exception: $e');
+    }
+
+    return logs;
+  }
+
+  /// Upload backup JSON to Google Drive (2-Step Method with Full Diagnostics)
   static Future<DriveUploadResult> uploadBackup({
     required String backupJson,
     required String fileName,
   }) async {
     final token = await getValidAccessToken();
     if (token == null) {
-      return DriveUploadResult(success: false, error: 'No valid access token. Please reconnect Drive.');
+      return DriveUploadResult(
+        success: false,
+        error: 'No valid access token. Please enter token or reconnect Drive.',
+      );
     }
 
     // 1. Try uploading to folder if specified
@@ -231,7 +330,7 @@ class GoogleDriveService {
       targetFolderId: _folderId,
     );
 
-    // 2. Fallback to Drive root if folder was rejected (e.g. 403 / 404)
+    // 2. Fallback to Drive root if folder was rejected (e.g. 403 / 404 / insufficient scope for folder)
     if (!res.success && _folderId != null && _folderId!.isNotEmpty) {
       debugPrint('Folder upload failed (${res.error}), falling back to Google Drive Root...');
       res = await _executeTwoStepUpload(
@@ -245,9 +344,7 @@ class GoogleDriveService {
     return res;
   }
 
-  /// 2-Step Official Google Drive Upload:
-  /// Step 1: Create Metadata record via POST /drive/v3/files
-  /// Step 2: Upload Content via PATCH /upload/drive/v3/files/{id}?uploadType=media
+  /// 2-Step Official Google Drive Upload
   static Future<DriveUploadResult> _executeTwoStepUpload({
     required String token,
     required String backupJson,
@@ -276,7 +373,11 @@ class GoogleDriveService {
       if (createRes.statusCode != 200 && createRes.statusCode != 201) {
         final errBody = createRes.body;
         debugPrint('Step 1 Metadata Creation Failed: ${createRes.statusCode} $errBody');
-        return DriveUploadResult(success: false, error: 'Metadata Error (${createRes.statusCode}): $errBody');
+        return DriveUploadResult(
+          success: false,
+          error: 'Metadata Creation Failed (HTTP ${createRes.statusCode})',
+          details: errBody,
+        );
       }
 
       final createData = jsonDecode(createRes.body);
@@ -284,7 +385,11 @@ class GoogleDriveService {
       final webViewLink = createData['webViewLink'] as String?;
 
       if (fileId == null) {
-        return DriveUploadResult(success: false, error: 'No File ID returned from Google Drive');
+        return DriveUploadResult(
+          success: false,
+          error: 'No File ID returned from Google Drive',
+          details: createRes.body,
+        );
       }
 
       // Step 2: Upload Content
@@ -300,7 +405,12 @@ class GoogleDriveService {
       if (uploadRes.statusCode != 200 && uploadRes.statusCode != 201) {
         final uploadErr = uploadRes.body;
         debugPrint('Step 2 Content Upload Failed: ${uploadRes.statusCode} $uploadErr');
-        return DriveUploadResult(success: false, fileId: fileId, error: 'Content Upload Error: $uploadErr');
+        return DriveUploadResult(
+          success: false,
+          fileId: fileId,
+          error: 'Content Upload Failed (HTTP ${uploadRes.statusCode})',
+          details: uploadErr,
+        );
       }
 
       debugPrint('✅ Google Drive 2-Step Upload Success! File ID: $fileId');
@@ -318,10 +428,17 @@ class GoogleDriveService {
       } catch (_) {}
 
       final finalUrl = webViewLink ?? 'https://drive.google.com/file/d/$fileId/view';
-      return DriveUploadResult(success: true, driveUrl: finalUrl, fileId: fileId);
+      return DriveUploadResult(
+        success: true,
+        driveUrl: finalUrl,
+        fileId: fileId,
+      );
     } catch (e) {
       debugPrint('Exception in 2-step Drive upload: $e');
-      return DriveUploadResult(success: false, error: e.toString());
+      return DriveUploadResult(
+        success: false,
+        error: 'Network/Exception: $e',
+      );
     }
   }
 
