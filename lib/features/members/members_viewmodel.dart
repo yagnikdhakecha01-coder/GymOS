@@ -245,13 +245,17 @@ class MembersViewModel extends ChangeNotifier {
 
   List<FinanceTransaction> getMemberTransactions(String memberId) {
     final member = allMembers.cast<Member?>().firstWhere((m) => m?.id == memberId, orElse: () => null);
-    final memberName = member?.name ?? '';
+    final memberName = member?.name?.trim() ?? '';
 
     final results = _repository.getTransactions().where((tx) {
-      // Match by direct reference_id (app-created transactions)
+      // Exclude gym operational expenses (Salary, Rent, Other expenses, etc.)
+      if (tx.type == 'Expense') return false;
+
+      // Match by direct reference_id (app-created member transactions)
       if (tx.referenceId == memberId) return true;
-      // Match by member name in title or notes (DB-trigger-created transactions)
-      if (memberName.isNotEmpty) {
+
+      // Match by member name in title or notes for Revenue transactions
+      if (memberName.length >= 2) {
         final titleLower = tx.title.toLowerCase();
         final notesLower = tx.notes.toLowerCase();
         final nameLower = memberName.toLowerCase();
