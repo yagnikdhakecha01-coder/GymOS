@@ -1,10 +1,13 @@
 import 'dart:convert';
+import 'dart:html' as html;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme/admin_theme.dart';
 import '../../core/services/supabase_service.dart';
-import 'package:intl/intl.dart';
+import '../../core/services/google_drive_service.dart';
 
 class AdminGymDashboardScreen extends StatefulWidget {
   final Map<String, dynamic> gym;
@@ -233,59 +236,142 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
   }
 
   Future<void> _exportBackup() async {
+    final gymName = widget.gym['name']?.toString() ?? 'Gym';
+    final gymId = widget.gym['id'];
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        content: Row(
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(width: 20),
+            Text('Creating backup for $gymName...', style: GoogleFonts.inter(fontSize: 13)),
+          ],
+        ),
+      ),
+    );
+
     try {
       final client = AdminSupabaseService.client;
-      final gymId = widget.gym['id'];
-      
-      final gymData = await client.from('gyms').select().eq('id', gymId).single();
-      final membersData = await client.from('members').select().eq('gym_id', gymId);
-      final staffData = await client.from('staff').select().eq('gym_id', gymId);
-      final txData = await client.from('finance_transactions').select().eq('gym_id', gymId);
-      final settingsData = await client.from('attendance_settings').select().eq('gym_id', gymId).maybeSingle();
+      final result = await client.rpc('export_single_gym_backup', params: {'p_gym_id': gymId});
+      final data = result as Map<String, dynamic>? ?? {};
 
-      final backupData = {
-        'gym': gymData,
-        'members': membersData,
-        'staff': staffData,
-        'finance_transactions': txData,
-        'attendance_settings': settingsData,
-        'exported_at': DateTime.now().toIso8601String(),
-        'version': '1.0',
-      };
+      final backupId = data['backup_id'];
+      final totalRecords = data['total_records'] ?? 0;
+      final sizeReadable = data['size_readable'] ?? '—';
+      final backupJson = jsonEncode(data['backup_json']);
 
-      final jsonStr = jsonEncode(backupData);
-      
-      // Save backup record to database as well
-      try {
-        await client.from('gym_backups').insert({
-          'gym_id': gymId,
-          'backup_name': 'Gym Backup ${DateFormat('dd MMM yyyy, hh:mm a').format(DateTime.now())}',
-          'backup_data': backupData,
-          'size_bytes': jsonStr.length,
-          'provider': 'Super Admin Backup System',
-        });
-      } catch (dbErr) {
-        debugPrint('Warning: Could not save backup to gym_backups table ($dbErr). Exporting local payload anyway.');
+      // Upload to Google Drive if connected
+      String? driveUrl;
+      String? driveError;
+      if (GoogleDriveService.isConnected && backupId != null) {
+        try {
+          final cleanGymName = gymName.replaceAll(RegExp(r'[^\w\s]+'), '').replaceAll(' ', '_');
+          final fileName = 'gym_backup_${cleanGymName}_${DateFormat('yyyy-MM-dd_HHmm').format(DateTime.now())}.json';
+          final uploadRes = await GoogleDriveService.uploadBackup(backupJson: backupJson, fileName: fileName);
+          if (uploadRes.success && uploadRes.driveUrl != null) {
+            driveUrl = uploadRes.driveUrl;
+            await client.from('database_backups').update({'drive_url': driveUrl}).eq('id', backupId);
+          } else {
+            driveError = uploadRes.error;
+          }
+        } catch (e) {
+          driveError = e.toString();
+        }
       }
 
       if (mounted) {
+        Navigator.pop(context); // Close loading dialog
+
         showDialog(
           context: context,
           builder: (ctx) => AlertDialog(
-            title: const Text('📦 Backup Export Complete'),
+            title: Row(
+              children: [
+                const Icon(Icons.check_circle_rounded, color: AdminTheme.success, size: 24),
+                const SizedBox(width: 10),
+                Text('📦 $gymName Backup Complete!', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold)),
+              ],
+            ),
             content: SizedBox(
-              width: 600,
-              height: 300,
-              child: SingleChildScrollView(
-                child: SelectableText(jsonStr, style: GoogleFonts.firaCode(fontSize: 11)),
+              width: 550,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AdminTheme.cardColor(context),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: AdminTheme.borderColor(context)),
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text('Total Records:', style: GoogleFonts.inter(fontSize: 12, color: AdminTheme.mutedTextColor(context))),
+                            Text('$totalRecords records', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text('Backup Size:', style: GoogleFonts.inter(fontSize: 12, color: AdminTheme.mutedTextColor(context))),
+                            Text(sizeReadable, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text('Google Drive:', style: GoogleFonts.inter(fontSize: 12, color: AdminTheme.mutedTextColor(context))),
+                            if (driveUrl != null)
+                              InkWell(
+                                onTap: () => launchUrl(Uri.parse(driveUrl!)),
+                                child: Text('✅ Uploaded (Open File ↗)', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AdminTheme.teal)),
+                              )
+                            else if (driveError != null)
+                              Text('⚠️ $driveError', style: GoogleFonts.inter(fontSize: 11, color: Colors.orange))
+                            else
+                              Text('⚪ Not Connected', style: GoogleFonts.inter(fontSize: 12, color: Colors.grey)),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text('ℹ️ This backup is saved in "Database & Backup Center" and can be restored or downloaded anytime.',
+                      style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.mutedTextColor(context))),
+                ],
               ),
             ),
             actions: [
               ElevatedButton.icon(
-                icon: const Icon(Icons.copy_rounded, size: 16),
-                label: const Text('Copy JSON Payload'),
+                icon: const Icon(Icons.download_rounded, size: 16),
+                label: const Text('Download JSON File'),
+                style: ElevatedButton.styleFrom(backgroundColor: AdminTheme.primary),
                 onPressed: () {
-                  Clipboard.setData(ClipboardData(text: jsonStr));
+                  final bytes = utf8.encode(backupJson);
+                  final blob = html.Blob([bytes], 'application/json');
+                  final url = html.Url.createObjectUrlFromBlob(blob);
+                  final cleanGymName = gymName.replaceAll(RegExp(r'[^\w\s]+'), '').replaceAll(' ', '_');
+                  final fileName = 'gym_backup_${cleanGymName}_${DateFormat('yyyy-MM-dd_HHmm').format(DateTime.now())}.json';
+                  final anchor = html.AnchorElement(href: url)
+                    ..setAttribute('download', fileName)
+                    ..click();
+                  html.Url.revokeObjectUrl(url);
+                },
+              ),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.copy_rounded, size: 16),
+                label: const Text('Copy JSON'),
+                onPressed: () {
+                  Clipboard.setData(ClipboardData(text: backupJson));
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('📋 Backup JSON copied to clipboard!'), backgroundColor: AdminTheme.success),
                   );
@@ -297,7 +383,10 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
         );
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Export error: $e'), backgroundColor: AdminTheme.danger));
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Export error: $e'), backgroundColor: AdminTheme.danger));
+      }
     }
   }
 

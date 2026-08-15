@@ -418,3 +418,166 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 GRANT EXECUTE ON FUNCTION public.save_daily_backup() TO anon, authenticated, service_role;
+
+
+-- =============================================
+-- 5. EXPORT SINGLE GYM BACKUP — per-gym cloud backup
+-- =============================================
+DROP FUNCTION IF EXISTS public.export_single_gym_backup(UUID);
+
+CREATE OR REPLACE FUNCTION public.export_single_gym_backup(p_gym_id UUID)
+RETURNS JSONB AS $$
+DECLARE
+    v_gym JSONB := '{}'::jsonb;
+    v_gym_name TEXT := 'Unknown Gym';
+    v_profiles JSONB := '[]'::jsonb;
+    v_members JSONB := '[]'::jsonb;
+    v_staff JSONB := '[]'::jsonb;
+    v_subscriptions JSONB := '[]'::jsonb;
+    v_transactions JSONB := '[]'::jsonb;
+    v_finance_transactions JSONB := '[]'::jsonb;
+    v_attendance_logs JSONB := '[]'::jsonb;
+    v_member_memberships JSONB := '[]'::jsonb;
+    v_salary_drafts JSONB := '[]'::jsonb;
+    v_salary_advance_ledger JSONB := '[]'::jsonb;
+    v_leave_requests JSONB := '[]'::jsonb;
+    v_workout_plans JSONB := '[]'::jsonb;
+    v_diet_plans JSONB := '[]'::jsonb;
+    v_goals JSONB := '[]'::jsonb;
+    v_custom_fields JSONB := '[]'::jsonb;
+    v_attendance_settings JSONB := '[]'::jsonb;
+    v_activity_logs JSONB := '[]'::jsonb;
+    v_notifications JSONB := '[]'::jsonb;
+    v_support_tickets JSONB := '[]'::jsonb;
+    v_total INT := 0;
+    v_counts JSONB;
+    v_backup JSONB;
+    v_backup_id UUID;
+    v_size INT;
+BEGIN
+    -- Check gym
+    SELECT to_jsonb(t) INTO v_gym FROM public.gyms t WHERE id = p_gym_id;
+    IF v_gym IS NULL THEN
+        RETURN jsonb_build_object('success', false, 'message', 'Gym not found');
+    END IF;
+    v_gym_name := COALESCE(v_gym->>'name', 'Gym');
+
+    -- Export gym-specific records
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_profiles FROM public.profiles t WHERE gym_id = p_gym_id; EXCEPTION WHEN OTHERS THEN v_profiles := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_members FROM public.members t WHERE gym_id = p_gym_id; EXCEPTION WHEN OTHERS THEN v_members := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_staff FROM public.staff t WHERE gym_id = p_gym_id; EXCEPTION WHEN OTHERS THEN v_staff := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_subscriptions FROM public.subscriptions t WHERE gym_id = p_gym_id; EXCEPTION WHEN OTHERS THEN v_subscriptions := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_transactions FROM public.transactions t WHERE gym_id = p_gym_id; EXCEPTION WHEN OTHERS THEN v_transactions := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_finance_transactions FROM public.finance_transactions t WHERE gym_id = p_gym_id; EXCEPTION WHEN OTHERS THEN v_finance_transactions := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_attendance_logs FROM public.attendance_logs t WHERE gym_id = p_gym_id; EXCEPTION WHEN OTHERS THEN v_attendance_logs := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_member_memberships FROM public.member_memberships t WHERE gym_id = p_gym_id; EXCEPTION WHEN OTHERS THEN v_member_memberships := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_salary_drafts FROM public.salary_drafts t WHERE gym_id = p_gym_id; EXCEPTION WHEN OTHERS THEN v_salary_drafts := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_salary_advance_ledger FROM public.salary_advance_ledger t WHERE gym_id = p_gym_id; EXCEPTION WHEN OTHERS THEN v_salary_advance_ledger := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_leave_requests FROM public.leave_requests t WHERE gym_id = p_gym_id; EXCEPTION WHEN OTHERS THEN v_leave_requests := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_workout_plans FROM public.workout_plans t WHERE gym_id = p_gym_id; EXCEPTION WHEN OTHERS THEN v_workout_plans := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_diet_plans FROM public.diet_plans t WHERE gym_id = p_gym_id; EXCEPTION WHEN OTHERS THEN v_diet_plans := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_goals FROM public.goals t WHERE gym_id = p_gym_id; EXCEPTION WHEN OTHERS THEN v_goals := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_custom_fields FROM public.custom_fields t WHERE gym_id = p_gym_id; EXCEPTION WHEN OTHERS THEN v_custom_fields := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_attendance_settings FROM public.attendance_settings t WHERE gym_id = p_gym_id; EXCEPTION WHEN OTHERS THEN v_attendance_settings := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_activity_logs FROM public.activity_logs t WHERE gym_id = p_gym_id; EXCEPTION WHEN OTHERS THEN v_activity_logs := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_notifications FROM public.notifications t WHERE gym_id = p_gym_id; EXCEPTION WHEN OTHERS THEN v_notifications := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_support_tickets FROM public.support_tickets t WHERE gym_id = p_gym_id; EXCEPTION WHEN OTHERS THEN v_support_tickets := '[]'::jsonb; END;
+
+    v_counts := jsonb_build_object(
+        'gyms', 1,
+        'profiles', jsonb_array_length(v_profiles),
+        'members', jsonb_array_length(v_members),
+        'staff', jsonb_array_length(v_staff),
+        'subscriptions', jsonb_array_length(v_subscriptions),
+        'transactions', jsonb_array_length(v_transactions),
+        'finance_transactions', jsonb_array_length(v_finance_transactions),
+        'attendance_logs', jsonb_array_length(v_attendance_logs),
+        'member_memberships', jsonb_array_length(v_member_memberships),
+        'salary_drafts', jsonb_array_length(v_salary_drafts),
+        'salary_advance_ledger', jsonb_array_length(v_salary_advance_ledger),
+        'leave_requests', jsonb_array_length(v_leave_requests),
+        'workout_plans', jsonb_array_length(v_workout_plans),
+        'diet_plans', jsonb_array_length(v_diet_plans),
+        'goals', jsonb_array_length(v_goals),
+        'custom_fields', jsonb_array_length(v_custom_fields),
+        'attendance_settings', jsonb_array_length(v_attendance_settings),
+        'activity_logs', jsonb_array_length(v_activity_logs),
+        'notifications', jsonb_array_length(v_notifications),
+        'support_tickets', jsonb_array_length(v_support_tickets)
+    );
+
+    v_total := 1 + jsonb_array_length(v_profiles) + jsonb_array_length(v_members) +
+               jsonb_array_length(v_staff) + jsonb_array_length(v_subscriptions) + jsonb_array_length(v_transactions) +
+               jsonb_array_length(v_finance_transactions) + jsonb_array_length(v_attendance_logs) +
+               jsonb_array_length(v_member_memberships) + jsonb_array_length(v_salary_drafts) +
+               jsonb_array_length(v_salary_advance_ledger) + jsonb_array_length(v_leave_requests) +
+               jsonb_array_length(v_workout_plans) + jsonb_array_length(v_diet_plans) +
+               jsonb_array_length(v_goals) + jsonb_array_length(v_custom_fields) +
+               jsonb_array_length(v_attendance_settings) + jsonb_array_length(v_activity_logs) +
+               jsonb_array_length(v_notifications) + jsonb_array_length(v_support_tickets);
+
+    v_backup := jsonb_build_object(
+        '_meta', jsonb_build_object(
+            'exported_at', now()::TEXT,
+            'version', '2.0',
+            'type', 'single_gym_backup',
+            'gym_id', p_gym_id,
+            'gym_name', v_gym_name,
+            'total_records', v_total,
+            'table_counts', v_counts
+        ),
+        'gyms', jsonb_build_array(v_gym),
+        'profiles', v_profiles,
+        'members', v_members,
+        'staff', v_staff,
+        'subscriptions', v_subscriptions,
+        'transactions', v_transactions,
+        'finance_transactions', v_finance_transactions,
+        'attendance_logs', v_attendance_logs,
+        'member_memberships', v_member_memberships,
+        'salary_drafts', v_salary_drafts,
+        'salary_advance_ledger', v_salary_advance_ledger,
+        'leave_requests', v_leave_requests,
+        'workout_plans', v_workout_plans,
+        'diet_plans', v_diet_plans,
+        'goals', v_goals,
+        'custom_fields', v_custom_fields,
+        'attendance_settings', v_attendance_settings,
+        'activity_logs', v_activity_logs,
+        'notifications', v_notifications,
+        'support_tickets', v_support_tickets
+    );
+
+    v_size := octet_length(v_backup::TEXT);
+
+    -- Save directly to database_backups so it appears on Super Admin Database page
+    INSERT INTO public.database_backups (
+        backup_name, backup_data, size_bytes, total_records, table_counts, status
+    ) VALUES (
+        'Gym Backup — ' || v_gym_name || ' (' || to_char(now() AT TIME ZONE 'Asia/Kolkata', 'DD Mon YYYY, HH12:MI AM') || ')',
+        v_backup,
+        v_size,
+        v_total,
+        v_counts,
+        'Success'
+    ) RETURNING id INTO v_backup_id;
+
+    RETURN jsonb_build_object(
+        'success', true,
+        'backup_id', v_backup_id,
+        'gym_id', p_gym_id,
+        'gym_name', v_gym_name,
+        'total_records', v_total,
+        'size_bytes', v_size,
+        'size_readable', CASE 
+            WHEN v_size > 1048576 THEN round(v_size / 1048576.0, 1) || ' MB'
+            WHEN v_size > 1024 THEN round(v_size / 1024.0, 1) || ' KB'
+            ELSE v_size || ' B' END,
+        'backup_json', v_backup,
+        'message', 'Gym backup saved successfully!'
+    );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+GRANT EXECUTE ON FUNCTION public.export_single_gym_backup(UUID) TO anon, authenticated, service_role;
+
