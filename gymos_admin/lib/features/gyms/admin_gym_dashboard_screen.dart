@@ -391,12 +391,18 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
   }
 
   Future<void> _deleteGymWithAutoBackup() async {
+    final gymName = widget.gym['name']?.toString() ?? 'Gym';
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('⚠️ Delete Gym & Cascade Wipe?'),
-        content: const Text(
-          'This will AUTO-EXPORT a backup JSON first, then completely remove all gym data across all tables and unlink all accounts. NO dummy accounts will remain.',
+        content: Text(
+          'This will:\n'
+          '1. 📦 Auto-backup ALL data of "$gymName" (20+ tables)\n'
+          '2. ☁️ Upload backup to Google Drive\n'
+          '3. 🗑️ Delete ALL gym data from database\n'
+          '4. 🔒 Logout all members, staff & owner\n\n'
+          'The backup can be restored anytime from Google Drive via Database → Upload & Restore → Select from Drive.',
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
@@ -411,19 +417,80 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
 
     if (confirm != true) return;
 
+    // Show loading
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        content: Row(
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(width: 20),
+            Text('Backing up $gymName before deletion...', style: GoogleFonts.inter(fontSize: 13)),
+          ],
+        ),
+      ),
+    );
+
     try {
-      await _exportBackup();
-      if (AdminSupabaseService.isInitialized) {
-        await AdminSupabaseService.client.rpc('delete_gym_cascade', params: {'p_gym_id': widget.gym['id']});
-      }
-      if (mounted) {
-        Navigator.pop(context);
+      final client = AdminSupabaseService.client;
+      final gymId = widget.gym['id'];
+
+      // Step 1: Export full gym backup via RPC
+      final result = await client.rpc('export_single_gym_backup', params: {'p_gym_id': gymId});
+      final data = result as Map<String, dynamic>? ?? {};
+
+      if (data['success'] != true) {
+        if (mounted) Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('✅ Gym auto-exported & completely wiped cleanly!'), backgroundColor: AdminTheme.success),
+          SnackBar(content: Text('Backup failed: ${data['message'] ?? 'Unknown error'}'), backgroundColor: AdminTheme.danger),
+        );
+        return;
+      }
+
+      final backupId = data['backup_id'];
+      final backupJson = jsonEncode(data['backup_json']);
+      final ownerMobile = data['owner_mobile']?.toString() ?? '';
+
+      // Step 2: Upload to Google Drive
+      String? driveUrl;
+      if (GoogleDriveService.isConnected && backupId != null) {
+        try {
+          final cleanName = gymName.replaceAll(RegExp(r'[^\w\s]+'), '').replaceAll(' ', '_');
+          final cleanMobile = ownerMobile.replaceAll(RegExp(r'[^\d]+'), '');
+          final fileName = 'gym_backup_${cleanName}_${cleanMobile}_${DateFormat('yyyy-MM-dd_HHmm').format(DateTime.now())}.json';
+          final uploadRes = await GoogleDriveService.uploadBackup(backupJson: backupJson, fileName: fileName);
+          if (uploadRes.success && uploadRes.driveUrl != null) {
+            driveUrl = uploadRes.driveUrl;
+            await client.from('database_backups').update({'drive_url': driveUrl}).eq('id', backupId);
+          }
+        } catch (e) {
+          debugPrint('Drive upload during delete: $e');
+        }
+      }
+
+      // Step 3: Cascade delete the gym
+      await client.rpc('delete_gym_cascade', params: {'p_gym_id': gymId});
+
+      if (mounted) {
+        Navigator.pop(context); // Close loading
+        Navigator.pop(context); // Go back to gym list
+
+        String msg = '✅ "$gymName" backed up & completely wiped!';
+        if (driveUrl != null) {
+          msg += ' ☁️ Saved to Google Drive.';
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(msg), backgroundColor: AdminTheme.success, duration: const Duration(seconds: 5)),
         );
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Delete error: $e'), backgroundColor: AdminTheme.danger));
+      if (mounted) {
+        Navigator.pop(context); // Close loading
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Delete error: $e'), backgroundColor: AdminTheme.danger),
+        );
+      }
     }
   }
 

@@ -35,7 +35,7 @@ DROP FUNCTION IF EXISTS public.delete_gym_cascade(UUID);
 DROP FUNCTION IF EXISTS public.restore_gym_backup(JSONB);
 DROP FUNCTION IF EXISTS public.get_gym_monthly_financial_summary(UUID, INT, INT);
 
--- 4. CLEAN CASCADE DELETE GYM (Auto-unlinks users, deletes profiles, leaves 0 dummy accounts)
+-- 4. CLEAN CASCADE DELETE GYM (Auto-unlinks users, leaves 0 dummy accounts)
 CREATE OR REPLACE FUNCTION public.delete_gym_cascade(p_gym_id UUID)
 RETURNS JSONB AS $$
 DECLARE
@@ -44,41 +44,45 @@ DECLARE
     v_users_count INT := 0;
 BEGIN
     -- Check if gym exists
-    IF NOT EXISTS (SELECT 1 FROM public.gyms WHERE id = p_gym_id) THEN
+    IF NOT EXISTS (SELECT 1 FROM public.gyms WHERE id::text = p_gym_id::text) THEN
         RETURN jsonb_build_object('success', false, 'message', 'Gym not found');
     END IF;
 
     -- Count before deletion for summary
-    SELECT COUNT(*) INTO v_members_count FROM public.members WHERE gym_id = p_gym_id;
-    SELECT COUNT(*) INTO v_staff_count FROM public.staff WHERE gym_id = p_gym_id;
-    SELECT COUNT(*) INTO v_users_count FROM public.profiles WHERE gym_id = p_gym_id;
+    BEGIN SELECT COUNT(*) INTO v_members_count FROM public.members WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN NULL; END;
+    BEGIN SELECT COUNT(*) INTO v_staff_count FROM public.staff WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN NULL; END;
+    BEGIN SELECT COUNT(DISTINCT user_id) INTO v_users_count FROM public.user_gym_associations WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN NULL; END;
 
-    -- Delete all child table records linked to gym_id
-    DELETE FROM public.finance_transactions WHERE gym_id = p_gym_id;
-    DELETE FROM public.transactions WHERE gym_id = p_gym_id;
-    DELETE FROM public.attendance_logs WHERE gym_id = p_gym_id;
-    DELETE FROM public.member_memberships WHERE gym_id = p_gym_id;
-    DELETE FROM public.members WHERE gym_id = p_gym_id;
-    DELETE FROM public.staff WHERE gym_id = p_gym_id;
-    DELETE FROM public.salary_drafts WHERE gym_id = p_gym_id;
-    DELETE FROM public.salary_advance_ledger WHERE gym_id = p_gym_id;
-    DELETE FROM public.leave_requests WHERE gym_id = p_gym_id;
-    DELETE FROM public.workout_plans WHERE gym_id = p_gym_id;
-    DELETE FROM public.diet_plans WHERE gym_id = p_gym_id;
-    DELETE FROM public.goals WHERE gym_id = p_gym_id;
-    DELETE FROM public.custom_fields WHERE gym_id = p_gym_id;
-    DELETE FROM public.attendance_settings WHERE gym_id = p_gym_id;
-    DELETE FROM public.activity_logs WHERE gym_id = p_gym_id;
-    DELETE FROM public.notifications WHERE gym_id = p_gym_id;
-    DELETE FROM public.support_tickets WHERE gym_id = p_gym_id;
-    DELETE FROM public.gym_backups WHERE gym_id = p_gym_id;
-    DELETE FROM public.subscriptions WHERE gym_id = p_gym_id;
-
-    -- Unlink and delete profiles associated with this gym
-    DELETE FROM public.profiles WHERE gym_id = p_gym_id;
+    -- Delete all child table records linked to gym_id safely with text casting
+    BEGIN DELETE FROM public.finance_transactions WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN NULL; END;
+    BEGIN DELETE FROM public.transactions WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN NULL; END;
+    BEGIN DELETE FROM public.attendance_logs WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN NULL; END;
+    BEGIN DELETE FROM public.attendance WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN NULL; END;
+    BEGIN DELETE FROM public.member_memberships WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN NULL; END;
+    BEGIN DELETE FROM public.membership_plans WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN NULL; END;
+    BEGIN DELETE FROM public.expenses WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN NULL; END;
+    BEGIN DELETE FROM public.pt_sessions WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN NULL; END;
+    BEGIN DELETE FROM public.salaries WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN NULL; END;
+    BEGIN DELETE FROM public.holidays WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN NULL; END;
+    BEGIN DELETE FROM public.members WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN NULL; END;
+    BEGIN DELETE FROM public.staff WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN NULL; END;
+    BEGIN DELETE FROM public.salary_drafts WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN NULL; END;
+    BEGIN DELETE FROM public.salary_advance_ledger WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN NULL; END;
+    BEGIN DELETE FROM public.leave_requests WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN NULL; END;
+    BEGIN DELETE FROM public.workout_plans WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN NULL; END;
+    BEGIN DELETE FROM public.diet_plans WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN NULL; END;
+    BEGIN DELETE FROM public.goals WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN NULL; END;
+    BEGIN DELETE FROM public.custom_fields WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN NULL; END;
+    BEGIN DELETE FROM public.attendance_settings WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN NULL; END;
+    BEGIN DELETE FROM public.activity_logs WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN NULL; END;
+    BEGIN DELETE FROM public.notifications WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN NULL; END;
+    BEGIN DELETE FROM public.support_tickets WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN NULL; END;
+    BEGIN DELETE FROM public.gym_backups WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN NULL; END;
+    BEGIN DELETE FROM public.subscriptions WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN NULL; END;
+    BEGIN DELETE FROM public.user_gym_associations WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN NULL; END;
 
     -- Finally delete the Gym itself
-    DELETE FROM public.gyms WHERE id = p_gym_id;
+    DELETE FROM public.gyms WHERE id::text = p_gym_id::text;
 
     RETURN jsonb_build_object(
         'success', true,
@@ -93,79 +97,41 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 GRANT EXECUTE ON FUNCTION public.delete_gym_cascade(UUID) TO anon, authenticated, service_role;
 
 
--- 5. ONE-CLICK RESTORE GYM FROM BACKUP JSON BUNDLE
+-- 5. ONE-CLICK RESTORE GYM FROM BACKUP JSON BUNDLE (Universal 20+ table restore)
 CREATE OR REPLACE FUNCTION public.restore_gym_backup(p_backup_data JSONB)
 RETURNS JSONB AS $$
 DECLARE
-    v_gym_id UUID;
     v_gym_obj JSONB;
+    v_payload JSONB := p_backup_data;
 BEGIN
-    v_gym_obj := p_backup_data->'gym';
+    -- If payload has '_meta' or 'gyms' array (Enterprise v2.0 format), route directly through full_database_import
+    IF v_payload->'gyms' IS NOT NULL OR v_payload->'_meta' IS NOT NULL THEN
+        IF v_payload->'_meta' IS NULL THEN
+            v_payload := jsonb_set(v_payload, '{_meta}', '{"version": "2.0", "system": "GymOS Enterprise Backup"}'::jsonb);
+        END IF;
+        RETURN public.full_database_import(v_payload);
+    END IF;
+
+    -- Handle legacy format with single 'gym' object
+    v_gym_obj := v_payload->'gym';
     IF v_gym_obj IS NULL OR v_gym_obj->>'id' IS NULL THEN
-        RAISE EXCEPTION 'Invalid backup data format: Missing gym record';
+        RAISE EXCEPTION 'Invalid backup data format: Missing gym record or gyms list in JSON payload';
     END IF;
 
-    v_gym_id := (v_gym_obj->>'id')::UUID;
-
-    -- 1. Upsert Gym
-    INSERT INTO public.gyms (
-        id, name, owner_name, email, phone, address, status, 
-        is_locked, plan_type, expiry_date, max_staff_limit, max_members_limit, created_at
-    )
-    VALUES (
-        v_gym_id,
-        COALESCE(v_gym_obj->>'name', 'Restored Gym'),
-        COALESCE(v_gym_obj->>'owner_name', 'Owner'),
-        COALESCE(v_gym_obj->>'email', ''),
-        COALESCE(v_gym_obj->>'phone', ''),
-        COALESCE(v_gym_obj->>'address', ''),
-        COALESCE(v_gym_obj->>'status', 'Active'),
-        COALESCE((v_gym_obj->>'is_locked')::BOOLEAN, FALSE),
-        COALESCE(v_gym_obj->>'plan_type', 'Trial'),
-        CASE WHEN (v_gym_obj->>'expiry_date') IS NOT NULL AND (v_gym_obj->>'expiry_date') != '' 
-             THEN (v_gym_obj->>'expiry_date')::TIMESTAMPTZ ELSE now() + interval '30 days' END,
-        COALESCE((v_gym_obj->>'max_staff_limit')::INT, 10),
-        COALESCE((v_gym_obj->>'max_members_limit')::INT, 100),
-        CASE WHEN (v_gym_obj->>'created_at') IS NOT NULL AND (v_gym_obj->>'created_at') != '' 
-             THEN (v_gym_obj->>'created_at')::TIMESTAMPTZ ELSE now() END
-    )
-    ON CONFLICT (id) DO UPDATE SET
-        name = EXCLUDED.name,
-        owner_name = EXCLUDED.owner_name,
-        email = EXCLUDED.email,
-        phone = EXCLUDED.phone,
-        address = EXCLUDED.address,
-        status = EXCLUDED.status,
-        is_locked = EXCLUDED.is_locked,
-        plan_type = EXCLUDED.plan_type,
-        expiry_date = EXCLUDED.expiry_date,
-        max_staff_limit = EXCLUDED.max_staff_limit,
-        max_members_limit = EXCLUDED.max_members_limit;
-
-    -- 2. Restore Attendance Settings
-    IF p_backup_data->'attendance_settings' IS NOT NULL THEN
-        INSERT INTO public.attendance_settings (
-            gym_id, work_start_time, work_end_time, grace_period_minutes, half_day_threshold_hours
-        )
-        VALUES (
-            v_gym_id,
-            COALESCE(p_backup_data->'attendance_settings'->>'work_start_time', '06:00'),
-            COALESCE(p_backup_data->'attendance_settings'->>'work_end_time', '22:00'),
-            COALESCE((p_backup_data->'attendance_settings'->>'grace_period_minutes')::INT, 15),
-            COALESCE((p_backup_data->'attendance_settings'->>'half_day_threshold_hours')::INT, 4)
-        )
-        ON CONFLICT (gym_id) DO UPDATE SET
-            work_start_time = EXCLUDED.work_start_time,
-            work_end_time = EXCLUDED.work_end_time,
-            grace_period_minutes = EXCLUDED.grace_period_minutes,
-            half_day_threshold_hours = EXCLUDED.half_day_threshold_hours;
-    END IF;
-
-    RETURN jsonb_build_object(
-        'success', true,
-        'gym_id', v_gym_id,
-        'message', 'Gym backup restored successfully'
+    -- Build standard enterprise payload and import
+    v_payload := jsonb_build_object(
+        '_meta', jsonb_build_object('version', '2.0', 'system', 'GymOS Enterprise Backup'),
+        'gyms', jsonb_build_array(v_gym_obj)
     );
+
+    IF p_backup_data->'profiles' IS NOT NULL THEN v_payload := jsonb_set(v_payload, '{profiles}', p_backup_data->'profiles'); END IF;
+    IF p_backup_data->'user_gym_associations' IS NOT NULL THEN v_payload := jsonb_set(v_payload, '{user_gym_associations}', p_backup_data->'user_gym_associations'); END IF;
+    IF p_backup_data->'members' IS NOT NULL THEN v_payload := jsonb_set(v_payload, '{members}', p_backup_data->'members'); END IF;
+    IF p_backup_data->'staff' IS NOT NULL THEN v_payload := jsonb_set(v_payload, '{staff}', p_backup_data->'staff'); END IF;
+    IF p_backup_data->'subscriptions' IS NOT NULL THEN v_payload := jsonb_set(v_payload, '{subscriptions}', p_backup_data->'subscriptions'); END IF;
+    IF p_backup_data->'attendance_settings' IS NOT NULL THEN v_payload := jsonb_set(v_payload, '{attendance_settings}', jsonb_build_array(p_backup_data->'attendance_settings')); END IF;
+
+    RETURN public.full_database_import(v_payload);
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 

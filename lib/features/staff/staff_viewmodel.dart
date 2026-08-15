@@ -303,7 +303,7 @@ class StaffViewModel extends ChangeNotifier {
     await fetchPaidSalariesForMonth(month);
     await fetchGymSalaryAdvances(gymId);
 
-    for (final staff in allStaff.where((s) => s.status == 'Active')) {
+    for (final staff in allStaff.where((s) => s.status != 'Inactive')) {
       try {
         _payableByStaff[staff.id] = await getStaffPendingPayable(
           gymId: gymId,

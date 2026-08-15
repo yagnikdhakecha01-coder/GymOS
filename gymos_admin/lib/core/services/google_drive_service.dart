@@ -517,7 +517,7 @@ class GoogleDriveService {
     final token = await getValidAccessToken();
     if (token == null) return [];
     try {
-      String query = "name contains 'gymos_backup' and mimeType='application/json'";
+      String query = "(name contains 'gymos_backup' or name contains 'gym_backup') and mimeType='application/json'";
       if (_folderId != null && _folderId!.isNotEmpty) {
         query += " and '$_folderId' in parents";
       }
@@ -537,4 +537,25 @@ class GoogleDriveService {
     }
     return [];
   }
+
+  /// Download file content from Google Drive by file ID
+  static Future<String?> fetchFileContent(String fileId) async {
+    final token = await getValidAccessToken();
+    if (token == null) return null;
+    try {
+      final response = await http.get(
+        Uri.parse('https://www.googleapis.com/drive/v3/files/$fileId?alt=media'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (response.statusCode == 200) {
+        return response.body;
+      } else {
+        debugPrint('fetchFileContent error ${response.statusCode}: ${response.body}');
+      }
+    } catch (e) {
+      debugPrint('Error fetching Drive file content: $e');
+    }
+    return null;
+  }
 }
+

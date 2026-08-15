@@ -223,15 +223,10 @@ BEGIN
     -- 1. GYMS (parent of everything)
     IF p_backup->'gyms' IS NOT NULL AND jsonb_array_length(p_backup->'gyms') > 0 THEN
         BEGIN
-            FOR v_row IN SELECT jsonb_array_elements(p_backup->'gyms') LOOP
-                INSERT INTO public.gyms SELECT * FROM jsonb_populate_record(null::public.gyms, v_row)
-                ON CONFLICT (id) DO UPDATE SET
-                    name = EXCLUDED.name, owner_name = EXCLUDED.owner_name, email = EXCLUDED.email,
-                    phone = EXCLUDED.phone, address = EXCLUDED.address, status = EXCLUDED.status,
-                    is_locked = EXCLUDED.is_locked, plan_type = EXCLUDED.plan_type,
-                    expiry_date = EXCLUDED.expiry_date, max_staff_limit = EXCLUDED.max_staff_limit,
-                    max_members_limit = EXCLUDED.max_members_limit;
-            END LOOP;
+            INSERT INTO public.gyms 
+            SELECT * FROM jsonb_populate_recordset(null::public.gyms, p_backup->'gyms')
+            ON CONFLICT (id) DO NOTHING;
+            
             v_tables_restored := v_tables_restored + 1;
             v_records_inserted := v_records_inserted + jsonb_array_length(p_backup->'gyms');
         EXCEPTION WHEN OTHERS THEN
@@ -242,13 +237,10 @@ BEGIN
     -- 2. PROFILES
     IF p_backup->'profiles' IS NOT NULL AND jsonb_array_length(p_backup->'profiles') > 0 THEN
         BEGIN
-            FOR v_row IN SELECT jsonb_array_elements(p_backup->'profiles') LOOP
-                INSERT INTO public.profiles SELECT * FROM jsonb_populate_record(null::public.profiles, v_row)
-                ON CONFLICT (id) DO UPDATE SET
-                    full_name = EXCLUDED.full_name, email = EXCLUDED.email,
-                    phone_number = EXCLUDED.phone_number, role = EXCLUDED.role,
-                    gym_id = EXCLUDED.gym_id, avatar_url = EXCLUDED.avatar_url;
-            END LOOP;
+            INSERT INTO public.profiles 
+            SELECT * FROM jsonb_populate_recordset(null::public.profiles, p_backup->'profiles')
+            ON CONFLICT (id) DO NOTHING;
+            
             v_tables_restored := v_tables_restored + 1;
             v_records_inserted := v_records_inserted + jsonb_array_length(p_backup->'profiles');
         EXCEPTION WHEN OTHERS THEN
@@ -256,14 +248,27 @@ BEGIN
         END;
     END IF;
 
-    -- 3. SUBSCRIPTIONS
+    -- 3. USER_GYM_ASSOCIATIONS
+    IF p_backup->'user_gym_associations' IS NOT NULL AND jsonb_array_length(p_backup->'user_gym_associations') > 0 THEN
+        BEGIN
+            INSERT INTO public.user_gym_associations 
+            SELECT * FROM jsonb_populate_recordset(null::public.user_gym_associations, p_backup->'user_gym_associations')
+            ON CONFLICT DO NOTHING;
+            
+            v_tables_restored := v_tables_restored + 1;
+            v_records_inserted := v_records_inserted + jsonb_array_length(p_backup->'user_gym_associations');
+        EXCEPTION WHEN OTHERS THEN
+            v_errors := array_append(v_errors, 'user_gym_associations: ' || SQLERRM);
+        END;
+    END IF;
+
+    -- 4. SUBSCRIPTIONS
     IF p_backup->'subscriptions' IS NOT NULL AND jsonb_array_length(p_backup->'subscriptions') > 0 THEN
         BEGIN
-            FOR v_row IN SELECT jsonb_array_elements(p_backup->'subscriptions') LOOP
-                INSERT INTO public.subscriptions SELECT * FROM jsonb_populate_record(null::public.subscriptions, v_row)
-                ON CONFLICT (id) DO UPDATE SET
-                    gym_id = EXCLUDED.gym_id, status = EXCLUDED.status, plan_type = EXCLUDED.plan_type;
-            END LOOP;
+            INSERT INTO public.subscriptions 
+            SELECT * FROM jsonb_populate_recordset(null::public.subscriptions, p_backup->'subscriptions')
+            ON CONFLICT (id) DO NOTHING;
+            
             v_tables_restored := v_tables_restored + 1;
             v_records_inserted := v_records_inserted + jsonb_array_length(p_backup->'subscriptions');
         EXCEPTION WHEN OTHERS THEN
@@ -271,15 +276,13 @@ BEGIN
         END;
     END IF;
 
-    -- 4. MEMBERS
+    -- 5. MEMBERS
     IF p_backup->'members' IS NOT NULL AND jsonb_array_length(p_backup->'members') > 0 THEN
         BEGIN
-            FOR v_row IN SELECT jsonb_array_elements(p_backup->'members') LOOP
-                INSERT INTO public.members SELECT * FROM jsonb_populate_record(null::public.members, v_row)
-                ON CONFLICT (id) DO UPDATE SET
-                    full_name = EXCLUDED.full_name, phone = EXCLUDED.phone, email = EXCLUDED.email,
-                    gym_id = EXCLUDED.gym_id, status = EXCLUDED.status;
-            END LOOP;
+            INSERT INTO public.members 
+            SELECT * FROM jsonb_populate_recordset(null::public.members, p_backup->'members')
+            ON CONFLICT (id) DO NOTHING;
+            
             v_tables_restored := v_tables_restored + 1;
             v_records_inserted := v_records_inserted + jsonb_array_length(p_backup->'members');
         EXCEPTION WHEN OTHERS THEN
@@ -287,15 +290,13 @@ BEGIN
         END;
     END IF;
 
-    -- 5. STAFF
+    -- 6. STAFF
     IF p_backup->'staff' IS NOT NULL AND jsonb_array_length(p_backup->'staff') > 0 THEN
         BEGIN
-            FOR v_row IN SELECT jsonb_array_elements(p_backup->'staff') LOOP
-                INSERT INTO public.staff SELECT * FROM jsonb_populate_record(null::public.staff, v_row)
-                ON CONFLICT (id) DO UPDATE SET
-                    name = EXCLUDED.name, role = EXCLUDED.role, salary = EXCLUDED.salary,
-                    gym_id = EXCLUDED.gym_id;
-            END LOOP;
+            INSERT INTO public.staff 
+            SELECT * FROM jsonb_populate_recordset(null::public.staff, p_backup->'staff')
+            ON CONFLICT (id) DO NOTHING;
+            
             v_tables_restored := v_tables_restored + 1;
             v_records_inserted := v_records_inserted + jsonb_array_length(p_backup->'staff');
         EXCEPTION WHEN OTHERS THEN
@@ -303,14 +304,13 @@ BEGIN
         END;
     END IF;
 
-    -- 6. MEMBER_MEMBERSHIPS
+    -- 7. MEMBER_MEMBERSHIPS
     IF p_backup->'member_memberships' IS NOT NULL AND jsonb_array_length(p_backup->'member_memberships') > 0 THEN
         BEGIN
-            FOR v_row IN SELECT jsonb_array_elements(p_backup->'member_memberships') LOOP
-                INSERT INTO public.member_memberships SELECT * FROM jsonb_populate_record(null::public.member_memberships, v_row)
-                ON CONFLICT (id) DO UPDATE SET
-                    member_id = EXCLUDED.member_id, gym_id = EXCLUDED.gym_id;
-            END LOOP;
+            INSERT INTO public.member_memberships 
+            SELECT * FROM jsonb_populate_recordset(null::public.member_memberships, p_backup->'member_memberships')
+            ON CONFLICT (id) DO NOTHING;
+            
             v_tables_restored := v_tables_restored + 1;
             v_records_inserted := v_records_inserted + jsonb_array_length(p_backup->'member_memberships');
         EXCEPTION WHEN OTHERS THEN
@@ -318,10 +318,11 @@ BEGIN
         END;
     END IF;
 
-    -- 7-21. ALL REMAINING CHILD TABLES
+    -- 7-21. ALL REMAINING CHILD TABLES (including user_gym_associations for login restore)
     DECLARE
         v_table_name TEXT;
         v_table_names TEXT[] := ARRAY[
+            'user_gym_associations',
             'transactions', 'finance_transactions', 'attendance_logs',
             'salary_drafts', 'salary_advance_ledger', 'leave_requests',
             'workout_plans', 'diet_plans', 'goals', 'custom_fields',
@@ -430,7 +431,9 @@ RETURNS JSONB AS $$
 DECLARE
     v_gym JSONB := '{}'::jsonb;
     v_gym_name TEXT := 'Unknown Gym';
+    v_owner_mobile TEXT := '';
     v_profiles JSONB := '[]'::jsonb;
+    v_user_gym_associations JSONB := '[]'::jsonb;
     v_members JSONB := '[]'::jsonb;
     v_staff JSONB := '[]'::jsonb;
     v_subscriptions JSONB := '[]'::jsonb;
@@ -456,36 +459,51 @@ DECLARE
     v_size INT;
 BEGIN
     -- Check gym
-    SELECT to_jsonb(t) INTO v_gym FROM public.gyms t WHERE id = p_gym_id;
+    SELECT to_jsonb(t) INTO v_gym FROM public.gyms t WHERE id::text = p_gym_id::text;
     IF v_gym IS NULL THEN
         RETURN jsonb_build_object('success', false, 'message', 'Gym not found');
     END IF;
     v_gym_name := COALESCE(v_gym->>'name', 'Gym');
 
+    -- Get owner mobile number for filename
+    BEGIN
+        SELECT COALESCE(p.phone_number, v_gym->>'phone', '') INTO v_owner_mobile
+        FROM public.user_gym_associations uga
+        JOIN public.profiles p ON p.id::text = uga.user_id::text
+        WHERE uga.gym_id::text = p_gym_id::text AND uga.role = 'owner'
+        LIMIT 1;
+    EXCEPTION WHEN OTHERS THEN v_owner_mobile := COALESCE(v_gym->>'phone', ''); END;
+
     -- Export gym-specific records
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_profiles FROM public.profiles t WHERE gym_id = p_gym_id; EXCEPTION WHEN OTHERS THEN v_profiles := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_members FROM public.members t WHERE gym_id = p_gym_id; EXCEPTION WHEN OTHERS THEN v_members := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_staff FROM public.staff t WHERE gym_id = p_gym_id; EXCEPTION WHEN OTHERS THEN v_staff := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_subscriptions FROM public.subscriptions t WHERE gym_id = p_gym_id; EXCEPTION WHEN OTHERS THEN v_subscriptions := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_transactions FROM public.transactions t WHERE gym_id = p_gym_id; EXCEPTION WHEN OTHERS THEN v_transactions := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_finance_transactions FROM public.finance_transactions t WHERE gym_id = p_gym_id; EXCEPTION WHEN OTHERS THEN v_finance_transactions := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_attendance_logs FROM public.attendance_logs t WHERE gym_id = p_gym_id; EXCEPTION WHEN OTHERS THEN v_attendance_logs := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_member_memberships FROM public.member_memberships t WHERE gym_id = p_gym_id; EXCEPTION WHEN OTHERS THEN v_member_memberships := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_salary_drafts FROM public.salary_drafts t WHERE gym_id = p_gym_id; EXCEPTION WHEN OTHERS THEN v_salary_drafts := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_salary_advance_ledger FROM public.salary_advance_ledger t WHERE gym_id = p_gym_id; EXCEPTION WHEN OTHERS THEN v_salary_advance_ledger := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_leave_requests FROM public.leave_requests t WHERE gym_id = p_gym_id; EXCEPTION WHEN OTHERS THEN v_leave_requests := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_workout_plans FROM public.workout_plans t WHERE gym_id = p_gym_id; EXCEPTION WHEN OTHERS THEN v_workout_plans := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_diet_plans FROM public.diet_plans t WHERE gym_id = p_gym_id; EXCEPTION WHEN OTHERS THEN v_diet_plans := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_goals FROM public.goals t WHERE gym_id = p_gym_id; EXCEPTION WHEN OTHERS THEN v_goals := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_custom_fields FROM public.custom_fields t WHERE gym_id = p_gym_id; EXCEPTION WHEN OTHERS THEN v_custom_fields := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_attendance_settings FROM public.attendance_settings t WHERE gym_id = p_gym_id; EXCEPTION WHEN OTHERS THEN v_attendance_settings := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_activity_logs FROM public.activity_logs t WHERE gym_id = p_gym_id; EXCEPTION WHEN OTHERS THEN v_activity_logs := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_notifications FROM public.notifications t WHERE gym_id = p_gym_id; EXCEPTION WHEN OTHERS THEN v_notifications := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_support_tickets FROM public.support_tickets t WHERE gym_id = p_gym_id; EXCEPTION WHEN OTHERS THEN v_support_tickets := '[]'::jsonb; END;
+    BEGIN 
+        SELECT COALESCE(jsonb_agg(to_jsonb(p)), '[]'::jsonb) INTO v_profiles 
+        FROM public.profiles p 
+        WHERE p.id::text IN (SELECT user_id::text FROM public.user_gym_associations WHERE gym_id::text = p_gym_id::text);
+    EXCEPTION WHEN OTHERS THEN v_profiles := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_user_gym_associations FROM public.user_gym_associations t WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN v_user_gym_associations := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_members FROM public.members t WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN v_members := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_staff FROM public.staff t WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN v_staff := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_subscriptions FROM public.subscriptions t WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN v_subscriptions := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_transactions FROM public.transactions t WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN v_transactions := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_finance_transactions FROM public.finance_transactions t WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN v_finance_transactions := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_attendance_logs FROM public.attendance_logs t WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN v_attendance_logs := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_member_memberships FROM public.member_memberships t WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN v_member_memberships := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_salary_drafts FROM public.salary_drafts t WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN v_salary_drafts := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_salary_advance_ledger FROM public.salary_advance_ledger t WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN v_salary_advance_ledger := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_leave_requests FROM public.leave_requests t WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN v_leave_requests := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_workout_plans FROM public.workout_plans t WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN v_workout_plans := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_diet_plans FROM public.diet_plans t WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN v_diet_plans := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_goals FROM public.goals t WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN v_goals := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_custom_fields FROM public.custom_fields t WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN v_custom_fields := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_attendance_settings FROM public.attendance_settings t WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN v_attendance_settings := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_activity_logs FROM public.activity_logs t WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN v_activity_logs := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_notifications FROM public.notifications t WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN v_notifications := '[]'::jsonb; END;
+    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_support_tickets FROM public.support_tickets t WHERE gym_id::text = p_gym_id::text; EXCEPTION WHEN OTHERS THEN v_support_tickets := '[]'::jsonb; END;
 
     v_counts := jsonb_build_object(
         'gyms', 1,
         'profiles', jsonb_array_length(v_profiles),
+        'user_gym_associations', jsonb_array_length(v_user_gym_associations),
         'members', jsonb_array_length(v_members),
         'staff', jsonb_array_length(v_staff),
         'subscriptions', jsonb_array_length(v_subscriptions),
@@ -506,7 +524,8 @@ BEGIN
         'support_tickets', jsonb_array_length(v_support_tickets)
     );
 
-    v_total := 1 + jsonb_array_length(v_profiles) + jsonb_array_length(v_members) +
+    v_total := 1 + jsonb_array_length(v_profiles) + jsonb_array_length(v_user_gym_associations) +
+               jsonb_array_length(v_members) +
                jsonb_array_length(v_staff) + jsonb_array_length(v_subscriptions) + jsonb_array_length(v_transactions) +
                jsonb_array_length(v_finance_transactions) + jsonb_array_length(v_attendance_logs) +
                jsonb_array_length(v_member_memberships) + jsonb_array_length(v_salary_drafts) +
@@ -523,11 +542,13 @@ BEGIN
             'type', 'single_gym_backup',
             'gym_id', p_gym_id,
             'gym_name', v_gym_name,
+            'owner_mobile', v_owner_mobile,
             'total_records', v_total,
             'table_counts', v_counts
         ),
         'gyms', jsonb_build_array(v_gym),
         'profiles', v_profiles,
+        'user_gym_associations', v_user_gym_associations,
         'members', v_members,
         'staff', v_staff,
         'subscriptions', v_subscriptions,
@@ -567,6 +588,7 @@ BEGIN
         'backup_id', v_backup_id,
         'gym_id', p_gym_id,
         'gym_name', v_gym_name,
+        'owner_mobile', v_owner_mobile,
         'total_records', v_total,
         'size_bytes', v_size,
         'size_readable', CASE 

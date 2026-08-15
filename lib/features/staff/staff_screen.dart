@@ -284,8 +284,11 @@ class _StaffScreenState extends State<StaffScreen> {
                       }
                     }
 
-                    final payable = staffVm.getStaffCachedPayable(staff.id);
-                    final isPaid = payable <= 0 && (rpcMatch?['is_salary_paid'] == true);
+                    final String currentMonthStr = DateFormat('MMMM yyyy').format(DateTime.now());
+                    final bool isPaid = rpcMatch?['is_salary_paid'] == true || staffVm.isSalaryPaid(staff.id, currentMonthStr);
+                    final double cachedPayable = staffVm.getStaffCachedPayable(staff.id);
+                    final double rpcPayable = (rpcMatch?['salary_pending'] as num?)?.toDouble() ?? staff.salary;
+                    final double effectivePayable = isPaid ? 0.0 : (cachedPayable > 0 ? cachedPayable : (rpcPayable > 0 ? rpcPayable : staff.salary));
 
                     final staffData = rpcMatch ?? {
                       'staff_id': staff.id,
@@ -301,10 +304,10 @@ class _StaffScreenState extends State<StaffScreen> {
                       'current_date_str': DateFormat('dd MMM yyyy').format(DateTime.now()),
                     };
 
-                    staffData['salary_pending'] = payable;
+                    staffData['salary_pending'] = effectivePayable;
                     staffData['is_salary_paid'] = isPaid;
                     if (isPaid && rpcMatch != null) {
-                      staffData['paid_amount'] = rpcMatch['paid_amount'] ?? payable;
+                      staffData['paid_amount'] = rpcMatch['paid_amount'] ?? staff.salary;
                     }
 
                     return OwnerStaffCard(

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/theme.dart';
 import '../../core/widgets/custom_card.dart';
@@ -23,8 +24,23 @@ import '../dashboard/gym_switcher_bottom_sheet.dart';
 
 import '../subscription/owner_subscription_screen.dart';
 
-class MoreScreen extends StatelessWidget {
+class MoreScreen extends StatefulWidget {
   const MoreScreen({super.key});
+
+  @override
+  State<MoreScreen> createState() => _MoreScreenState();
+}
+
+class _MoreScreenState extends State<MoreScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        Provider.of<AuthViewModel>(context, listen: false).fetchSubscriptionStatus();
+      }
+    });
+  }
 
   Widget _buildSettingTile(
     BuildContext context, {
@@ -66,10 +82,39 @@ class MoreScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final authVm = Provider.of<AuthViewModel>(context);
     final gym = authVm.gymInfo ?? {};
+    final subInfo = authVm.subscriptionInfo;
     
-    final gymName = gym['name'] ?? 'GYMOS';
-    final plan = gym['plan'] ?? 'Premium Plan';
-    final validity = gym['validUntil'] ?? '25 May 2025';
+    final gymName = gym['name']?.toString().trim() ?? 'GYMOS';
+    final logoUrl = gym['logo'] ?? gym['logo_url'] ?? '';
+
+    // Plan name format (e.g. 'free_trial' -> 'Free Trial', 'pro' -> 'Pro')
+    String rawPlan = (subInfo?['plan'] ?? gym['plan'] ?? 'Free Trial').toString();
+    String planDisplay = rawPlan
+        .replaceAll('_', ' ')
+        .split(' ')
+        .map((w) => w.isNotEmpty ? '${w[0].toUpperCase()}${w.substring(1)}' : '')
+        .join(' ');
+    if (planDisplay.isEmpty) planDisplay = 'Free Trial';
+
+    // Validity date from database
+    String validityDisplay = '';
+    final dynamic rawExpiry = subInfo?['expiry_date'] ?? gym['expiry_date'] ?? gym['trial_end_date'] ?? gym['validUntil'];
+    if (rawExpiry != null) {
+      final DateTime? parsed = rawExpiry is DateTime ? rawExpiry : DateTime.tryParse(rawExpiry.toString());
+      if (parsed != null) {
+        validityDisplay = DateFormat('dd MMM yyyy').format(parsed);
+      }
+    }
+    if (validityDisplay.isEmpty) {
+      final daysLeft = subInfo?['days_left'] as int?;
+      if (daysLeft != null && daysLeft > 0) {
+        validityDisplay = DateFormat('dd MMM yyyy').format(DateTime.now().add(Duration(days: daysLeft)));
+      } else {
+        validityDisplay = 'Active';
+      }
+    }
+
+    final bool hasValidLogo = logoUrl != null && logoUrl.toString().trim().isNotEmpty && logoUrl.toString().startsWith('http');
 
     return Scaffold(
       backgroundColor: AppTheme.background,
@@ -93,7 +138,9 @@ class MoreScreen extends StatelessWidget {
             // Gym Profile Banner
             CustomCard(
               padding: const EdgeInsets.all(16),
-              onTap: () {},
+              onTap: () {
+                Navigator.push(context, AppRouter.slideRoute(const OwnerSubscriptionScreen()));
+              },
               child: Row(
                 children: [
                   Container(
@@ -102,12 +149,25 @@ class MoreScreen extends StatelessWidget {
                     decoration: BoxDecoration(
                       color: AppTheme.primary,
                       borderRadius: BorderRadius.circular(12),
+                      image: hasValidLogo
+                          ? DecorationImage(
+                              image: NetworkImage(logoUrl.toString().trim()),
+                              fit: BoxFit.cover,
+                            )
+                          : null,
                     ),
-                    child: const Icon(
-                      Icons.fitness_center_rounded,
-                      color: Colors.white,
-                      size: 28,
-                    ),
+                    child: !hasValidLogo
+                        ? Center(
+                            child: Text(
+                              gymName.isNotEmpty ? gymName[0].toUpperCase() : 'G',
+                              style: GoogleFonts.inter(
+                                fontSize: 22,
+                                fontWeight: FontWeight.w800,
+                                color: Colors.white,
+                              ),
+                            ),
+                          )
+                        : null,
                   ),
                   const SizedBox(width: 14),
                   Expanded(
@@ -116,11 +176,15 @@ class MoreScreen extends StatelessWidget {
                       children: [
                         Row(
                           children: [
-                            Text(
-                              gymName,
-                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                  ),
+                            Flexible(
+                              child: Text(
+                                gymName,
+                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
                             const SizedBox(width: 8),
                             Container(
@@ -142,7 +206,7 @@ class MoreScreen extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '$plan • Valid till $validity',
+                          '$planDisplay • Valid till $validityDisplay',
                           style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
                         ),
                       ],

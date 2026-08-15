@@ -1,6 +1,9 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
+import 'package:intl/intl.dart';
 import '../../core/theme/admin_theme.dart';
 import '../../core/theme/responsive.dart';
 import '../../core/widgets/status_badge.dart';
@@ -10,6 +13,7 @@ import '../../core/widgets/empty_state.dart';
 import '../../core/constants/app_constants.dart';
 
 import '../../core/services/supabase_service.dart';
+import '../../core/services/google_drive_service.dart';
 import 'admin_gym_dashboard_screen.dart';
 
 class GymsScreen extends StatefulWidget {
@@ -198,58 +202,14 @@ class _GymsScreenState extends State<GymsScreen> {
   }
 
   void _showRestoreDialog(BuildContext context) {
-    final textController = TextEditingController();
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('📥 1-Click Restore Gym from Backup JSON'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Paste the JSON backup payload to restore or upload file:'),
-            const SizedBox(height: 12),
-            TextField(
-              controller: textController,
-              maxLines: 8,
-              decoration: const InputDecoration(
-                hintText: 'Paste backup JSON payload here...',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AdminTheme.primary),
-            onPressed: () async {
-              if (textController.text.trim().isEmpty) return;
-              try {
-                final jsonMap = jsonDecode(textController.text.trim());
-                if (AdminSupabaseService.isInitialized) {
-                  await AdminSupabaseService.client.rpc('restore_gym_backup', params: {'p_backup_data': jsonMap});
-                }
-                if (context.mounted) {
-                  Navigator.pop(ctx);
-                  _fetchGyms();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('✅ Gym restored successfully!'), backgroundColor: AdminTheme.success),
-                  );
-                }
-              } catch (e) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Restore error: $e'), backgroundColor: AdminTheme.danger),
-                  );
-                }
-              }
-            },
-            child: const Text('Restore Gym'),
-          ),
-        ],
-      ),
-    );
+      builder: (ctx) => const _GymDriveRestoreDialog(),
+    ).then((restored) {
+      if (restored == true) {
+        _fetchGyms();
+      }
+    });
   }
 
   @override
@@ -1614,3 +1574,368 @@ const List<Map<String, dynamic>> _mockGyms = [
   {'name': 'Spartan Health Club', 'owner': 'Deepak Mehta', 'email': 'deepak@spartanclub.com', 'mobile': '9876543218', 'plan': 'Pro', 'status': 'active', 'trialLeft': '-', 'expiry': '2027-09-10', 'members': 340, 'staff': 15, 'lastLogin': '4h ago', 'appVersion': 'v2.4.1'},
   {'name': 'Flex Zone', 'owner': 'Anita Roy', 'email': 'anita@flexzone.in', 'mobile': '9876543219', 'plan': 'Starter', 'status': 'grace_period', 'trialLeft': '-', 'expiry': '2026-07-25', 'members': 78, 'staff': 5, 'lastLogin': '2d ago', 'appVersion': 'v2.4.0'},
 ];
+
+// ── Google Drive Gym Restore Dialog ──
+class _GymDriveRestoreDialog extends StatefulWidget {
+  const _GymDriveRestoreDialog();
+
+  @override
+  State<_GymDriveRestoreDialog> createState() => _GymDriveRestoreDialogState();
+}
+
+class _GymDriveRestoreDialogState extends State<_GymDriveRestoreDialog> {
+  bool _isLoading = true;
+  String? _restoringFileId;
+  List<Map<String, dynamic>> _backups = [];
+  String _search = '';
+  bool _showManualPaste = false;
+  final _manualJsonController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDriveBackups();
+  }
+
+  @override
+  void dispose() {
+    _manualJsonController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadDriveBackups() async {
+    setState(() => _isLoading = true);
+    try {
+      final list = await GoogleDriveService.listBackups();
+      if (mounted) {
+        setState(() {
+          _backups = list;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _restoreFile(Map<String, dynamic> file) async {
+    final fileId = file['id'];
+    final fileName = file['name']?.toString() ?? 'Gym Backup';
+
+    setState(() => _restoringFileId = fileId);
+
+    try {
+      final jsonStr = await GoogleDriveService.fetchFileContent(fileId);
+      if (jsonStr == null || jsonStr.isEmpty) {
+        throw 'Could not download backup file content from Google Drive';
+      }
+
+      final backupData = jsonDecode(jsonStr);
+      final client = AdminSupabaseService.client;
+      final res = await client.rpc('full_database_import', params: {'p_backup': backupData});
+      final data = res as Map<String, dynamic>? ?? {};
+
+      if (mounted) {
+        setState(() => _restoringFileId = null);
+        Navigator.pop(context, true);
+
+        final tables = data['tables_restored'] ?? 0;
+        final records = data['records_inserted'] ?? 0;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('🎉 Restored successfully from Drive! ($records records across $tables tables)'),
+            backgroundColor: AdminTheme.success,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _restoringFileId = null);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Restore error: $e'), backgroundColor: AdminTheme.danger),
+        );
+      }
+    }
+  }
+
+  Future<void> _restoreManualJson() async {
+    final text = _manualJsonController.text.trim();
+    if (text.isEmpty) return;
+
+    setState(() => _restoringFileId = 'manual');
+    try {
+      final backupData = jsonDecode(text);
+      final client = AdminSupabaseService.client;
+      final res = await client.rpc('full_database_import', params: {'p_backup': backupData});
+      final data = res as Map<String, dynamic>? ?? {};
+
+      if (mounted) {
+        setState(() => _restoringFileId = null);
+        Navigator.pop(context, true);
+
+        final tables = data['tables_restored'] ?? 0;
+        final records = data['records_inserted'] ?? 0;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('🎉 Gym restored successfully! ($records records across $tables tables)'),
+            backgroundColor: AdminTheme.success,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _restoringFileId = null);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Restore error: $e'), backgroundColor: AdminTheme.danger),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final filtered = _backups.where((b) {
+      final name = (b['name'] ?? '').toString().toLowerCase();
+      return name.contains(_search.toLowerCase());
+    }).toList();
+
+    return AlertDialog(
+      title: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(color: AdminTheme.teal.withOpacity(0.12), borderRadius: BorderRadius.circular(10)),
+            child: const Icon(Icons.cloud_download_rounded, color: AdminTheme.teal, size: 22),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Restore Gym from Google Drive', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 16)),
+                Text('Select any deleted gym backup to restore all members, staff & login access',
+                    style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.mutedTextColor(context))),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded, size: 20),
+            tooltip: 'Refresh Drive Backups',
+            onPressed: _loadDriveBackups,
+          ),
+        ],
+      ),
+      content: SizedBox(
+        width: 650,
+        height: 480,
+        child: Column(
+          children: [
+            // Search Bar
+            TextField(
+              onChanged: (val) => setState(() => _search = val),
+              decoration: InputDecoration(
+                hintText: 'Search by Gym Name or Mobile...',
+                prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                filled: true,
+                fillColor: AdminTheme.surfaceColor(context),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: AdminTheme.borderColor(context))),
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // Backups List
+            Expanded(
+              child: _isLoading
+                  ? const Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CircularProgressIndicator(),
+                          SizedBox(height: 12),
+                          Text('Fetching backups from Google Drive...'),
+                        ],
+                      ),
+                    )
+                  : filtered.isEmpty
+                      ? Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.folder_off_rounded, size: 48, color: AdminTheme.mutedTextColor(context)),
+                              const SizedBox(height: 10),
+                              Text('No backup files found in Google Drive', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+                              const SizedBox(height: 4),
+                              Text('Backups are uploaded to the "GYMOS_ENTERPRISE_BACKUPS" folder.',
+                                  style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.mutedTextColor(context))),
+                            ],
+                          ),
+                        )
+                      : ListView.separated(
+                          itemCount: filtered.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: 8),
+                          itemBuilder: (_, i) {
+                            final file = filtered[i];
+                            final fileName = file['name']?.toString() ?? 'Gym Backup';
+                            final fileId = file['id']?.toString() ?? '';
+                            final sizeBytes = int.tryParse(file['size']?.toString() ?? '0') ?? 0;
+                            final sizeStr = sizeBytes > 1048576
+                                ? '${(sizeBytes / 1048576).toStringAsFixed(1)} MB'
+                                : sizeBytes > 1024
+                                    ? '${(sizeBytes / 1024).toStringAsFixed(1)} KB'
+                                    : '$sizeBytes B';
+
+                            final created = file['createdTime'] != null
+                                ? DateFormat('dd MMM yyyy, hh:mm a').format(DateTime.parse(file['createdTime']).toLocal())
+                                : '—';
+
+                            final isGymBackup = fileName.startsWith('gym_backup_');
+                            final isRestoringThis = _restoringFileId == fileId;
+
+                            // Parse display name from gym_backup_FitZone_9876543210_2026-08-15.json
+                            String displayName = fileName;
+                            String ownerMobile = '';
+                            if (isGymBackup) {
+                              final parts = fileName.replaceFirst('gym_backup_', '').replaceFirst('.json', '').split('_');
+                              if (parts.isNotEmpty) {
+                                displayName = parts[0];
+                              }
+                              if (parts.length > 1 && RegExp(r'^\d+$').hasMatch(parts[1])) {
+                                ownerMobile = '📞 ${parts[1]}';
+                              }
+                            }
+
+                            return Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: AdminTheme.cardColor(context),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: AdminTheme.borderColor(context)),
+                              ),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 44,
+                                    height: 44,
+                                    decoration: BoxDecoration(
+                                      color: (isGymBackup ? Colors.orange : AdminTheme.primary).withOpacity(0.12),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Icon(
+                                      isGymBackup ? Icons.fitness_center_rounded : Icons.storage_rounded,
+                                      color: isGymBackup ? Colors.orange : AdminTheme.primary,
+                                      size: 22,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Text(displayName, style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 13)),
+                                            if (ownerMobile.isNotEmpty) ...[
+                                              const SizedBox(width: 8),
+                                              Text(ownerMobile, style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.primary, fontWeight: FontWeight.w600)),
+                                            ],
+                                          ],
+                                        ),
+                                        const SizedBox(height: 3),
+                                        Text(
+                                          '$fileName • $sizeStr • $created',
+                                          style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.mutedTextColor(context)),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  ElevatedButton.icon(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: AdminTheme.primary,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                    ),
+                                    icon: isRestoringThis
+                                        ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                        : const Icon(Icons.restore_rounded, size: 16),
+                                    label: Text(isRestoringThis ? 'Restoring...' : 'Restore',
+                                        style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 12)),
+                                    onPressed: _restoringFileId != null ? null : () => _restoreFile(file),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+            ),
+
+            // Manual JSON Expandable
+            const Divider(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                TextButton.icon(
+                  icon: Icon(_showManualPaste ? Icons.keyboard_arrow_up_rounded : Icons.code_rounded, size: 16),
+                  label: Text(_showManualPaste ? 'Hide manual paste' : 'Paste backup JSON manually',
+                      style: GoogleFonts.inter(fontSize: 12)),
+                  onPressed: () => setState(() => _showManualPaste = !_showManualPaste),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Close'),
+                ),
+              ],
+            ),
+
+            if (_showManualPaste) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _manualJsonController,
+                      maxLines: 3,
+                      style: GoogleFonts.firaCode(fontSize: 10),
+                      decoration: const InputDecoration(
+                        hintText: 'Paste backup JSON payload here...',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Column(
+                    children: [
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.content_paste_rounded, size: 14),
+                        label: const Text('Paste'),
+                        onPressed: () async {
+                          final data = await Clipboard.getData(Clipboard.kTextPlain);
+                          if (data?.text != null) {
+                            _manualJsonController.text = data!.text!;
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 6),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(backgroundColor: AdminTheme.danger),
+                        onPressed: _restoreManualJson,
+                        child: const Text('Restore'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}

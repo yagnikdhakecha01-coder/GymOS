@@ -419,6 +419,153 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
       }
     }
   }
+  /// 4b. SELECT BACKUP FROM GOOGLE DRIVE — fetches file list, user picks one, auto-fills JSON
+  Future<void> _selectFromDrive() async {
+    // Show loading while fetching file list
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        content: Row(
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(width: 20),
+            Text('Fetching backups from Google Drive...', style: GoogleFonts.inter(fontSize: 13)),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      final files = await GoogleDriveService.listBackups();
+      if (mounted) Navigator.pop(context); // Close loading
+
+      if (files.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No backup files found in Google Drive'), backgroundColor: Colors.orange),
+          );
+        }
+        return;
+      }
+
+      // Show file selection dialog
+      if (!mounted) return;
+      final selectedFile = await showDialog<Map<String, dynamic>>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Row(
+            children: [
+              const Icon(Icons.cloud_rounded, color: AdminTheme.teal, size: 24),
+              const SizedBox(width: 10),
+              Text('Select Backup from Google Drive', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold)),
+            ],
+          ),
+          content: SizedBox(
+            width: 650,
+            height: 400,
+            child: ListView.separated(
+              itemCount: files.length,
+              separatorBuilder: (_, __) => Divider(color: AdminTheme.borderColor(ctx), height: 1),
+              itemBuilder: (_, i) {
+                final file = files[i];
+                final name = file['name'] ?? 'Unknown';
+                final sizeBytes = int.tryParse(file['size']?.toString() ?? '0') ?? 0;
+                final sizeStr = sizeBytes > 1048576
+                    ? '${(sizeBytes / 1048576).toStringAsFixed(1)} MB'
+                    : sizeBytes > 1024
+                        ? '${(sizeBytes / 1024).toStringAsFixed(1)} KB'
+                        : '$sizeBytes B';
+                final createdTime = file['createdTime'] != null
+                    ? DateFormat('dd MMM yyyy, hh:mm a').format(DateTime.parse(file['createdTime']).toLocal())
+                    : '—';
+
+                // Detect backup type from filename
+                final isGymBackup = name.toString().startsWith('gym_backup_');
+                final icon = isGymBackup ? Icons.fitness_center_rounded : Icons.storage_rounded;
+                final typeLabel = isGymBackup ? 'Gym Backup' : 'Full Backup';
+                final typeColor = isGymBackup ? Colors.orange : AdminTheme.primary;
+
+                return ListTile(
+                  leading: Container(
+                    width: 40, height: 40,
+                    decoration: BoxDecoration(
+                      color: typeColor.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(icon, color: typeColor, size: 20),
+                  ),
+                  title: Text(name, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600)),
+                  subtitle: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(color: typeColor.withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
+                        child: Text(typeLabel, style: GoogleFonts.inter(fontSize: 10, color: typeColor, fontWeight: FontWeight.bold)),
+                      ),
+                      const SizedBox(width: 8),
+                      Text('$sizeStr • $createdTime', style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.mutedTextColor(ctx))),
+                    ],
+                  ),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => Navigator.pop(ctx, file),
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ],
+        ),
+      );
+
+      if (selectedFile == null || !mounted) return;
+
+      // Download file content
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          content: Row(
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(width: 20),
+              Text('Downloading ${selectedFile['name']}...', style: GoogleFonts.inter(fontSize: 13)),
+            ],
+          ),
+        ),
+      );
+
+      final content = await GoogleDriveService.fetchFileContent(selectedFile['id']);
+      if (mounted) Navigator.pop(context); // Close download loading
+
+      if (content != null && content.isNotEmpty) {
+        _restoreJsonController.text = content;
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('☁️ Loaded "${selectedFile['name']}" from Google Drive. Click "Restore Full Database" to restore.'),
+              backgroundColor: AdminTheme.success,
+              duration: const Duration(seconds: 5),
+            ),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Failed to download file content from Drive'), backgroundColor: AdminTheme.danger),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Drive error: $e'), backgroundColor: AdminTheme.danger),
+        );
+      }
+    }
+  }
 
   /// 5. DELETE BACKUP
   Future<void> _deleteBackup(Map<String, dynamic> backup) async {
@@ -923,6 +1070,17 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
                   backgroundColor: AdminTheme.danger,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                ),
+              ),
+              const SizedBox(width: 12),
+              ElevatedButton.icon(
+                onPressed: GoogleDriveService.isConnected ? _selectFromDrive : null,
+                icon: const Icon(Icons.cloud_download_rounded, size: 18),
+                label: Text('Select from Google Drive', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AdminTheme.teal,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
                 ),
               ),
               const SizedBox(width: 12),
