@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme/admin_theme.dart';
 import '../../core/services/supabase_service.dart';
@@ -272,8 +273,24 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
           context: context,
           builder: (ctx) => AlertDialog(
             title: const Text('📦 Backup Export Complete'),
-            content: SelectableText(jsonStr),
+            content: SizedBox(
+              width: 600,
+              height: 300,
+              child: SingleChildScrollView(
+                child: SelectableText(jsonStr, style: GoogleFonts.firaCode(fontSize: 11)),
+              ),
+            ),
             actions: [
+              ElevatedButton.icon(
+                icon: const Icon(Icons.copy_rounded, size: 16),
+                label: const Text('Copy JSON Payload'),
+                onPressed: () {
+                  Clipboard.setData(ClipboardData(text: jsonStr));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('📋 Backup JSON copied to clipboard!'), backgroundColor: AdminTheme.success),
+                  );
+                },
+              ),
               TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
             ],
           ),
