@@ -581,7 +581,6 @@ class StaffViewModel extends ChangeNotifier {
     }
 
     // 2. Also load from finance transactions matching staff name in title
-    final staff = allStaff.cast<Staff?>().firstWhere((s) => s?.id == staffId, orElse: () => null);
     final staffName = staff?.name.trim().toLowerCase() ?? '';
     if (staffName.isNotEmpty) {
       final txs = _repository.getTransactions().where((tx) {
