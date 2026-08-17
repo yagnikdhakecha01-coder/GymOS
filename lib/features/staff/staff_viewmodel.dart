@@ -34,6 +34,16 @@ class StaffViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  void clearAllData() {
+    _searchQuery = '';
+    _selectedFilter = 'All';
+    _paidStaffByMonth.clear();
+    _draftsByMonth.clear();
+    _payableByStaff.clear();
+    _payableCacheMonth = '';
+    notifyListeners();
+  }
+
   // Getters
   String get searchQuery => _searchQuery;
   String get selectedFilter => _selectedFilter;

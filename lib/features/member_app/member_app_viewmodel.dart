@@ -318,8 +318,11 @@ class MemberAppViewModel extends ChangeNotifier {
     _isLoggedIn = prefs.getBool('member_logged_in') ?? false;
     _checkedInToday = prefs.getBool('member_checked_in_today') ?? false;
     if (_checkedInToday) {
-      _checkInTime = prefs.getString('member_check_in_time') ?? '07:32 AM';
-      _checkInDate = prefs.getString('member_check_in_date') ?? '15 May 2026';
+      _checkInTime = prefs.getString('member_check_in_time') ?? '';
+      _checkInDate = prefs.getString('member_check_in_date') ?? '';
+    } else {
+      _checkInTime = '';
+      _checkInDate = '';
     }
 
     // Load cached workout plan, diet plan & attendance history for instant UI rendering

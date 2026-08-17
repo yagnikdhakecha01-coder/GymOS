@@ -36,20 +36,38 @@ class GymSwitcherBottomSheet extends StatelessWidget {
     );
   }
 
-  Future<void> _reloadAllGymData(BuildContext context) async {
-    // 1. Members & Transactions
-    await Provider.of<MembersViewModel>(context, listen: false).fetchMembers();
-    // 2. Staff
-    await Provider.of<StaffViewModel>(context, listen: false).fetchStaff();
-    // 3. Finance
-    await Provider.of<FinanceViewModel>(context, listen: false).fetchTransactions();
-    // 4. Membership
-    await Provider.of<MembershipViewModel>(context, listen: false).loadPlans();
-    
-    // 5. Workouts, Diets, and Attendance just notify their listeners
-    Provider.of<WorkoutViewModel>(context, listen: false).refresh();
-    Provider.of<DietViewModel>(context, listen: false).refresh();
-    Provider.of<AttendanceViewModel>(context, listen: false).refresh();
+  Future<void> _reloadAllGymData(BuildContext context, UserRole role) async {
+    // 0. Reset all viewmodel states first to clear any stale cache
+    final membersVm = Provider.of<MembersViewModel>(context, listen: false);
+    final staffVm = Provider.of<StaffViewModel>(context, listen: false);
+    final financeVm = Provider.of<FinanceViewModel>(context, listen: false);
+    final membershipVm = Provider.of<MembershipViewModel>(context, listen: false);
+    final memberAppVm = Provider.of<MemberAppViewModel>(context, listen: false);
+    final workoutVm = Provider.of<WorkoutViewModel>(context, listen: false);
+    final dietVm = Provider.of<DietViewModel>(context, listen: false);
+    final attendanceVm = Provider.of<AttendanceViewModel>(context, listen: false);
+
+    membersVm.clearAllData();
+    staffVm.clearAllData();
+    memberAppVm.clearAllDataInMemory();
+
+    if (role == UserRole.member) {
+      await memberAppVm.loadMemberDataFromSupabase();
+    } else {
+      // 1. Members & Transactions
+      await membersVm.fetchMembers();
+      // 2. Staff
+      await staffVm.fetchStaff();
+      // 3. Finance
+      await financeVm.fetchTransactions();
+      // 4. Membership
+      await membershipVm.loadPlans();
+      
+      // 5. Workouts, Diets, and Attendance just notify their listeners
+      workoutVm.refresh();
+      dietVm.refresh();
+      attendanceVm.refresh();
+    }
   }
 
   void _showSwitchConfirmation(
@@ -162,7 +180,7 @@ class GymSwitcherBottomSheet extends StatelessWidget {
                                 } else {
                                   targetScreen = const FirstTimeSetupScreen();
                                 }
-                                await _reloadAllGymData(context);
+                                await _reloadAllGymData(context, assoc.role);
                                 break;
                               case UserRole.staff:
                                 final staffRole = authVm.staffRecord?.role.toLowerCase() ?? '';
@@ -171,11 +189,11 @@ class GymSwitcherBottomSheet extends StatelessWidget {
                                 } else {
                                   targetScreen = const StaffShell();
                                 }
-                                await _reloadAllGymData(context);
+                                await _reloadAllGymData(context, assoc.role);
                                 break;
                               case UserRole.member:
                                 targetScreen = const MemberShell();
-                                await Provider.of<MemberAppViewModel>(context, listen: false).loadMemberDataFromSupabase();
+                                await _reloadAllGymData(context, assoc.role);
                                 break;
                             }
                             

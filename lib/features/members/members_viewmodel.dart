@@ -32,6 +32,12 @@ class MembersViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  void clearAllData() {
+    _searchQuery = '';
+    _selectedFilter = 'All';
+    notifyListeners();
+  }
+
   // Getters
   String get searchQuery => _searchQuery;
   String get selectedFilter => _selectedFilter;

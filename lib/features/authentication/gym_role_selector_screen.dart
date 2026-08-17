@@ -9,6 +9,14 @@ import '../dashboard/main_navigation_holder.dart';
 import '../staff/portal/staff_shell.dart';
 import '../receptionist/portal/receptionist_shell.dart';
 import '../member_app/screens/member_shell.dart';
+import '../member_app/member_app_viewmodel.dart';
+import '../members/members_viewmodel.dart';
+import '../staff/staff_viewmodel.dart';
+import '../finance/finance_viewmodel.dart';
+import '../membership/membership_viewmodel.dart';
+import '../workout/workout_viewmodel.dart';
+import '../diet/diet_viewmodel.dart';
+import '../attendance/attendance_viewmodel.dart';
 import 'first_time_setup_screen.dart';
 import 'role_selection_screen.dart';
 import 'auth_viewmodel.dart';
@@ -77,6 +85,20 @@ class GymRoleSelectorScreen extends StatelessWidget {
                       padding: const EdgeInsets.only(bottom: 16),
                       child: InkWell(
                         onTap: () async {
+                          // Clear in-memory caches from previous role/profile
+                          final membersVm = Provider.of<MembersViewModel>(context, listen: false);
+                          final staffVm = Provider.of<StaffViewModel>(context, listen: false);
+                          final financeVm = Provider.of<FinanceViewModel>(context, listen: false);
+                          final membershipVm = Provider.of<MembershipViewModel>(context, listen: false);
+                          final memberAppVm = Provider.of<MemberAppViewModel>(context, listen: false);
+                          final workoutVm = Provider.of<WorkoutViewModel>(context, listen: false);
+                          final dietVm = Provider.of<DietViewModel>(context, listen: false);
+                          final attendanceVm = Provider.of<AttendanceViewModel>(context, listen: false);
+
+                          membersVm.clearAllData();
+                          staffVm.clearAllData();
+                          memberAppVm.clearAllDataInMemory();
+
                           await authVm.selectAssociation(assoc);
                           if (context.mounted) {
                             Widget targetScreen;
@@ -87,6 +109,13 @@ class GymRoleSelectorScreen extends StatelessWidget {
                                 } else {
                                   targetScreen = const FirstTimeSetupScreen();
                                 }
+                                await membersVm.fetchMembers();
+                                await staffVm.fetchStaff();
+                                await financeVm.fetchTransactions();
+                                await membershipVm.loadPlans();
+                                workoutVm.refresh();
+                                dietVm.refresh();
+                                attendanceVm.refresh();
                                 break;
                               case UserRole.staff:
                                 final staffRole = authVm.staffRecord?.role.toLowerCase() ?? '';
@@ -95,9 +124,14 @@ class GymRoleSelectorScreen extends StatelessWidget {
                                 } else {
                                   targetScreen = const StaffShell();
                                 }
+                                await staffVm.fetchStaff();
+                                workoutVm.refresh();
+                                dietVm.refresh();
+                                attendanceVm.refresh();
                                 break;
                               case UserRole.member:
                                 targetScreen = const MemberShell();
+                                await memberAppVm.loadMemberDataFromSupabase();
                                 break;
                             }
                             Navigator.pushAndRemoveUntil(

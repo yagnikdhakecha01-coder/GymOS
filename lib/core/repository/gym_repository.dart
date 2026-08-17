@@ -4151,23 +4151,29 @@ class GymRepository extends ChangeNotifier {
     }
   }
 
-  void _saveTodayDetailsToStorage() {
-    if (_todayAttendanceDetails != null) {
+  void _saveTodayDetailsToStorage(String userId, String gymId) {
+    if (_todayAttendanceDetails != null && userId.isNotEmpty && gymId.isNotEmpty) {
       final todayStr = DateTime.now().toIso8601String().substring(0, 10);
-      final key = 'today_att_details_$todayStr';
+      final key = 'today_att_details_${gymId}_${userId}_$todayStr';
       _storage.setString(key, jsonEncode(_todayAttendanceDetails));
     }
   }
 
-  void _loadTodayDetailsFromStorage() {
+  void _loadTodayDetailsFromStorage(String userId, String gymId) {
+    if (userId.isEmpty || gymId.isEmpty) {
+      _todayAttendanceDetails = null;
+      return;
+    }
     final todayStr = DateTime.now().toIso8601String().substring(0, 10);
-    final key = 'today_att_details_$todayStr';
+    final key = 'today_att_details_${gymId}_${userId}_$todayStr';
     final raw = _storage.getString(key);
     if (raw != null) {
       try {
         _todayAttendanceDetails = Map<String, dynamic>.from(jsonDecode(raw));
         notifyListeners();
       } catch (_) {}
+    } else {
+      _todayAttendanceDetails = null;
     }
   }
 
@@ -4360,7 +4366,7 @@ class GymRepository extends ChangeNotifier {
   }
 
   Future<void> fetchTodayAttendanceDetails(String userId, String gymId) async {
-    _loadTodayDetailsFromStorage();
+    _loadTodayDetailsFromStorage(userId, gymId);
     if (!SupabaseService.isInitialized) return;
 
     // Try RPC first (which calculates all shift statuses and hours in the database backend)
@@ -4374,7 +4380,7 @@ class GymRepository extends ChangeNotifier {
       );
       if (response != null && response is Map) {
         _todayAttendanceDetails = Map<String, dynamic>.from(response as Map);
-        _saveTodayDetailsToStorage();
+        _saveTodayDetailsToStorage(userId, gymId);
         notifyListeners();
         return;
       }
