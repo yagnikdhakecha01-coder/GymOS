@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import '../../core/theme/theme.dart';
 import '../../core/widgets/custom_card.dart';
 import '../../core/widgets/success_dialog.dart';
+import 'payment_result_screen.dart';
 import 'members_viewmodel.dart';
 import '../../core/models/member.dart';
 import '../workout/workout_viewmodel.dart';
@@ -427,156 +428,187 @@ Thank you.''';
     final double alreadyReceived = member.totalReceivedAmount;
     final double pendingAmount = member.pendingAmount;
     final double finalAmount = alreadyReceived + pendingAmount;
+    bool isSubmitting = false;
 
-    amountController.text = pendingAmount.toStringAsFixed(0);
+    amountController.text = pendingAmount > 0 ? pendingAmount.toStringAsFixed(0) : '';
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (context) {
+      builder: (sheetContext) {
         return StatefulBuilder(
-          builder: (context, setSheetState) {
+          builder: (sheetContext, setSheetState) {
             return SafeArea(
               child: SingleChildScrollView(
                 child: Padding(
-                  padding: EdgeInsets.fromLTRB(24, 20, 24, MediaQuery.of(context).viewInsets.bottom + 24),
+                  padding: EdgeInsets.fromLTRB(24, 20, 24, MediaQuery.of(sheetContext).viewInsets.bottom + 24),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('Receive Payment', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold)),
-                      IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('Receive Payment', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold)),
+                          IconButton(
+                            icon: const Icon(Icons.close),
+                            onPressed: isSubmitting ? null : () => Navigator.pop(sheetContext),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(color: AppTheme.surfaceGray, borderRadius: BorderRadius.circular(16)),
+                        child: Column(
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(plan?.title ?? 'Gold Membership', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+                                Text('Active', style: GoogleFonts.inter(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 12)),
+                              ],
+                            ),
+                            const Divider(height: 24),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text('Final Amount', style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary)),
+                                Text('Received', style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary)),
+                                Text('Pending', style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary)),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text('₹ ${finalAmount.toStringAsFixed(0)}', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+                                Text('₹ ${alreadyReceived.toStringAsFixed(0)}', style: GoogleFonts.inter(fontWeight: FontWeight.bold, color: Colors.green)),
+                                Text('₹ ${pendingAmount.toStringAsFixed(0)}', style: GoogleFonts.inter(fontWeight: FontWeight.bold, color: Colors.red)),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Text('Receive Amount *', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 6),
+                      TextField(
+                        controller: amountController,
+                        keyboardType: TextInputType.number,
+                        enabled: !isSubmitting,
+                        decoration: const InputDecoration(hintText: 'Enter amount', prefixText: '₹ '),
+                      ),
+                      const SizedBox(height: 16),
+                      Text('Payment Method *', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 6),
+                      DropdownButtonFormField<String>(
+                        value: selectedMethod,
+                        items: ['UPI', 'Cash', 'Card', 'Bank Transfer', 'Cheque'].map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
+                        onChanged: isSubmitting ? null : (val) {
+                          if (val != null) setSheetState(() => selectedMethod = val);
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      Text('Reference No. (Optional)', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 6),
+                      TextField(
+                        controller: refController,
+                        enabled: !isSubmitting,
+                        decoration: const InputDecoration(hintText: 'e.g. TXN123456789'),
+                      ),
+                      const SizedBox(height: 16),
+                      Text('Notes (Optional)', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 6),
+                      TextField(
+                        controller: notesController,
+                        enabled: !isSubmitting,
+                        decoration: const InputDecoration(hintText: 'Add notes'),
+                      ),
+                      const SizedBox(height: 24),
+                      ElevatedButton(
+                        onPressed: isSubmitting ? null : () async {
+                          final enteredAmount = double.tryParse(amountController.text) ?? 0.0;
+                          if (enteredAmount <= 0) return;
+                          
+                          setSheetState(() => isSubmitting = true);
+
+                          try {
+                            await membersVm.recordPayment(
+                              memberId: member.id,
+                              amount: enteredAmount,
+                              paymentMethod: selectedMethod,
+                              category: 'Membership',
+                              notes: notesController.text.trim().isNotEmpty ? notesController.text.trim() : 'Received Payment',
+                            );
+                            
+                            // Close bottom sheet cleanly
+                            if (Navigator.canPop(sheetContext)) {
+                              Navigator.pop(sheetContext);
+                            }
+
+                            final double remaining = (pendingAmount - enteredAmount).clamp(0.0, double.infinity);
+                            
+                            if (mounted) {
+                              PaymentResultScreen.show(
+                                context,
+                                isSuccess: true,
+                                title: 'Payment Received Successfully!',
+                                message: 'Payment of ₹${NumberFormat('#,##,###').format(enteredAmount)} has been credited to ${member.name}.',
+                                memberName: member.name,
+                                memberCode: member.memberCode,
+                                amount: enteredAmount,
+                                paymentMethod: selectedMethod,
+                                planName: plan?.title ?? 'Membership Plan',
+                                referenceNo: refController.text.trim().isNotEmpty ? refController.text.trim() : null,
+                                remainingPending: remaining,
+                              );
+                            }
+                          } catch (e) {
+                            if (Navigator.canPop(sheetContext)) {
+                              Navigator.pop(sheetContext);
+                            }
+                            if (mounted) {
+                              PaymentResultScreen.show(
+                                context,
+                                isSuccess: false,
+                                title: 'Payment Failed',
+                                message: 'Unable to record payment. Please check your connection and try again.',
+                                memberName: member.name,
+                                memberCode: member.memberCode,
+                                amount: enteredAmount,
+                                paymentMethod: selectedMethod,
+                                errorMessage: e.toString(),
+                              );
+                            }
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.primary,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        child: isSubmitting
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                ),
+                              )
+                            : Text('Receive Payment', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+                      ),
                     ],
                   ),
-                  const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(color: AppTheme.surfaceGray, borderRadius: BorderRadius.circular(16)),
-                    child: Column(
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(plan?.title ?? 'Gold Membership', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-                            Text('Active', style: GoogleFonts.inter(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 12)),
-                          ],
-                        ),
-                        const Divider(height: 24),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text('Final Amount', style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary)),
-                            Text('Received', style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary)),
-                            Text('Pending', style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary)),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text('₹ ${finalAmount.toStringAsFixed(0)}', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-                            Text('₹ ${alreadyReceived.toStringAsFixed(0)}', style: GoogleFonts.inter(fontWeight: FontWeight.bold, color: Colors.green)),
-                            Text('₹ ${pendingAmount.toStringAsFixed(0)}', style: GoogleFonts.inter(fontWeight: FontWeight.bold, color: Colors.red)),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  Text('Receive Amount *', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 6),
-                  TextField(
-                    controller: amountController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(hintText: 'Enter amount', prefixText: '₹ '),
-                  ),
-                  const SizedBox(height: 16),
-                  Text('Payment Method *', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 6),
-                  DropdownButtonFormField<String>(
-                    value: selectedMethod,
-                    items: ['UPI', 'Cash', 'Card', 'Bank Transfer', 'Cheque'].map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
-                    onChanged: (val) {
-                      if (val != null) setSheetState(() => selectedMethod = val);
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  Text('Reference No. (Optional)', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 6),
-                  TextField(
-                    controller: refController,
-                    decoration: const InputDecoration(hintText: 'e.g. TXN123456789'),
-                  ),
-                  const SizedBox(height: 16),
-                  Text('Notes (Optional)', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 6),
-                  TextField(
-                    controller: notesController,
-                    decoration: const InputDecoration(hintText: 'Add notes'),
-                  ),
-                  const SizedBox(height: 24),
-                  ElevatedButton(
-                    onPressed: () async {
-                      final enteredAmount = double.tryParse(amountController.text) ?? 0.0;
-                      if (enteredAmount <= 0) return;
-                      Navigator.pop(context); // Close sheet
-                      
-                      // Show loading spinner
-                      showDialog(
-                        context: context,
-                        barrierDismissible: false,
-                        builder: (ctx) => const Center(child: CircularProgressIndicator(color: AppTheme.primary)),
-                      );
-
-                      try {
-                        await membersVm.recordPayment(
-                          memberId: member.id,
-                          amount: enteredAmount,
-                          paymentMethod: selectedMethod,
-                          category: 'Membership',
-                          notes: notesController.text.trim().isNotEmpty ? notesController.text.trim() : 'Received Payment',
-                        );
-                        
-                        if (mounted) {
-                          Navigator.pop(context); // Pop loading spinner
-                          SuccessDialog.show(
-                            context,
-                            title: 'Payment Successful',
-                            message: 'Payment of ₹${NumberFormat('#,##,###').format(enteredAmount)} has been received.',
-                          );
-                        }
-                      } catch (e) {
-                        if (mounted) {
-                          Navigator.pop(context); // Pop loading spinner
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              backgroundColor: Colors.redAccent,
-                              content: Text('Failed to record payment: $e'),
-                            ),
-                          );
-                        }
-                      }
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.primary,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    child: Text('Receive Payment', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-                  ),
-                ],
+                ),
               ),
-            ),
-          ),
+            );
+          },
         );
-      },
-    );
       },
     );
   }
@@ -589,15 +621,16 @@ Thank you.''';
     final receiveController = TextEditingController();
     final notesController = TextEditingController();
     String selectedMethod = 'UPI';
+    bool isSubmitting = false;
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (context) {
+      builder: (sheetContext) {
         return StatefulBuilder(
-          builder: (context, setSheetState) {
+          builder: (sheetContext, setSheetState) {
             final double planPrice = selectedPlan?.price ?? 3000.0;
             final double discountVal = double.tryParse(discountController.text) ?? 0.0;
             final double finalAmount = (planPrice - discountVal).clamp(0.0, double.infinity);
@@ -605,145 +638,173 @@ Thank you.''';
             return SafeArea(
               child: SingleChildScrollView(
                 child: Padding(
-                  padding: EdgeInsets.fromLTRB(24, 20, 24, MediaQuery.of(context).viewInsets.bottom + 24),
+                  padding: EdgeInsets.fromLTRB(24, 20, 24, MediaQuery.of(sheetContext).viewInsets.bottom + 24),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('Renew Membership', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold)),
-                      IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  Text('Select New Plan *', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 6),
-                  DropdownButtonFormField<MembershipPlan>(
-                    value: plans.any((p) => p.id == selectedPlan?.id)
-                        ? plans.firstWhere((p) => p.id == selectedPlan?.id)
-                        : null,
-                    items: plans.map((p) => DropdownMenuItem(value: p, child: Text('${p.title} (${p.durationMonths} Months)'))).toList(),
-                    onChanged: (val) {
-                      setSheetState(() => selectedPlan = val);
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Plan Price', style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary)),
-                            const SizedBox(height: 4),
-                            Text('₹ ${planPrice.toStringAsFixed(0)}', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 16)),
-                          ],
-                        ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('Renew Membership', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold)),
+                          IconButton(
+                            icon: const Icon(Icons.close),
+                            onPressed: isSubmitting ? null : () => Navigator.pop(sheetContext),
+                          ),
+                        ],
                       ),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Discount (₹)', style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary)),
-                            const SizedBox(height: 4),
-                            TextField(
-                              controller: discountController,
-                              keyboardType: TextInputType.number,
-                              onChanged: (_) => setSheetState(() {}),
-                              decoration: const InputDecoration(contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8)),
+                      const SizedBox(height: 16),
+                      Text('Select New Plan *', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 6),
+                      DropdownButtonFormField<MembershipPlan>(
+                        value: plans.any((p) => p.id == selectedPlan?.id)
+                            ? plans.firstWhere((p) => p.id == selectedPlan?.id)
+                            : null,
+                        items: plans.map((p) => DropdownMenuItem(value: p, child: Text('${p.title} (${p.durationMonths} Months)'))).toList(),
+                        onChanged: isSubmitting ? null : (val) {
+                          setSheetState(() => selectedPlan = val);
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Plan Price', style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary)),
+                                const SizedBox(height: 4),
+                                Text('₹ ${planPrice.toStringAsFixed(0)}', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 16)),
+                              ],
                             ),
-                          ],
+                          ),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Discount (₹)', style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary)),
+                                const SizedBox(height: 4),
+                                TextField(
+                                  controller: discountController,
+                                  keyboardType: TextInputType.number,
+                                  enabled: !isSubmitting,
+                                  onChanged: (_) => setSheetState(() {}),
+                                  decoration: const InputDecoration(contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8)),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const Divider(height: 32),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('Final Amount', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+                          Text('₹ ${finalAmount.toStringAsFixed(0)}', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 18, color: AppTheme.primary)),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Text('Receive Today *', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 6),
+                      TextField(
+                        controller: receiveController,
+                        keyboardType: TextInputType.number,
+                        enabled: !isSubmitting,
+                        decoration: const InputDecoration(hintText: 'Enter payment received today', prefixText: '₹ '),
+                      ),
+                      const SizedBox(height: 16),
+                      Text('Payment Method *', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 6),
+                      DropdownButtonFormField<String>(
+                        value: selectedMethod,
+                        items: ['UPI', 'Cash', 'Card', 'Bank Transfer', 'Cheque'].map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
+                        onChanged: isSubmitting ? null : (val) {
+                          if (val != null) setSheetState(() => selectedMethod = val);
+                        },
+                      ),
+                      const SizedBox(height: 24),
+                      ElevatedButton(
+                        onPressed: isSubmitting ? null : () async {
+                          if (selectedPlan == null) return;
+                          final receiveToday = double.tryParse(receiveController.text) ?? 0.0;
+                          
+                          setSheetState(() => isSubmitting = true);
+
+                          try {
+                            final updated = member.copyWith(
+                              membershipPlanId: selectedPlan!.id,
+                              discountAmount: discountVal,
+                              totalReceivedAmount: receiveToday,
+                              pendingAmount: finalAmount - receiveToday,
+                              paymentStatus: (finalAmount - receiveToday) <= 0 ? 'Paid' : 'Partial',
+                            );
+                            await membersVm.updateMember(updated, paymentMethod: selectedMethod, transactionAmount: receiveToday, isRenewal: true);
+                            
+                            // Close bottom sheet cleanly
+                            if (Navigator.canPop(sheetContext)) {
+                              Navigator.pop(sheetContext);
+                            }
+
+                            final double remaining = (finalAmount - receiveToday).clamp(0.0, double.infinity);
+                            
+                            if (mounted) {
+                              PaymentResultScreen.show(
+                                context,
+                                isSuccess: true,
+                                title: 'Membership Renewed Successfully!',
+                                message: '${member.name}\'s membership has been renewed for ${selectedPlan!.title}.',
+                                memberName: member.name,
+                                memberCode: member.memberCode,
+                                amount: receiveToday,
+                                paymentMethod: selectedMethod,
+                                planName: selectedPlan!.title,
+                                remainingPending: remaining,
+                              );
+                            }
+                          } catch (e) {
+                            if (Navigator.canPop(sheetContext)) {
+                              Navigator.pop(sheetContext);
+                            }
+                            if (mounted) {
+                              PaymentResultScreen.show(
+                                context,
+                                isSuccess: false,
+                                title: 'Renewal Failed',
+                                message: 'Unable to renew membership. Please try again.',
+                                memberName: member.name,
+                                memberCode: member.memberCode,
+                                amount: receiveToday,
+                                paymentMethod: selectedMethod,
+                                errorMessage: e.toString(),
+                              );
+                            }
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.primary,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
+                        child: isSubmitting
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                ),
+                              )
+                            : Text('Renew Membership', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
                       ),
                     ],
                   ),
-                  const Divider(height: 32),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('Final Amount', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-                      Text('₹ ${finalAmount.toStringAsFixed(0)}', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 18, color: AppTheme.primary)),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  Text('Receive Today *', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 6),
-                  TextField(
-                    controller: receiveController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(hintText: 'Enter payment received today', prefixText: '₹ '),
-                  ),
-                  const SizedBox(height: 16),
-                  Text('Payment Method *', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 6),
-                  DropdownButtonFormField<String>(
-                    value: selectedMethod,
-                    items: ['UPI', 'Cash', 'Card', 'Bank Transfer', 'Cheque'].map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
-                    onChanged: (val) {
-                      if (val != null) setSheetState(() => selectedMethod = val);
-                    },
-                  ),
-                  const SizedBox(height: 24),
-                  ElevatedButton(
-                    onPressed: () async {
-                      if (selectedPlan == null) return;
-                      final receiveToday = double.tryParse(receiveController.text) ?? 0.0;
-                      Navigator.pop(context); // Close sheet
-
-                      // Show loading spinner
-                      showDialog(
-                        context: context,
-                        barrierDismissible: false,
-                        builder: (ctx) => const Center(child: CircularProgressIndicator(color: AppTheme.primary)),
-                      );
-
-                      try {
-                        final updated = member.copyWith(
-                          membershipPlanId: selectedPlan!.id,
-                          discountAmount: discountVal,
-                          totalReceivedAmount: receiveToday,
-                          pendingAmount: finalAmount - receiveToday,
-                          paymentStatus: (finalAmount - receiveToday) <= 0 ? 'Paid' : 'Partial',
-                        );
-                        await membersVm.updateMember(updated, paymentMethod: selectedMethod, transactionAmount: receiveToday, isRenewal: true);
-                        
-                        if (mounted) {
-                          Navigator.pop(context); // Pop loading spinner
-                          SuccessDialog.show(
-                            context,
-                            title: 'Membership Renewed',
-                            message: '${member.name}\'s membership has been renewed successfully.',
-                          );
-                        }
-                      } catch (e) {
-                        if (mounted) {
-                          Navigator.pop(context); // Pop loading spinner
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              backgroundColor: Colors.redAccent,
-                              content: Text('Failed to renew membership: $e'),
-                            ),
-                          );
-                        }
-                      }
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.primary,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    child: Text('Renew Membership', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-                  ),
-                ],
+                ),
               ),
-            ),
-          ),
+            );
+          },
         );
-      },
-    );
       },
     );
   }
