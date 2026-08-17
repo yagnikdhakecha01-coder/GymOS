@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'supabase_service.dart';
 
@@ -54,9 +55,11 @@ class AdminAuthService {
 
   Future<bool> signInWithGoogle() async {
     if (_client == null) return false;
+    final String? webRedirect = kIsWeb ? '${Uri.base.origin}/' : null;
     return await _client!.auth.signInWithOAuth(
       OAuthProvider.google,
-      redirectTo: null, // Same window redirect for web
+      redirectTo: webRedirect,
+      queryParams: {'prompt': 'select_account'},
     );
   }
 

@@ -2475,6 +2475,9 @@ class _SalaryHistoryItemWidgetState extends State<SalaryHistoryItemWidget> {
   @override
   Widget build(BuildContext context) {
     final record = widget.record;
+    final dynamic advancesList = (_details != null && List.from(_details!['advances'] ?? []).isNotEmpty)
+        ? _details!['advances']
+        : (record['advances'] as List? ?? []);
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
@@ -2592,10 +2595,6 @@ class _SalaryHistoryItemWidgetState extends State<SalaryHistoryItemWidget> {
             ],
 
             // Render Advance Recoveries breakdown table if available
-            final dynamic advancesList = (_details != null && List.from(_details!['advances'] ?? []).isNotEmpty)
-                ? _details!['advances']
-                : (record['advances'] as List? ?? []);
-
             if (List.from(advancesList).isNotEmpty) ...[
               const SizedBox(height: 16),
               Text(

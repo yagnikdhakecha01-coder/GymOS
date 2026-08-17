@@ -167,7 +167,7 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> with SingleTi
         }
       }
 
-      // 2. Count plan totals dynamically from real subscriptions
+      // 2. Query subscription_plans directly from Database
       final Map<String, int> counts = {
         'free_trial': 0,
         'starter': 0,
@@ -190,46 +190,64 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> with SingleTi
         }
       }
 
-      final List<Map<String, dynamic>> calculatedPlans = [
-        {
-          'id': 'free_trial',
-          'name': 'Free Trial',
-          'price': '₹0',
-          'gyms': counts['free_trial'] ?? 0,
-          'popular': false,
-          'features': ['3 Months Free', 'All Features', 'Up to 50 Members', '2 Staff']
-        },
-        {
-          'id': 'starter',
-          'name': 'Starter',
-          'price': '₹699',
-          'gyms': counts['starter'] ?? 0,
-          'popular': false,
-          'features': ['100 Members', '5 Staff', 'QR Attendance', 'Basic Reports']
-        },
-        {
-          'id': 'pro',
-          'name': 'Pro',
-          'price': '₹999',
-          'gyms': counts['pro'] ?? 0,
-          'popular': true,
-          'features': ['500 Members', '15 Staff', 'All Attendance', 'AI Features', 'Priority Support']
-        },
-        {
-          'id': 'business',
-          'name': 'Business',
-          'price': '₹1,999',
-          'gyms': counts['business'] ?? 0,
-          'popular': false,
-          'features': ['Unlimited Members', 'Unlimited Staff', 'All Features', 'Custom Branding', 'Dedicated Support']
-        },
-      ];
+      List<Map<String, dynamic>> loadedPlans = [];
+      try {
+        final plansRes = await client.from('subscription_plans').select('*').order('price', ascending: true);
+        if (plansRes.isNotEmpty) {
+          for (var p in plansRes) {
+            final map = Map<String, dynamic>.from(p);
+            final String pid = (map['id'] ?? '').toString().toLowerCase();
+            final int gymsCount = counts[pid] ?? 0;
+
+            final int? maxMembers = map['max_members'] as int?;
+            final int? maxStaff = map['max_staff'] as int?;
+            final int? maxGyms = map['max_gyms'] as int?;
+
+            final List<String> features = [];
+            features.add(maxMembers == null || maxMembers <= -1 ? 'Unlimited Members' : 'Up to $maxMembers Members');
+            features.add(maxStaff == null || maxStaff <= -1 ? 'Unlimited Staff' : 'Up to $maxStaff Staff');
+            features.add(maxGyms == null || maxGyms <= -1 ? 'Unlimited Gyms' : 'Up to $maxGyms Gym(s)');
+            if (pid == 'pro' || pid == 'business') {
+              features.add('AI Features & Attendance');
+            }
+            if (pid == 'business') {
+              features.add('Custom Branding & Priority Support');
+            }
+
+            loadedPlans.add({
+              'id': map['id'],
+              'name': map['name'] ?? pid.toUpperCase(),
+              'price_num': (map['price'] as num? ?? 0.0).toDouble(),
+              'price': '₹${(map['price'] as num? ?? 0.0).toInt()}',
+              'max_members': maxMembers ?? -1,
+              'max_staff': maxStaff ?? -1,
+              'max_gyms': maxGyms ?? 1,
+              'razorpay_plan_id': map['razorpay_plan_id'] ?? '',
+              'gyms': gymsCount,
+              'popular': pid == 'pro',
+              'features': features,
+              'raw': map,
+            });
+          }
+        }
+      } catch (e) {
+        debugPrint('Error loading subscription_plans table: $e');
+      }
+
+      if (loadedPlans.isEmpty) {
+        loadedPlans = [
+          {'id': 'free_trial', 'name': 'Free Trial', 'price_num': 0.0, 'price': '₹0', 'max_members': 50, 'max_staff': 5, 'max_gyms': 1, 'gyms': counts['free_trial'] ?? 0, 'popular': false, 'features': ['50 Members', '5 Staff', '1 Gym', '3 Months Free']},
+          {'id': 'starter', 'name': 'Starter', 'price_num': 699.0, 'price': '₹699', 'max_members': 100, 'max_staff': 5, 'max_gyms': 1, 'gyms': counts['starter'] ?? 0, 'popular': false, 'features': ['100 Members', '5 Staff', '1 Gym', 'Basic Reports']},
+          {'id': 'pro', 'name': 'Pro', 'price_num': 999.0, 'price': '₹999', 'max_members': 500, 'max_staff': 15, 'max_gyms': 2, 'gyms': counts['pro'] ?? 0, 'popular': true, 'features': ['500 Members', '15 Staff', '2 Gyms', 'AI Features']},
+          {'id': 'business', 'name': 'Business', 'price_num': 1999.0, 'price': '₹1,999', 'max_members': -1, 'max_staff': -1, 'max_gyms': 5, 'gyms': counts['business'] ?? 0, 'popular': false, 'features': ['Unlimited Members', 'Unlimited Staff', '5 Gyms', 'Custom Branding']},
+        ];
+      }
 
       // 3. Fetch Coupons
       List<Map<String, dynamic>> loadedCoupons = [];
       try {
         final couponsRes = await client.from('platform_coupons').select('*').order('created_at', ascending: false);
-        if (couponsRes is List) {
+        if (couponsRes.isNotEmpty) {
           loadedCoupons = couponsRes.map((e) => Map<String, dynamic>.from(e)).toList();
         }
       } catch (_) {}
@@ -237,7 +255,7 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> with SingleTi
       if (!mounted) return;
       setState(() {
         _subscriptions = loadedSubscriptions;
-        _plans = calculatedPlans;
+        _plans = loadedPlans;
         _coupons = loadedCoupons;
         _isLoading = false;
       });
@@ -521,7 +539,238 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> with SingleTi
               ],
             ),
           )),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () => _showEditPlanLimitsDialog(context, plan),
+              icon: const Icon(Icons.edit_rounded, size: 16),
+              label: Text('Edit Plan & Limits', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold)),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AdminTheme.primary,
+                side: const BorderSide(color: AdminTheme.primary),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AdminTheme.radiusSm)),
+              ),
+            ),
+          ),
         ],
+      ),
+    );
+  }
+
+  void _showEditPlanLimitsDialog(BuildContext context, Map<String, dynamic> plan) {
+    final String pid = (plan['id'] ?? '').toString();
+    final String planName = (plan['name'] ?? pid).toString();
+    
+    final priceController = TextEditingController(text: (plan['price_num'] ?? 0.0).toString());
+    final razorpayController = TextEditingController(text: (plan['razorpay_plan_id'] ?? '').toString());
+
+    int? maxMembers = plan['max_members'] as int?;
+    int? maxStaff = plan['max_staff'] as int?;
+    int? maxGyms = plan['max_gyms'] as int?;
+
+    bool isUnlimitedMembers = maxMembers == null || maxMembers <= -1;
+    bool isUnlimitedStaff = maxStaff == null || maxStaff <= -1;
+    bool isUnlimitedGyms = maxGyms == null || maxGyms <= -1;
+
+    final membersController = TextEditingController(text: isUnlimitedMembers ? '' : maxMembers.toString());
+    final staffController = TextEditingController(text: isUnlimitedStaff ? '' : maxStaff.toString());
+    final gymsController = TextEditingController(text: isUnlimitedGyms ? '' : maxGyms.toString());
+
+    bool isSaving = false;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          backgroundColor: AdminTheme.cardColor(context),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AdminTheme.radiusCard)),
+          title: Row(
+            children: [
+              const Icon(Icons.tune_rounded, color: AdminTheme.primary),
+              const SizedBox(width: 8),
+              Text('Edit $planName Plan Limits', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold, color: AdminTheme.textColor(context))),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Configure permissions, pricing & maximum allowed resources for this plan:', style: GoogleFonts.inter(fontSize: 13, color: AdminTheme.secondaryTextColor(context))),
+                const SizedBox(height: 16),
+                
+                // Monthly Price (₹)
+                TextField(
+                  controller: priceController,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  style: GoogleFonts.inter(color: AdminTheme.textColor(context)),
+                  decoration: InputDecoration(
+                    labelText: 'Monthly Price (₹)',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(AdminTheme.radiusSm)),
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Max Members Limit
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: membersController,
+                        enabled: !isUnlimitedMembers,
+                        keyboardType: TextInputType.number,
+                        style: GoogleFonts.inter(color: AdminTheme.textColor(context)),
+                        decoration: InputDecoration(
+                          labelText: 'Max Members Limit',
+                          hintText: isUnlimitedMembers ? 'Unlimited (-1)' : 'e.g. 50',
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(AdminTheme.radiusSm)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    FilterChip(
+                      label: Text('Unlimited', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold)),
+                      selected: isUnlimitedMembers,
+                      selectedColor: AdminTheme.primary.withValues(alpha: 0.2),
+                      onSelected: (val) {
+                        setDialogState(() {
+                          isUnlimitedMembers = val;
+                          if (val) membersController.clear();
+                        });
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                // Max Staff Limit
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: staffController,
+                        enabled: !isUnlimitedStaff,
+                        keyboardType: TextInputType.number,
+                        style: GoogleFonts.inter(color: AdminTheme.textColor(context)),
+                        decoration: InputDecoration(
+                          labelText: 'Max Staff Limit',
+                          hintText: isUnlimitedStaff ? 'Unlimited (-1)' : 'e.g. 5',
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(AdminTheme.radiusSm)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    FilterChip(
+                      label: Text('Unlimited', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold)),
+                      selected: isUnlimitedStaff,
+                      selectedColor: AdminTheme.primary.withValues(alpha: 0.2),
+                      onSelected: (val) {
+                        setDialogState(() {
+                          isUnlimitedStaff = val;
+                          if (val) staffController.clear();
+                        });
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                // Max Gyms Limit
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: gymsController,
+                        enabled: !isUnlimitedGyms,
+                        keyboardType: TextInputType.number,
+                        style: GoogleFonts.inter(color: AdminTheme.textColor(context)),
+                        decoration: InputDecoration(
+                          labelText: 'Max Gyms Allowed',
+                          hintText: isUnlimitedGyms ? 'Unlimited (-1)' : 'e.g. 1',
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(AdminTheme.radiusSm)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    FilterChip(
+                      label: Text('Unlimited', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold)),
+                      selected: isUnlimitedGyms,
+                      selectedColor: AdminTheme.primary.withValues(alpha: 0.2),
+                      onSelected: (val) {
+                        setDialogState(() {
+                          isUnlimitedGyms = val;
+                          if (val) gymsController.clear();
+                        });
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                // Razorpay Plan ID
+                TextField(
+                  controller: razorpayController,
+                  style: GoogleFonts.inter(color: AdminTheme.textColor(context)),
+                  decoration: InputDecoration(
+                    labelText: 'Razorpay Plan ID (Optional)',
+                    hintText: 'e.g. plan_N123456789',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(AdminTheme.radiusSm)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text('Cancel', style: GoogleFonts.inter(color: AdminTheme.secondaryTextColor(context))),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: AdminTheme.primary, foregroundColor: Colors.white),
+              onPressed: isSaving ? null : () async {
+                setDialogState(() => isSaving = true);
+                try {
+                  final double priceVal = double.tryParse(priceController.text.trim()) ?? (plan['price_num'] ?? 0.0);
+                  final int? finalMaxMembers = isUnlimitedMembers ? -1 : int.tryParse(membersController.text.trim());
+                  final int? finalMaxStaff = isUnlimitedStaff ? -1 : int.tryParse(staffController.text.trim());
+                  final int? finalMaxGyms = isUnlimitedGyms ? -1 : int.tryParse(gymsController.text.trim());
+                  final String rzPlanId = razorpayController.text.trim();
+
+                  if (AdminSupabaseService.isInitialized) {
+                    await AdminSupabaseService.client.from('subscription_plans').upsert({
+                      'id': pid,
+                      'name': planName,
+                      'price': priceVal,
+                      'max_members': finalMaxMembers,
+                      'max_staff': finalMaxStaff,
+                      'max_gyms': finalMaxGyms,
+                      'razorpay_plan_id': rzPlanId.isNotEmpty ? rzPlanId : null,
+                    });
+                  }
+
+                  if (!context.mounted) return;
+                  Navigator.pop(ctx);
+                  _fetchData();
+
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Plan limits for "$planName" updated successfully in Database!'),
+                      backgroundColor: AdminTheme.success,
+                    ),
+                  );
+                } catch (e) {
+                  setDialogState(() => isSaving = false);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Error updating plan: $e'), backgroundColor: AdminTheme.danger),
+                  );
+                }
+              },
+              child: Text(isSaving ? 'Saving...' : 'Save Plan Limits', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
       ),
     );
   }

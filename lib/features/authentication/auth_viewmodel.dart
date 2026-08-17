@@ -579,9 +579,10 @@ class AuthViewModel extends ChangeNotifier {
 
       if (kIsWeb) {
         // Standard OAuth flow is highly optimized and recommended for Web
+        final String webRedirect = '${Uri.base.origin}/';
         await SupabaseService.client.auth.signInWithOAuth(
           OAuthProvider.google,
-          redirectTo: 'http://127.0.0.1:8080/',
+          redirectTo: webRedirect,
           queryParams: {'prompt': 'select_account'},
         );
         return true;

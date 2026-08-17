@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -6,6 +7,7 @@ import '../theme/responsive.dart';
 import '../providers/navigation_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/auth_provider.dart';
+import '../services/admin_notification_service.dart';
 import '../services/supabase_service.dart';
 
 /// Menu item definition
@@ -419,14 +421,10 @@ class _AdminTopBar extends StatelessWidget {
           ),
           const SizedBox(width: 16),
           _ThemeToggle(),
-          const SizedBox(width: 8),
-          // Notifications bell
-          _TopBarIconButton(
-            icon: Icons.notifications_none_rounded,
-            badge: '3',
-            onTap: () {},
-          ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 12),
+          // Notifications bell (Placed right next to Profile Avatar)
+          const _AdminNotificationBell(),
+          const SizedBox(width: 12),
           // Profile
           PopupMenuButton<String>(
             offset: const Offset(0, 50),
@@ -508,44 +506,240 @@ class _AdminTopBar extends StatelessWidget {
 class _TopBarIconButton extends StatelessWidget {
   final IconData icon;
   final String? badge;
-  final VoidCallback onTap;
 
-  const _TopBarIconButton({required this.icon, this.badge, required this.onTap});
+  const _TopBarIconButton({required this.icon, this.badge});
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(AdminTheme.radiusSm),
-      onTap: onTap,
-      child: Container(
-        width: 38,
-        height: 38,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(AdminTheme.radiusSm),
-        ),
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            Icon(icon, size: 22, color: AdminTheme.secondaryTextColor(context)),
-            if (badge != null)
-              Positioned(
-                top: 4,
-                right: 4,
-                child: Container(
-                  padding: const EdgeInsets.all(3),
-                  decoration: const BoxDecoration(
-                    color: AdminTheme.danger,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Text(
-                    badge!,
-                    style: GoogleFonts.inter(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w600),
+    return Container(
+      width: 38,
+      height: 38,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(AdminTheme.radiusSm),
+      ),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Icon(icon, size: 22, color: AdminTheme.secondaryTextColor(context)),
+          if (badge != null)
+            Positioned(
+              top: 4,
+              right: 4,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AdminTheme.danger,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  badge!,
+                  style: GoogleFonts.inter(
+                    color: Colors.white,
+                    fontSize: 9,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
               ),
-          ],
-        ),
+            ),
+        ],
       ),
+    );
+  }
+}
+
+class _AdminNotificationBell extends StatefulWidget {
+  const _AdminNotificationBell();
+
+  @override
+  State<_AdminNotificationBell> createState() => _AdminNotificationBellState();
+}
+
+class _AdminNotificationBellState extends State<_AdminNotificationBell> {
+  List<AdminNotificationItem> _notifications = [];
+  int _unreadCount = 0;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+    _timer = Timer.periodic(const Duration(seconds: 10), (_) => _loadData());
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadData() async {
+    final list = await AdminNotificationService.fetchNotifications(limit: 10);
+    final count = await AdminNotificationService.fetchUnreadCount();
+    if (mounted) {
+      setState(() {
+        _notifications = list;
+        _unreadCount = count;
+      });
+    }
+  }
+
+  IconData _getCategoryIcon(String category) {
+    switch (category) {
+      case 'gym_registered': return Icons.business_rounded;
+      case 'subscription_change': return Icons.stars_rounded;
+      case 'support_ticket': return Icons.support_agent_rounded;
+      case 'payment_received': return Icons.payments_rounded;
+      case 'trial_expiry': return Icons.timer_rounded;
+      default: return Icons.notifications_rounded;
+    }
+  }
+
+  Color _getCategoryColor(String category) {
+    switch (category) {
+      case 'gym_registered': return AdminTheme.primary;
+      case 'subscription_change': return AdminTheme.success;
+      case 'support_ticket': return AdminTheme.orange;
+      case 'payment_received': return Colors.green;
+      case 'trial_expiry': return AdminTheme.danger;
+      default: return AdminTheme.info;
+    }
+  }
+
+  String _formatTime(DateTime date) {
+    final diff = DateTime.now().difference(date);
+    if (diff.inMinutes < 1) return 'Just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    return '${diff.inDays}d ago';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<String>(
+      offset: const Offset(0, 50),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AdminTheme.radiusCard)),
+      tooltip: 'Notifications',
+      onOpened: _loadData,
+      onSelected: (val) {
+        if (val == 'view_all') {
+          context.read<NavigationProvider>().setIndex(7);
+        }
+      },
+      child: _TopBarIconButton(
+        icon: Icons.notifications_none_rounded,
+        badge: _unreadCount > 0 ? (_unreadCount > 9 ? '9+' : '$_unreadCount') : null,
+      ),
+      itemBuilder: (ctx) => [
+        PopupMenuItem<String>(
+          enabled: false,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Notifications (${_notifications.length})',
+                style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AdminTheme.textColor(context)),
+              ),
+              if (_unreadCount > 0)
+                TextButton(
+                  onPressed: () async {
+                    Navigator.pop(ctx);
+                    await AdminNotificationService.markAllAsRead();
+                    _loadData();
+                  },
+                  child: Text('Mark all read', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: AdminTheme.primary)),
+                ),
+            ],
+          ),
+        ),
+        const PopupMenuDivider(),
+        if (_notifications.isEmpty)
+          PopupMenuItem<String>(
+            enabled: false,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Center(
+                child: Text('No new notifications', style: GoogleFonts.inter(fontSize: 12, color: AdminTheme.mutedTextColor(context))),
+              ),
+            ),
+          )
+        else
+          ..._notifications.take(5).map((item) => PopupMenuItem<String>(
+            value: item.id,
+            onTap: () async {
+              await AdminNotificationService.markAsRead(item.id);
+              _loadData();
+            },
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: _getCategoryColor(item.category).withValues(alpha: 0.15),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(_getCategoryIcon(item.category), size: 16, color: _getCategoryColor(item.category)),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              item.title,
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: item.isRead ? FontWeight.w500 : FontWeight.bold,
+                                color: AdminTheme.textColor(context),
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (!item.isRead)
+                            Container(
+                              margin: const EdgeInsets.only(left: 4),
+                              width: 6,
+                              height: 6,
+                              decoration: const BoxDecoration(color: AdminTheme.primary, shape: BoxShape.circle),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        item.message,
+                        style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.secondaryTextColor(context)),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        _formatTime(item.createdAt),
+                        style: GoogleFonts.inter(fontSize: 10, color: AdminTheme.mutedTextColor(context)),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          )),
+        const PopupMenuDivider(),
+        PopupMenuItem<String>(
+          value: 'view_all',
+          onTap: () {
+            context.read<NavigationProvider>().setIndex(7);
+          },
+          child: Center(
+            child: Text(
+              'View All Notifications →',
+              style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AdminTheme.primary),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

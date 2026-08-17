@@ -29,6 +29,9 @@ class _GymsScreenState extends State<GymsScreen> {
   String _searchQuery = '';
   final _searchController = TextEditingController();
   List<Map<String, dynamic>> _gyms = [];
+  int _activeTrialVal = 30;
+  String _activeTrialUnit = 'days';
+  bool _activeTrialEnabled = true;
 
   @override
   void initState() {
@@ -60,6 +63,22 @@ class _GymsScreenState extends State<GymsScreen> {
       }
       final client = AdminSupabaseService.client;
       
+      try {
+        final settingRes = await client
+            .from('platform_settings')
+            .select('*')
+            .eq('key', 'default_free_trial')
+            .maybeSingle();
+        if (settingRes != null && settingRes['value'] != null) {
+          final valMap = Map<String, dynamic>.from(settingRes['value']);
+          _activeTrialVal = (valMap['duration_value'] as num? ?? 30).toInt();
+          _activeTrialUnit = (valMap['duration_unit'] ?? 'days').toString();
+          _activeTrialEnabled = valMap['enabled'] == true;
+        }
+      } catch (e) {
+        debugPrint('Could not fetch default_free_trial setting: $e');
+      }
+
       final response = await client
           .from('gyms')
           .select('*, members(count), staff(count), user_gym_associations(role, user_id, profiles(full_name, phone_number))');
@@ -234,6 +253,9 @@ class _GymsScreenState extends State<GymsScreen> {
             children: [
               // Header
               _buildHeader(context),
+              const SizedBox(height: 16),
+              // Active Trial Banner
+              _buildActiveTrialBanner(context),
               const SizedBox(height: 20),
               // Status filter chips
               _buildFilterChips(context),
@@ -305,6 +327,200 @@ class _GymsScreenState extends State<GymsScreen> {
           onPressed: () => _showRestoreDialog(context),
         ),
       ],
+    );
+  }
+
+  Widget _buildActiveTrialBanner(BuildContext context) {
+    final String trialDurationText = _activeTrialEnabled
+        ? '$_activeTrialVal ${_activeTrialUnit.toUpperCase()}'
+        : 'DISABLED';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            AdminTheme.primary.withValues(alpha: 0.12),
+            AdminTheme.primary.withValues(alpha: 0.04),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(AdminTheme.radiusCard),
+        border: Border.all(color: AdminTheme.primary.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: AdminTheme.primary.withValues(alpha: 0.15),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.timer_rounded, color: AdminTheme.primary, size: 22),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      'Default Free Trial for New Gyms: ',
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: AdminTheme.textColor(context),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: _activeTrialEnabled ? AdminTheme.success.withValues(alpha: 0.15) : AdminTheme.danger.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(AdminTheme.radiusXs),
+                        border: Border.all(color: _activeTrialEnabled ? AdminTheme.success.withValues(alpha: 0.3) : AdminTheme.danger.withValues(alpha: 0.3)),
+                      ),
+                      child: Text(
+                        trialDurationText,
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: _activeTrialEnabled ? AdminTheme.success : AdminTheme.danger,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Newly registered gyms automatically receive this trial period upon signup.',
+                  style: GoogleFonts.inter(fontSize: 12, color: AdminTheme.secondaryTextColor(context)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          OutlinedButton.icon(
+            onPressed: () => _showEditTrialDialog(context),
+            icon: const Icon(Icons.edit_rounded, size: 16),
+            label: Text('Change Setting', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold)),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AdminTheme.primary,
+              side: const BorderSide(color: AdminTheme.primary),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AdminTheme.radiusSm)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showEditTrialDialog(BuildContext context) {
+    final valController = TextEditingController(text: _activeTrialVal.toString());
+    String selectedUnit = _activeTrialUnit;
+    bool isEnabled = _activeTrialEnabled;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          backgroundColor: AdminTheme.cardColor(context),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AdminTheme.radiusCard)),
+          title: Row(
+            children: [
+              const Icon(Icons.timer_rounded, color: AdminTheme.primary),
+              const SizedBox(width: 8),
+              Text('Edit Default Free Trial', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold, color: AdminTheme.textColor(context))),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Set the trial duration automatically assigned to newly registered gyms:', style: GoogleFonts.inter(fontSize: 13, color: AdminTheme.secondaryTextColor(context))),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: valController,
+                      keyboardType: TextInputType.number,
+                      style: GoogleFonts.inter(color: AdminTheme.textColor(context)),
+                      decoration: InputDecoration(
+                        labelText: 'Trial Duration',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(AdminTheme.radiusSm)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  SizedBox(
+                    width: 120,
+                    child: DropdownButtonFormField<String>(
+                      value: selectedUnit,
+                      dropdownColor: AdminTheme.cardColor(context),
+                      decoration: InputDecoration(
+                        labelText: 'Unit',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(AdminTheme.radiusSm)),
+                      ),
+                      items: ['days', 'months'].map((u) => DropdownMenuItem(
+                        value: u,
+                        child: Text(u.toUpperCase(), style: GoogleFonts.inter(color: AdminTheme.textColor(context))),
+                      )).toList(),
+                      onChanged: (val) {
+                        if (val != null) setDialogState(() => selectedUnit = val);
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text('Enable Free Trial for New Gyms', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: AdminTheme.textColor(context))),
+                subtitle: Text('If disabled, new gyms start as expired.', style: GoogleFonts.inter(fontSize: 12, color: AdminTheme.secondaryTextColor(context))),
+                value: isEnabled,
+                activeTrackColor: AdminTheme.primary,
+                onChanged: (val) => setDialogState(() => isEnabled = val),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text('Cancel', style: GoogleFonts.inter(color: AdminTheme.secondaryTextColor(context))),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: AdminTheme.primary, foregroundColor: Colors.white),
+              onPressed: () async {
+                final int numVal = int.tryParse(valController.text) ?? 30;
+                if (AdminSupabaseService.isInitialized) {
+                  await AdminSupabaseService.client.from('platform_settings').upsert({
+                    'key': 'default_free_trial',
+                    'value': {
+                      'duration_value': numVal,
+                      'duration_unit': selectedUnit,
+                      'enabled': isEnabled,
+                    },
+                    'updated_at': DateTime.now().toIso8601String(),
+                  });
+                }
+                if (!context.mounted) return;
+                Navigator.pop(ctx);
+                _fetchGyms();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Free Trial updated to $numVal ${selectedUnit.toUpperCase()}!'),
+                    backgroundColor: AdminTheme.success,
+                  ),
+                );
+              },
+              child: Text('Save Configuration', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
