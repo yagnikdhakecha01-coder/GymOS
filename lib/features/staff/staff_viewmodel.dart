@@ -165,14 +165,34 @@ class StaffViewModel extends ChangeNotifier {
     if (_paidStaffByMonth[month]?.contains(staffId) ?? false) return true;
     final normalizedMonth = month.trim().toLowerCase();
     
-    // Check repository salary drafts with exact staffId and paid status
+    // 1. Check repository salary drafts
     final hasPaidDraft = _repository.salaryDrafts.any((d) {
       final sId = d['staff_id']?.toString() ?? '';
       final sMonth = (d['salary_month'] ?? '').toString().trim().toLowerCase();
       final status = (d['status'] ?? '').toString().trim().toLowerCase();
-      return sId == staffId && sMonth == normalizedMonth && status == 'paid';
+      return sId == staffId && (sMonth == normalizedMonth || sMonth.contains(normalizedMonth.split(' ').first)) && (status == 'paid' || d['paid_transaction_id'] != null);
     });
-    return hasPaidDraft;
+    if (hasPaidDraft) return true;
+
+    // 2. Check repository finance transactions matching staff name in title
+    final staff = allStaff.cast<Staff?>().firstWhere((s) => s?.id == staffId, orElse: () => null);
+    final staffName = staff?.name.trim().toLowerCase() ?? '';
+    if (staffName.isNotEmpty) {
+      final hasSalaryTx = _repository.getTransactions().any((tx) {
+        final cat = tx.category.toLowerCase();
+        final title = tx.title.toLowerCase();
+        final isSalary = cat.contains('salary') || title.contains('salary');
+        final matchesStaff = title.contains(staffName);
+        final dateStr = tx.date.toLowerCase();
+        final txDateStr = tx.transactionDate.toLowerCase();
+        final matchesMonth = dateStr.contains(normalizedMonth) || txDateStr.contains(normalizedMonth) ||
+            (dateStr.isNotEmpty && normalizedMonth.contains(dateStr.split(' ').last));
+        return isSalary && matchesStaff && matchesMonth;
+      });
+      if (hasSalaryTx) return true;
+    }
+
+    return false;
   }
 
   void markSalaryAsPaid(String staffId, String month) {

@@ -70,7 +70,6 @@ BEGIN
         SELECT 
             s.id AS s_id,
             TRUE AS is_paid,
-            -- Calculate Total Compensation (Gross Earnings: Base + Commission + Additions)
             GREATEST(
                 COALESCE(sd.gross_salary, 0.0),
                 COALESCE(sd.base_salary, s.salary, 0.0) + COALESCE(
@@ -83,16 +82,44 @@ BEGIN
                     (SELECT COALESCE(SUM(sa.recovered_amount), 0.0) FROM public.salary_advance_ledger sa WHERE sa.salary_payment_id = sd.id OR (sa.staff_id = s.id AND sa.salary_month = v_month_str AND sa.status = 'Recovered')),
                     0.0
                 ),
-                COALESCE(sd.net_salary, s.salary, 0.0)
+                COALESCE(tx.amount, exp.amount, 0.0) + COALESCE(
+                    (SELECT COALESCE(SUM(sa.recovered_amount), 0.0) FROM public.salary_advance_ledger sa WHERE sa.staff_id = s.id AND sa.salary_month = v_month_str),
+                    0.0
+                ),
+                COALESCE(sd.net_salary, tx.amount, exp.amount, s.salary, 0.0)
             ) AS amount
-        FROM public.salary_drafts sd
-        JOIN public.staff s ON s.id = sd.staff_id
-        WHERE sd.gym_id = p_gym_id
+        FROM public.staff s
+        LEFT JOIN public.salary_drafts sd
+               ON sd.staff_id = s.id
+              AND (
+                trim(lower(sd.salary_month)) = trim(lower(v_month_str))
+                OR trim(lower(sd.salary_month)) = trim(lower(v_mon_short))
+              )
+        LEFT JOIN LATERAL (
+            SELECT t.amount, t.date
+            FROM public.transactions t
+            WHERE t.gym_id = p_gym_id
+              AND (t.category ILIKE '%Salaries%' OR t.category ILIKE '%Salary%' OR t.title ILIKE '%Salary%')
+              AND t.title ILIKE '%' || s.name || '%'
+              AND (to_char(t.date, 'FMMonth YYYY') = trim(v_month_str) OR to_char(t.date, 'Mon YYYY') = trim(v_mon_short))
+            LIMIT 1
+        ) tx ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT e.amount, e.date
+            FROM public.expenses e
+            WHERE e.gym_id = p_gym_id
+              AND (e.category ILIKE '%Salaries%' OR e.category ILIKE '%Salary%' OR e.title ILIKE '%Salary%')
+              AND e.title ILIKE '%' || s.name || '%'
+              AND (to_char(e.date, 'FMMonth YYYY') = trim(v_month_str) OR to_char(e.date, 'Mon YYYY') = trim(v_mon_short))
+            LIMIT 1
+        ) exp ON TRUE
+        WHERE s.gym_id = p_gym_id
           AND (
-            trim(lower(sd.salary_month)) = trim(lower(v_month_str))
-            OR trim(lower(sd.salary_month)) = trim(lower(v_mon_short))
+            lower(sd.status::TEXT) = 'paid'
+            OR sd.paid_transaction_id IS NOT NULL
+            OR tx.amount IS NOT NULL
+            OR exp.amount IS NOT NULL
           )
-          AND lower(sd.status::TEXT) = 'paid'
     )
     SELECT 
         s.id AS staff_id,
@@ -151,8 +178,9 @@ DECLARE
     v_is_paid BOOLEAN := FALSE;
     s_name TEXT;
     v_advances_deduction NUMERIC(12,2) := 0.0;
+    v_gym_id UUID;
 BEGIN
-    SELECT name, COALESCE(salary, 0.0) INTO s_name, v_base_salary
+    SELECT name, gym_id, COALESCE(salary, 0.0) INTO s_name, v_gym_id, v_base_salary
     FROM public.staff
     WHERE id = p_staff_id;
 
@@ -167,7 +195,19 @@ BEGIN
             trim(lower(salary_month)) = trim(lower(v_curr_month))
             OR trim(lower(salary_month)) = trim(lower(v_curr_mon_short))
           )
-          AND lower(status::TEXT) = 'paid'
+          AND (lower(status::TEXT) = 'paid' OR paid_transaction_id IS NOT NULL)
+    ) OR EXISTS (
+        SELECT 1 FROM public.transactions t
+        WHERE t.gym_id = v_gym_id
+          AND (t.category ILIKE '%Salaries%' OR t.category ILIKE '%Salary%' OR t.title ILIKE '%Salary%')
+          AND t.title ILIKE '%' || s_name || '%'
+          AND (to_char(t.date, 'FMMonth YYYY') = trim(v_curr_month) OR to_char(t.date, 'Mon YYYY') = trim(v_curr_mon_short))
+    ) OR EXISTS (
+        SELECT 1 FROM public.expenses e
+        WHERE e.gym_id = v_gym_id
+          AND (e.category ILIKE '%Salaries%' OR e.category ILIKE '%Salary%' OR e.title ILIKE '%Salary%')
+          AND e.title ILIKE '%' || s_name || '%'
+          AND (to_char(e.date, 'FMMonth YYYY') = trim(v_curr_month) OR to_char(e.date, 'Mon YYYY') = trim(v_curr_mon_short))
     ) THEN
         v_is_paid := TRUE;
     END IF;
@@ -206,9 +246,10 @@ DECLARE
     v_base_salary NUMERIC(12,2) := 0.0;
     v_is_paid BOOLEAN := FALSE;
     s_name TEXT;
+    v_gym_id UUID;
     v_advances_deduction NUMERIC(12,2) := 0.0;
 BEGIN
-    SELECT name, COALESCE(salary, 0.0) INTO s_name, v_base_salary
+    SELECT name, gym_id, COALESCE(salary, 0.0) INTO s_name, v_gym_id, v_base_salary
     FROM public.staff
     WHERE id = p_staff_id;
 
@@ -220,7 +261,19 @@ BEGIN
         SELECT 1 FROM public.salary_drafts
         WHERE staff_id = p_staff_id
           AND trim(lower(salary_month)) = trim(lower(p_salary_month))
-          AND lower(status::TEXT) = 'paid'
+          AND (lower(status::TEXT) = 'paid' OR paid_transaction_id IS NOT NULL)
+    ) OR EXISTS (
+        SELECT 1 FROM public.transactions t
+        WHERE t.gym_id = v_gym_id
+          AND (t.category ILIKE '%Salaries%' OR t.category ILIKE '%Salary%' OR t.title ILIKE '%Salary%')
+          AND t.title ILIKE '%' || s_name || '%'
+          AND to_char(t.date, 'FMMonth YYYY') = trim(p_salary_month)
+    ) OR EXISTS (
+        SELECT 1 FROM public.expenses e
+        WHERE e.gym_id = v_gym_id
+          AND (e.category ILIKE '%Salaries%' OR e.category ILIKE '%Salary%' OR e.title ILIKE '%Salary%')
+          AND e.title ILIKE '%' || s_name || '%'
+          AND to_char(e.date, 'FMMonth YYYY') = trim(p_salary_month)
     ) THEN
         v_is_paid := TRUE;
     END IF;
@@ -271,7 +324,6 @@ DECLARE
     v_adv_sum NUMERIC := 0.0;
     v_gross NUMERIC := 0.0;
 BEGIN
-    -- Safely attempt UUID casting
     BEGIN
         v_real_uuid := p_draft_id::UUID;
     EXCEPTION WHEN OTHERS THEN
@@ -292,12 +344,11 @@ BEGIN
         );
     END IF;
 
-    -- Fetch transaction if linked
     IF v_draft.paid_transaction_id IS NOT NULL THEN
         SELECT payment_mode, date INTO v_tx FROM public.transactions WHERE id = v_draft.paid_transaction_id;
     END IF;
 
-    -- 2. Fetch commissions linked to this salary payment or staff month
+    -- Commissions
     SELECT COALESCE(jsonb_agg(jsonb_build_object(
         'created_at', to_char(created_at AT TIME ZONE 'Asia/Kolkata', 'dd MMM yyyy'),
         'payment_id', payment_id,
@@ -311,7 +362,7 @@ BEGIN
     WHERE salary_payment_id = v_draft.id
        OR (staff_id = v_draft.staff_id AND trim(lower(salary_month)) = trim(lower(v_draft.salary_month)) AND status = 'Paid');
 
-    -- 3. Fetch advances recovered in this salary payment or linked to this staff's month
+    -- Advances
     SELECT COALESCE(jsonb_agg(jsonb_build_object(
         'given_date', to_char(given_date, 'dd MMM yyyy'),
         'reason', reason,
@@ -333,7 +384,7 @@ BEGIN
           )
        );
 
-    -- 4. Fetch manual adjustments linked to this salary draft
+    -- Adjustments
     SELECT COALESCE(jsonb_agg(jsonb_build_object(
         'reason', reason,
         'amount', amount,

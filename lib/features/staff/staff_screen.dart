@@ -285,14 +285,14 @@ class _StaffScreenState extends State<StaffScreen> {
                     }
 
                     final String currentMonthStr = DateFormat('MMMM yyyy').format(DateTime.now());
-                    final bool isPaid = (rpcMatch != null)
-                        ? (rpcMatch['is_salary_paid'] == true)
-                        : staffVm.isSalaryPaid(staff.id, currentMonthStr);
+                    final bool rpcPaid = rpcMatch?['is_salary_paid'] == true;
+                    final bool vmPaid = staffVm.isSalaryPaid(staff.id, currentMonthStr);
+                    final bool isPaid = rpcPaid || vmPaid;
                     final double cachedPayable = staffVm.getStaffCachedPayable(staff.id);
                     final double rpcPayable = (rpcMatch?['salary_pending'] as num?)?.toDouble() ?? staff.salary;
                     final double effectivePayable = isPaid 
                         ? 0.0 
-                        : (rpcMatch != null ? rpcPayable : (cachedPayable > 0 ? cachedPayable : staff.salary));
+                        : (cachedPayable > 0 ? cachedPayable : (rpcMatch != null ? rpcPayable : staff.salary));
 
                     final staffData = rpcMatch ?? {
                       'staff_id': staff.id,
