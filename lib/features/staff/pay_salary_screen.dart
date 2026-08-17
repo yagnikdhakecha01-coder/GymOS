@@ -151,7 +151,7 @@ class _PaySalaryScreenState extends State<PaySalaryScreen> {
 
       final results = await Future.wait([
         staffVm.fetchSalaryAdjustments(validDraft.id).catchError((_) => <SalaryAdjustment>[]),
-        staffVm.fetchStaffCommissions(widget.staff.id).catchError((_) => <Map<String, dynamic>>[]),
+        staffVm.fetchStaffCommissions(widget.staff.id, pendingOnly: false).catchError((_) => <Map<String, dynamic>>[]),
         staffVm.fetchStaffSalaryMonthLeaveDetails(widget.staff.id, widget.selectedMonth).catchError((_) => null),
         staffVm.fetchSalaryAdvances(widget.staff.id).catchError((_) => <Map<String, dynamic>>[]),
       ]);
@@ -253,8 +253,15 @@ class _PaySalaryScreenState extends State<PaySalaryScreen> {
   // Calculate live totals using database-backed draft calculations from Supabase
   double get _fixedSalary => _draft?.baseSalary ?? widget.staff.salary;
   double get _commission {
-    // Compute live total from the fetched pending commissions list
-    final liveTotal = _commissions.fold<double>(
+    // Compute live total from the fetched commissions list
+    final monthComms = _commissions.where((c) {
+      final m = (c['salary_month'] ?? '').toString().trim().toLowerCase();
+      final date = c['created_at'] != null ? DateTime.tryParse(c['created_at'].toString()) : null;
+      final calcMonth = date != null ? DateFormat('MMMM yyyy').format(date) : '';
+      return m == widget.selectedMonth.trim().toLowerCase() || calcMonth.toLowerCase() == widget.selectedMonth.trim().toLowerCase() || m.isEmpty;
+    }).toList();
+
+    final liveTotal = monthComms.fold<double>(
       0.0,
       (sum, c) => sum + ((c['amount'] as num?)?.toDouble() ?? 0.0),
     );
@@ -901,7 +908,7 @@ class _PaySalaryScreenState extends State<PaySalaryScreen> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text('Net Paid Amount', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: const Color(0xFF047857))),
-                        Text('₹${NumberFormat('#,##,###').format(_draft?.netSalary ?? (_totalGrossSalary - _advanceDeduction))}', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w800, color: const Color(0xFF047857))),
+                        Text('₹${NumberFormat('#,##,###').format((_totalGrossSalary - _advanceDeduction) > 0 ? (_totalGrossSalary - _advanceDeduction) : (_draft?.netSalary ?? _totalGrossSalary))}', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w800, color: const Color(0xFF047857))),
                       ],
                     ),
                   ],
