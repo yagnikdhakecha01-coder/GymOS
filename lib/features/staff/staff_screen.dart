@@ -285,10 +285,14 @@ class _StaffScreenState extends State<StaffScreen> {
                     }
 
                     final String currentMonthStr = DateFormat('MMMM yyyy').format(DateTime.now());
-                    final bool isPaid = rpcMatch?['is_salary_paid'] == true || staffVm.isSalaryPaid(staff.id, currentMonthStr);
+                    final bool isPaid = (rpcMatch != null)
+                        ? (rpcMatch['is_salary_paid'] == true)
+                        : staffVm.isSalaryPaid(staff.id, currentMonthStr);
                     final double cachedPayable = staffVm.getStaffCachedPayable(staff.id);
                     final double rpcPayable = (rpcMatch?['salary_pending'] as num?)?.toDouble() ?? staff.salary;
-                    final double effectivePayable = isPaid ? 0.0 : (cachedPayable > 0 ? cachedPayable : (rpcPayable > 0 ? rpcPayable : staff.salary));
+                    final double effectivePayable = isPaid 
+                        ? 0.0 
+                        : (rpcMatch != null ? rpcPayable : (cachedPayable > 0 ? cachedPayable : staff.salary));
 
                     final staffData = rpcMatch ?? {
                       'staff_id': staff.id,
@@ -308,7 +312,14 @@ class _StaffScreenState extends State<StaffScreen> {
                     staffData['is_salary_paid'] = isPaid;
                     if (isPaid) {
                       final num? rpcPaid = rpcMatch?['paid_amount'] as num?;
-                      staffData['paid_amount'] = (rpcPaid != null && rpcPaid > 0) ? rpcPaid.toDouble() : staff.salary;
+                      final paidDraft = staffVm.getDraftsForMonth(currentMonthStr).cast<Map<String, dynamic>?>().firstWhere(
+                        (d) => d?['staff_id']?.toString() == staff.id,
+                        orElse: () => null,
+                      );
+                      final num? draftNet = paidDraft?['net_salary'] as num? ?? paidDraft?['base_salary'] as num?;
+                      staffData['paid_amount'] = (rpcPaid != null && rpcPaid > 0)
+                          ? rpcPaid.toDouble()
+                          : ((draftNet != null && draftNet > 0) ? draftNet.toDouble() : staff.salary);
                     }
 
                     return OwnerStaffCard(

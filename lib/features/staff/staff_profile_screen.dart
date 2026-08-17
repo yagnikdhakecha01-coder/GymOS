@@ -1818,7 +1818,8 @@ Thank you.''';
   Widget _buildSalaryHistoryTab(Staff staff) {
     final totalPaid = _salaryHistory.fold<double>(0, (sum, r) {
       final double grossSalary = (r['gross_salary'] as num?)?.toDouble() ?? 0.0;
-      return sum + grossSalary;
+      final double netSalary = (r['net_salary'] ?? r['amount'] as num?)?.toDouble() ?? 0.0;
+      return sum + (grossSalary > 0 ? grossSalary : netSalary);
     });
 
     return SingleChildScrollView(
@@ -2533,146 +2534,143 @@ class _SalaryHistoryItemWidgetState extends State<SalaryHistoryItemWidget> {
             if (_isLoading) ...[
               const SizedBox(height: 16),
               const Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primary))),
-            ] else if (_isError) ...[
-              const SizedBox(height: 12),
-              Center(child: Text('Failed to load breakdown details.', style: GoogleFonts.inter(fontSize: 11, color: Colors.red))),
-            ] else if (_details != null) ...[
-              // Render Commissions breakdown table if available
-              if (List.from(_details!['commissions'] ?? []).isNotEmpty) ...[
-                const SizedBox(height: 16),
-                Text(
-                  'Commissions Included',
-                  style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.primary),
-                ),
-                const SizedBox(height: 8),
-                Table(
-                  columnWidths: const {
-                    0: FlexColumnWidth(1.2),
-                    1: FlexColumnWidth(1.2),
-                    2: FlexColumnWidth(1.0),
-                    3: FlexColumnWidth(1.0),
-                    4: FlexColumnWidth(1.0),
-                  },
-                  children: [
-                    TableRow(
-                      children: [
-                        _tableHeader('Date'),
-                        _tableHeader('Ref'),
-                        _tableHeader('Recd.'),
-                        _tableHeader('Rate'),
-                        _tableHeader('Comm.'),
-                      ],
-                    ),
-                    ...List.from(_details!['commissions']).map((it) {
-                      final dateStr = it['created_at']?.toString() ?? '';
-                      final ref = it['payment_id']?.toString().split('-').last ?? 'Payment';
-                      final double recd = (it['payment_received'] as num? ?? 0.0).toDouble();
-                      final double rate = (it['commission_rate'] as num? ?? 0.0).toDouble();
-                      final double comm = (it['amount'] as num? ?? 0.0).toDouble();
-                      return TableRow(
-                        children: [
-                          _tableCell(dateStr),
-                          _tableCell(ref),
-                          _tableCell('₹${recd.toStringAsFixed(0)}'),
-                          _tableCell('${rate.toStringAsFixed(0)}%'),
-                          _tableCell('₹${comm.toStringAsFixed(0)}', isBold: true, color: Colors.green),
-                        ],
-                      );
-                    }),
-                  ],
-                ),
-              ],
+            ],
 
-              // Render Advance Recoveries breakdown table if available
-              final dynamic advancesList = (_details != null && List.from(_details!['advances'] ?? []).isNotEmpty)
-                  ? _details!['advances']
-                  : (record['advances'] as List? ?? []);
-
-              if (List.from(advancesList).isNotEmpty) ...[
-                const SizedBox(height: 16),
-                Text(
-                  'Advance Recoveries & Dates',
-                  style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.primary),
-                ),
-                const SizedBox(height: 8),
-                Table(
-                  columnWidths: const {
-                    0: FlexColumnWidth(1.2),
-                    1: FlexColumnWidth(1.8),
-                    2: FlexColumnWidth(1.0),
-                    3: FlexColumnWidth(1.0),
-                  },
-                  children: [
-                    TableRow(
+            // Render Commissions breakdown table if available
+            if (_details != null && List.from(_details!['commissions'] ?? []).isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Text(
+                'Commissions Included',
+                style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.primary),
+              ),
+              const SizedBox(height: 8),
+              Table(
+                columnWidths: const {
+                  0: FlexColumnWidth(1.2),
+                  1: FlexColumnWidth(1.2),
+                  2: FlexColumnWidth(1.0),
+                  3: FlexColumnWidth(1.0),
+                  4: FlexColumnWidth(1.0),
+                },
+                children: [
+                  TableRow(
+                    children: [
+                      _tableHeader('Date'),
+                      _tableHeader('Ref'),
+                      _tableHeader('Recd.'),
+                      _tableHeader('Rate'),
+                      _tableHeader('Comm.'),
+                    ],
+                  ),
+                  ...List.from(_details!['commissions']).map((it) {
+                    final dateStr = it['created_at']?.toString() ?? '';
+                    final ref = it['payment_id']?.toString().split('-').last ?? 'Payment';
+                    final double recd = (it['payment_received'] as num? ?? 0.0).toDouble();
+                    final double rate = (it['commission_rate'] as num? ?? 0.0).toDouble();
+                    final double comm = (it['amount'] as num? ?? 0.0).toDouble();
+                    return TableRow(
                       children: [
-                        _tableHeader('Given Date'),
-                        _tableHeader('Reason'),
-                        _tableHeader('Advance'),
-                        _tableHeader('Recovered'),
+                        _tableCell(dateStr),
+                        _tableCell(ref),
+                        _tableCell('₹${recd.toStringAsFixed(0)}'),
+                        _tableCell('${rate.toStringAsFixed(0)}%'),
+                        _tableCell('₹${comm.toStringAsFixed(0)}', isBold: true, color: Colors.green),
                       ],
-                    ),
-                    ...List.from(advancesList).map((it) {
-                      final dateStr = it['given_date'] != null 
-                          ? (it['givenOn'] ?? it['given_date'].toString().split('T').first) 
-                          : 'N/A';
-                      final reason = it['reason']?.toString() ?? 'Personal';
-                      final double advance = (it['advance_amount'] ?? it['amount'] as num? ?? 0.0).toDouble();
-                      final double recovered = (it['recovered_amount'] ?? it['advance_amount'] ?? it['amount'] as num? ?? 0.0).toDouble();
-                      return TableRow(
-                        children: [
-                          _tableCell(dateStr),
-                          _tableCell(reason),
-                          _tableCell('₹${advance.toStringAsFixed(0)}'),
-                          _tableCell('₹${recovered.toStringAsFixed(0)}', isBold: true, color: Colors.red),
-                        ],
-                      );
-                    }),
-                  ],
-                ),
-              ],
+                    );
+                  }),
+                ],
+              ),
+            ],
 
-              // Render Adjustments breakdown table if available
-              if (List.from(_details!['adjustments'] ?? []).isNotEmpty) ...[
-                const SizedBox(height: 16),
-                Text(
-                  'Salary Adjustments',
-                  style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.primary),
-                ),
-                const SizedBox(height: 8),
-                Table(
-                  columnWidths: const {
-                    0: FlexColumnWidth(2.0),
-                    1: FlexColumnWidth(1.0),
-                    2: FlexColumnWidth(1.0),
-                  },
-                  children: [
-                    TableRow(
+            // Render Advance Recoveries breakdown table if available
+            final dynamic advancesList = (_details != null && List.from(_details!['advances'] ?? []).isNotEmpty)
+                ? _details!['advances']
+                : (record['advances'] as List? ?? []);
+
+            if (List.from(advancesList).isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Text(
+                'Advance Recoveries & Dates',
+                style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.primary),
+              ),
+              const SizedBox(height: 8),
+              Table(
+                columnWidths: const {
+                  0: FlexColumnWidth(1.2),
+                  1: FlexColumnWidth(1.8),
+                  2: FlexColumnWidth(1.0),
+                  3: FlexColumnWidth(1.0),
+                },
+                children: [
+                  TableRow(
+                    children: [
+                      _tableHeader('Given Date'),
+                      _tableHeader('Reason'),
+                      _tableHeader('Advance'),
+                      _tableHeader('Recovered'),
+                    ],
+                  ),
+                  ...List.from(advancesList).map((it) {
+                    final dateStr = it['given_date'] != null 
+                        ? (it['givenOn'] ?? it['given_date'].toString().split('T').first) 
+                        : 'N/A';
+                    final reason = it['reason']?.toString() ?? 'Personal';
+                    final double advance = (it['advance_amount'] ?? it['amount'] as num? ?? 0.0).toDouble();
+                    final double recovered = (it['recovered_amount'] ?? it['advance_amount'] ?? it['amount'] as num? ?? 0.0).toDouble();
+                    return TableRow(
                       children: [
-                        _tableHeader('Reason'),
-                        _tableHeader('Type'),
-                        _tableHeader('Amount'),
+                        _tableCell(dateStr),
+                        _tableCell(reason),
+                        _tableCell('₹${advance.toStringAsFixed(0)}'),
+                        _tableCell('₹${recovered.toStringAsFixed(0)}', isBold: true, color: Colors.red),
                       ],
-                    ),
-                    ...List.from(_details!['adjustments']).map((it) {
-                      final reason = it['reason']?.toString() ?? 'N/A';
-                      final type = it['type']?.toString() ?? 'N/A';
-                      final double amount = (it['amount'] as num? ?? 0.0).toDouble();
-                      final isAddition = type == 'Addition';
-                      return TableRow(
-                        children: [
-                          _tableCell(reason),
-                          _tableCell(type, color: isAddition ? Colors.green : Colors.red),
-                          _tableCell(
-                            '₹${amount.toStringAsFixed(0)}',
-                            isBold: true,
-                            color: isAddition ? Colors.green : Colors.red,
-                          ),
-                        ],
-                      );
-                    }),
-                  ],
-                ),
-              ],
+                    );
+                  }),
+                ],
+              ),
+            ],
+
+            // Render Adjustments breakdown table if available
+            if (_details != null && List.from(_details!['adjustments'] ?? []).isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Text(
+                'Salary Adjustments',
+                style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.primary),
+              ),
+              const SizedBox(height: 8),
+              Table(
+                columnWidths: const {
+                  0: FlexColumnWidth(2.0),
+                  1: FlexColumnWidth(1.0),
+                  2: FlexColumnWidth(1.0),
+                },
+                children: [
+                  TableRow(
+                    children: [
+                      _tableHeader('Reason'),
+                      _tableHeader('Type'),
+                      _tableHeader('Amount'),
+                    ],
+                  ),
+                  ...List.from(_details!['adjustments']).map((it) {
+                    final reason = it['reason']?.toString() ?? 'N/A';
+                    final type = it['type']?.toString() ?? 'N/A';
+                    final double amount = (it['amount'] as num? ?? 0.0).toDouble();
+                    final isAddition = type == 'Addition';
+                    return TableRow(
+                      children: [
+                        _tableCell(reason),
+                        _tableCell(type, color: isAddition ? Colors.green : Colors.red),
+                        _tableCell(
+                          '₹${amount.toStringAsFixed(0)}',
+                          isBold: true,
+                          color: isAddition ? Colors.green : Colors.red,
+                        ),
+                      ],
+                    );
+                  }),
+                ],
+              ),
             ],
           ],
         ),

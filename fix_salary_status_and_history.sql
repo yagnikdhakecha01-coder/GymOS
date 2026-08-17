@@ -1,7 +1,5 @@
 -- ====================================================================
--- GYMOS - SALARY STATUS, HISTORY & STAFF CARD SYNCHRONIZATION FIX
--- Run this in your Supabase SQL Editor to resolve all salary status,
--- pending amount calculations, and detailed history breakdown.
+-- GYMOS - PRECISE SALARY STATUS, HISTORY & STAFF CARD SYNCHRONIZATION
 -- ====================================================================
 
 -- 1. UPDATE FUNCTION: get_owner_staff_cards_v1
@@ -70,41 +68,17 @@ BEGIN
     ),
     paid_drafts AS (
         SELECT 
-            s.id AS s_id,
+            sd.staff_id AS s_id,
             TRUE AS is_paid,
-            COALESCE(
-                sd.net_salary,
-                (SELECT e.amount FROM public.expenses e WHERE e.gym_id = p_gym_id AND (e.category ILIKE '%Salaries%' OR e.category ILIKE '%Salary%') AND (e.title ILIKE '%' || s.name || '%' OR e.title ILIKE '%Salary%') AND (to_char(e.date, 'FMMonth YYYY') = trim(v_month_str) OR to_char(e.date, 'Mon YYYY') = trim(v_mon_short)) LIMIT 1),
-                (SELECT t.amount FROM public.transactions t WHERE t.gym_id = p_gym_id AND (t.category ILIKE '%Salaries%' OR t.category ILIKE '%Salary%') AND (t.title ILIKE '%' || s.name || '%' OR t.title ILIKE '%Salary%') AND (to_char(t.date, 'FMMonth YYYY') = trim(v_month_str) OR to_char(t.date, 'Mon YYYY') = trim(v_mon_short)) LIMIT 1),
-                s.salary,
-                0.0
-            ) AS amount
-        FROM public.staff s
-        LEFT JOIN public.salary_drafts sd
-               ON sd.staff_id = s.id
-              AND (
-                trim(lower(sd.salary_month)) = trim(lower(v_month_str))
-                OR trim(lower(sd.salary_month)) = trim(lower(v_mon_short))
-              )
-              AND lower(sd.status::TEXT) = 'paid'
-        WHERE s.gym_id = p_gym_id
+            COALESCE(NULLIF(sd.net_salary, 0), NULLIF(sd.base_salary, 0), s.salary, 0.0) AS amount
+        FROM public.salary_drafts sd
+        JOIN public.staff s ON s.id = sd.staff_id
+        WHERE sd.gym_id = p_gym_id
           AND (
-            sd.id IS NOT NULL 
-            OR EXISTS (
-                SELECT 1 FROM public.expenses e
-                WHERE e.gym_id = p_gym_id
-                  AND (e.category ILIKE '%Salaries%' OR e.category ILIKE '%Salary%')
-                  AND (e.title ILIKE '%' || s.name || '%' OR e.title ILIKE '%Salary%')
-                  AND (to_char(e.date, 'FMMonth YYYY') = trim(v_month_str) OR to_char(e.date, 'Mon YYYY') = trim(v_mon_short))
-            )
-            OR EXISTS (
-                SELECT 1 FROM public.transactions t
-                WHERE t.gym_id = p_gym_id
-                  AND (t.category ILIKE '%Salaries%' OR t.category ILIKE '%Salary%')
-                  AND (t.title ILIKE '%' || s.name || '%' OR t.title ILIKE '%Salary%')
-                  AND (to_char(t.date, 'FMMonth YYYY') = trim(v_month_str) OR to_char(t.date, 'Mon YYYY') = trim(v_mon_short))
-            )
+            trim(lower(sd.salary_month)) = trim(lower(v_month_str))
+            OR trim(lower(sd.salary_month)) = trim(lower(v_mon_short))
           )
+          AND lower(sd.status::TEXT) = 'paid'
     )
     SELECT 
         s.id AS staff_id,
@@ -180,17 +154,6 @@ BEGIN
             OR trim(lower(salary_month)) = trim(lower(v_curr_mon_short))
           )
           AND lower(status::TEXT) = 'paid'
-    ) OR EXISTS (
-        SELECT 1 FROM public.expenses
-        WHERE (category ILIKE '%Salaries%' OR category ILIKE '%Salary%')
-          AND (title ILIKE '%' || s_name || '%' OR title ILIKE '%Salary%')
-          AND (to_char(date, 'FMMonth YYYY') = trim(v_curr_month) OR to_char(date, 'Mon YYYY') = trim(v_curr_mon_short))
-    ) OR EXISTS (
-        SELECT 1 FROM public.transactions
-        WHERE (category ILIKE '%Salaries%' OR category ILIKE '%Salary%')
-          AND type = 'Expense'
-          AND (title ILIKE '%' || s_name || '%' OR title ILIKE '%Salary%')
-          AND (to_char(date, 'FMMonth YYYY') = trim(v_curr_month) OR to_char(date, 'Mon YYYY') = trim(v_curr_mon_short))
     ) THEN
         v_is_paid := TRUE;
     END IF;
@@ -244,17 +207,6 @@ BEGIN
         WHERE staff_id = p_staff_id
           AND trim(lower(salary_month)) = trim(lower(p_salary_month))
           AND lower(status::TEXT) = 'paid'
-    ) OR EXISTS (
-        SELECT 1 FROM public.expenses
-        WHERE (category ILIKE '%Salaries%' OR category ILIKE '%Salary%')
-          AND (title ILIKE '%' || s_name || '%' OR title ILIKE '%Salary%')
-          AND to_char(date, 'FMMonth YYYY') = trim(p_salary_month)
-    ) OR EXISTS (
-        SELECT 1 FROM public.transactions
-        WHERE (category ILIKE '%Salaries%' OR category ILIKE '%Salary%')
-          AND type = 'Expense'
-          AND (title ILIKE '%' || s_name || '%' OR title ILIKE '%Salary%')
-          AND to_char(date, 'FMMonth YYYY') = trim(p_salary_month)
     ) THEN
         v_is_paid := TRUE;
     END IF;
@@ -283,11 +235,12 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 GRANT EXECUTE ON FUNCTION public.get_staff_pending_salary_for_month(UUID, TEXT) TO anon, authenticated, service_role;
 
 
--- 4. UPDATE FUNCTION: get_paid_salary_draft_details
+-- 4. UPDATE FUNCTION: get_paid_salary_draft_details (Supports both UUID and TEXT ID)
 DROP FUNCTION IF EXISTS public.get_paid_salary_draft_details(UUID);
+DROP FUNCTION IF EXISTS public.get_paid_salary_draft_details(TEXT);
 
 CREATE OR REPLACE FUNCTION public.get_paid_salary_draft_details(
-    p_draft_id UUID
+    p_draft_id TEXT
 )
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -295,16 +248,25 @@ SECURITY DEFINER
 AS $$
 DECLARE
     v_draft RECORD;
-    v_commissions JSONB;
-    v_advances JSONB;
-    v_adjustments JSONB;
+    v_commissions JSONB := '[]'::JSONB;
+    v_advances JSONB := '[]'::JSONB;
+    v_adjustments JSONB := '[]'::JSONB;
     v_tx RECORD;
+    v_real_uuid UUID;
 BEGIN
-    -- 1. Fetch draft info
-    SELECT id, gym_id, staff_id, salary_month, base_salary, commission_amount, advance_deduction, other_additions, other_deductions, net_salary, status, created_at, paid_transaction_id
-    INTO v_draft
-    FROM public.salary_drafts
-    WHERE id = p_draft_id;
+    -- Safely attempt UUID casting
+    BEGIN
+        v_real_uuid := p_draft_id::UUID;
+    EXCEPTION WHEN OTHERS THEN
+        v_real_uuid := NULL;
+    END;
+
+    IF v_real_uuid IS NOT NULL THEN
+        SELECT id, gym_id, staff_id, salary_month, base_salary, commission_amount, advance_deduction, other_additions, other_deductions, net_salary, status, created_at, paid_transaction_id
+        INTO v_draft
+        FROM public.salary_drafts
+        WHERE id = v_real_uuid;
+    END IF;
 
     IF v_draft.id IS NULL THEN
         RETURN jsonb_build_object(
@@ -328,7 +290,7 @@ BEGIN
     ) ORDER BY created_at ASC), '[]'::JSONB)
     INTO v_commissions
     FROM public.commission_ledger
-    WHERE salary_payment_id = p_draft_id;
+    WHERE salary_payment_id = v_draft.id;
 
     -- 3. Fetch advances recovered in this salary payment or linked to this staff's month
     SELECT COALESCE(jsonb_agg(jsonb_build_object(
@@ -341,7 +303,7 @@ BEGIN
     ) ORDER BY given_date ASC), '[]'::JSONB)
     INTO v_advances
     FROM public.salary_advance_ledger
-    WHERE salary_payment_id = p_draft_id
+    WHERE salary_payment_id = v_draft.id
        OR (
           staff_id = v_draft.staff_id 
           AND status = 'Recovered'::public.advance_status
@@ -359,7 +321,7 @@ BEGIN
     ) ORDER BY created_at ASC), '[]'::JSONB)
     INTO v_adjustments
     FROM public.salary_adjustments
-    WHERE salary_draft_id = p_draft_id;
+    WHERE salary_draft_id = v_draft.id;
 
     RETURN jsonb_build_object(
         'success', TRUE,
@@ -383,4 +345,4 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.get_paid_salary_draft_details(UUID) TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.get_paid_salary_draft_details(TEXT) TO anon, authenticated, service_role;

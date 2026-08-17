@@ -165,33 +165,14 @@ class StaffViewModel extends ChangeNotifier {
     if (_paidStaffByMonth[month]?.contains(staffId) ?? false) return true;
     final normalizedMonth = month.trim().toLowerCase();
     
-    // Check repository salary drafts
+    // Check repository salary drafts with exact staffId and paid status
     final hasPaidDraft = _repository.salaryDrafts.any((d) {
       final sId = d['staff_id']?.toString() ?? '';
       final sMonth = (d['salary_month'] ?? '').toString().trim().toLowerCase();
       final status = (d['status'] ?? '').toString().trim().toLowerCase();
       return sId == staffId && sMonth == normalizedMonth && status == 'paid';
     });
-    if (hasPaidDraft) return true;
-
-    // Check transactions
-    final staff = allStaff.cast<Staff?>().firstWhere((s) => s?.id == staffId, orElse: () => null);
-    final staffName = staff?.name.toLowerCase() ?? '';
-    final hasSalaryTx = _repository.getTransactions().any((tx) {
-      final cat = tx.category.toLowerCase();
-      final title = tx.title.toLowerCase();
-      final notes = tx.notes.toLowerCase();
-      final isSalaryCat = cat.contains('salary') || title.contains('salary');
-      final matchesStaff = (staffName.isNotEmpty && (title.contains(staffName) || notes.contains(staffName))) ||
-          title.contains(staffId) || notes.contains(staffId);
-      final dateStr = tx.date.toLowerCase();
-      final txDateStr = tx.transactionDate.toLowerCase();
-      final matchesMonth = dateStr.contains(normalizedMonth) || txDateStr.contains(normalizedMonth) ||
-          (dateStr.isNotEmpty && normalizedMonth.contains(dateStr.split(' ').last));
-      return isSalaryCat && matchesStaff && matchesMonth;
-    });
-
-    return hasSalaryTx;
+    return hasPaidDraft;
   }
 
   void markSalaryAsPaid(String staffId, String month) {
@@ -551,47 +532,6 @@ class StaffViewModel extends ChangeNotifier {
       }
     }
 
-    // 2. Also check if there are transactions for this staff in category 'Salary' that didn't have a draft
-    final staff = allStaff.cast<Staff?>().firstWhere((s) => s?.id == staffId, orElse: () => null);
-    final staffName = staff?.name.toLowerCase() ?? '';
-    final txs = _repository.getTransactions().where((tx) {
-      final cat = tx.category.toLowerCase();
-      final title = tx.title.toLowerCase();
-      final notes = tx.notes.toLowerCase();
-      final isSalary = cat.contains('salary') || title.contains('salary');
-      final matchesStaff = (staffName.isNotEmpty && (title.contains(staffName) || notes.contains(staffName))) ||
-          title.contains(staffId) || notes.contains(staffId);
-      return isSalary && matchesStaff;
-    }).toList();
-
-    for (final tx in txs) {
-      String mStr = tx.date;
-      try {
-        final parsed = DateTime.tryParse(tx.transactionDate) ?? DateFormat('dd MMM yyyy').parse(tx.date);
-        mStr = DateFormat('MMMM yyyy').format(parsed);
-      } catch (_) {}
-
-      if (!processedMonths.contains(mStr.trim().toLowerCase())) {
-        processedMonths.add(mStr.trim().toLowerCase());
-        result.add({
-          'id': tx.id,
-          'gym_id': gymId ?? '',
-          'staff_id': staffId,
-          'salary_month': mStr,
-          'base_salary': staff?.salary ?? tx.amount,
-          'commission_amount': 0.0,
-          'advance_deduction': 0.0,
-          'other_additions': 0.0,
-          'other_deductions': 0.0,
-          'net_salary': tx.amount,
-          'gross_salary': staff?.salary ?? tx.amount,
-          'status': 'Paid',
-          'created_at': tx.transactionDate.isNotEmpty ? tx.transactionDate : DateTime.now().toIso8601String(),
-          'payment_mode': tx.paymentMode.isNotEmpty ? tx.paymentMode : 'UPI',
-        });
-      }
-    }
-
     return result;
   }
 
@@ -658,8 +598,11 @@ class StaffViewModel extends ChangeNotifier {
       final double otherDeductions = (sal['other_deductions'] as num?)?.toDouble() ?? 0.0;
 
       // Calculate total earnings for the month: Gross = Base + Commission + Additions - Deductions
-      final double grossSalary = (sal['gross_salary'] as num?)?.toDouble() ?? 
-          (baseSalary > 0 ? (baseSalary + commissionAmount + otherAdditions - otherDeductions) : (netSalary + advanceDeduction));
+      final double calculatedGross = (baseSalary > 0 ? (baseSalary + commissionAmount + otherAdditions - otherDeductions) : 0.0);
+      final double grossFromDraft = (sal['gross_salary'] as num?)?.toDouble() ?? 0.0;
+      final double grossSalary = grossFromDraft > 0
+          ? grossFromDraft
+          : (calculatedGross >= (netSalary + advanceDeduction) ? calculatedGross : (netSalary + advanceDeduction));
 
       final monthStr = (sal['salary_month'] ?? 'N/A').toString();
 
@@ -679,7 +622,7 @@ class StaffViewModel extends ChangeNotifier {
         'paidOn': DateFormat('dd MMM yyyy').format(created),
         'amount': netSalary,
         'net_salary': netSalary,
-        'gross_salary': grossSalary,
+        'gross_salary': grossSalary > 0 ? grossSalary : (netSalary + advanceDeduction),
         'base_salary': baseSalary,
         'commission_amount': commissionAmount,
         'advance_deduction': advanceDeduction,
