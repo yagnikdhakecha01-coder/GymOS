@@ -544,10 +544,59 @@ class StaffViewModel extends ChangeNotifier {
     for (final d in _repository.salaryDrafts) {
       if (d['staff_id']?.toString() == staffId) {
         final status = (d['status'] ?? '').toString().trim().toLowerCase();
-        if (status == 'paid') {
+        if (status == 'paid' || d['paid_transaction_id'] != null) {
           final month = (d['salary_month'] ?? 'N/A').toString();
           processedMonths.add(month.trim().toLowerCase());
           result.add(Map<String, dynamic>.from(d));
+        }
+      }
+    }
+
+    // 2. Also load from finance transactions matching staff name in title
+    final staff = allStaff.cast<Staff?>().firstWhere((s) => s?.id == staffId, orElse: () => null);
+    final staffName = staff?.name.trim().toLowerCase() ?? '';
+    if (staffName.isNotEmpty) {
+      final txs = _repository.getTransactions().where((tx) {
+        final cat = tx.category.toLowerCase();
+        final title = tx.title.toLowerCase();
+        final isSalary = cat.contains('salary') || title.contains('salary');
+        final matchesStaff = title.contains(staffName);
+        return isSalary && matchesStaff;
+      }).toList();
+
+      for (final tx in txs) {
+        String mStr = tx.date;
+        try {
+          final parsed = DateTime.tryParse(tx.transactionDate) ?? DateFormat('dd MMM yyyy').parse(tx.date);
+          mStr = DateFormat('MMMM yyyy').format(parsed);
+        } catch (_) {}
+
+        if (!processedMonths.contains(mStr.trim().toLowerCase())) {
+          processedMonths.add(mStr.trim().toLowerCase());
+
+          final advances = getStaffAdvancesForMonth(staffId, mStr);
+          final advSum = advances.fold<double>(0.0, (s, a) => s + ((a['recovered_amount'] ?? a['advance_amount'] ?? a['amount'] as num?)?.toDouble() ?? 0.0));
+          final baseSal = staff?.salary ?? 5000.0;
+          final netPaid = tx.amount;
+          final gross = (netPaid + advSum >= baseSal) ? (netPaid + advSum) : baseSal;
+          final comm = gross > (baseSal + advSum) ? (gross - baseSal) : ((netPaid + advSum > baseSal) ? (netPaid + advSum - baseSal) : 0.0);
+
+          result.add({
+            'id': tx.id,
+            'gym_id': gymId ?? '',
+            'staff_id': staffId,
+            'salary_month': mStr,
+            'base_salary': baseSal,
+            'commission_amount': comm,
+            'advance_deduction': advSum,
+            'other_additions': 0.0,
+            'other_deductions': 0.0,
+            'net_salary': netPaid,
+            'gross_salary': gross,
+            'status': 'Paid',
+            'created_at': tx.transactionDate.isNotEmpty ? tx.transactionDate : DateTime.now().toIso8601String(),
+            'payment_mode': tx.paymentMode.isNotEmpty ? tx.paymentMode : 'UPI',
+          });
         }
       }
     }

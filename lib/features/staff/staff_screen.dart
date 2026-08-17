@@ -106,6 +106,25 @@ class _StaffScreenState extends State<StaffScreen> {
     // Calculate dynamic cards opacity based on scroll offset (fades out at 150px)
     final double cardsOpacity = (1.0 - (_scrollOffset / 150.0)).clamp(0.0, 1.0);
 
+    final String currentMonthStr = DateFormat('MMMM yyyy').format(DateTime.now());
+    double totalSalaryDue = 0.0;
+    for (final s in staffVm.allStaff) {
+      Map<String, dynamic>? rpc;
+      for (final row in _staffCardsRpc) {
+        if (row['staff_id']?.toString() == s.id.toString()) {
+          rpc = row;
+          break;
+        }
+      }
+      final bool isPaid = (rpc?['is_salary_paid'] == true) || staffVm.isSalaryPaid(s.id, currentMonthStr);
+      if (!isPaid) {
+        final double rpcPending = (rpc?['salary_pending'] as num?)?.toDouble() ?? s.salary;
+        final double cachedPending = staffVm.getStaffCachedPayable(s.id);
+        final double effectivePending = (cachedPending > 0 ? cachedPending : (rpcPending > 0 ? rpcPending : s.salary));
+        totalSalaryDue += effectivePending;
+      }
+    }
+
     return Scaffold(
       backgroundColor: AppTheme.background,
       body: SafeArea(
@@ -175,17 +194,11 @@ class _StaffScreenState extends State<StaffScreen> {
                             value: '$presentToday',
                             label: 'Present Today',
                           ),
-                          FutureBuilder<dynamic>(
-                            future: Future.value(staffVm.totalPendingPayableForMonth),
-                            builder: (context, snapshot) {
-                              final dueVal = staffVm.totalPendingPayableForMonth;
-                              return StatCard(
-                                icon: Icons.payments_outlined,
-                                iconColor: AppTheme.danger,
-                                value: '₹${NumberFormat('#,##,###').format(dueVal)}',
-                                label: 'Salary Due',
-                              );
-                            },
+                          StatCard(
+                            icon: Icons.payments_outlined,
+                            iconColor: AppTheme.danger,
+                            value: '₹${NumberFormat('#,##,###').format(totalSalaryDue)}',
+                            label: 'Salary Due',
                           ),
                           StatCard(
                             icon: Icons.beach_access_outlined,

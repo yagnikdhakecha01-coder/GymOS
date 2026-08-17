@@ -735,7 +735,16 @@ Thank you.''';
                     _statColumn('Start Date', staff.joinDate, AppTheme.textPrimary),
                     if (widget.isOwnerView) ...[
                       _statColumn('Salary Type', staff.salaryType.isNotEmpty ? staff.salaryType : 'Fixed', AppTheme.textPrimary),
-                      _statColumn('Pending Salary', '₹${NumberFormat('#,##,###').format(_pendingSalaryFromDb)}', AppTheme.primary),
+                      Builder(builder: (ctx) {
+                        final currentMonthStr = DateFormat('MMMM yyyy').format(DateTime.now());
+                        final bool isPaidNow = staffVm.isSalaryPaid(staff.id, currentMonthStr);
+                        final double effectivePendingSalary = isPaidNow ? 0.0 : _pendingSalaryFromDb;
+                        return _statColumn(
+                          'Pending Salary', 
+                          isPaidNow ? '₹0' : '₹${NumberFormat('#,##,###').format(effectivePendingSalary)}', 
+                          isPaidNow ? AppTheme.success : AppTheme.primary,
+                        );
+                      }),
                     ] else ...[
                       _statColumn('Shift', staff.shift.isNotEmpty ? staff.shift : '—', AppTheme.textPrimary),
                       _statColumn('Department', staff.department.isNotEmpty ? staff.department : '—', AppTheme.textPrimary),
