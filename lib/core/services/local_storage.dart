@@ -37,9 +37,13 @@ class LocalStorageService {
   static const String keyOfflineMemberCache = 'gymos_offline_member_cache';
   static const String keyOfflineStaffCache = 'gymos_offline_staff_cache';
 
+  static LocalStorageService? _instance;
+  static LocalStorageService? get instance => _instance;
+
   final SharedPreferences _prefs;
 
   LocalStorageService(this._prefs) {
+    _instance = this;
     _initDemoData().then((_) {
       SchemaMigrationManager.checkAndMigrate(this);
     });
