@@ -1258,7 +1258,17 @@ class MemberAppViewModel extends ChangeNotifier {
   Future<void> logout() async {
     clearAllDataInMemory();
     final prefs = await SharedPreferences.getInstance();
-    await prefs.clear();
+    await prefs.remove('member_logged_in');
+    await prefs.remove('member_code_verified');
+    await prefs.remove('member_checked_in_today');
+    await prefs.remove('member_check_in_time');
+    await prefs.remove('member_check_in_date');
+    await prefs.remove('member_cached_workout_title');
+    await prefs.remove('member_cached_today_muscle');
+    await prefs.remove('member_cached_diet_title');
+    await prefs.remove('member_cached_attendance_days');
+    await prefs.remove('member_cached_days_left');
+    await prefs.remove('member_cached_days_timestamp');
     try {
       if (SupabaseService.client != null) {
         await SupabaseService.client.auth.signOut();

@@ -19,15 +19,12 @@ class GymLogoCacheService {
         _memoryCache[gymId] = cached;
         return cached;
       }
-    }
-    
-    // Check general custom gym logo cache
-    final generalCached = storage.getCachedImage('custom_gym_logo');
-    if (generalCached != null && generalCached.isNotEmpty) {
-      if (gymId != null && gymId.isNotEmpty) {
-        _memoryCache[gymId] = generalCached;
+    } else {
+      // Check general custom gym logo cache only if gymId is not specified
+      final generalCached = storage.getCachedImage('custom_gym_logo');
+      if (generalCached != null && generalCached.isNotEmpty) {
+        return generalCached;
       }
-      return generalCached;
     }
     
     // Safe background pre-download (only once per URL, no build loop trigger)

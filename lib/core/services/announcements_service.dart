@@ -47,10 +47,12 @@ class Announcement {
 }
 
 class AnnouncementsService {
-  static const String _keyAnnouncements = 'gymos_announcements';
+  static String _getKey(String? gymId) =>
+      (gymId != null && gymId.isNotEmpty) ? 'gymos_announcements_$gymId' : 'gymos_announcements';
 
   static Future<List<Announcement>> getAnnouncements({String? gymId}) async {
     List<Announcement> announcements = [];
+    final cacheKey = _getKey(gymId);
 
     if (SupabaseService.isInitialized) {
       try {
@@ -68,7 +70,7 @@ class AnnouncementsService {
         if (dbRes.isNotEmpty) {
           announcements = dbRes.map((e) => Announcement.fromJson(e)).toList();
           final prefs = await SharedPreferences.getInstance();
-          await prefs.setString(_keyAnnouncements, jsonEncode(announcements.map((e) => e.toJson()).toList()));
+          await prefs.setString(cacheKey, jsonEncode(announcements.map((e) => e.toJson()).toList()));
           return announcements;
         }
 
@@ -87,7 +89,7 @@ class AnnouncementsService {
         if (notifRes.isNotEmpty) {
           announcements = notifRes.map((e) => Announcement.fromJson(e)).toList();
           final prefs = await SharedPreferences.getInstance();
-          await prefs.setString(_keyAnnouncements, jsonEncode(announcements.map((e) => e.toJson()).toList()));
+          await prefs.setString(cacheKey, jsonEncode(announcements.map((e) => e.toJson()).toList()));
           return announcements;
         }
       } catch (e) {
@@ -96,7 +98,7 @@ class AnnouncementsService {
     }
 
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_keyAnnouncements);
+    final raw = prefs.getString(cacheKey);
     if (raw != null) {
       final List decoded = jsonDecode(raw);
       return decoded.map((e) => Announcement.fromJson(e)).toList();
@@ -107,9 +109,10 @@ class AnnouncementsService {
 
   static Future<void> addAnnouncement(Announcement ann, {String? gymId}) async {
     final prefs = await SharedPreferences.getInstance();
+    final cacheKey = _getKey(gymId);
     final current = await getAnnouncements(gymId: gymId);
     current.insert(0, ann);
-    await prefs.setString(_keyAnnouncements, jsonEncode(current.map((e) => e.toJson()).toList()));
+    await prefs.setString(cacheKey, jsonEncode(current.map((e) => e.toJson()).toList()));
 
     if (SupabaseService.isInitialized && gymId != null && gymId.isNotEmpty) {
       try {
@@ -200,11 +203,12 @@ class AnnouncementsService {
     }
   }
 
-  static Future<void> deleteAnnouncement(String id) async {
+  static Future<void> deleteAnnouncement(String id, {String? gymId}) async {
     final prefs = await SharedPreferences.getInstance();
-    final current = await getAnnouncements();
+    final cacheKey = _getKey(gymId);
+    final current = await getAnnouncements(gymId: gymId);
     current.removeWhere((e) => e.id == id);
-    await prefs.setString(_keyAnnouncements, jsonEncode(current.map((e) => e.toJson()).toList()));
+    await prefs.setString(cacheKey, jsonEncode(current.map((e) => e.toJson()).toList()));
 
     if (SupabaseService.isInitialized) {
       try {
