@@ -2527,6 +2527,10 @@ class _SalaryHistoryItemWidgetState extends State<SalaryHistoryItemWidget> {
     final double finalNet = (_details?['net_salary'] as num?)?.toDouble() ?? 
         ((record['net_salary'] ?? record['amount'] as num?)?.toDouble() ?? (finalGross - effectiveAdv));
 
+    final String effectivePaidOn = (_details?['paid_on'] != null && _details!['paid_on'].toString().isNotEmpty)
+        ? _details!['paid_on'].toString()
+        : ((record['paid_on'] ?? record['paidOn'] ?? '').toString());
+
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
@@ -2544,7 +2548,7 @@ class _SalaryHistoryItemWidgetState extends State<SalaryHistoryItemWidget> {
             style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.textPrimary),
           ),
           subtitle: Text(
-            'Paid on ${record['paidOn']}',
+            effectivePaidOn.isNotEmpty ? 'Paid on $effectivePaidOn' : (record['month'] as String),
             style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary),
           ),
           trailing: Row(

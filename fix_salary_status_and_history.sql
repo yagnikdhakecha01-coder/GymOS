@@ -345,6 +345,14 @@ BEGIN
 
     IF v_draft.paid_transaction_id IS NOT NULL THEN
         SELECT payment_mode, date INTO v_tx FROM public.transactions WHERE id = v_draft.paid_transaction_id;
+    ELSE
+        SELECT payment_mode, date INTO v_tx 
+        FROM public.transactions 
+        WHERE gym_id = v_draft.gym_id 
+          AND (category ILIKE '%Salaries%' OR category ILIKE '%Salary%' OR title ILIKE '%Salary%')
+          AND title ILIKE '%' || (SELECT name FROM public.staff WHERE id = v_draft.staff_id) || '%'
+          AND (to_char(date, 'FMMonth YYYY') = trim(v_draft.salary_month) OR to_char(date, 'Mon YYYY') = trim(v_draft.salary_month))
+        ORDER BY date DESC LIMIT 1;
     END IF;
 
     -- Commissions
@@ -412,7 +420,7 @@ BEGIN
         'other_deductions', v_draft.other_deductions,
         'net_salary', GREATEST(v_gross - GREATEST(COALESCE(v_draft.advance_deduction, 0.0), v_adv_sum), 0.0),
         'gross_salary', v_gross,
-        'paid_on', to_char(v_draft.created_at AT TIME ZONE 'Asia/Kolkata', 'dd MMM yyyy'),
+        'paid_on', COALESCE(to_char(v_tx.date, 'dd MMM yyyy'), to_char(v_draft.created_at AT TIME ZONE 'Asia/Kolkata', 'dd MMM yyyy')),
         'payment_mode', COALESCE(v_tx.payment_mode::TEXT, 'UPI'),
         'commissions', v_commissions,
         'advances', v_advances,

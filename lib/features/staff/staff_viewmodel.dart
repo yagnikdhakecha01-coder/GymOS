@@ -575,6 +575,36 @@ class StaffViewModel extends ChangeNotifier {
           draftMap['gross_salary'] = gross;
           draftMap['net_salary'] = net;
 
+          // Lookup matching finance transaction to get exact payment date
+          final staffName = staff?.name.trim().toLowerCase() ?? '';
+          String paidOnDate = '';
+          String paymentMode = (draftMap['payment_mode'] ?? 'UPI').toString();
+          
+          final matchingTx = _repository.getTransactions().cast<FinanceTransaction?>().firstWhere(
+            (t) {
+              if (t == null) return false;
+              if (draftMap['paid_transaction_id'] != null && t.id == draftMap['paid_transaction_id']) return true;
+              final isSalary = t.category.toLowerCase().contains('salary') || t.title.toLowerCase().contains('salary');
+              final matchesStaff = staffName.isNotEmpty && t.title.toLowerCase().contains(staffName);
+              return isSalary && matchesStaff;
+            },
+            orElse: () => null,
+          );
+
+          if (matchingTx != null) {
+            paidOnDate = matchingTx.date;
+            paymentMode = matchingTx.paymentMethod.isNotEmpty ? matchingTx.paymentMethod : paymentMode;
+          }
+
+          if (paidOnDate.isEmpty && draftMap['created_at'] != null) {
+            final cr = DateTime.tryParse(draftMap['created_at'].toString());
+            if (cr != null) paidOnDate = DateFormat('dd MMM yyyy').format(cr);
+          }
+
+          draftMap['paid_on'] = paidOnDate;
+          draftMap['paidOn'] = paidOnDate;
+          draftMap['payment_mode'] = paymentMode;
+
           result.add(draftMap);
         }
       }
@@ -723,12 +753,42 @@ class StaffViewModel extends ChangeNotifier {
           ? (grossFromDraft > calculatedGross ? grossFromDraft : calculatedGross)
           : (grossFromDraft > 0 ? grossFromDraft : (netSalary + effectiveAdvanceDeduction));
 
+      // Priority paid on date matching
+      String paidOnDate = '';
+      if (sal['paid_on'] != null && sal['paid_on'].toString().isNotEmpty) {
+        paidOnDate = sal['paid_on'].toString();
+      } else if (sal['paidOn'] != null && sal['paidOn'].toString().isNotEmpty) {
+        paidOnDate = sal['paidOn'].toString();
+      }
+
+      if (paidOnDate.isEmpty) {
+        final staffName = allStaff.cast<Staff?>().firstWhere((s) => s?.id == staffId, orElse: () => null)?.name.trim().toLowerCase() ?? '';
+        final matchingTx = _repository.getTransactions().cast<FinanceTransaction?>().firstWhere(
+          (t) {
+            if (t == null) return false;
+            if (sal['paid_transaction_id'] != null && t.id == sal['paid_transaction_id']) return true;
+            final isSalary = t.category.toLowerCase().contains('salary') || t.title.toLowerCase().contains('salary');
+            final matchesStaff = staffName.isNotEmpty && t.title.toLowerCase().contains(staffName);
+            return isSalary && matchesStaff;
+          },
+          orElse: () => null,
+        );
+        if (matchingTx != null) {
+          paidOnDate = matchingTx.date;
+        }
+      }
+
+      if (paidOnDate.isEmpty) {
+        paidOnDate = DateFormat('dd MMM yyyy').format(created);
+      }
+
       return {
         'id': sal['id'],
         'month': monthStr,
         'salary_month': monthStr,
         'status': sal['status'] ?? 'Paid',
-        'paidOn': DateFormat('dd MMM yyyy').format(created),
+        'paidOn': paidOnDate,
+        'paid_on': paidOnDate,
         'amount': netSalary,
         'net_salary': netSalary,
         'gross_salary': finalGross,
