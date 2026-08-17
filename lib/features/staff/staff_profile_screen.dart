@@ -64,6 +64,14 @@ class _StaffProfileScreenState extends State<StaffProfileScreen> {
     _profileShift2Start = widget.staff.shift2Start.isNotEmpty ? widget.staff.shift2Start : '04:00 PM';
     _profileShift2End = widget.staff.shift2End.isNotEmpty ? widget.staff.shift2End : '09:00 PM';
 
+    // Instant synchronous hydration from local cache (Zero lag opening)
+    final staffVm = Provider.of<StaffViewModel>(context, listen: false);
+    _attendanceRecords = staffVm.getStaffAttendance(widget.staff.id);
+    final currentMonthStr = DateFormat('MMMM yyyy').format(DateTime.now());
+    _pendingSalaryFromDb = staffVm.isSalaryPaid(widget.staff.id, currentMonthStr) 
+        ? 0.0 
+        : (staffVm.getStaffCachedPayable(widget.staff.id) > 0 ? staffVm.getStaffCachedPayable(widget.staff.id) : widget.staff.salary);
+
     _loadInvitation();
     _fetchDbTabsData();
   }

@@ -282,13 +282,28 @@ class _StaffScreenState extends State<StaffScreen> {
               child: SizedBox(height: 8),
             ),
 
-            // 4. Staff List
+            // 4. Staff List (Sorted: Pending salary staff at TOP)
             SliverPadding(
               padding: const EdgeInsets.symmetric(horizontal: AppTheme.pagePadding),
               sliver: SliverList(
                 delegate: SliverChildBuilderDelegate(
                   (context, index) {
-                    final staff = allStaff[index];
+                    final sortedStaff = List<Staff>.from(allStaff);
+                    sortedStaff.sort((a, b) {
+                      Map<String, dynamic>? aRpc;
+                      Map<String, dynamic>? bRpc;
+                      for (final row in _staffCardsRpc) {
+                        if (row['staff_id']?.toString() == a.id.toString()) aRpc = row;
+                        if (row['staff_id']?.toString() == b.id.toString()) bRpc = row;
+                      }
+                      final bool aPaid = (aRpc?['is_salary_paid'] == true) || staffVm.isSalaryPaid(a.id, currentMonthStr);
+                      final bool bPaid = (bRpc?['is_salary_paid'] == true) || staffVm.isSalaryPaid(b.id, currentMonthStr);
+                      if (!aPaid && bPaid) return -1;
+                      if (aPaid && !bPaid) return 1;
+                      return 0;
+                    });
+
+                    final staff = sortedStaff[index];
                     Map<String, dynamic>? rpcMatch;
                     for (final row in _staffCardsRpc) {
                       if (row['staff_id']?.toString() == staff.id.toString()) {
@@ -297,7 +312,6 @@ class _StaffScreenState extends State<StaffScreen> {
                       }
                     }
 
-                    final String currentMonthStr = DateFormat('MMMM yyyy').format(DateTime.now());
                     final bool rpcPaid = rpcMatch?['is_salary_paid'] == true;
                     final bool vmPaid = staffVm.isSalaryPaid(staff.id, currentMonthStr);
                     final bool isPaid = rpcPaid || vmPaid;

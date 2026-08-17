@@ -66,13 +66,20 @@ class MembersViewModel extends ChangeNotifier {
       }
     }).toList();
 
-    if (_selectedFilter == 'All') {
-      // Sort: Active first, then Trial, then Inactive / other statuses
-      final activeList = filtered.where((m) => m.status == 'Active').toList();
-      final trialList = filtered.where((m) => m.status == 'Trial').toList();
-      final inactiveList = filtered.where((m) => m.status != 'Active' && m.status != 'Trial').toList();
-      return [...activeList, ...trialList, ...inactiveList];
-    }
+    // Sort: Members with pending fees at the TOP (highest pending amount first), then by status
+    filtered.sort((a, b) {
+      final aPending = a.pendingAmount > 0;
+      final bPending = b.pendingAmount > 0;
+      if (aPending && !bPending) return -1;
+      if (!aPending && bPending) return 1;
+      if (aPending && bPending) {
+        return b.pendingAmount.compareTo(a.pendingAmount);
+      }
+      // If both don't have pending, sort active first, then trial, then inactive
+      if (a.status == 'Active' && b.status != 'Active') return -1;
+      if (a.status != 'Active' && b.status == 'Active') return 1;
+      return 0;
+    });
 
     return filtered;
   }

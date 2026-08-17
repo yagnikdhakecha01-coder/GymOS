@@ -1,9 +1,11 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/theme.dart';
 import '../../core/widgets/custom_card.dart';
+import '../../core/services/gym_logo_cache_service.dart';
 import '../authentication/auth_viewmodel.dart';
 import '../authentication/role_selection_screen.dart';
 import '../../core/navigation/app_router.dart';
@@ -143,31 +145,48 @@ class _MoreScreenState extends State<MoreScreen> {
               },
               child: Row(
                 children: [
-                  Container(
-                    width: 52,
-                    height: 52,
-                    decoration: BoxDecoration(
-                      color: AppTheme.primary,
-                      borderRadius: BorderRadius.circular(12),
-                      image: hasValidLogo
-                          ? DecorationImage(
-                              image: NetworkImage(logoUrl.toString().trim()),
-                              fit: BoxFit.cover,
-                            )
-                          : null,
-                    ),
-                    child: !hasValidLogo
-                        ? Center(
-                            child: Text(
-                              gymName.isNotEmpty ? gymName[0].toUpperCase() : 'G',
-                              style: GoogleFonts.inter(
-                                fontSize: 22,
-                                fontWeight: FontWeight.w800,
-                                color: Colors.white,
-                              ),
-                            ),
-                          )
-                        : null,
+                  Builder(
+                    builder: (context) {
+                      final gymId = authVm.activeAssociation?.gymId ?? gym['id']?.toString();
+                      final logoStr = logoUrl?.toString().trim() ?? '';
+                      final cachedBase64 = GymLogoCacheService.getCachedLogoBase64(authVm.storage, gymId, logoStr);
+
+                      ImageProvider? imageProvider;
+                      if (cachedBase64 != null && cachedBase64.isNotEmpty) {
+                        try {
+                          imageProvider = MemoryImage(base64Decode(cachedBase64));
+                        } catch (_) {}
+                      } else if (hasValidLogo) {
+                        imageProvider = NetworkImage(logoStr);
+                      }
+
+                      return Container(
+                        width: 52,
+                        height: 52,
+                        decoration: BoxDecoration(
+                          color: AppTheme.primary,
+                          borderRadius: BorderRadius.circular(12),
+                          image: imageProvider != null
+                              ? DecorationImage(
+                                  image: imageProvider,
+                                  fit: BoxFit.cover,
+                                )
+                              : null,
+                        ),
+                        child: imageProvider == null
+                            ? Center(
+                                child: Text(
+                                  gymName.isNotEmpty ? gymName[0].toUpperCase() : 'G',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              )
+                            : null,
+                      );
+                    },
                   ),
                   const SizedBox(width: 14),
                   Expanded(
