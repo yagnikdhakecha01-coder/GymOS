@@ -2475,9 +2475,43 @@ class _SalaryHistoryItemWidgetState extends State<SalaryHistoryItemWidget> {
   @override
   Widget build(BuildContext context) {
     final record = widget.record;
+    
+    // Dynamic commissions list & sum
+    final dynamic commissionsList = (_details != null && List.from(_details!['commissions'] ?? []).isNotEmpty)
+        ? _details!['commissions']
+        : [];
+    final double liveCommSum = List.from(commissionsList).fold<double>(
+      0.0,
+      (sum, c) => sum + ((c['amount'] as num?)?.toDouble() ?? 0.0),
+    );
+    final double effectiveComm = liveCommSum > 0 
+        ? liveCommSum 
+        : ((_details?['commission_amount'] ?? record['commission_amount'] as num?)?.toDouble() ?? 0.0);
+
+    // Dynamic advances list & sum
     final dynamic advancesList = (_details != null && List.from(_details!['advances'] ?? []).isNotEmpty)
         ? _details!['advances']
         : (record['advances'] as List? ?? []);
+    final double liveAdvSum = List.from(advancesList).fold<double>(
+      0.0,
+      (sum, a) => sum + ((a['recovered_amount'] ?? a['advance_amount'] ?? a['amount'] as num?)?.toDouble() ?? 0.0),
+    );
+    final double effectiveAdv = liveAdvSum > 0 
+        ? liveAdvSum 
+        : ((_details?['advance_deduction'] ?? record['advance_deduction'] as num?)?.toDouble() ?? 0.0);
+
+    final double baseSalary = (_details?['base_salary'] ?? record['base_salary'] as num?)?.toDouble() ?? 5000.0;
+    final double additions = (_details?['other_additions'] ?? record['other_additions'] as num?)?.toDouble() ?? 0.0;
+    final double deductions = (_details?['other_deductions'] ?? record['other_deductions'] as num?)?.toDouble() ?? 0.0;
+
+    final double calculatedGross = baseSalary + effectiveComm + additions - deductions;
+    final double grossSalary = (_details?['gross_salary'] as num?)?.toDouble() ?? 
+        ((record['gross_salary'] as num?)?.toDouble() ?? calculatedGross);
+    final double finalGross = grossSalary >= calculatedGross ? grossSalary : calculatedGross;
+
+    final double finalNet = (_details?['net_salary'] as num?)?.toDouble() ?? 
+        ((record['net_salary'] ?? record['amount'] as num?)?.toDouble() ?? (finalGross - effectiveAdv));
+
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
@@ -2502,7 +2536,7 @@ class _SalaryHistoryItemWidgetState extends State<SalaryHistoryItemWidget> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                '₹${NumberFormat('#,##,###').format(record['gross_salary'] ?? 0.0)}',
+                '₹${NumberFormat('#,##,###').format(finalGross)}',
                 style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.primary),
               ),
               const SizedBox(width: 8),
@@ -2517,28 +2551,28 @@ class _SalaryHistoryItemWidgetState extends State<SalaryHistoryItemWidget> {
           children: [
             const Divider(height: 1, color: AppTheme.border),
             const SizedBox(height: 12),
-            _buildRow('Base Salary', '₹${NumberFormat('#,##,###').format(record['base_salary'] ?? 0.0)}'),
-            if ((record['commission_amount'] ?? 0.0) > 0)
-              _buildRow('Commission', '+ ₹${NumberFormat('#,##,###').format(record['commission_amount'])}', valueColor: Colors.green),
-            if ((record['other_additions'] ?? 0.0) > 0)
-              _buildRow('Additions', '+ ₹${NumberFormat('#,##,###').format(record['other_additions'])}', valueColor: Colors.green),
-            if ((record['other_deductions'] ?? 0.0) > 0)
-              _buildRow('Deductions', '- ₹${NumberFormat('#,##,###').format(record['other_deductions'])}', valueColor: Colors.red),
+            _buildRow('Base Salary', '₹${NumberFormat('#,##,###').format(baseSalary)}'),
+            if (effectiveComm > 0)
+              _buildRow('Commission', '+ ₹${NumberFormat('#,##,###').format(effectiveComm)}', valueColor: Colors.green),
+            if (additions > 0)
+              _buildRow('Additions', '+ ₹${NumberFormat('#,##,###').format(additions)}', valueColor: Colors.green),
+            if (deductions > 0)
+              _buildRow('Deductions', '- ₹${NumberFormat('#,##,###').format(deductions)}', valueColor: Colors.red),
             const SizedBox(height: 4),
             _buildRow(
               'Gross Salary',
-              '₹${NumberFormat('#,##,###').format(record['gross_salary'] ?? 0.0)}',
+              '₹${NumberFormat('#,##,###').format(finalGross)}',
               isBold: true,
             ),
             const SizedBox(height: 4),
-            if ((record['advance_deduction'] ?? 0.0) > 0)
-              _buildRow('Advance Recovery', '- ₹${NumberFormat('#,##,###').format(record['advance_deduction'])}', valueColor: Colors.red),
+            if (effectiveAdv > 0)
+              _buildRow('Advance Recovery', '- ₹${NumberFormat('#,##,###').format(effectiveAdv)}', valueColor: Colors.red),
             const SizedBox(height: 8),
             const Divider(height: 1, color: AppTheme.border),
             const SizedBox(height: 8),
             _buildRow(
               'Net Paid Amount', 
-              '₹${NumberFormat('#,##,###').format(record['amount'])}', 
+              '₹${NumberFormat('#,##,###').format(finalNet)}', 
               isBold: true,
               valueColor: AppTheme.primary
             ),

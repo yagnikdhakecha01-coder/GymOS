@@ -74,16 +74,16 @@ BEGIN
                 COALESCE(sd.gross_salary, 0.0),
                 COALESCE(sd.base_salary, s.salary, 0.0) + COALESCE(
                     NULLIF(sd.commission_amount, 0),
-                    (SELECT COALESCE(SUM(cl.amount), 0.0) FROM public.commission_ledger cl WHERE cl.salary_payment_id = sd.id OR (cl.staff_id = s.id AND cl.salary_month = v_month_str AND cl.status = 'Paid')),
+                    (SELECT COALESCE(SUM(cl.amount), 0.0) FROM public.commission_ledger cl WHERE cl.salary_payment_id = sd.id OR (cl.staff_id = s.id AND (cl.salary_month = v_month_str OR to_char(cl.created_at, 'FMMonth YYYY') = v_month_str))),
                     0.0
                 ) + COALESCE(sd.other_additions, 0.0) - COALESCE(sd.other_deductions, 0.0),
                 COALESCE(sd.net_salary, 0.0) + COALESCE(
                     NULLIF(sd.advance_deduction, 0),
-                    (SELECT COALESCE(SUM(sa.recovered_amount), 0.0) FROM public.salary_advance_ledger sa WHERE sa.salary_payment_id = sd.id OR (sa.staff_id = s.id AND sa.salary_month = v_month_str AND sa.status = 'Recovered')),
+                    (SELECT COALESCE(SUM(sa.recovered_amount), 0.0) FROM public.salary_advance_ledger sa WHERE sa.salary_payment_id = sd.id OR (sa.staff_id = s.id AND (sa.salary_month = v_month_str OR to_char(sa.given_date, 'FMMonth YYYY') = v_month_str))),
                     0.0
                 ),
                 COALESCE(tx.amount, exp.amount, 0.0) + COALESCE(
-                    (SELECT COALESCE(SUM(sa.recovered_amount), 0.0) FROM public.salary_advance_ledger sa WHERE sa.staff_id = s.id AND sa.salary_month = v_month_str),
+                    (SELECT COALESCE(SUM(sa.recovered_amount), 0.0) FROM public.salary_advance_ledger sa WHERE sa.staff_id = s.id AND (sa.salary_month = v_month_str OR to_char(sa.given_date, 'FMMonth YYYY') = v_month_str)),
                     0.0
                 ),
                 COALESCE(sd.net_salary, tx.amount, exp.amount, s.salary, 0.0)
@@ -216,7 +216,6 @@ BEGIN
         RETURN 0.0;
     END IF;
 
-    -- Calculate pending advance deduction
     SELECT COALESCE(SUM(sa.remaining_amount), 0.0)
     INTO v_advances_deduction
     FROM public.salary_advance_ledger sa
@@ -302,7 +301,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 GRANT EXECUTE ON FUNCTION public.get_staff_pending_salary_for_month(UUID, TEXT) TO anon, authenticated, service_role;
 
 
--- 4. UPDATE FUNCTION: get_paid_salary_draft_details (Supports both UUID and TEXT ID)
+-- 4. UPDATE FUNCTION: get_paid_salary_draft_details
 DROP FUNCTION IF EXISTS public.get_paid_salary_draft_details(UUID);
 DROP FUNCTION IF EXISTS public.get_paid_salary_draft_details(TEXT);
 
@@ -360,7 +359,7 @@ BEGIN
     INTO v_commissions, v_comm_sum
     FROM public.commission_ledger
     WHERE salary_payment_id = v_draft.id
-       OR (staff_id = v_draft.staff_id AND trim(lower(salary_month)) = trim(lower(v_draft.salary_month)) AND status = 'Paid');
+       OR (staff_id = v_draft.staff_id AND (trim(lower(salary_month)) = trim(lower(v_draft.salary_month)) OR to_char(created_at, 'FMMonth YYYY') = trim(v_draft.salary_month)));
 
     -- Advances
     SELECT COALESCE(jsonb_agg(jsonb_build_object(
@@ -377,7 +376,6 @@ BEGIN
     WHERE salary_payment_id = v_draft.id
        OR (
           staff_id = v_draft.staff_id 
-          AND status = 'Recovered'::public.advance_status
           AND (
             trim(lower(salary_month)) = trim(lower(v_draft.salary_month))
             OR to_char(given_date, 'FMMonth YYYY') = trim(v_draft.salary_month)
@@ -412,7 +410,7 @@ BEGIN
         'advance_deduction', GREATEST(COALESCE(v_draft.advance_deduction, 0.0), v_adv_sum),
         'other_additions', v_draft.other_additions,
         'other_deductions', v_draft.other_deductions,
-        'net_salary', v_draft.net_salary,
+        'net_salary', GREATEST(v_gross - GREATEST(COALESCE(v_draft.advance_deduction, 0.0), v_adv_sum), 0.0),
         'gross_salary', v_gross,
         'paid_on', to_char(v_draft.created_at AT TIME ZONE 'Asia/Kolkata', 'dd MMM yyyy'),
         'payment_mode', COALESCE(v_tx.payment_mode::TEXT, 'UPI'),
