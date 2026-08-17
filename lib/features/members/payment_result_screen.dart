@@ -8,6 +8,7 @@ class PaymentResultScreen extends StatefulWidget {
   final String title;
   final String message;
   final String memberName;
+  final String? phoneNumber;
   final String? memberCode;
   final double amount;
   final String paymentMethod;
@@ -23,6 +24,7 @@ class PaymentResultScreen extends StatefulWidget {
     required this.title,
     required this.message,
     required this.memberName,
+    this.phoneNumber,
     this.memberCode,
     required this.amount,
     required this.paymentMethod,
@@ -33,12 +35,15 @@ class PaymentResultScreen extends StatefulWidget {
     this.errorMessage,
   });
 
+  /// Opens the Payment Result screen with a smooth Center-Scale popup animation
+  /// so it feels like an in-place modal confirmation rather than sliding to another page.
   static Future<void> show(
     BuildContext context, {
     required bool isSuccess,
     required String title,
     required String message,
     required String memberName,
+    String? phoneNumber,
     String? memberCode,
     required double amount,
     required String paymentMethod,
@@ -50,12 +55,16 @@ class PaymentResultScreen extends StatefulWidget {
   }) {
     return Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => PaymentResultScreen(
+      PageRouteBuilder(
+        opaque: true,
+        transitionDuration: const Duration(milliseconds: 320),
+        reverseTransitionDuration: const Duration(milliseconds: 240),
+        pageBuilder: (context, animation, secondaryAnimation) => PaymentResultScreen(
           isSuccess: isSuccess,
           title: title,
           message: message,
           memberName: memberName,
+          phoneNumber: phoneNumber,
           memberCode: memberCode,
           amount: amount,
           paymentMethod: paymentMethod,
@@ -65,6 +74,24 @@ class PaymentResultScreen extends StatefulWidget {
           planName: planName,
           errorMessage: errorMessage,
         ),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          final curvedAnim = CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutBack,
+            reverseCurve: Curves.easeInCubic,
+          );
+          return ScaleTransition(
+            scale: Tween<double>(begin: 0.85, end: 1.0).animate(curvedAnim),
+            alignment: Alignment.center,
+            child: FadeTransition(
+              opacity: CurvedAnimation(
+                parent: animation,
+                curve: Curves.easeOut,
+              ),
+              child: child,
+            ),
+          );
+        },
       ),
     );
   }
@@ -76,25 +103,25 @@ class PaymentResultScreen extends StatefulWidget {
 class _PaymentResultScreenState extends State<PaymentResultScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _animController;
-  late Animation<double> _scaleAnimation;
-  late Animation<double> _fadeAnimation;
+  late Animation<double> _badgeScale;
+  late Animation<double> _contentFade;
 
   @override
   void initState() {
     super.initState();
     _animController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 700),
+      duration: const Duration(milliseconds: 600),
     );
 
-    _scaleAnimation = CurvedAnimation(
+    _badgeScale = CurvedAnimation(
       parent: _animController,
       curve: Curves.elasticOut,
     );
 
-    _fadeAnimation = CurvedAnimation(
+    _contentFade = CurvedAnimation(
       parent: _animController,
-      curve: const Interval(0.2, 1.0, curve: Curves.easeOut),
+      curve: const Interval(0.15, 1.0, curve: Curves.easeOut),
     );
 
     _animController.forward();
@@ -115,6 +142,10 @@ class _PaymentResultScreenState extends State<PaymentResultScreen>
         ? widget.transactionDate!
         : DateFormat('dd MMM yyyy, hh:mm a').format(DateTime.now());
 
+    final displayPhone = (widget.phoneNumber != null && widget.phoneNumber!.isNotEmpty)
+        ? widget.phoneNumber!
+        : (widget.memberCode ?? '');
+
     return WillPopScope(
       onWillPop: () async {
         Navigator.pop(context);
@@ -133,13 +164,14 @@ class _PaymentResultScreenState extends State<PaymentResultScreen>
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        const SizedBox(height: 24),
-                        // Animated Badge Icon
+                        const SizedBox(height: 20),
+                        // Center Animated Badge Icon
                         ScaleTransition(
-                          scale: _scaleAnimation,
+                          scale: _badgeScale,
+                          alignment: Alignment.center,
                           child: Container(
-                            width: 100,
-                            height: 100,
+                            width: 96,
+                            height: 96,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               color: isSuccess
@@ -162,16 +194,16 @@ class _PaymentResultScreenState extends State<PaymentResultScreen>
                             child: Center(
                               child: Icon(
                                 isSuccess ? Icons.check_rounded : Icons.close_rounded,
-                                size: 56,
+                                size: 54,
                                 color: isSuccess ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
                               ),
                             ),
                           ),
                         ),
-                        const SizedBox(height: 24),
+                        const SizedBox(height: 22),
                         // Title
                         FadeTransition(
-                          opacity: _fadeAnimation,
+                          opacity: _contentFade,
                           child: Text(
                             widget.title,
                             textAlign: TextAlign.center,
@@ -186,7 +218,7 @@ class _PaymentResultScreenState extends State<PaymentResultScreen>
                         const SizedBox(height: 8),
                         // Message / Subtitle
                         FadeTransition(
-                          opacity: _fadeAnimation,
+                          opacity: _contentFade,
                           child: Text(
                             widget.message,
                             textAlign: TextAlign.center,
@@ -197,11 +229,11 @@ class _PaymentResultScreenState extends State<PaymentResultScreen>
                             ),
                           ),
                         ),
-                        const SizedBox(height: 28),
+                        const SizedBox(height: 26),
 
                         // Amount Card
                         FadeTransition(
-                          opacity: _fadeAnimation,
+                          opacity: _contentFade,
                           child: Container(
                             width: double.infinity,
                             padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 24),
@@ -247,7 +279,7 @@ class _PaymentResultScreenState extends State<PaymentResultScreen>
 
                         // Details Breakdown Card
                         FadeTransition(
-                          opacity: _fadeAnimation,
+                          opacity: _contentFade,
                           child: Container(
                             width: double.infinity,
                             padding: const EdgeInsets.all(20),
@@ -266,9 +298,9 @@ class _PaymentResultScreenState extends State<PaymentResultScreen>
                             child: Column(
                               children: [
                                 _buildDetailRow('Member Name', widget.memberName),
-                                if (widget.memberCode != null && widget.memberCode!.isNotEmpty) ...[
+                                if (displayPhone.isNotEmpty) ...[
                                   const Divider(height: 20),
-                                  _buildDetailRow('Member ID', widget.memberCode!),
+                                  _buildDetailRow('Mobile Number', displayPhone),
                                 ],
                                 if (widget.planName != null && widget.planName!.isNotEmpty) ...[
                                   const Divider(height: 20),
@@ -313,7 +345,7 @@ class _PaymentResultScreenState extends State<PaymentResultScreen>
 
                 // Bottom Action Buttons
                 FadeTransition(
-                  opacity: _fadeAnimation,
+                  opacity: _contentFade,
                   child: SizedBox(
                     width: double.infinity,
                     height: 52,
