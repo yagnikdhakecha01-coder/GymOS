@@ -540,6 +540,9 @@ class StaffViewModel extends ChangeNotifier {
     final List<Map<String, dynamic>> result = [];
     final Set<String> processedMonths = {};
 
+    final staff = allStaff.cast<Staff?>().firstWhere((s) => s?.id == staffId, orElse: () => null);
+    final commissions = await fetchStaffCommissions(staffId);
+
     // 1. Load from salaryDrafts
     for (final d in _repository.salaryDrafts) {
       if (d['staff_id']?.toString() == staffId) {
@@ -547,7 +550,32 @@ class StaffViewModel extends ChangeNotifier {
         if (status == 'paid' || d['paid_transaction_id'] != null) {
           final month = (d['salary_month'] ?? 'N/A').toString();
           processedMonths.add(month.trim().toLowerCase());
-          result.add(Map<String, dynamic>.from(d));
+          
+          final draftMap = Map<String, dynamic>.from(d);
+          final monthComms = commissions.where((c) {
+            final cMonth = (c['salary_month'] ?? '').toString().trim().toLowerCase();
+            final cDate = c['created_at'] != null ? DateTime.tryParse(c['created_at'].toString()) : null;
+            final cCalcMonth = cDate != null ? DateFormat('MMMM yyyy').format(cDate) : '';
+            return cMonth == month.trim().toLowerCase() || cCalcMonth.toLowerCase() == month.trim().toLowerCase();
+          }).toList();
+          final commSum = monthComms.fold<double>(0.0, (s, c) => s + ((c['amount'] as num?)?.toDouble() ?? 0.0));
+
+          final advances = getStaffAdvancesForMonth(staffId, month);
+          final advSum = advances.fold<double>(0.0, (s, a) => s + ((a['recovered_amount'] ?? a['advance_amount'] ?? a['amount'] as num?)?.toDouble() ?? 0.0));
+
+          final baseSal = (draftMap['base_salary'] as num?)?.toDouble() ?? staff?.salary ?? 5000.0;
+          final commAmount = commSum > 0 ? commSum : ((draftMap['commission_amount'] as num?)?.toDouble() ?? 0.0);
+          final advAmount = advSum > 0 ? advSum : ((draftMap['advance_deduction'] as num?)?.toDouble() ?? 0.0);
+          final gross = baseSal + commAmount;
+          final net = gross - advAmount;
+
+          draftMap['base_salary'] = baseSal;
+          draftMap['commission_amount'] = commAmount;
+          draftMap['advance_deduction'] = advAmount;
+          draftMap['gross_salary'] = gross;
+          draftMap['net_salary'] = net;
+
+          result.add(draftMap);
         }
       }
     }

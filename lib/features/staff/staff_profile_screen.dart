@@ -2393,6 +2393,12 @@ class _SalaryHistoryItemWidgetState extends State<SalaryHistoryItemWidget> {
   bool _isLoading = false;
   bool _isError = false;
 
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadDetails());
+  }
+
   Future<void> _loadDetails() async {
     if (_details != null || _isLoading) return;
     setState(() {
