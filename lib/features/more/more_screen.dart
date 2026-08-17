@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/theme.dart';
 import '../../core/widgets/custom_card.dart';
+import '../../core/widgets/app_cached_gym_logo.dart';
 import '../../core/services/gym_logo_cache_service.dart';
 import '../authentication/auth_viewmodel.dart';
 import '../authentication/role_selection_screen.dart';
@@ -145,48 +146,12 @@ class _MoreScreenState extends State<MoreScreen> {
               },
               child: Row(
                 children: [
-                  Builder(
-                    builder: (context) {
-                      final gymId = authVm.activeAssociation?.gymId ?? gym['id']?.toString();
-                      final logoStr = logoUrl?.toString().trim() ?? '';
-                      final cachedBase64 = GymLogoCacheService.getCachedLogoBase64(authVm.storage, gymId, logoStr);
-
-                      ImageProvider? imageProvider;
-                      if (cachedBase64 != null && cachedBase64.isNotEmpty) {
-                        try {
-                          imageProvider = MemoryImage(base64Decode(cachedBase64));
-                        } catch (_) {}
-                      } else if (hasValidLogo) {
-                        imageProvider = NetworkImage(logoStr);
-                      }
-
-                      return Container(
-                        width: 52,
-                        height: 52,
-                        decoration: BoxDecoration(
-                          color: AppTheme.primary,
-                          borderRadius: BorderRadius.circular(12),
-                          image: imageProvider != null
-                              ? DecorationImage(
-                                  image: imageProvider,
-                                  fit: BoxFit.cover,
-                                )
-                              : null,
-                        ),
-                        child: imageProvider == null
-                            ? Center(
-                                child: Text(
-                                  gymName.isNotEmpty ? gymName[0].toUpperCase() : 'G',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.w800,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              )
-                            : null,
-                      );
-                    },
+                  AppCachedGymLogo(
+                    gymId: authVm.activeAssociation?.gymId ?? gym['id']?.toString(),
+                    logoUrl: logoUrl?.toString().trim(),
+                    gymName: gymName,
+                    size: 52,
+                    borderRadius: BorderRadius.circular(14),
                   ),
                   const SizedBox(width: 14),
                   Expanded(
