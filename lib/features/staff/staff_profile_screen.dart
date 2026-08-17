@@ -67,7 +67,11 @@ class _StaffProfileScreenState extends State<StaffProfileScreen> {
 
     // Instant synchronous hydration from local cache (Zero lag opening)
     final staffVm = Provider.of<StaffViewModel>(context, listen: false);
-    _attendanceRecords = staffVm.getStaffAttendance(widget.staff.id);
+    final rawAtt = staffVm.getStaffAttendance(widget.staff.id);
+    _attendanceRecords = rawAtt.map((r) => {
+      'date': r.date,
+      'status': r.status,
+    }).toList();
     final currentMonthStr = DateFormat('MMMM yyyy').format(DateTime.now());
     _pendingSalaryFromDb = staffVm.isSalaryPaid(widget.staff.id, currentMonthStr) 
         ? 0.0 

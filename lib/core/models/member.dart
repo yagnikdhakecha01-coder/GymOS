@@ -45,6 +45,11 @@ class Member {
     this.createdAt,
   });
 
+  String get memberCode =>
+      (extraFields['member_code'] as String?) ??
+      (extraFields['memberCode'] as String?) ??
+      (phone.isNotEmpty ? phone : (id.length > 8 ? id.substring(0, 8).toUpperCase() : id));
+
   static Map<String, dynamic> _parseExtraFields(dynamic raw) {
     if (raw == null) return const {};
     if (raw is Map<String, dynamic>) return raw;
