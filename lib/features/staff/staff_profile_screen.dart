@@ -736,6 +736,7 @@ Thank you.''';
                     if (widget.isOwnerView) ...[
                       _statColumn('Salary Type', staff.salaryType.isNotEmpty ? staff.salaryType : 'Fixed', AppTheme.textPrimary),
                       Builder(builder: (ctx) {
+                        final staffVm = ctx.watch<StaffViewModel>();
                         final currentMonthStr = DateFormat('MMMM yyyy').format(DateTime.now());
                         final bool isPaidNow = staffVm.isSalaryPaid(staff.id, currentMonthStr);
                         final double effectivePendingSalary = isPaidNow ? 0.0 : _pendingSalaryFromDb;

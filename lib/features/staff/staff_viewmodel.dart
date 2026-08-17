@@ -595,7 +595,7 @@ class StaffViewModel extends ChangeNotifier {
             'gross_salary': gross,
             'status': 'Paid',
             'created_at': tx.transactionDate.isNotEmpty ? tx.transactionDate : DateTime.now().toIso8601String(),
-            'payment_mode': tx.paymentMode.isNotEmpty ? tx.paymentMode : 'UPI',
+            'payment_mode': tx.paymentMethod.isNotEmpty ? tx.paymentMethod : 'UPI',
           });
         }
       }
