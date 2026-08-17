@@ -1847,14 +1847,43 @@ Thank you.''';
           ),
           const SizedBox(height: 20),
 
-          // Monthly Records
-          ..._salaryHistory.map((record) {
-            final staffVm = Provider.of<StaffViewModel>(context, listen: false);
-            return SalaryHistoryItemWidget(
-              record: record,
-              staffVm: staffVm,
-            );
-          }),
+          if (_salaryHistory.isEmpty) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(32),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppTheme.border),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.receipt_long_outlined, size: 48, color: AppTheme.textMuted),
+                  const SizedBox(height: 12),
+                  Text(
+                    'No Salary History',
+                    style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Paid salaries and compensation breakdowns will appear here.',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary),
+                  ),
+                ],
+              ),
+            ),
+          ] else ...[
+            // Monthly Records
+            ..._salaryHistory.map((record) {
+              final staffVm = Provider.of<StaffViewModel>(context, listen: false);
+              return SalaryHistoryItemWidget(
+                record: record,
+                staffVm: staffVm,
+              );
+            }),
+          ],
         ],
       ),
     );
@@ -2555,10 +2584,14 @@ class _SalaryHistoryItemWidgetState extends State<SalaryHistoryItemWidget> {
               ],
 
               // Render Advance Recoveries breakdown table if available
-              if (List.from(_details!['advances'] ?? []).isNotEmpty) ...[
+              final dynamic advancesList = (_details != null && List.from(_details!['advances'] ?? []).isNotEmpty)
+                  ? _details!['advances']
+                  : (record['advances'] as List? ?? []);
+
+              if (List.from(advancesList).isNotEmpty) ...[
                 const SizedBox(height: 16),
                 Text(
-                  'Advance Recoveries',
+                  'Advance Recoveries & Dates',
                   style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.primary),
                 ),
                 const SizedBox(height: 8),
@@ -2578,11 +2611,13 @@ class _SalaryHistoryItemWidgetState extends State<SalaryHistoryItemWidget> {
                         _tableHeader('Recovered'),
                       ],
                     ),
-                    ...List.from(_details!['advances']).map((it) {
-                      final dateStr = it['given_date']?.toString() ?? '';
-                      final reason = it['reason']?.toString() ?? 'N/A';
-                      final double advance = (it['advance_amount'] as num? ?? 0.0).toDouble();
-                      final double recovered = (it['recovered_amount'] as num? ?? 0.0).toDouble();
+                    ...List.from(advancesList).map((it) {
+                      final dateStr = it['given_date'] != null 
+                          ? (it['givenOn'] ?? it['given_date'].toString().split('T').first) 
+                          : 'N/A';
+                      final reason = it['reason']?.toString() ?? 'Personal';
+                      final double advance = (it['advance_amount'] ?? it['amount'] as num? ?? 0.0).toDouble();
+                      final double recovered = (it['recovered_amount'] ?? it['advance_amount'] ?? it['amount'] as num? ?? 0.0).toDouble();
                       return TableRow(
                         children: [
                           _tableCell(dateStr),

@@ -306,8 +306,9 @@ class _StaffScreenState extends State<StaffScreen> {
 
                     staffData['salary_pending'] = effectivePayable;
                     staffData['is_salary_paid'] = isPaid;
-                    if (isPaid && rpcMatch != null) {
-                      staffData['paid_amount'] = rpcMatch['paid_amount'] ?? staff.salary;
+                    if (isPaid) {
+                      final num? rpcPaid = rpcMatch?['paid_amount'] as num?;
+                      staffData['paid_amount'] = (rpcPaid != null && rpcPaid > 0) ? rpcPaid.toDouble() : staff.salary;
                     }
 
                     return OwnerStaffCard(

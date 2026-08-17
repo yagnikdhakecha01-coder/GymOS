@@ -453,6 +453,8 @@ class _PaySalaryScreenState extends State<PaySalaryScreen> {
   void _handlePaySalary() async {
     if (_draft == null) return;
     final staffVm = Provider.of<StaffViewModel>(context, listen: false);
+    final authVm = Provider.of<AuthViewModel>(context, listen: false);
+    final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'] ?? '';
     
     // Show loading spinner
     showDialog(
@@ -462,21 +464,64 @@ class _PaySalaryScreenState extends State<PaySalaryScreen> {
     );
 
     try {
+      final payableAmount = _totalPayable;
+      final uuidRegex = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
+      String realDraftId = _draft!.id;
+
+      if (!uuidRegex.hasMatch(realDraftId)) {
+        final realDraft = await staffVm.getOrCreateSalaryDraft(gymId, widget.staff.id, widget.selectedMonth);
+        if (realDraft != null) {
+          realDraftId = realDraft.id;
+        } else if (SupabaseService.isInitialized && gymId.isNotEmpty) {
+          final upsertRes = await SupabaseService.client.from('salary_drafts').upsert({
+            'gym_id': gymId,
+            'staff_id': widget.staff.id,
+            'salary_month': widget.selectedMonth,
+            'base_salary': _fixedSalary,
+            'commission_amount': _commission,
+            'advance_deduction': _advanceDeduction,
+            'other_additions': _totalAddition,
+            'other_deductions': _totalDeduction,
+            'net_salary': payableAmount,
+            'status': 'Draft',
+          }, onConflict: 'staff_id,salary_month').select().single();
+          realDraftId = upsertRes['id'] as String;
+        }
+      }
+
+      // Update draft figures in DB before paying
+      if (uuidRegex.hasMatch(realDraftId) && SupabaseService.isInitialized) {
+        try {
+          await SupabaseService.client.from('salary_drafts').update({
+            'base_salary': _fixedSalary,
+            'commission_amount': _commission,
+            'advance_deduction': _advanceDeduction,
+            'other_additions': _totalAddition,
+            'other_deductions': _totalDeduction,
+            'net_salary': payableAmount,
+          }).eq('id', realDraftId);
+        } catch (_) {}
+      }
+
       await staffVm.paySalaryDraft(
-        draftId: _draft!.id,
+        draftId: realDraftId,
         paymentMode: _selectedMethod,
         notes: _notesController.text.isNotEmpty ? _notesController.text : '${widget.selectedMonth} salary paid.',
       );
 
-      // Local state fallback update
+      // Save finance transaction locally & remotely
       staffVm.markSalaryAsPaid(widget.staff.id, widget.selectedMonth);
+
+      if (gymId.isNotEmpty) {
+        await staffVm.refreshStaffPayablesForMonth(gymId, widget.selectedMonth);
+      }
 
       if (mounted) {
         Navigator.pop(context); // Pop loading spinner
         SuccessDialog.show(
           context,
           title: 'Salary Paid!',
-          message: 'Salary of ₹${NumberFormat('#,##,###').format(_totalPayable)} paid to ${widget.staff.name} successfully.',
+          message: 'Salary of ₹${NumberFormat('#,##,###').format(payableAmount)} paid to ${widget.staff.name} successfully.',
           onDone: () {
             Navigator.pop(context);
           },
@@ -621,9 +666,11 @@ class _PaySalaryScreenState extends State<PaySalaryScreen> {
                       ],
                       const Text('=', style: TextStyle(fontSize: 16, color: AppTheme.textSecondary)),
                       _summaryBlock(
-                        _advanceDeduction > 0 ? 'Gross Salary' : 'Pending Payable', 
-                        _isPaid ? '₹0' : '₹${NumberFormat('#,##,###').format(_totalGrossSalary)}', 
-                        _isPaid ? Colors.green : AppTheme.primary, 
+                        _advanceDeduction > 0 ? 'Gross Salary' : (_isPaid ? 'Total Paid' : 'Pending Payable'), 
+                        _isPaid 
+                            ? '₹${NumberFormat('#,##,###').format(_totalGrossSalary)}' 
+                            : '₹${NumberFormat('#,##,###').format(_totalGrossSalary)}', 
+                        _isPaid ? const Color(0xFF047857) : AppTheme.primary, 
                         isBold: true
                       ),
                     ],
@@ -637,7 +684,14 @@ class _PaySalaryScreenState extends State<PaySalaryScreen> {
                         const Text('-', style: TextStyle(fontSize: 16, color: Colors.red, fontWeight: FontWeight.bold)),
                         _summaryBlock('Advance Taken', '₹${NumberFormat('#,##,###').format(_advanceDeduction)}', Colors.red, isBold: true),
                         const Text('=', style: TextStyle(fontSize: 16, color: AppTheme.textSecondary)),
-                        _summaryBlock('Pending Payable', _isPaid ? '₹0' : '₹${NumberFormat('#,##,###').format(_totalPayable)}', _isPaid ? Colors.green : AppTheme.primary, isBold: true),
+                        _summaryBlock(
+                          _isPaid ? 'Net Paid' : 'Pending Payable', 
+                          _isPaid 
+                              ? '₹${NumberFormat('#,##,###').format(_draft?.netSalary ?? (_totalGrossSalary - _advanceDeduction))}' 
+                              : '₹${NumberFormat('#,##,###').format(_totalPayable)}', 
+                          _isPaid ? const Color(0xFF047857) : AppTheme.primary, 
+                          isBold: true
+                        ),
                       ],
                     ),
                   ],
@@ -668,7 +722,7 @@ class _PaySalaryScreenState extends State<PaySalaryScreen> {
             ),
             const SizedBox(height: 12),
 
-            // New: Advance Details (Expandable Card - Only shows if there are advances)
+            // Advance Details
             if (_advances.isNotEmpty) ...[
               _expandableSection(
                 title: 'ADVANCE SALARY',
@@ -680,7 +734,7 @@ class _PaySalaryScreenState extends State<PaySalaryScreen> {
               const SizedBox(height: 12),
             ],
 
-            // 5. Adjustments Editor Card
+            // 5. Adjustments Card
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -783,65 +837,6 @@ class _PaySalaryScreenState extends State<PaySalaryScreen> {
                               color: isAddition ? Colors.green : Colors.red,
                             ),
                           ),
-                          if (!_isPaid && !widget.readOnly) ...[
-                            const SizedBox(width: 8),
-                            IconButton(
-                              icon: const Icon(Icons.delete_outline, color: Colors.red, size: 18),
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
-                              onPressed: () async {
-                                final confirmed = await showDialog<bool>(
-                                  context: context,
-                                  builder: (ctx) => AlertDialog(
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                                    title: Text('Delete Adjustment?', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-                                    content: Text('Are you sure you want to remove this adjustment? This action is permanent.'),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: () => Navigator.pop(ctx, false),
-                                        child: const Text('Cancel'),
-                                      ),
-                                      ElevatedButton(
-                                        style: ElevatedButton.styleFrom(backgroundColor: AppTheme.danger),
-                                        onPressed: () => Navigator.pop(ctx, true),
-                                        child: const Text('Delete', style: TextStyle(color: Colors.white)),
-                                      ),
-                                    ],
-                                  ),
-                                );
-
-                                if (confirmed == true && mounted) {
-                                  // Show spinner
-                                  showDialog(
-                                    context: context,
-                                    barrierDismissible: false,
-                                    builder: (_) => const Center(child: CircularProgressIndicator(color: AppTheme.primary)),
-                                  );
-
-                                  try {
-                                    // Directly delete entry from Supabase database salary_adjustments table
-                                    await SupabaseService.client
-                                        .from('salary_adjustments')
-                                        .delete()
-                                        .eq('id', item.id);
-                                    
-                                    if (mounted) {
-                                      Navigator.pop(context); // Pop spinner
-                                      _loadDraftDetails(); // Refresh live calculations and data
-                                    }
-                                  } catch (e) {
-                                    if (mounted) {
-                                      Navigator.pop(context); // Pop spinner
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(content: Text('Failed to delete: $e'), backgroundColor: AppTheme.danger),
-                                      );
-                                    }
-                                  }
-                                }
-                              },
-                            ),
-                          ],
-                          const SizedBox(width: 8),
                         ],
                       ),
                     );
@@ -861,117 +856,191 @@ class _PaySalaryScreenState extends State<PaySalaryScreen> {
             const SizedBox(height: 12),
 
             if (!widget.readOnly) ...[
-            // 6. Payment Details Card
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppTheme.border),
+            if (_isPaid) ...[
+              // 6. Paid Settlement Receipt Card
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF0FDF4),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFA7F3D0)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.verified_rounded, color: Color(0xFF10B981), size: 20),
+                        const SizedBox(width: 8),
+                        Text(
+                          'PAYMENT SETTLEMENT RECEIPT',
+                          style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF047857)),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Total Month Compensation', style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary)),
+                        Text('₹${NumberFormat('#,##,###').format(_totalGrossSalary)}', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
+                      ],
+                    ),
+                    if (_advanceDeduction > 0) ...[
+                      const SizedBox(height: 6),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('Advance Deducted', style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary)),
+                          Text('- ₹${NumberFormat('#,##,###').format(_advanceDeduction)}', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.red)),
+                        ],
+                      ),
+                    ],
+                    const Divider(height: 18, color: Color(0xFFA7F3D0)),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Net Paid Amount', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: const Color(0xFF047857))),
+                        Text('₹${NumberFormat('#,##,###').format(_draft?.netSalary ?? (_totalGrossSalary - _advanceDeduction))}', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w800, color: const Color(0xFF047857))),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    '4. PAYMENT DETAILS',
-                    style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.primary),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Payment Method', style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary)),
-                            DropdownButton<String>(
-                              value: _selectedMethod,
-                              isExpanded: true,
-                              items: ['Cash', 'UPI', 'Bank', 'Cheque'].map((m) {
-                                return DropdownMenuItem(value: m, child: Text(m));
-                              }).toList(),
-                              onChanged: (val) => setState(() => _selectedMethod = val!),
+              const SizedBox(height: 24),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE6FDF4),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFA7F3D0)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.check_circle_rounded, color: Color(0xFF10B981), size: 20),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Salary for ${widget.selectedMonth} is Paid',
+                      style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.bold, color: const Color(0xFF047857)),
+                    ),
+                  ],
+                ),
+              ),
+            ] else ...[
+              // 6. Payment Details Card
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppTheme.border),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      '4. PAYMENT DETAILS',
+                      style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.primary),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Payment Method', style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary)),
+                              DropdownButton<String>(
+                                value: _selectedMethod,
+                                isExpanded: true,
+                                items: ['Cash', 'UPI', 'Bank', 'Cheque'].map((m) {
+                                  return DropdownMenuItem(value: m, child: Text(m));
+                                }).toList(),
+                                onChanged: (val) => setState(() => _selectedMethod = val!),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextField(
+                            controller: _referenceController,
+                            decoration: const InputDecoration(
+                              labelText: 'Reference ID',
+                              labelStyle: TextStyle(fontSize: 11),
                             ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    GestureDetector(
+                      onTap: () async {
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: _paymentDate,
+                          firstDate: DateTime(1900),
+                          lastDate: DateTime(2100),
+                        );
+                        if (picked != null) {
+                          setState(() => _paymentDate = picked);
+                        }
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: AppTheme.border),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text('Payment Date: $formattedDate', style: GoogleFonts.inter(fontSize: 13, color: AppTheme.textPrimary)),
+                            const Icon(Icons.calendar_today_outlined, size: 16, color: AppTheme.primary),
                           ],
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: TextField(
-                          controller: _referenceController,
-                          decoration: const InputDecoration(
-                            labelText: 'Reference ID',
-                            labelStyle: TextStyle(fontSize: 11),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  GestureDetector(
-                    onTap: () async {
-                      final picked = await showDatePicker(
-                        context: context,
-                        initialDate: _paymentDate,
-                        firstDate: DateTime(1900),
-                        lastDate: DateTime(2100),
-                      );
-                      if (picked != null) {
-                        setState(() => _paymentDate = picked);
-                      }
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
-                      decoration: BoxDecoration(
-                        border: Border.all(color: AppTheme.border),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text('Payment Date: $formattedDate', style: GoogleFonts.inter(fontSize: 13, color: AppTheme.textPrimary)),
-                          const Icon(Icons.calendar_today_outlined, size: 16, color: AppTheme.primary),
-                        ],
-                      ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _notesController,
-                    decoration: const InputDecoration(labelText: 'Notes (Optional)'),
-                  ),
-                ],
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _notesController,
+                      decoration: const InputDecoration(labelText: 'Notes (Optional)'),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(height: 24),
+              const SizedBox(height: 24),
 
-            // 7. Bottom Confirmation & Pay Button
-            ElevatedButton(
-              onPressed: _isPaid ? null : _handlePaySalary,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _isPaid ? Colors.grey : AppTheme.primary,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              // 7. Bottom Confirmation & Pay Button
+              ElevatedButton(
+                onPressed: _handlePaySalary,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.send, size: 18),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Pay Salary',
+                      style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(_isPaid ? Icons.check_circle_outline : Icons.send, size: 18),
-                  const SizedBox(width: 8),
-                  Text(
-                    _isPaid ? 'Salary Already Paid' : 'Pay Salary',
-                    style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
-                ],
+              const SizedBox(height: 8),
+              Text(
+                'You are about to pay salary of ₹${NumberFormat('#,##,###').format(_totalPayable)} to ${widget.staff.name} for ${widget.selectedMonth}.',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary),
               ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'You are about to pay salary of ₹${NumberFormat('#,##,###').format(_totalPayable)} to ${widget.staff.name} for ${widget.selectedMonth}.',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary),
-            ),
+            ],
             ],
           ],
         ),

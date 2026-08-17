@@ -162,11 +162,41 @@ class StaffViewModel extends ChangeNotifier {
   }
 
   bool isSalaryPaid(String staffId, String month) {
-    return _paidStaffByMonth[month]?.contains(staffId) ?? false;
+    if (_paidStaffByMonth[month]?.contains(staffId) ?? false) return true;
+    final normalizedMonth = month.trim().toLowerCase();
+    
+    // Check repository salary drafts
+    final hasPaidDraft = _repository.salaryDrafts.any((d) {
+      final sId = d['staff_id']?.toString() ?? '';
+      final sMonth = (d['salary_month'] ?? '').toString().trim().toLowerCase();
+      final status = (d['status'] ?? '').toString().trim().toLowerCase();
+      return sId == staffId && sMonth == normalizedMonth && status == 'paid';
+    });
+    if (hasPaidDraft) return true;
+
+    // Check transactions
+    final staff = allStaff.cast<Staff?>().firstWhere((s) => s?.id == staffId, orElse: () => null);
+    final staffName = staff?.name.toLowerCase() ?? '';
+    final hasSalaryTx = _repository.getTransactions().any((tx) {
+      final cat = tx.category.toLowerCase();
+      final title = tx.title.toLowerCase();
+      final notes = tx.notes.toLowerCase();
+      final isSalaryCat = cat.contains('salary') || title.contains('salary');
+      final matchesStaff = (staffName.isNotEmpty && (title.contains(staffName) || notes.contains(staffName))) ||
+          title.contains(staffId) || notes.contains(staffId);
+      final dateStr = tx.date.toLowerCase();
+      final txDateStr = tx.transactionDate.toLowerCase();
+      final matchesMonth = dateStr.contains(normalizedMonth) || txDateStr.contains(normalizedMonth) ||
+          (dateStr.isNotEmpty && normalizedMonth.contains(dateStr.split(' ').last));
+      return isSalaryCat && matchesStaff && matchesMonth;
+    });
+
+    return hasSalaryTx;
   }
 
   void markSalaryAsPaid(String staffId, String month) {
     _paidStaffByMonth.putIfAbsent(month, () => {}).add(staffId);
+    _payableByStaff[staffId] = 0.0;
     notifyListeners();
   }
 
@@ -184,7 +214,7 @@ class StaffViewModel extends ChangeNotifier {
       final List response = await SupabaseService.client
           .from('salary_drafts')
           .select()
-          .eq('salary_month', month);
+          .ilike('salary_month', month.trim());
       
       _draftsByMonth[month] = List<Map<String, dynamic>>.from(response);
       notifyListeners();
@@ -200,11 +230,26 @@ class StaffViewModel extends ChangeNotifier {
       
       final List response = await SupabaseService.client
           .from('salary_drafts')
-          .select('staff_id')
-          .eq('salary_month', month)
-          .eq('status', 'Paid');
+          .select('staff_id, status')
+          .ilike('salary_month', month.trim());
       
-      final Set<String> paidSet = response.map((item) => item['staff_id'].toString()).toSet();
+      final Set<String> paidSet = {};
+      for (final item in response) {
+        final status = (item['status'] ?? '').toString().toLowerCase();
+        if (status == 'paid') {
+          paidSet.add(item['staff_id'].toString());
+        }
+      }
+
+      // Also include any staff marked paid locally or in local drafts
+      for (final d in _repository.salaryDrafts) {
+        final sMonth = (d['salary_month'] ?? '').toString().trim().toLowerCase();
+        final status = (d['status'] ?? '').toString().trim().toLowerCase();
+        if (sMonth == month.trim().toLowerCase() && status == 'paid') {
+          paidSet.add(d['staff_id'].toString());
+        }
+      }
+
       _paidStaffByMonth[month] = paidSet;
       notifyListeners();
     } catch (e) {
@@ -490,9 +535,64 @@ class StaffViewModel extends ChangeNotifier {
         await _repository.fetchSalaryDraftsFromSupabase(gymId);
       } catch (_) {}
     }
-    return _repository.salaryDrafts
-        .where((d) => d['staff_id'] == staffId && d['status'] == 'Paid')
-        .toList();
+
+    final List<Map<String, dynamic>> result = [];
+    final Set<String> processedMonths = {};
+
+    // 1. Load from salaryDrafts
+    for (final d in _repository.salaryDrafts) {
+      if (d['staff_id']?.toString() == staffId) {
+        final status = (d['status'] ?? '').toString().trim().toLowerCase();
+        if (status == 'paid') {
+          final month = (d['salary_month'] ?? 'N/A').toString();
+          processedMonths.add(month.trim().toLowerCase());
+          result.add(Map<String, dynamic>.from(d));
+        }
+      }
+    }
+
+    // 2. Also check if there are transactions for this staff in category 'Salary' that didn't have a draft
+    final staff = allStaff.cast<Staff?>().firstWhere((s) => s?.id == staffId, orElse: () => null);
+    final staffName = staff?.name.toLowerCase() ?? '';
+    final txs = _repository.getTransactions().where((tx) {
+      final cat = tx.category.toLowerCase();
+      final title = tx.title.toLowerCase();
+      final notes = tx.notes.toLowerCase();
+      final isSalary = cat.contains('salary') || title.contains('salary');
+      final matchesStaff = (staffName.isNotEmpty && (title.contains(staffName) || notes.contains(staffName))) ||
+          title.contains(staffId) || notes.contains(staffId);
+      return isSalary && matchesStaff;
+    }).toList();
+
+    for (final tx in txs) {
+      String mStr = tx.date;
+      try {
+        final parsed = DateTime.tryParse(tx.transactionDate) ?? DateFormat('dd MMM yyyy').parse(tx.date);
+        mStr = DateFormat('MMMM yyyy').format(parsed);
+      } catch (_) {}
+
+      if (!processedMonths.contains(mStr.trim().toLowerCase())) {
+        processedMonths.add(mStr.trim().toLowerCase());
+        result.add({
+          'id': tx.id,
+          'gym_id': gymId ?? '',
+          'staff_id': staffId,
+          'salary_month': mStr,
+          'base_salary': staff?.salary ?? tx.amount,
+          'commission_amount': 0.0,
+          'advance_deduction': 0.0,
+          'other_additions': 0.0,
+          'other_deductions': 0.0,
+          'net_salary': tx.amount,
+          'gross_salary': staff?.salary ?? tx.amount,
+          'status': 'Paid',
+          'created_at': tx.transactionDate.isNotEmpty ? tx.transactionDate : DateTime.now().toIso8601String(),
+          'payment_mode': tx.paymentMode.isNotEmpty ? tx.paymentMode : 'UPI',
+        });
+      }
+    }
+
+    return result;
   }
 
   Future<Map<String, List<Map<String, dynamic>>>> getStaffDashboardData(String staffId) async {
@@ -551,22 +651,42 @@ class StaffViewModel extends ChangeNotifier {
     final salHist = salaryHistory.map((sal) {
       final created = DateTime.tryParse(sal['created_at']?.toString() ?? '') ?? DateTime.now();
       final double netSalary = (sal['net_salary'] as num?)?.toDouble() ?? 0.0;
+      final double baseSalary = (sal['base_salary'] as num?)?.toDouble() ?? 0.0;
+      final double commissionAmount = (sal['commission_amount'] as num?)?.toDouble() ?? 0.0;
       final double advanceDeduction = (sal['advance_deduction'] as num?)?.toDouble() ?? 0.0;
-      final double grossSalary = (sal['gross_salary'] as num?)?.toDouble() ?? (netSalary + advanceDeduction);
+      final double otherAdditions = (sal['other_additions'] as num?)?.toDouble() ?? 0.0;
+      final double otherDeductions = (sal['other_deductions'] as num?)?.toDouble() ?? 0.0;
+
+      // Calculate total earnings for the month: Gross = Base + Commission + Additions - Deductions
+      final double grossSalary = (sal['gross_salary'] as num?)?.toDouble() ?? 
+          (baseSalary > 0 ? (baseSalary + commissionAmount + otherAdditions - otherDeductions) : (netSalary + advanceDeduction));
+
+      final monthStr = (sal['salary_month'] ?? 'N/A').toString();
+
+      // Find all advances related to this month to show itemized dates & amounts
+      final monthAdvances = advList.where((a) {
+        final aMonth = (a['salary_month'] ?? '').toString().trim().toLowerCase();
+        final aGiven = a['given_date'] != null ? DateTime.tryParse(a['given_date'].toString()) : null;
+        final calcMonth = aGiven != null ? DateFormat('MMMM yyyy').format(aGiven) : '';
+        return aMonth == monthStr.trim().toLowerCase() || calcMonth.toLowerCase() == monthStr.trim().toLowerCase();
+      }).toList();
 
       return {
         'id': sal['id'],
-        'month': sal['salary_month'] ?? 'N/A',
-        'salary_month': sal['salary_month'] ?? 'N/A',
+        'month': monthStr,
+        'salary_month': monthStr,
         'status': sal['status'] ?? 'Paid',
         'paidOn': DateFormat('dd MMM yyyy').format(created),
         'amount': netSalary,
+        'net_salary': netSalary,
         'gross_salary': grossSalary,
-        'base_salary': (sal['base_salary'] as num?)?.toDouble() ?? 0.0,
-        'commission_amount': (sal['commission_amount'] as num?)?.toDouble() ?? 0.0,
+        'base_salary': baseSalary,
+        'commission_amount': commissionAmount,
         'advance_deduction': advanceDeduction,
-        'other_additions': (sal['other_additions'] as num?)?.toDouble() ?? 0.0,
-        'other_deductions': (sal['other_deductions'] as num?)?.toDouble() ?? 0.0,
+        'other_additions': otherAdditions,
+        'other_deductions': otherDeductions,
+        'payment_mode': sal['payment_mode'] ?? 'UPI',
+        'advances': monthAdvances,
       };
     }).toList();
 
