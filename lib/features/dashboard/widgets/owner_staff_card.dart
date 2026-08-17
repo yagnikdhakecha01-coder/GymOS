@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import '../../../core/theme/theme.dart';
 import '../../../core/models/staff.dart';
+import '../../../core/widgets/app_cached_avatar.dart';
 
 class OwnerStaffCard extends StatelessWidget {
   final Map<String, dynamic> staffData;
@@ -108,29 +109,11 @@ class OwnerStaffCard extends StatelessWidget {
             // ── TOP SECTION: Avatar, Name/Role & Salary Pending Badge ──
             Row(
               children: [
-                // Avatar Circle
-                Container(
-                  width: 54,
-                  height: 54,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: const Color(0xFFE2E8F0),
-                    image: avatar.isNotEmpty && avatar.startsWith('http')
-                        ? DecorationImage(image: NetworkImage(avatar), fit: BoxFit.cover)
-                        : null,
-                  ),
-                  child: avatar.isEmpty || !avatar.startsWith('http')
-                      ? Center(
-                          child: Text(
-                            name.isNotEmpty ? name[0].toUpperCase() : 'S',
-                            style: GoogleFonts.inter(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              color: AppTheme.textPrimary,
-                            ),
-                          ),
-                        )
-                      : null,
+                // Avatar Circle (Instant cached render)
+                AppCachedAvatar(
+                  imageUrl: avatar,
+                  name: name,
+                  size: 54,
                 ),
                 const SizedBox(width: 14),
 

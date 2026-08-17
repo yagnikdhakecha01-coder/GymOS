@@ -11,6 +11,7 @@ import '../members/members_viewmodel.dart';
 import 'pay_salary_screen.dart';
 import '../authentication/auth_viewmodel.dart';
 import '../../core/widgets/success_dialog.dart';
+import '../../core/widgets/app_cached_avatar.dart';
 import '../../core/services/supabase_service.dart';
 
 class StaffProfileScreen extends StatefulWidget {
@@ -643,19 +644,12 @@ Thank you.''';
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Profile Photo
-                Container(
-                  width: 80,
-                  height: 80,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: const Color(0xFF1F2937), width: 2),
-                  ),
-                  child: ClipOval(
-                    child: staff.avatar.startsWith('http')
-                        ? Image.network(staff.avatar, fit: BoxFit.cover, errorBuilder: (_, __, ___) => _defaultAvatar(staff))
-                        : _defaultAvatar(staff),
-                  ),
+                // Profile Photo (Instant cached render)
+                AppCachedAvatar(
+                  imageUrl: staff.avatar,
+                  name: staff.name,
+                  size: 80,
+                  border: Border.all(color: const Color(0xFF1F2937), width: 2),
                 ),
                 const SizedBox(width: 16),
                 Expanded(

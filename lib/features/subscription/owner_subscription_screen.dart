@@ -5,6 +5,7 @@ import 'package:razorpay_flutter/razorpay_flutter.dart';
 import '../../core/theme/theme.dart';
 import '../../core/config/app_config.dart';
 import '../../core/services/supabase_service.dart';
+import '../../core/services/subscription_plans_service.dart';
 import '../authentication/auth_viewmodel.dart';
 
 class OwnerSubscriptionScreen extends StatefulWidget {
@@ -25,6 +26,7 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
   int _trialDuration = 30;
   String _trialUnit = 'days';
   bool _isLoadingSettings = true;
+  List<SubscriptionPlanModel> _plans = [];
 
   @override
   void initState() {
@@ -33,6 +35,15 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
     _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _handlePaymentSuccess);
     _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handlePaymentError);
     _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWallet);
+
+    final authVm = Provider.of<AuthViewModel>(context, listen: false);
+    _plans = SubscriptionPlansService.getPlans(authVm.storage);
+    SubscriptionPlansService.fetchAndCachePlans(authVm.storage).then((updated) {
+      if (mounted && updated.isNotEmpty) {
+        setState(() => _plans = updated);
+      }
+    });
+
     _loadTrialSettings();
   }
 
@@ -745,57 +756,29 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
             ),
             const SizedBox(height: 24),
 
-            // Starter Plan Card
-            _buildPlanCard(
-              planId: 'starter',
-              title: 'Starter',
-              price: '₹699',
-              badge: 'Popular',
-              badgeColor: const Color(0xFFDCFCE7),
-              badgeTextColor: const Color(0xFF15803D),
-              features: [
-                'Up to 50 Members',
-                'Basic Reports',
-                'Support (Email)',
-                '1 Staff Account',
-              ],
-            ),
-            const SizedBox(height: 20),
-
-            // Pro Plan Card
-            _buildPlanCard(
-              planId: 'pro',
-              title: 'Pro',
-              price: '₹999',
-              badge: 'Best Value',
-              badgeColor: const Color(0xFFF5F3FF),
-              badgeTextColor: const Color(0xFF6C4EFF),
-              isRecommended: true,
-              features: [
-                'Up to 200 Members',
-                'Advanced Reports',
-                'Priority Support',
-                '5 Staff Accounts',
-                'Custom Branding',
-              ],
-            ),
-            const SizedBox(height: 20),
-
-            // Business Plan Card
-            _buildPlanCard(
-              planId: 'business',
-              title: 'Business',
-              price: '₹1999',
-              features: [
-                'Unlimited Members',
-                'Advanced Reports',
-                'Priority Support',
-                'Unlimited Staff',
-                'Custom Branding',
-                'API Access',
-              ],
-            ),
-            const SizedBox(height: 32),
+            // Dynamic Plan Cards (Instantly loaded from local cache + Supabase sync)
+            ..._plans.map((plan) {
+              Color badgeColor = const Color(0xFFDCFCE7);
+              Color badgeTextColor = const Color(0xFF15803D);
+              if (plan.id == 'pro' || plan.badge == 'Best Value') {
+                badgeColor = const Color(0xFFF5F3FF);
+                badgeTextColor = const Color(0xFF6C4EFF);
+              }
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 20),
+                child: _buildPlanCard(
+                  planId: plan.id,
+                  title: plan.name,
+                  price: plan.priceFormatted,
+                  badge: plan.badge,
+                  badgeColor: badgeColor,
+                  badgeTextColor: badgeTextColor,
+                  isRecommended: plan.isRecommended,
+                  features: plan.features,
+                ),
+              );
+            }),
+            const SizedBox(height: 12),
 
             // Footer info
             Container(

@@ -6,6 +6,7 @@ import 'package:razorpay_flutter/razorpay_flutter.dart';
 import '../theme/theme.dart';
 import '../services/supabase_service.dart';
 import '../services/gym_logo_cache_service.dart';
+import '../services/subscription_plans_service.dart';
 import '../../features/authentication/auth_viewmodel.dart';
 import '../../features/authentication/role_selection_screen.dart';
 import '../config/app_config.dart';
@@ -264,12 +265,21 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
                 style: GoogleFonts.inter(fontSize: 13, color: AppTheme.textSecondary),
               ),
               const SizedBox(height: 24),
-              _planOptionCard(sheetCtx, 'starter', 'Starter Plan', '₹699/month', 'Up to 50 Members  •  1 Staff  •  Basic Reports', gymId),
+              ...SubscriptionPlansService.getPlans(authVm.storage).map((plan) {
+                final desc = plan.features.take(3).join('  •  ');
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: _planOptionCard(
+                    sheetCtx, 
+                    plan.id, 
+                    '${plan.name} Plan', 
+                    '${plan.priceFormatted}/month', 
+                    desc, 
+                    gymId,
+                  ),
+                );
+              }),
               const SizedBox(height: 12),
-              _planOptionCard(sheetCtx, 'pro', 'Pro Plan', '₹999/month', 'Up to 200 Members  •  5 Staff  •  Priority Support', gymId),
-              const SizedBox(height: 12),
-              _planOptionCard(sheetCtx, 'business', 'Business Plan', '₹1,999/month', 'Unlimited Members  •  Unlimited Staff  •  Custom Branding', gymId),
-              const SizedBox(height: 24),
             ],
           ),
         );
