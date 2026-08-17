@@ -185,7 +185,28 @@ class GymRepository extends ChangeNotifier {
   Map<String, dynamic> _reportsAnalytics = {};
 
   Map<String, dynamic> get reportsAnalytics => _reportsAnalytics;
-  String get _reportsAnalyticsKey => 'gymos_reports_analytics_${_storage.getGymInfo()?['id'] ?? 'default'}';
+  String get _currentGymId => _storage.getGymInfo()?['id'] ?? 'default';
+  String get _reportsAnalyticsKey => 'gymos_reports_analytics_$_currentGymId';
+  String get _membersKey => 'gymos_members_$_currentGymId';
+  String get _trialMembersKey => 'gymos_trial_members_$_currentGymId';
+  String get _staffKey => 'gymos_staff_$_currentGymId';
+  String get _transactionsKey => 'gymos_transactions_$_currentGymId';
+  String get _workoutsKey => 'gymos_workouts_$_currentGymId';
+  String get _dietsKey => 'gymos_diets_$_currentGymId';
+  String get _membershipsKey => 'gymos_memberships_$_currentGymId';
+  String get _attendanceKey => 'gymos_attendance_$_currentGymId';
+  String get _goalsKey => 'gymos_fitness_goals_$_currentGymId';
+  String get _customFieldsKey => 'gymos_custom_fields_$_currentGymId';
+  String get _dashboardStatsKey => 'gymos_dashboard_stats_$_currentGymId';
+  String get _salaryAdvancesKey => 'gymos_salary_advances_$_currentGymId';
+  String get _salaryDraftsKey => 'gymos_salary_drafts_$_currentGymId';
+  String get _leaveRequestsKey => 'gymos_leave_requests_$_currentGymId';
+  String get _gymShiftSettingsKey => 'gymos_gym_shift_settings_$_currentGymId';
+  String get _gymShiftsListKey => 'gymos_gym_shifts_list_$_currentGymId';
+  String get _attendanceSettingsKey => 'gymos_attendance_settings_$_currentGymId';
+  String get _recentActivitiesKey => 'gymos_recent_activities_$_currentGymId';
+  String get _alertsKey => 'gymos_attendance_alerts_$_currentGymId';
+  String get _correctionsKey => 'gymos_attendance_corrections_$_currentGymId';
 
   List<Map<String, dynamic>> _salaryAdvances = [];
   List<Map<String, dynamic>> _salaryDrafts = [];
@@ -208,14 +229,6 @@ class GymRepository extends ChangeNotifier {
     _dashboardAlertsData = data;
     notifyListeners();
   }
-
-  String get _workoutsKey => 'gymos_workouts_${_storage.getGymInfo()?['id'] ?? 'default'}';
-  String get _dietsKey => 'gymos_diets_${_storage.getGymInfo()?['id'] ?? 'default'}';
-  String get _membershipsKey => 'gymos_memberships_${_storage.getGymInfo()?['id'] ?? 'default'}';
-  String get _attendanceKey => 'gymos_attendance_${_storage.getGymInfo()?['id'] ?? 'default'}';
-  String get _goalsKey => 'gymos_fitness_goals_${_storage.getGymInfo()?['id'] ?? 'default'}';
-  String get _customFieldsKey => 'gymos_custom_fields_${_storage.getGymInfo()?['id'] ?? 'default'}';
-  String get _dashboardStatsKey => 'gymos_dashboard_stats_${_storage.getGymInfo()?['id'] ?? 'default'}';
 
   GymRepository(this._storage) {
     _loadAllFromStorage();
@@ -1830,9 +1843,9 @@ class GymRepository extends ChangeNotifier {
     _loadDashboardStats();
     _loadReportsAnalytics();
     _loadRecentActivities();
+    _loadAlerts();
+    _loadCorrections();
   }
-
-  String get _recentActivitiesKey => 'gymos_recent_activities_${_storage.getGymInfo()?['id'] ?? 'default'}';
 
   void _loadRecentActivities() {
     final raw = _storage.getString(_recentActivitiesKey);
@@ -1841,6 +1854,36 @@ class GymRepository extends ChangeNotifier {
         final List decoded = jsonDecode(raw);
         _recentActivities = decoded.map((e) => RecentActivity.fromJson(e)).toList();
       } catch (_) {}
+    } else {
+      _recentActivities = [];
+    }
+  }
+
+  void _loadAlerts() {
+    final raw = _storage.getString(_alertsKey);
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        final List decoded = jsonDecode(raw);
+        _alerts = decoded.map((e) => AttendanceAlert.fromJson(e)).toList();
+      } catch (_) {
+        _alerts = [];
+      }
+    } else {
+      _alerts = [];
+    }
+  }
+
+  void _loadCorrections() {
+    final raw = _storage.getString(_correctionsKey);
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        final List decoded = jsonDecode(raw);
+        _corrections = decoded.map((e) => AttendanceCorrectionRequest.fromJson(e)).toList();
+      } catch (_) {
+        _corrections = [];
+      }
+    } else {
+      _corrections = [];
     }
   }
 
@@ -1864,7 +1907,7 @@ class GymRepository extends ChangeNotifier {
   }
 
   void _loadAttendanceSettings() {
-    final raw = _storage.getString(LocalStorageService.keyAttendanceSettings);
+    final raw = _storage.getString(_attendanceSettingsKey);
     if (raw != null && raw.isNotEmpty) {
       try {
         _attendanceSettings = GymAttendanceSettings.fromJson(jsonDecode(raw));
@@ -1886,8 +1929,8 @@ class GymRepository extends ChangeNotifier {
   }
 
   void _loadShiftSettings() {
-    _shiftMode = _storage.getString(LocalStorageService.keyGymShiftSettings) ?? 'Single Shift';
-    final rawShifts = _storage.getString(LocalStorageService.keyGymShiftsList);
+    _shiftMode = _storage.getString(_gymShiftSettingsKey) ?? 'Single Shift';
+    final rawShifts = _storage.getString(_gymShiftsListKey);
     if (rawShifts != null && rawShifts.isNotEmpty) {
       try {
         _shiftsList = List<Map<String, dynamic>>.from(jsonDecode(rawShifts));
@@ -1900,7 +1943,7 @@ class GymRepository extends ChangeNotifier {
   }
 
   void _loadSalaryAdvances() {
-    final raw = _storage.getString(LocalStorageService.keySalaryAdvances);
+    final raw = _storage.getString(_salaryAdvancesKey);
     if (raw != null && raw.isNotEmpty) {
       try {
         _salaryAdvances = List<Map<String, dynamic>>.from(jsonDecode(raw));
@@ -1913,7 +1956,7 @@ class GymRepository extends ChangeNotifier {
   }
 
   void _loadSalaryDrafts() {
-    final raw = _storage.getString(LocalStorageService.keySalaryDrafts);
+    final raw = _storage.getString(_salaryDraftsKey);
     if (raw != null && raw.isNotEmpty) {
       try {
         _salaryDrafts = List<Map<String, dynamic>>.from(jsonDecode(raw));
@@ -1926,7 +1969,7 @@ class GymRepository extends ChangeNotifier {
   }
 
   void _loadLeaveRequests() {
-    final raw = _storage.getString(LocalStorageService.keyLeaveRequests);
+    final raw = _storage.getString(_leaveRequestsKey);
     if (raw != null && raw.isNotEmpty) {
       try {
         _leaveRequests = List<Map<String, dynamic>>.from(jsonDecode(raw));
@@ -1943,7 +1986,7 @@ class GymRepository extends ChangeNotifier {
   List<TrialMember> getTrialMembers() => List.unmodifiable(_trialMembers);
 
   void _loadMembers() {
-    final raw = _storage.getString(LocalStorageService.keyMembers);
+    final raw = _storage.getString(_membersKey);
     if (raw != null && raw.isNotEmpty) {
       try {
         final List decoded = jsonDecode(raw);
@@ -1956,7 +1999,7 @@ class GymRepository extends ChangeNotifier {
       _members = [];
     }
 
-    final rawTrial = _storage.getString(LocalStorageService.keyTrialMembers);
+    final rawTrial = _storage.getString(_trialMembersKey);
     if (rawTrial != null && rawTrial.isNotEmpty) {
       try {
         final List decoded = jsonDecode(rawTrial);
@@ -2039,7 +2082,7 @@ class GymRepository extends ChangeNotifier {
     } else {
       _members.insert(0, member);
     }
-    await _storage.setString(LocalStorageService.keyMembers, jsonEncode(_members.map((e) => e.toJson()).toList()));
+    await _storage.setString(_membersKey, jsonEncode(_members.map((e) => e.toJson()).toList()));
     notifyListeners();
 
     // 2. Queue Member save payload for sync
@@ -2123,7 +2166,7 @@ class GymRepository extends ChangeNotifier {
         ptTrainer: ptTrainerId,
       );
       _members[memberIndex] = updatedMember;
-      await _storage.setString(LocalStorageService.keyMembers, jsonEncode(_members.map((e) => e.toJson()).toList()));
+      await _storage.setString(_membersKey, jsonEncode(_members.map((e) => e.toJson()).toList()));
       notifyListeners();
     }
 
@@ -2239,7 +2282,7 @@ class GymRepository extends ChangeNotifier {
           if (responseStr != _lastTrialMembersRaw) {
             _lastTrialMembersRaw = responseStr;
             _trialMembers = response.map((e) => TrialMember.fromJson(e)).toList();
-            await _storage.setString(LocalStorageService.keyTrialMembers, responseStr);
+            await _storage.setString(_trialMembersKey, responseStr);
             notifyListeners();
           }
         } catch (e) {
@@ -2279,7 +2322,7 @@ class GymRepository extends ChangeNotifier {
   Future<void> deleteMember(String id) async {
     if (_isValidUUID(id)) {
       _members.removeWhere((m) => m.id == id);
-      await _storage.setString(LocalStorageService.keyMembers, jsonEncode(_members.map((e) => e.toJson()).toList()));
+      await _storage.setString(_membersKey, jsonEncode(_members.map((e) => e.toJson()).toList()));
       notifyListeners();
 
       _crudQueue.add({
@@ -2300,7 +2343,7 @@ class GymRepository extends ChangeNotifier {
   List<Staff> getStaff() => List.unmodifiable(_staff);
 
   void _loadStaff() {
-    final raw = _storage.getString(LocalStorageService.keyStaff);
+    final raw = _storage.getString(_staffKey);
     if (raw != null && raw.isNotEmpty) {
       try {
         final List decoded = jsonDecode(raw);
@@ -2334,7 +2377,7 @@ class GymRepository extends ChangeNotifier {
     } else {
       _staff.insert(0, staff);
     }
-    await _storage.setString(LocalStorageService.keyStaff, jsonEncode(_staff.map((e) => e.toJson()).toList()));
+    await _storage.setString(_staffKey, jsonEncode(_staff.map((e) => e.toJson()).toList()));
     notifyListeners();
 
     // 2. Queue Staff save payload for sync
@@ -2427,7 +2470,7 @@ class GymRepository extends ChangeNotifier {
   Future<void> deleteStaff(String id) async {
     if (_isValidUUID(id)) {
       _staff.removeWhere((s) => s.id == id);
-      await _storage.setString(LocalStorageService.keyStaff, jsonEncode(_staff.map((e) => e.toJson()).toList()));
+      await _storage.setString(_staffKey, jsonEncode(_staff.map((e) => e.toJson()).toList()));
       notifyListeners();
 
       _crudQueue.add({
@@ -2655,7 +2698,7 @@ class GymRepository extends ChangeNotifier {
   List<FinanceTransaction> getTransactions() => List.unmodifiable(_transactions);
 
   void _loadTransactions() {
-    final raw = _storage.getString(LocalStorageService.keyTransactions);
+    final raw = _storage.getString(_transactionsKey);
     if (raw != null && raw.isNotEmpty) {
       try {
         final List decoded = jsonDecode(raw);
@@ -2689,7 +2732,7 @@ class GymRepository extends ChangeNotifier {
     } else {
       _transactions.insert(0, updatedTx);
     }
-    await _storage.setString(LocalStorageService.keyTransactions, jsonEncode(_transactions.map((e) => e.toJson()).toList()));
+    await _storage.setString(_transactionsKey, jsonEncode(_transactions.map((e) => e.toJson()).toList()));
     notifyListeners();
 
     // 2. Perform SINGLE database upsert with explicit ID & sanitized category
@@ -2799,7 +2842,7 @@ class GymRepository extends ChangeNotifier {
   Future<void> deleteTransaction(String id) async {
     if (_isValidUUID(id)) {
       _transactions.removeWhere((t) => t.id == id);
-      await _storage.setString(LocalStorageService.keyTransactions, jsonEncode(_transactions.map((e) => e.toJson()).toList()));
+      await _storage.setString(_transactionsKey, jsonEncode(_transactions.map((e) => e.toJson()).toList()));
       notifyListeners();
 
       _crudQueue.add({
@@ -3446,7 +3489,7 @@ class GymRepository extends ChangeNotifier {
             _lastMembersRaw = responseStr;
             final serverList = response.map((e) => Member.fromJson(e)).toList();
             _members = _mergeMembersList(serverList);
-            await _storage.setString(LocalStorageService.keyMembers, jsonEncode(_members.map((e) => e.toJson()).toList()));
+            await _storage.setString(_membersKey, jsonEncode(_members.map((e) => e.toJson()).toList()));
             notifyListeners();
           }
         } catch (e) {
@@ -3493,7 +3536,7 @@ class GymRepository extends ChangeNotifier {
           if (responseStr != _lastStaffRaw) {
             _lastStaffRaw = responseStr;
             _staff = _mergeStaffList(loadedStaff);
-            await _storage.setString(LocalStorageService.keyStaff, jsonEncode(_staff.map((e) => e.toJson()).toList()));
+            await _storage.setString(_staffKey, jsonEncode(_staff.map((e) => e.toJson()).toList()));
             notifyListeners();
           }
         } catch (e) {
@@ -3519,7 +3562,7 @@ class GymRepository extends ChangeNotifier {
             _lastTransactionsRaw = responseStr;
             final serverList = response.map((e) => FinanceTransaction.fromJson(e)).toList();
             _transactions = _mergeTransactionsList(serverList);
-            await _storage.setString(LocalStorageService.keyTransactions, jsonEncode(_transactions.map((e) => e.toJson()).toList()));
+            await _storage.setString(_transactionsKey, jsonEncode(_transactions.map((e) => e.toJson()).toList()));
             notifyListeners();
           }
         } catch (e) {
@@ -3624,7 +3667,7 @@ class GymRepository extends ChangeNotifier {
         final remoteIds = remoteList.map((e) => e['id']?.toString()).toSet();
         final localOnly = _salaryAdvances.where((l) => l['gym_id'] == gymId && !remoteIds.contains(l['id']?.toString())).toList();
         _salaryAdvances = [...localOnly, ...remoteList];
-        await _storage.setString(LocalStorageService.keySalaryAdvances, jsonEncode(_salaryAdvances));
+        await _storage.setString(_salaryAdvancesKey, jsonEncode(_salaryAdvances));
         notifyListeners();
       } catch (e) {
         print('fetchGymSalaryAdvancesFromSupabase error: $e');
@@ -3658,7 +3701,7 @@ class GymRepository extends ChangeNotifier {
     };
 
     _salaryAdvances.insert(0, item);
-    await _storage.setString(LocalStorageService.keySalaryAdvances, jsonEncode(_salaryAdvances));
+    await _storage.setString(_salaryAdvancesKey, jsonEncode(_salaryAdvances));
     notifyListeners();
 
     _crudQueue.add({
@@ -3684,7 +3727,7 @@ class GymRepository extends ChangeNotifier {
       final updatedDraft = Map<String, dynamic>.from(_salaryDrafts[index]);
       updatedDraft['status'] = 'Paid';
       _salaryDrafts[index] = updatedDraft;
-      await _storage.setString(LocalStorageService.keySalaryDrafts, jsonEncode(_salaryDrafts));
+      await _storage.setString(_salaryDraftsKey, jsonEncode(_salaryDrafts));
       notifyListeners();
     }
 
@@ -3731,7 +3774,7 @@ class GymRepository extends ChangeNotifier {
     };
 
     _leaveRequests.insert(0, item);
-    await _storage.setString(LocalStorageService.keyLeaveRequests, jsonEncode(_leaveRequests));
+    await _storage.setString(_leaveRequestsKey, jsonEncode(_leaveRequests));
     notifyListeners();
 
     _crudQueue.add({
@@ -3758,7 +3801,7 @@ class GymRepository extends ChangeNotifier {
       updated['status'] = status;
       _leaveRequests[index] = updated;
       gymId = updated['gym_id'];
-      await _storage.setString(LocalStorageService.keyLeaveRequests, jsonEncode(_leaveRequests));
+      await _storage.setString(_leaveRequestsKey, jsonEncode(_leaveRequests));
       
       // Update local dashboard alerts count
       if (_dashboardAlertsData['staff_leave_requests'] != null) {
@@ -3813,7 +3856,7 @@ class GymRepository extends ChangeNotifier {
       updated['status'] = status;
       _salaryAdvances[index] = updated;
       gymId = updated['gym_id'];
-      await _storage.setString(LocalStorageService.keySalaryAdvances, jsonEncode(_salaryAdvances));
+      await _storage.setString(_salaryAdvancesKey, jsonEncode(_salaryAdvances));
       
       // Update local dashboard alerts count
       if (_dashboardAlertsData['staff_advance_requests'] != null) {
@@ -3868,7 +3911,7 @@ class GymRepository extends ChangeNotifier {
 
         if (settingsRes != null) {
           _shiftMode = settingsRes['mode'] ?? 'Single Shift';
-          await _storage.setString(LocalStorageService.keyGymShiftSettings, _shiftMode);
+          await _storage.setString(_gymShiftSettingsKey, _shiftMode);
         }
 
         final shiftsRes = await SupabaseService.client
@@ -3877,7 +3920,7 @@ class GymRepository extends ChangeNotifier {
             .eq('gym_id', gymId);
 
         _shiftsList = List<Map<String, dynamic>>.from(shiftsRes);
-        await _storage.setString(LocalStorageService.keyGymShiftsList, jsonEncode(_shiftsList));
+        await _storage.setString(_gymShiftsListKey, jsonEncode(_shiftsList));
         notifyListeners();
       } catch (e) {
         print('fetchGymShiftSettingsFromSupabase error: $e');
@@ -3888,8 +3931,8 @@ class GymRepository extends ChangeNotifier {
   Future<bool> saveOperatingHoursOffline(String gymId, String mode, List<Map<String, dynamic>> shiftsList) async {
     _shiftMode = mode;
     _shiftsList = shiftsList;
-    await _storage.setString(LocalStorageService.keyGymShiftSettings, mode);
-    await _storage.setString(LocalStorageService.keyGymShiftsList, jsonEncode(shiftsList));
+    await _storage.setString(_gymShiftSettingsKey, mode);
+    await _storage.setString(_gymShiftsListKey, jsonEncode(shiftsList));
     notifyListeners();
 
     _crudQueue.add({
@@ -4010,7 +4053,7 @@ class GymRepository extends ChangeNotifier {
               .maybeSingle();
           if (response != null) {
             _attendanceSettings = GymAttendanceSettings.fromJson(response);
-            await _storage.setString(LocalStorageService.keyAttendanceSettings, jsonEncode(response));
+            await _storage.setString(_attendanceSettingsKey, jsonEncode(response));
             notifyListeners();
           }
         } catch (e) {
@@ -4323,6 +4366,7 @@ class GymRepository extends ChangeNotifier {
             .eq('gym_id', gymId)
             .order('created_at', ascending: false);
         _alerts = response.map((e) => AttendanceAlert.fromJson(e)).toList();
+        await _storage.setString(_alertsKey, jsonEncode(response));
         notifyListeners();
       } catch (e) {
         _handleNetworkError('fetchAttendanceAlerts', e);
@@ -4339,6 +4383,7 @@ class GymRepository extends ChangeNotifier {
             .eq('gym_id', gymId)
             .order('created_at', ascending: false);
         _corrections = response.map((e) => AttendanceCorrectionRequest.fromJson(e)).toList();
+        await _storage.setString(_correctionsKey, jsonEncode(response));
         notifyListeners();
       } catch (e) {
         _handleNetworkError('fetchAttendanceCorrections', e);
