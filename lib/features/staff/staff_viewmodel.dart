@@ -541,7 +541,7 @@ class StaffViewModel extends ChangeNotifier {
     final Set<String> processedMonths = {};
 
     final staff = allStaff.cast<Staff?>().firstWhere((s) => s?.id == staffId, orElse: () => null);
-    final commissions = await fetchStaffCommissions(staffId);
+    final commissions = await fetchStaffCommissions(staffId, pendingOnly: false);
 
     // 1. Load from salaryDrafts
     for (final d in _repository.salaryDrafts) {
@@ -720,11 +720,9 @@ class StaffViewModel extends ChangeNotifier {
       // Total Gross Compensation: Base + Commission + Additions = Gross Earnings
       final double calculatedGross = baseSalary + effectiveCommission + otherAdditions - otherDeductions;
       final double grossFromDraft = (sal['gross_salary'] as num?)?.toDouble() ?? 0.0;
-      final double grossSalary = grossFromDraft > 0
-          ? grossFromDraft
-          : (calculatedGross >= (netSalary + effectiveAdvanceDeduction) ? calculatedGross : (netSalary + effectiveAdvanceDeduction));
-
-      final double finalGross = grossSalary > 0 ? grossSalary : (netSalary + effectiveAdvanceDeduction);
+      final double finalGross = calculatedGross > 0
+          ? (grossFromDraft > calculatedGross ? grossFromDraft : calculatedGross)
+          : (grossFromDraft > 0 ? grossFromDraft : (netSalary + effectiveAdvanceDeduction));
 
       return {
         'id': sal['id'],
