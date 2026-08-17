@@ -597,13 +597,6 @@ class StaffViewModel extends ChangeNotifier {
       final double otherAdditions = (sal['other_additions'] as num?)?.toDouble() ?? 0.0;
       final double otherDeductions = (sal['other_deductions'] as num?)?.toDouble() ?? 0.0;
 
-      // Calculate total earnings for the month: Gross = Base + Commission + Additions - Deductions
-      final double calculatedGross = (baseSalary > 0 ? (baseSalary + commissionAmount + otherAdditions - otherDeductions) : 0.0);
-      final double grossFromDraft = (sal['gross_salary'] as num?)?.toDouble() ?? 0.0;
-      final double grossSalary = grossFromDraft > 0
-          ? grossFromDraft
-          : (calculatedGross >= (netSalary + advanceDeduction) ? calculatedGross : (netSalary + advanceDeduction));
-
       final monthStr = (sal['salary_month'] ?? 'N/A').toString();
 
       // Find all advances related to this month to show itemized dates & amounts
@@ -614,6 +607,28 @@ class StaffViewModel extends ChangeNotifier {
         return aMonth == monthStr.trim().toLowerCase() || calcMonth.toLowerCase() == monthStr.trim().toLowerCase();
       }).toList();
 
+      final totalMonthAdvances = monthAdvances.fold<double>(
+        0.0, 
+        (sum, a) => sum + ((a['recovered_amount'] ?? a['advance_amount'] ?? a['amount'] as num?)?.toDouble() ?? 0.0),
+      );
+
+      final double effectiveAdvanceDeduction = advanceDeduction > 0 ? advanceDeduction : totalMonthAdvances;
+
+      // Effective Commission calculation
+      double effectiveCommission = commissionAmount;
+      if (effectiveCommission == 0 && netSalary > (baseSalary - effectiveAdvanceDeduction)) {
+        effectiveCommission = netSalary + effectiveAdvanceDeduction - baseSalary - otherAdditions + otherDeductions;
+      }
+
+      // Total Gross Compensation: Base + Commission + Additions = Gross Earnings
+      final double calculatedGross = baseSalary + effectiveCommission + otherAdditions - otherDeductions;
+      final double grossFromDraft = (sal['gross_salary'] as num?)?.toDouble() ?? 0.0;
+      final double grossSalary = grossFromDraft > 0
+          ? grossFromDraft
+          : (calculatedGross >= (netSalary + effectiveAdvanceDeduction) ? calculatedGross : (netSalary + effectiveAdvanceDeduction));
+
+      final double finalGross = grossSalary > 0 ? grossSalary : (netSalary + effectiveAdvanceDeduction);
+
       return {
         'id': sal['id'],
         'month': monthStr,
@@ -622,10 +637,10 @@ class StaffViewModel extends ChangeNotifier {
         'paidOn': DateFormat('dd MMM yyyy').format(created),
         'amount': netSalary,
         'net_salary': netSalary,
-        'gross_salary': grossSalary > 0 ? grossSalary : (netSalary + advanceDeduction),
+        'gross_salary': finalGross,
         'base_salary': baseSalary,
-        'commission_amount': commissionAmount,
-        'advance_deduction': advanceDeduction,
+        'commission_amount': effectiveCommission,
+        'advance_deduction': effectiveAdvanceDeduction,
         'other_additions': otherAdditions,
         'other_deductions': otherDeductions,
         'payment_mode': sal['payment_mode'] ?? 'UPI',

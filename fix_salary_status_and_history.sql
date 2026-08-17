@@ -68,9 +68,23 @@ BEGIN
     ),
     paid_drafts AS (
         SELECT 
-            sd.staff_id AS s_id,
+            s.id AS s_id,
             TRUE AS is_paid,
-            COALESCE(NULLIF(sd.net_salary, 0), NULLIF(sd.base_salary, 0), s.salary, 0.0) AS amount
+            -- Calculate Total Compensation (Gross Earnings: Base + Commission + Additions)
+            GREATEST(
+                COALESCE(sd.gross_salary, 0.0),
+                COALESCE(sd.base_salary, s.salary, 0.0) + COALESCE(
+                    NULLIF(sd.commission_amount, 0),
+                    (SELECT COALESCE(SUM(cl.amount), 0.0) FROM public.commission_ledger cl WHERE cl.salary_payment_id = sd.id OR (cl.staff_id = s.id AND cl.salary_month = v_month_str AND cl.status = 'Paid')),
+                    0.0
+                ) + COALESCE(sd.other_additions, 0.0) - COALESCE(sd.other_deductions, 0.0),
+                COALESCE(sd.net_salary, 0.0) + COALESCE(
+                    NULLIF(sd.advance_deduction, 0),
+                    (SELECT COALESCE(SUM(sa.recovered_amount), 0.0) FROM public.salary_advance_ledger sa WHERE sa.salary_payment_id = sd.id OR (sa.staff_id = s.id AND sa.salary_month = v_month_str AND sa.status = 'Recovered')),
+                    0.0
+                ),
+                COALESCE(sd.net_salary, s.salary, 0.0)
+            ) AS amount
         FROM public.salary_drafts sd
         JOIN public.staff s ON s.id = sd.staff_id
         WHERE sd.gym_id = p_gym_id
@@ -253,6 +267,9 @@ DECLARE
     v_adjustments JSONB := '[]'::JSONB;
     v_tx RECORD;
     v_real_uuid UUID;
+    v_comm_sum NUMERIC := 0.0;
+    v_adv_sum NUMERIC := 0.0;
+    v_gross NUMERIC := 0.0;
 BEGIN
     -- Safely attempt UUID casting
     BEGIN
@@ -262,7 +279,7 @@ BEGIN
     END;
 
     IF v_real_uuid IS NOT NULL THEN
-        SELECT id, gym_id, staff_id, salary_month, base_salary, commission_amount, advance_deduction, other_additions, other_deductions, net_salary, status, created_at, paid_transaction_id
+        SELECT id, gym_id, staff_id, salary_month, base_salary, commission_amount, advance_deduction, other_additions, other_deductions, net_salary, gross_salary, status, created_at, paid_transaction_id
         INTO v_draft
         FROM public.salary_drafts
         WHERE id = v_real_uuid;
@@ -280,17 +297,19 @@ BEGIN
         SELECT payment_mode, date INTO v_tx FROM public.transactions WHERE id = v_draft.paid_transaction_id;
     END IF;
 
-    -- 2. Fetch commissions linked to this salary payment
+    -- 2. Fetch commissions linked to this salary payment or staff month
     SELECT COALESCE(jsonb_agg(jsonb_build_object(
         'created_at', to_char(created_at AT TIME ZONE 'Asia/Kolkata', 'dd MMM yyyy'),
         'payment_id', payment_id,
         'payment_received', payment_received,
         'commission_rate', commission_rate,
         'amount', amount
-    ) ORDER BY created_at ASC), '[]'::JSONB)
-    INTO v_commissions
+    ) ORDER BY created_at ASC), '[]'::JSONB),
+    COALESCE(SUM(amount), 0.0)
+    INTO v_commissions, v_comm_sum
     FROM public.commission_ledger
-    WHERE salary_payment_id = v_draft.id;
+    WHERE salary_payment_id = v_draft.id
+       OR (staff_id = v_draft.staff_id AND trim(lower(salary_month)) = trim(lower(v_draft.salary_month)) AND status = 'Paid');
 
     -- 3. Fetch advances recovered in this salary payment or linked to this staff's month
     SELECT COALESCE(jsonb_agg(jsonb_build_object(
@@ -300,8 +319,9 @@ BEGIN
         'recovered_amount', recovered_amount,
         'remaining_amount', remaining_amount,
         'status', status
-    ) ORDER BY given_date ASC), '[]'::JSONB)
-    INTO v_advances
+    ) ORDER BY given_date ASC), '[]'::JSONB),
+    COALESCE(SUM(recovered_amount), 0.0)
+    INTO v_advances, v_adv_sum
     FROM public.salary_advance_ledger
     WHERE salary_payment_id = v_draft.id
        OR (
@@ -323,6 +343,13 @@ BEGIN
     FROM public.salary_adjustments
     WHERE salary_draft_id = v_draft.id;
 
+    -- Compute final gross: Base + Commission + Additions - Deductions
+    v_gross := GREATEST(
+        COALESCE(v_draft.gross_salary, 0.0),
+        COALESCE(v_draft.base_salary, 0.0) + GREATEST(COALESCE(v_draft.commission_amount, 0.0), v_comm_sum) + COALESCE(v_draft.other_additions, 0.0) - COALESCE(v_draft.other_deductions, 0.0),
+        COALESCE(v_draft.net_salary, 0.0) + GREATEST(COALESCE(v_draft.advance_deduction, 0.0), v_adv_sum)
+    );
+
     RETURN jsonb_build_object(
         'success', TRUE,
         'draft_id', v_draft.id,
@@ -330,12 +357,12 @@ BEGIN
         'staff_id', v_draft.staff_id,
         'salary_month', v_draft.salary_month,
         'base_salary', v_draft.base_salary,
-        'commission_amount', v_draft.commission_amount,
-        'advance_deduction', v_draft.advance_deduction,
+        'commission_amount', GREATEST(COALESCE(v_draft.commission_amount, 0.0), v_comm_sum),
+        'advance_deduction', GREATEST(COALESCE(v_draft.advance_deduction, 0.0), v_adv_sum),
         'other_additions', v_draft.other_additions,
         'other_deductions', v_draft.other_deductions,
         'net_salary', v_draft.net_salary,
-        'gross_salary', COALESCE(v_draft.base_salary, 0.0) + COALESCE(v_draft.commission_amount, 0.0) + COALESCE(v_draft.other_additions, 0.0) - COALESCE(v_draft.other_deductions, 0.0),
+        'gross_salary', v_gross,
         'paid_on', to_char(v_draft.created_at AT TIME ZONE 'Asia/Kolkata', 'dd MMM yyyy'),
         'payment_mode', COALESCE(v_tx.payment_mode::TEXT, 'UPI'),
         'commissions', v_commissions,

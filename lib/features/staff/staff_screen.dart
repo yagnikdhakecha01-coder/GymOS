@@ -316,10 +316,16 @@ class _StaffScreenState extends State<StaffScreen> {
                         (d) => d?['staff_id']?.toString() == staff.id,
                         orElse: () => null,
                       );
-                      final num? draftNet = paidDraft?['net_salary'] as num? ?? paidDraft?['base_salary'] as num?;
+                      final num? draftGross = paidDraft?['gross_salary'] as num?;
+                      final num? draftNet = paidDraft?['net_salary'] as num?;
+                      final num? draftAdvance = paidDraft?['advance_deduction'] as num?;
+                      final double draftTotal = (draftGross != null && draftGross > 0)
+                          ? draftGross.toDouble()
+                          : ((draftNet != null && draftNet > 0) ? (draftNet.toDouble() + (draftAdvance?.toDouble() ?? 0.0)) : 0.0);
+
                       staffData['paid_amount'] = (rpcPaid != null && rpcPaid > 0)
                           ? rpcPaid.toDouble()
-                          : ((draftNet != null && draftNet > 0) ? draftNet.toDouble() : staff.salary);
+                          : (draftTotal > 0 ? draftTotal : staff.salary);
                     }
 
                     return OwnerStaffCard(
