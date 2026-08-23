@@ -2151,6 +2151,78 @@ class GymRepository extends ChangeNotifier {
     triggerBackgroundSync();
   }
 
+  /// Save an old/imported member WITHOUT creating PT assignment or commission entries.
+  /// Used for pre-existing member data import where finance and commission
+  /// should NOT be affected.
+  Future<void> saveOldMember(Member member) async {
+    if (!_isValidUUID(member.id)) {
+      throw Exception('Invalid member ID format.');
+    }
+    final gymId = _storage.getGymInfo()?['id'];
+    if (gymId == null) {
+      throw Exception('Active Gym ID not found. Please select or create a gym.');
+    }
+
+    final index = _members.indexWhere((m) => m.id == member.id);
+    if (index == -1) {
+      await checkSubscriptionLimit('member');
+    }
+
+    // 1. Immediately update local state & cache
+    if (index >= 0) {
+      _members[index] = member;
+    } else {
+      _members.insert(0, member);
+    }
+    await _storage.setString(_membersKey, jsonEncode(_members.map((e) => e.toJson()).toList()));
+    notifyListeners();
+
+    // 2. Queue Member save payload for sync
+    final Map<String, dynamic> data = {
+      'id': member.id,
+      'gym_id': gymId,
+      'name': member.name,
+      'phone': member.phone,
+      'status': member.status,
+      'join_date': member.joinDate,
+      'avatar': member.avatar,
+      'membership_plan_id': member.membershipPlanId,
+      'pt_member': member.ptMember,
+      'pt_trainer': _isValidUUID(member.ptTrainer) ? member.ptTrainer : null,
+      'assigned_workout_id': _isValidUUID(member.assignedWorkoutId) ? member.assignedWorkoutId : null,
+      'assigned_diet_id': _isValidUUID(member.assignedDietId) ? member.assignedDietId : null,
+      'medical_details': member.medicalDetails,
+      'notes': member.notes,
+      'discount_amount': member.discountAmount,
+      'extra_fields': member.extraFields,
+    };
+
+    // Direct Supabase upsert when online
+    if (SupabaseService.isInitialized) {
+      try {
+        await SupabaseService.client.from('members').upsert(data);
+      } catch (e) {
+        print('saveOldMember direct Supabase upsert skipped/failed: $e. Fallback to queue.');
+      }
+    }
+
+    _crudQueue.add({
+      'uuid': _generateUuidV4(),
+      'table': 'members',
+      'action': 'insert',
+      'payload': data,
+      'created_at': DateTime.now().toIso8601String(),
+      'retry_count': 0,
+      'error_message': null,
+    });
+
+    // NOTE: PT assignment queue is intentionally SKIPPED for old members
+    // to avoid generating commission ledger entries for historical data.
+
+    await _saveQueuesToStorage();
+    triggerBackgroundSync();
+  }
+
   Future<void> updateMemberPtAssignment({
     required String memberId,
     required bool ptMember,

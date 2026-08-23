@@ -3,12 +3,14 @@ import 'package:google_fonts/google_fonts.dart';
 import '../theme/theme.dart';
 import '../../features/members/add_member_wizard_screen.dart';
 import '../../features/members/add_trial_member_screen.dart';
+import '../../features/members/add_old_member_screen.dart';
 
 class AddMemberSelectionSheet {
   static void show(
     BuildContext context, {
     VoidCallback? onNormalSelected,
     VoidCallback? onTrialSelected,
+    VoidCallback? onOldMemberSelected,
   }) {
     showModalBottomSheet(
       context: context,
@@ -50,7 +52,7 @@ class AddMemberSelectionSheet {
                   leading: Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: AppTheme.primary.withOpacity(0.1),
+                      color: AppTheme.primary.withValues(alpha: 0.1),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(Icons.person_add_alt_1_rounded, color: AppTheme.primary, size: 20),
@@ -81,7 +83,7 @@ class AddMemberSelectionSheet {
                   leading: Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: Colors.deepOrange.withOpacity(0.1),
+                      color: Colors.deepOrange.withValues(alpha: 0.1),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(Icons.assignment_ind_outlined, color: Colors.deepOrange, size: 20),
@@ -103,6 +105,37 @@ class AddMemberSelectionSheet {
                       Navigator.push(
                         context,
                         MaterialPageRoute(builder: (_) => const AddTrialMemberScreen()),
+                      );
+                    }
+                  },
+                ),
+                const Divider(height: 16),
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withValues(alpha: 0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.history_rounded, color: Colors.orange, size: 20),
+                  ),
+                  title: Text(
+                    'Old Member (Import)',
+                    style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                  ),
+                  subtitle: Text(
+                    'Import existing member data without affecting current finance',
+                    style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary),
+                  ),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () {
+                    Navigator.pop(context);
+                    if (onOldMemberSelected != null) {
+                      onOldMemberSelected();
+                    } else {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const AddOldMemberScreen()),
                       );
                     }
                   },

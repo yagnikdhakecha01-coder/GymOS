@@ -22,6 +22,7 @@ import 'settings_screen.dart';
 import 'help_support_screen.dart';
 import 'about_gymos_screen.dart';
 import 'backup_restore_screen.dart';
+import '../members/add_old_member_screen.dart';
 import '../receptionist/portal/receptionist_activity_log_screen.dart';
 import '../dashboard/gym_switcher_bottom_sheet.dart';
 
@@ -261,7 +262,20 @@ class _MoreScreenState extends State<MoreScreen> {
                   ),
                   const Divider(height: 1),
 
-
+                  // Import Old Member (Owner & Receptionist only)
+                  if (authVm.selectedRole?.toLowerCase() == 'owner' || authVm.selectedRole?.toLowerCase() == 'receptionist') ...[
+                    _buildSettingTile(
+                      context,
+                      icon: Icons.history_rounded,
+                      color: Colors.orange,
+                      title: 'Import Old Member',
+                      subtitle: 'Add pre-existing members from before GymOS',
+                      onTap: () {
+                        Navigator.push(context, AppRouter.slideRoute(const AddOldMemberScreen()));
+                      },
+                    ),
+                    const Divider(height: 1),
+                  ],
 
                   // 7. Backup & Restore (Future)
                   _buildSettingTile(

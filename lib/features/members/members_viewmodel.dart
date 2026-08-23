@@ -157,6 +157,13 @@ class MembersViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Save an old/imported member WITHOUT creating any finance transaction
+  /// or PT commission. Used for pre-existing member data import.
+  Future<void> saveOldMember(Member member) async {
+    await _repository.saveOldMember(member);
+    notifyListeners();
+  }
+
   Future<void> updateMemberPt({
     required String memberId,
     required bool ptMember,
