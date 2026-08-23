@@ -500,35 +500,57 @@ Thank you.''';
     final staffVm = Provider.of<StaffViewModel>(context);
     final staff = staffVm.allStaff.firstWhere((s) => s.id == widget.staff.id, orElse: () => widget.staff);
 
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
+    return PopScope(
+      canPop: _currentTabIndex == 0,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && _currentTabIndex != 0) {
+          setState(() => _currentTabIndex = 0);
+        }
+      },
+      child: Scaffold(
         backgroundColor: Colors.white,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppTheme.textPrimary),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Text(
-          _currentTabIndex == 1 ? 'Attendance' : 'Staff Profile',
-          style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w600, color: AppTheme.textPrimary),
-        ),
-        centerTitle: true,
-        actions: widget.isOwnerView
-            ? [
-                IconButton(
-                  icon: Icon(
-                    _currentTabIndex == 1 ? Icons.calendar_month_outlined : Icons.more_vert,
-                    color: AppTheme.textPrimary,
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: AppTheme.textPrimary),
+            onPressed: () {
+              if (_currentTabIndex != 0) {
+                setState(() => _currentTabIndex = 0);
+              } else {
+                Navigator.pop(context);
+              }
+            },
+          ),
+          title: Text(
+            _currentTabIndex == 0
+                ? 'Staff Profile'
+                : (_currentTabIndex == 1
+                    ? 'Attendance'
+                    : (_currentTabIndex == 2
+                        ? 'Advance Salary'
+                        : (_currentTabIndex == 3
+                            ? 'Leave Requests'
+                            : 'Salary History'))),
+            style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w600, color: AppTheme.textPrimary),
+          ),
+          centerTitle: true,
+          actions: widget.isOwnerView
+              ? [
+                  IconButton(
+                    icon: Icon(
+                      _currentTabIndex == 1 ? Icons.calendar_month_outlined : Icons.more_vert,
+                      color: AppTheme.textPrimary,
+                    ),
+                    onPressed: () {},
                   ),
-                  onPressed: () {},
-                ),
-              ]
-            : null,
+                ]
+              : null,
+        ),
+        body: _buildCurrentTab(staff),
+        bottomNavigationBar: _buildBottomNav(),
       ),
-      body: _buildCurrentTab(staff),
-      bottomNavigationBar: _buildBottomNav(),
     );
   }
 
