@@ -373,7 +373,7 @@ class AuthViewModel extends ChangeNotifier {
           }
         }
 
-        if (currentGymsCount >= maxGymsLimit) {
+        if (maxGymsLimit > 0 && currentGymsCount >= maxGymsLimit) {
           throw Exception('limit_reached:Your current $planName Plan only allows up to $maxGymsLimit Gym(s). Upgrade to Business Plan to manage multiple gyms.');
         }
 

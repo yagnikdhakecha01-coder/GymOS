@@ -2038,18 +2038,20 @@ class GymRepository extends ChangeNotifier {
         if (plan != null) {
           if (type == 'member') {
             final maxMembers = plan['max_members'] as int?;
-            if (maxMembers != null) {
+            // A maxMembers value of null, -1, or <= 0 indicates unlimited members
+            if (maxMembers != null && maxMembers > 0) {
               final currentMembers = _members.length;
               if (currentMembers >= maxMembers) {
-                throw Exception('limit_reached:your plan only acsse to add $maxMembers members');
+                throw Exception('limit_reached:Your plan allows a maximum of $maxMembers members. Please upgrade your plan to add more members.');
               }
             }
           } else if (type == 'staff') {
             final maxStaff = plan['max_staff'] as int?;
-            if (maxStaff != null) {
+            // A maxStaff value of null, -1, or <= 0 indicates unlimited staff
+            if (maxStaff != null && maxStaff > 0) {
               final currentStaff = _staff.length;
               if (currentStaff >= maxStaff) {
-                throw Exception('limit_reached:your plan only acsse to add $maxStaff staff');
+                throw Exception('limit_reached:Your plan allows a maximum of $maxStaff staff members. Please upgrade your plan to add more staff.');
               }
             }
           }
