@@ -277,8 +277,12 @@ class _AddOldMemberScreenState extends State<AddOldMemberScreen> {
     );
 
     try {
-      // Use saveOldMember — no finance transaction, no PT commission
-      await vm.saveOldMember(newMember);
+      // Save old member with historical payment date
+      await vm.saveOldMember(
+        newMember,
+        paymentMethod: _paymentMethod.isNotEmpty ? _paymentMethod : 'Cash',
+        paymentReceiveDate: _paymentReceiveDate ?? _joiningDate,
+      );
 
       String invitationCode = '';
       try {

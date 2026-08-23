@@ -2103,7 +2103,10 @@ class GymRepository extends ChangeNotifier {
       'assigned_diet_id': _isValidUUID(member.assignedDietId) ? member.assignedDietId : null,
       'medical_details': member.medicalDetails,
       'notes': member.notes,
+      'pending_amount': member.pendingAmount,
       'discount_amount': member.discountAmount,
+      'total_received_amount': member.totalReceivedAmount,
+      'payment_status': member.paymentStatus,
       'extra_fields': member.extraFields,
     };
 
@@ -2195,7 +2198,10 @@ class GymRepository extends ChangeNotifier {
       'assigned_diet_id': _isValidUUID(member.assignedDietId) ? member.assignedDietId : null,
       'medical_details': member.medicalDetails,
       'notes': member.notes,
+      'pending_amount': member.pendingAmount,
       'discount_amount': member.discountAmount,
+      'total_received_amount': member.totalReceivedAmount,
+      'payment_status': member.paymentStatus,
       'extra_fields': member.extraFields,
     };
 

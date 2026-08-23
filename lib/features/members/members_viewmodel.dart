@@ -157,10 +157,38 @@ class MembersViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Save an old/imported member WITHOUT creating any finance transaction
-  /// or PT commission. Used for pre-existing member data import.
-  Future<void> saveOldMember(Member member) async {
+  /// Save an old/imported member with historical finance recording.
+  /// The transaction uses the past receive date so it does NOT affect
+  /// current month's revenue, while ensuring the member's payment and
+  /// received amounts are fully tracked in the database and member card.
+  Future<void> saveOldMember(
+    Member member, {
+    String paymentMethod = 'Cash',
+    DateTime? paymentReceiveDate,
+  }) async {
     await _repository.saveOldMember(member);
+
+    final txAmount = member.totalReceivedAmount;
+    if (txAmount > 0) {
+      final historicalDate = paymentReceiveDate ??
+          (member.joinDate.isNotEmpty ? (DateFormat('dd MMM yyyy').tryParse(member.joinDate) ?? DateTime.now()) : DateTime.now());
+
+      final tx = FinanceTransaction(
+        id: 'tx_${DateTime.now().millisecondsSinceEpoch}',
+        title: '${member.name} - Initial Payment (Old Record)',
+        amount: txAmount,
+        type: 'Revenue',
+        category: 'Membership',
+        paymentMethod: paymentMethod,
+        date: DateFormat('dd MMM yyyy').format(historicalDate),
+        transactionDate: historicalDate.toIso8601String(),
+        revenueDate: historicalDate.toIso8601String(),
+        entryDate: historicalDate.toIso8601String(),
+        notes: 'Old Member Import - Payment received on ${DateFormat('dd MMM yyyy').format(historicalDate)}',
+        referenceId: member.id,
+      );
+      await _repository.saveTransaction(tx);
+    }
     notifyListeners();
   }
 
