@@ -102,7 +102,7 @@ void main() async {
   }
 }
 
-class GymOSApp extends StatelessWidget {
+class GymOSApp extends StatefulWidget {
   final LocalStorageService localStorageService;
   final GymRepository gymRepository;
 
@@ -113,47 +113,75 @@ class GymOSApp extends StatelessWidget {
   }) : super(key: key);
 
   @override
+  State<GymOSApp> createState() => _GymOSAppState();
+}
+
+class _GymOSAppState extends State<GymOSApp> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    NotificationService.setAppInForeground(true);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed) {
+      NotificationService.setAppInForeground(true);
+    } else {
+      NotificationService.setAppInForeground(false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider.value(
-          value: gymRepository,
+          value: widget.gymRepository,
         ),
         // Auth
         ChangeNotifierProvider(
-          create: (_) => AuthViewModel(localStorageService, gymRepository),
+          create: (_) => AuthViewModel(widget.localStorageService, widget.gymRepository),
         ),
         // Members
         ChangeNotifierProvider(
-          create: (_) => MembersViewModel(gymRepository),
+          create: (_) => MembersViewModel(widget.gymRepository),
         ),
         // Trial Members
         ChangeNotifierProvider(
-          create: (_) => TrialMembersViewModel(gymRepository),
+          create: (_) => TrialMembersViewModel(widget.gymRepository),
         ),
         // Staff
         ChangeNotifierProvider(
-          create: (_) => StaffViewModel(gymRepository),
+          create: (_) => StaffViewModel(widget.gymRepository),
         ),
         // Finance
         ChangeNotifierProvider(
-          create: (_) => FinanceViewModel(gymRepository),
+          create: (_) => FinanceViewModel(widget.gymRepository),
         ),
         // Workout
         ChangeNotifierProvider(
-          create: (_) => WorkoutViewModel(gymRepository),
+          create: (_) => WorkoutViewModel(widget.gymRepository),
         ),
         // Diet
         ChangeNotifierProvider(
-          create: (_) => DietViewModel(gymRepository),
+          create: (_) => DietViewModel(widget.gymRepository),
         ),
         // Membership
         ChangeNotifierProvider(
-          create: (_) => MembershipViewModel(gymRepository),
+          create: (_) => MembershipViewModel(widget.gymRepository),
         ),
         // Attendance
         ChangeNotifierProvider(
-          create: (_) => AttendanceViewModel(gymRepository),
+          create: (_) => AttendanceViewModel(widget.gymRepository),
         ),
         // Member App
         ChangeNotifierProvider(
@@ -162,10 +190,10 @@ class GymOSApp extends StatelessWidget {
         // Gym Settings Setup
         ChangeNotifierProxyProvider<AuthViewModel, GymSettingsViewModel>(
           create: (context) => GymSettingsViewModel(
-            gymRepository,
+            widget.gymRepository,
             Provider.of<AuthViewModel>(context, listen: false),
           ),
-          update: (context, authVm, previous) => GymSettingsViewModel(gymRepository, authVm),
+          update: (context, authVm, previous) => GymSettingsViewModel(widget.gymRepository, authVm),
         ),
       ],
       child: MaterialApp(
