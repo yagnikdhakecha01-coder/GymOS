@@ -24,6 +24,7 @@ import 'expiring_memberships_screen.dart';
 import '../attendance/attendance_screen.dart';
 import '../attendance/owner_scanner_screen.dart';
 import '../members/add_member_wizard_screen.dart';
+import '../members/add_old_member_screen.dart';
 import '../members/trial_members_screen.dart';
 import '../../core/widgets/add_member_selection_sheet.dart';
 import '../staff/staff_screen.dart';
@@ -913,6 +914,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       Navigator.push(
                         context,
                         AppRouter.slideRoute(const TrialMembersScreen()),
+                      );
+                    },
+                  ),
+                  _buildQuickActionBtn(
+                    Icons.history_rounded,
+                    const Color(0xFFF59E0B),
+                    'Old Member',
+                    fontSize: 8.5,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const AddOldMemberScreen()),
                       );
                     },
                   ),
