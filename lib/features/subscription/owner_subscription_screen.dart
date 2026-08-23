@@ -23,7 +23,7 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
   double? _selectedPrice;
 
   // Dynamic free trial settings
-  int _trialDuration = 30;
+  int _trialDuration = 45;
   String _trialUnit = 'days';
   bool _isLoadingSettings = true;
   List<SubscriptionPlanModel> _plans = [];
@@ -52,6 +52,9 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
   String _trialEndStr = '';
   String _planEndStr = '';
   int _trialDaysLeft = 0;
+  String? _currentPurchasedPlanId;
+  bool _isTrialActive = true;
+  bool _isTrialExpired = false;
 
   Future<void> _loadTrialSettings() async {
     try {
@@ -67,29 +70,52 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
                 .eq('gym_id', gymId)
                 .maybeSingle();
 
-            if (subRes != null && mounted) {
-              final planId = (subRes['plan_id'] ?? 'free_trial').toString();
-              DateTime? trialEnd = subRes['trial_end'] != null ? DateTime.tryParse(subRes['trial_end'].toString()) : null;
-              DateTime? planEnd = subRes['end_date'] != null ? DateTime.tryParse(subRes['end_date'].toString()) : null;
+            final gymRes = await SupabaseService.client
+                .from('gyms')
+                .select('plan, status, expiry_date, trial_end_date')
+                .eq('id', gymId)
+                .maybeSingle();
 
+            if (mounted) {
+              final rawPlan = (subRes?['plan_id'] ?? gymRes?['plan'] ?? 'free_trial').toString().toLowerCase();
+              final rawStatus = (subRes?['status'] ?? gymRes?['status'] ?? 'trial').toString().toLowerCase();
+
+              DateTime? trialEnd = subRes?['trial_end'] != null ? DateTime.tryParse(subRes!['trial_end'].toString()) : null;
+              DateTime? planEnd = subRes?['end_date'] != null ? DateTime.tryParse(subRes!['end_date'].toString()) : null;
+
+              if (trialEnd == null && gymRes?['trial_end_date'] != null) {
+                trialEnd = DateTime.tryParse(gymRes!['trial_end_date'].toString());
+              }
               if (trialEnd == null && authVm.gymInfo?['trial_end_date'] != null) {
                 trialEnd = DateTime.tryParse(authVm.gymInfo!['trial_end_date'].toString());
               }
 
-              final bool isTrialActive = trialEnd != null && trialEnd.isAfter(DateTime.now());
-              final bool hasPurchasedPlan = planId.toLowerCase() != 'free_trial';
-              final bool isQueued = isTrialActive && hasPurchasedPlan;
+              if (planEnd == null && gymRes?['expiry_date'] != null) {
+                planEnd = DateTime.tryParse(gymRes!['expiry_date'].toString());
+              }
+
+              final bool hasPurchased = rawPlan != 'free_trial' && 
+                  rawPlan != 'trial' && 
+                  rawPlan.isNotEmpty && 
+                  rawStatus != 'expired';
+              
+              final bool isTrialActive = !hasPurchased && 
+                  (trialEnd == null || trialEnd.isAfter(DateTime.now())) && 
+                  rawStatus != 'expired';
+              
+              final bool isTrialExpired = !hasPurchased && 
+                  (rawStatus == 'expired' || (trialEnd != null && trialEnd.isBefore(DateTime.now())));
 
               int daysLeft = 0;
-              if (isTrialActive) {
-                daysLeft = trialEnd!.difference(DateTime.now()).inDays;
+              if (isTrialActive && trialEnd != null) {
+                daysLeft = trialEnd.difference(DateTime.now()).inDays;
                 if (daysLeft < 0) daysLeft = 0;
               }
 
               String formattedPlanName = 'Free Trial';
-              if (planId.toLowerCase() == 'starter') formattedPlanName = 'Starter Plan';
-              if (planId.toLowerCase() == 'pro') formattedPlanName = 'Pro Plan';
-              if (planId.toLowerCase() == 'business') formattedPlanName = 'Business Plan';
+              if (rawPlan == 'starter') formattedPlanName = 'Starter Plan';
+              if (rawPlan == 'pro') formattedPlanName = 'Pro Plan';
+              if (rawPlan == 'business') formattedPlanName = 'Business Plan';
 
               String formatDate(DateTime? dt) {
                 if (dt == null) return '-';
@@ -100,14 +126,10 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
                 return '$day/$month/$year';
               }
 
-              if (isQueued) {
-                if (planEnd == null || !planEnd.isAfter(trialEnd!)) {
-                  planEnd = trialEnd!.add(const Duration(days: 30));
-                }
-              }
-
               setState(() {
-                _isQueuedPlan = isQueued;
+                _currentPurchasedPlanId = hasPurchased ? rawPlan : null;
+                _isTrialActive = isTrialActive;
+                _isTrialExpired = isTrialExpired;
                 _queuedPlanName = formattedPlanName;
                 _trialDaysLeft = daysLeft;
                 _trialEndStr = formatDate(trialEnd);
@@ -129,7 +151,7 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
           final Map<String, dynamic> val = Map<String, dynamic>.from(res['value']);
           if (mounted) {
             setState(() {
-              _trialDuration = int.tryParse(val['duration_value']?.toString() ?? '30') ?? 30;
+              _trialDuration = int.tryParse(val['duration_value']?.toString() ?? '45') ?? 45;
               _trialUnit = val['duration_unit']?.toString() ?? 'days';
               _isLoadingSettings = false;
             });
@@ -148,30 +170,29 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
   }
 
   String get _trialTitleText {
-    final unitStr = _trialUnit.toLowerCase();
-    if (unitStr == 'months') {
-      return '$_trialDuration ${_trialDuration == 1 ? "Month" : "Month"} Free Trial';
-    } else {
-      return '$_trialDuration ${_trialDuration == 1 ? "Day" : "Days"} Free Trial';
+    if (_currentPurchasedPlanId != null) {
+      return 'Active Plan: $_queuedPlanName';
     }
+    if (_isTrialExpired) {
+      return 'Free Trial Expired';
+    }
+    return _trialDaysLeft > 0 
+        ? '45 Days Free Trial Active ($_trialDaysLeft Days Left)' 
+        : '45 Days Free Trial Active';
   }
 
   String get _trialSubtitleText {
-    final unitStr = _trialUnit.toLowerCase();
-    if (unitStr == 'months') {
-      return 'Try all premium features free for $_trialDuration ${_trialDuration == 1 ? "month" : "months"}. Cancel anytime.';
-    } else {
-      return 'Try all premium features free for $_trialDuration ${_trialDuration == 1 ? "day" : "days"}. Cancel anytime.';
+    if (_currentPurchasedPlanId != null) {
+      return 'Valid till $_planEndStr • Full features unlocked';
     }
+    if (_isTrialExpired) {
+      return 'Your 45 days free trial has ended. Select a plan below to continue full access.';
+    }
+    return 'Try all premium features free for 45 days. Cancel anytime.';
   }
 
   String get _trialFooterText {
-    final unitStr = _trialUnit.toLowerCase();
-    if (unitStr == 'months') {
-      return 'All plans include $_trialDuration ${_trialDuration == 1 ? "month" : "months"} free trial. Cancel anytime.';
-    } else {
-      return 'All plans include $_trialDuration ${_trialDuration == 1 ? "day" : "days"} free trial. Cancel anytime.';
-    }
+    return 'All plans include 45 days free trial for new gyms. Cancel anytime.';
   }
 
   @override
@@ -666,91 +687,66 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
         child: ListView(
           padding: const EdgeInsets.all(24.0),
           children: [
-            // Trial & Upcoming Plan Banner
+            // Trial & Active Plan Banner
             Container(
               padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(
-                color: const Color(0xFFF5F3FF),
+                color: _isTrialExpired ? const Color(0xFFFFFBEB) : const Color(0xFFF5F3FF),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: const Color(0xFFDDD6FE), width: 1.2),
+                border: Border.all(
+                  color: _isTrialExpired ? const Color(0xFFFDE68A) : const Color(0xFFDDD6FE),
+                  width: 1.2,
+                ),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Row(
                 children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: const BoxDecoration(
-                          color: Colors.white,
-                          shape: BoxShape.circle,
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: (_isTrialExpired ? Colors.amber : const Color(0xFF6C4EFF)).withOpacity(0.12),
+                          blurRadius: 6,
                         ),
-                        child: Icon(
-                          _isQueuedPlan ? Icons.hourglass_top_rounded : Icons.shield_outlined,
-                          color: const Color(0xFF6C4EFF),
-                          size: 24,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              _isQueuedPlan ? 'Free Trial Active ($_trialDaysLeft Days Left)' : _trialTitleText,
-                              style: GoogleFonts.inter(
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                                color: const Color(0xFF6C4EFF),
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              _isQueuedPlan ? 'Free trial ends on $_trialEndStr' : _trialSubtitleText,
-                              style: GoogleFonts.inter(
-                                fontSize: 12,
-                                color: const Color(0xFF5B21B6),
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (_isQueuedPlan) ...[
-                    const SizedBox(height: 14),
-                    Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFC4B5FD)),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.check_circle_rounded, color: Colors.green, size: 22),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Purchased Plan: $_queuedPlanName',
-                                  style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF1E293B)),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  'Auto-activates on $_trialEndStr • Valid till $_planEndStr',
-                                  style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF64748B)),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
+                      ],
                     ),
-                  ],
+                    child: Icon(
+                      _currentPurchasedPlanId != null
+                          ? Icons.verified_rounded
+                          : (_isTrialExpired ? Icons.warning_amber_rounded : Icons.shield_outlined),
+                      color: _currentPurchasedPlanId != null
+                          ? const Color(0xFF6C4EFF)
+                          : (_isTrialExpired ? const Color(0xFFD97706) : const Color(0xFF6C4EFF)),
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _trialTitleText,
+                          style: GoogleFonts.inter(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: _isTrialExpired ? const Color(0xFFB45309) : const Color(0xFF6C4EFF),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _trialSubtitleText,
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            color: _isTrialExpired ? const Color(0xFF92400E) : const Color(0xFF5B21B6),
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -773,7 +769,6 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
                   badge: plan.badge,
                   badgeColor: badgeColor,
                   badgeTextColor: badgeTextColor,
-                  isRecommended: plan.isRecommended,
                   features: plan.features,
                 ),
               );
@@ -836,21 +831,24 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
     String? badge,
     Color? badgeColor,
     Color? badgeTextColor,
-    bool isRecommended = false,
     required List<String> features,
   }) {
+    final bool isPurchased = _currentPurchasedPlanId != null &&
+        _currentPurchasedPlanId!.toLowerCase() == planId.toLowerCase();
+    final bool isPro = planId.toLowerCase() == 'pro';
+
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: isRecommended ? const Color(0xFF6C4EFF) : const Color(0xFFE2E8F0),
-          width: isRecommended ? 2.2 : 1.2,
+          color: isPurchased ? const Color(0xFF6C4EFF) : const Color(0xFFE2E8F0),
+          width: isPurchased ? 2.2 : 1.2,
         ),
         boxShadow: [
           BoxShadow(
-            color: isRecommended 
-                ? const Color(0xFF6C4EFF).withOpacity(0.04)
+            color: isPurchased 
+                ? const Color(0xFF6C4EFF).withOpacity(0.08)
                 : Colors.black.withOpacity(0.02),
             blurRadius: 16,
             offset: const Offset(0, 4),
@@ -861,6 +859,46 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Top Center "MOST POPULAR" Badge for Pro Plan
+          if (isPro) ...[
+            Align(
+              alignment: Alignment.topCenter,
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 14),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF6C4EFF), Color(0xFF8B5CF6)],
+                  ),
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF6C4EFF).withOpacity(0.25),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.local_fire_department_rounded, size: 14, color: Colors.white),
+                    const SizedBox(width: 4),
+                    Text(
+                      'MOST POPULAR',
+                      style: GoogleFonts.inter(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                        letterSpacing: 0.6,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+
           Row(
             children: [
               Text(
@@ -871,7 +909,7 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
                   color: const Color(0xFF1E293B),
                 ),
               ),
-              if (badge != null) ...[
+              if (badge != null && !isPro) ...[
                 const SizedBox(width: 10),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -942,21 +980,36 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
           )),
           const SizedBox(height: 24),
 
-          // Choose Plan Button with press scale animation
+          // Action Button with state logic
           SizedBox(
             width: double.infinity,
             height: 48,
             child: ScaleButton(
-              onTap: () => _handlePayment(planId, double.parse(price.replaceAll('₹', ''))),
+              onTap: () {
+                if (isPurchased) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('You are already subscribed to the $title plan.'),
+                      backgroundColor: const Color(0xFF16A34A),
+                    ),
+                  );
+                  return;
+                }
+                _handlePayment(planId, double.parse(price.replaceAll('₹', '')));
+              },
               child: Container(
                 decoration: BoxDecoration(
-                  color: isRecommended ? const Color(0xFF6C4EFF) : Colors.white,
+                  color: isPurchased
+                      ? const Color(0xFFF0FDF4)
+                      : (_currentPurchasedPlanId == null && isPro ? const Color(0xFF6C4EFF) : Colors.white),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: const Color(0xFF6C4EFF),
+                    color: isPurchased
+                        ? const Color(0xFF22C55E)
+                        : const Color(0xFF6C4EFF),
                     width: 1.5,
                   ),
-                  boxShadow: isRecommended
+                  boxShadow: (!isPurchased && _currentPurchasedPlanId == null && isPro)
                       ? [
                           BoxShadow(
                             color: const Color(0xFF6C4EFF).withOpacity(0.2),
@@ -967,14 +1020,32 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
                       : null,
                 ),
                 alignment: Alignment.center,
-                child: Text(
-                  'Choose Plan',
-                  style: GoogleFonts.inter(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: isRecommended ? Colors.white : const Color(0xFF6C4EFF),
-                  ),
-                ),
+                child: isPurchased
+                    ? Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.check_circle_rounded, color: Color(0xFF16A34A), size: 18),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Current Plan',
+                            style: GoogleFonts.inter(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.bold,
+                              color: const Color(0xFF15803D),
+                            ),
+                          ),
+                        ],
+                      )
+                    : Text(
+                        _currentPurchasedPlanId != null ? 'Change Plan' : 'Choose Plan',
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: (_currentPurchasedPlanId == null && isPro)
+                              ? Colors.white
+                              : const Color(0xFF6C4EFF),
+                        ),
+                      ),
               ),
             ),
           ),
