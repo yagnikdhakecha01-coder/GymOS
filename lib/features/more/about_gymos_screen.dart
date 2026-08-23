@@ -206,27 +206,28 @@ class _AboutGymOSScreenState extends State<AboutGymOSScreen> {
               const SizedBox(height: 24),
               // Check Update Button
               SizedBox(
-                width: 180,
-                height: 40,
-                child: OutlinedButton(
+                height: 44,
+                child: OutlinedButton.icon(
                   onPressed: _isChecking ? null : _checkUpdate,
                   style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: AppTheme.primary),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                    side: const BorderSide(color: AppTheme.primary, width: 1.2),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),
                   ),
-                  child: _isChecking
+                  icon: _isChecking
                       ? const SizedBox(
-                          width: 18,
-                          height: 18,
+                          width: 16,
+                          height: 16,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
                             valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primary),
                           ),
                         )
-                      : Text(
-                          'Check for Updates',
-                          style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.primary),
-                        ),
+                      : const Icon(Icons.sync_rounded, size: 18, color: AppTheme.primary),
+                  label: Text(
+                    _isChecking ? 'Checking...' : 'Check for Updates',
+                    style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.primary),
+                  ),
                 ),
               ),
               const Spacer(flex: 1),

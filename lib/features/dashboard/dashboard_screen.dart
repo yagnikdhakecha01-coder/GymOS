@@ -86,6 +86,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       if (gymId != null) {
         final formattedDate = DateFormat('yyyy-MM-dd').format(_repository!.selectedDashboardDate);
         _repository?.fetchDashboardStatsFromSupabase(gymId, formattedDate);
+        authVm.fetchSubscriptionStatus();
       }
     });
   }

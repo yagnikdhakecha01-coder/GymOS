@@ -1078,21 +1078,84 @@ class AuthViewModel extends ChangeNotifier {
     }
     
     try {
-      final res = await SupabaseService.client
-          .rpc('get_gym_subscription_info', params: {'p_gym_id': gymId})
-          .maybeSingle();
-      
+      // 1. Direct fetch from subscriptions table
+      Map<String, dynamic>? subData;
+      try {
+        subData = await SupabaseService.client
+            .from('subscriptions')
+            .select('plan_id, status, trial_start, trial_end, start_date, end_date, created_at')
+            .eq('gym_id', gymId)
+            .maybeSingle();
+      } catch (e) {
+        print('Error querying subscriptions table in fetchSubscriptionStatus: $e');
+      }
+
+      // 2. Direct fetch from gyms table
+      Map<String, dynamic>? gymData;
+      try {
+        gymData = await SupabaseService.client
+            .from('gyms')
+            .select('plan, status, expiry_date, trial_end_date, is_locked')
+            .eq('id', gymId)
+            .maybeSingle();
+      } catch (e) {
+        print('Error querying gyms table in fetchSubscriptionStatus: $e');
+      }
+
       _isOffline = false;
-      if (res != null) {
-        _subscriptionInfo = res;
-        _isSubscriptionExpired = res['is_expired'] == true || res['is_locked'] == true;
+
+      if (subData != null || gymData != null) {
+        final plan = (subData?['plan_id'] ?? gymData?['plan'] ?? 'free_trial').toString();
+        final status = (subData?['status'] ?? gymData?['status'] ?? 'trial').toString();
+        
+        // Pick the most accurate live expiry date from subscriptions or gyms table
+        final rawExpiry = subData?['end_date'] ?? 
+            subData?['trial_end'] ?? 
+            gymData?['expiry_date'] ?? 
+            gymData?['trial_end_date'];
+        
+        DateTime? expiryDate;
+        if (rawExpiry != null) {
+          expiryDate = rawExpiry is DateTime ? rawExpiry : DateTime.tryParse(rawExpiry.toString());
+        }
+
+        final int daysLeft = expiryDate != null 
+            ? expiryDate.difference(DateTime.now()).inDays.clamp(0, 99999)
+            : 0;
+        final bool isExpired = status.toLowerCase() == 'expired' || 
+            (expiryDate != null && expiryDate.isBefore(DateTime.now()));
+        final bool isLocked = gymData?['is_locked'] == true;
+
+        final resolvedInfo = {
+          'gym_id': gymId,
+          'plan': plan,
+          'status': status,
+          'expiry_date': expiryDate?.toIso8601String() ?? '',
+          'days_left': daysLeft,
+          'is_expired': isExpired,
+          'is_locked': isLocked,
+        };
+
+        _subscriptionInfo = resolvedInfo;
+        _isSubscriptionExpired = isExpired || isLocked;
+
+        // Keep local gymInfo in sync as well
+        if (_gymInfo != null) {
+          _gymInfo!['plan'] = plan;
+          _gymInfo!['status'] = status;
+          if (expiryDate != null) {
+            _gymInfo!['expiry_date'] = expiryDate.toIso8601String();
+            _gymInfo!['trial_end_date'] = expiryDate.toIso8601String();
+          }
+          await _storage.setGymInfo(_gymInfo!);
+        }
       } else {
         _isSubscriptionExpired = false;
         _subscriptionInfo = null;
       }
       notifyListeners();
     } catch (e) {
-      print('Error fetching subscription status: $e');
+      print('Error in fetchSubscriptionStatus: $e');
       final errStr = e.toString();
       if (errStr.contains('SocketException') || errStr.contains('ClientException') || errStr.contains('Failed host lookup') || errStr.contains('connection failed')) {
         _isOffline = true;
