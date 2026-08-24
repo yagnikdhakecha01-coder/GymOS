@@ -318,7 +318,31 @@ class _ReceptionistMembersScreenState extends State<ReceptionistMembersScreen> w
   }
 
   Widget _buildMembersList(BuildContext context, List members, ReceptionistViewModel vm) {
-    if (members.isEmpty) {
+    // Sort: Members with pending fees (pendingAmount > 0) at the TOP, done/paid at the BOTTOM
+    final sortedMembers = List.from(members);
+    sortedMembers.sort((a, b) {
+      final memberA = a as Member;
+      final memberB = b as Member;
+
+      final bool aPending = memberA.pendingAmount > 0;
+      final bool bPending = memberB.pendingAmount > 0;
+
+      if (aPending && !bPending) return -1; // Pending comes first (TOP)
+      if (!aPending && bPending) return 1;  // Done comes later (BOTTOM)
+
+      if (aPending && bPending) {
+        // Higher pending amount first
+        return memberB.pendingAmount.compareTo(memberA.pendingAmount);
+      }
+
+      // If both are paid, sort by Active first, then by name
+      if (memberA.status == 'Active' && memberB.status != 'Active') return -1;
+      if (memberA.status != 'Active' && memberB.status == 'Active') return 1;
+
+      return memberA.name.toLowerCase().compareTo(memberB.name.toLowerCase());
+    });
+
+    if (sortedMembers.isEmpty) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(32),
@@ -339,9 +363,9 @@ class _ReceptionistMembersScreenState extends State<ReceptionistMembersScreen> w
 
     return ListView.builder(
       padding: const EdgeInsets.all(16),
-      itemCount: members.length,
+      itemCount: sortedMembers.length,
       itemBuilder: (context, index) {
-        final member = members[index] as Member;
+        final member = sortedMembers[index] as Member;
         final isTrial = member.status == 'Trial';
 
         String nextDueStr = 'N/A';
