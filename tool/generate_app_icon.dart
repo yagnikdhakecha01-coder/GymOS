@@ -70,9 +70,9 @@ void main() {
   bgFile.writeAsBytesSync(img.encodePng(bgImage));
   print('Saved background image to assets/images/app_icon_background.png');
 
-  // 2. Create Android Adaptive Foreground (Sized to 630px ~61.5% safe zone to fill circle naturally without dark borders)
+  // 2. Create Android Adaptive Foreground (Sized to 480px ~46.8% with comfortable breathing room & no over-zoom)
   final adaptiveForeground = img.Image(width: canvasSize, height: canvasSize);
-  const adaptiveTargetSize = 630;
+  const adaptiveTargetSize = 480;
   final adaptiveScaledLogo = img.copyResize(
     croppedLogo,
     width: adaptiveTargetSize,
@@ -87,9 +87,9 @@ void main() {
   adaptiveFile.writeAsBytesSync(img.encodePng(adaptiveForeground));
   print('Saved adaptive foreground to assets/images/app_icon_foreground.png');
 
-  // 3. Create iOS Master Canvas (740px ~72.2% size)
+  // 3. Create iOS Master Canvas (680px ~66.4% size)
   final masterCanvas = img.Image.from(bgImage);
-  const masterTargetSize = 740;
+  const masterTargetSize = 680;
   final masterScaledLogo = img.copyResize(
     croppedLogo,
     width: masterTargetSize,
