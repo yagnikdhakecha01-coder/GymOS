@@ -28,6 +28,8 @@ import '../../finance/pending_payments_screen.dart';
 import '../../members/member_profile_screen.dart';
 import '../../members/members_viewmodel.dart';
 import '../../../core/models/member.dart';
+import '../../dashboard/expiring_memberships_screen.dart';
+import '../../dashboard/alerts_screen.dart';
 
 class ReceptionistDashboardScreen extends StatefulWidget {
   const ReceptionistDashboardScreen({super.key});
@@ -574,7 +576,10 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
         'icon': Icons.autorenew_rounded,
         'color': Colors.orange,
         'action': () {
-          _showSearchMemberDialog(context, vm, 'Renew Membership');
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const ExpiringMembershipsScreen(initialTabIndex: 3)),
+          );
         }
       },
       {
@@ -830,12 +835,29 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Icon(Icons.notifications_active_outlined, color: AppTheme.danger, size: 18),
-            const SizedBox(width: 6),
-            Text(
-              "Alerts (Action Required)",
-              style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.textPrimary),
+            Row(
+              children: [
+                const Icon(Icons.notifications_active_outlined, color: AppTheme.danger, size: 18),
+                const SizedBox(width: 6),
+                Text(
+                  "Alerts (Action Required)",
+                  style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.textPrimary),
+                ),
+              ],
+            ),
+            GestureDetector(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AlertsScreen()),
+                );
+              },
+              child: Text(
+                'View All',
+                style: GoogleFonts.inter(fontSize: 12, color: AppTheme.primary, fontWeight: FontWeight.bold),
+              ),
             ),
           ],
         ),
@@ -849,7 +871,10 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
             subtitle: "Renewal follow-up recommended immediately",
             avatars: expired30Days.map((m) => m.avatar).where((a) => a.isNotEmpty && a.startsWith('http')).take(3).toList(),
             onTap: () {
-              _showSearchMemberDialog(context, vm, 'Renew Membership');
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ExpiringMembershipsScreen(initialTabIndex: 3)),
+              );
             },
           ),
         if (canRenew && endingToday.isNotEmpty)
@@ -861,7 +886,10 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
             subtitle: "Take action immediately to collect renewal",
             avatars: endingToday.map((m) => m.avatar).where((a) => a.isNotEmpty && a.startsWith('http')).take(3).toList(),
             onTap: () {
-              _showSearchMemberDialog(context, vm, 'Renew Membership');
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ExpiringMembershipsScreen(initialTabIndex: 2)),
+              );
             },
           ),
         if (canRenew && expiring7Days.isNotEmpty)
@@ -873,7 +901,10 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
             subtitle: "Follow-up recommended before expiry",
             avatars: expiring7Days.map((m) => m.avatar).where((a) => a.isNotEmpty && a.startsWith('http')).take(3).toList(),
             onTap: () {
-              _showSearchMemberDialog(context, vm, 'Renew Membership');
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ExpiringMembershipsScreen(initialTabIndex: 1)),
+              );
             },
           ),
         if (canRenew && expiring15Days.isNotEmpty)
@@ -885,7 +916,10 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
             subtitle: "Follow-up recommended",
             avatars: expiring15Days.map((m) => m.avatar).where((a) => a.isNotEmpty && a.startsWith('http')).take(3).toList(),
             onTap: () {
-              _showSearchMemberDialog(context, vm, 'Renew Membership');
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ExpiringMembershipsScreen(initialTabIndex: 0)),
+              );
             },
           ),
         if (canTakePayment && pendingDues.isNotEmpty)
@@ -1303,9 +1337,13 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
   }
 
   void _showAddTransactionBottomSheet(BuildContext context, ReceptionistViewModel vm, String type) {
+    final isIncome = type == 'Income' || type == 'Revenue';
+    final displayType = isIncome ? 'Income' : 'Expense';
+    final dbType = isIncome ? 'Revenue' : 'Expense';
+
     final titleController = TextEditingController();
     final amountController = TextEditingController();
-    final categories = type == 'Revenue'
+    final categories = isIncome
         ? ['Membership', 'Personal Training', 'Protein Sale', 'Locker Rent', 'Merchandise', 'Other']
         : ['Salary', 'Rent', 'Utilities', 'Maintenance', 'Equipment', 'Other'];
     String selectedCategory = categories.first;
@@ -1339,7 +1377,7 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          'Add $type',
+                          'Add $displayType',
                           style: GoogleFonts.inter(
                             fontWeight: FontWeight.bold,
                             fontSize: 18,
@@ -1354,9 +1392,9 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
                     ),
                     const SizedBox(height: 16),
 
-                    // DATE SELECTION FIELD (REVENUE DATE / EXPENSE DATE)
+                    // DATE SELECTION FIELD (INCOME DATE / EXPENSE DATE)
                     Text(
-                      type == 'Revenue' ? 'REVENUE DATE' : 'EXPENSE DATE',
+                      isIncome ? 'INCOME DATE' : 'EXPENSE DATE',
                       style: GoogleFonts.inter(
                         fontSize: 11,
                         fontWeight: FontWeight.bold,
@@ -1497,7 +1535,7 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
                     const SizedBox(height: 24),
                     ElevatedButton(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: type == 'Revenue' ? Colors.green : AppTheme.danger,
+                        backgroundColor: isIncome ? Colors.green : AppTheme.danger,
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         elevation: 0,
@@ -1537,7 +1575,7 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
                                 gymId: gymId,
                                 title: title,
                                 amount: amt,
-                                type: type,
+                                type: dbType,
                                 category: selectedCategory,
                                 paymentMethod: 'Cash',
                                 date: DateFormat('dd MMM yyyy').format(selectedTxDate),
@@ -1553,7 +1591,7 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
                               await gymRepo.saveTransaction(tx);
 
                               // 2. Log activity, refresh all viewmodels, close modal & show success dialog
-                              vm.logActivity('$type Added: $title ($selectedCategory - ₹${NumberFormat('#,##,###').format(amt)})', 'finance');
+                              vm.logActivity('$displayType Added: $title ($selectedCategory - ₹${NumberFormat('#,##,###').format(amt)})', 'finance');
                               
                               if (context.mounted) {
                                 Navigator.pop(context);
@@ -1565,7 +1603,7 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
 
                                 SuccessDialog.show(
                                   context,
-                                  title: '$type Saved Successfully!',
+                                  title: '$displayType Saved Successfully!',
                                   message: '₹${NumberFormat('#,##,###').format(amt)} recorded for $title ($selectedCategory) on ${DateFormat('dd MMM yyyy').format(selectedTxDate)}.',
                                 );
                               }

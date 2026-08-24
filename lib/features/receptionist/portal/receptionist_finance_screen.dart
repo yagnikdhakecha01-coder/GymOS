@@ -38,25 +38,41 @@ class _ReceptionistFinanceScreenState extends State<ReceptionistFinanceScreen> w
 
   Future<void> _fetchTransactions() async {
     final vm = Provider.of<ReceptionistViewModel>(context, listen: false);
-    if (vm.staffRecord == null) return;
+    final gymRepo = Provider.of<GymRepository>(context, listen: false);
+    final gymId = vm.staffRecord?.gymId ?? gymRepo.storage.getGymInfo()?['id'];
+    if (gymId == null || gymId.toString().isEmpty) return;
 
     setState(() => _isLoading = true);
     try {
-      final now = DateTime.now();
-      final startOfToday = DateTime(now.year, now.month, now.day).toUtc().toIso8601String();
-      final endOfToday = DateTime(now.year, now.month, now.day, 23, 59, 59, 999).toUtc().toIso8601String();
-
       final res = await SupabaseService.client
           .from('finance_transactions')
           .select()
-          .eq('gym_id', vm.staffRecord!.gymId)
-          .gte('transaction_date', startOfToday)
-          .lte('transaction_date', endOfToday)
-          .order('transaction_date', ascending: false);
+          .eq('gym_id', gymId)
+          .order('transaction_date', ascending: false)
+          .limit(250);
 
       if (mounted) {
+        final List<Map<String, dynamic>> allTx = List<Map<String, dynamic>>.from(res);
+        final today = DateTime.now();
+        final todayDateStr = DateFormat('yyyy-MM-dd').format(today);
+
+        final todayTx = allTx.where((tx) {
+          final txDateRaw = tx['transaction_date']?.toString() ?? 
+              tx['revenue_date']?.toString() ?? 
+              tx['expense_date']?.toString() ?? 
+              tx['created_at']?.toString();
+          if (txDateRaw == null || txDateRaw.isEmpty) return false;
+          if (txDateRaw.startsWith(todayDateStr)) return true;
+          try {
+            final dt = DateTime.parse(txDateRaw).toLocal();
+            return dt.year == today.year && dt.month == today.month && dt.day == today.day;
+          } catch (_) {
+            return false;
+          }
+        }).toList();
+
         setState(() {
-          _transactions = List<Map<String, dynamic>>.from(res);
+          _transactions = todayTx;
           _isLoading = false;
         });
       }
@@ -115,7 +131,7 @@ class _ReceptionistFinanceScreenState extends State<ReceptionistFinanceScreen> w
               final financeVm = Provider.of<FinanceViewModel>(context, listen: false);
               final gymId = vm.staffRecord?.gymId ?? gymRepo.storage.getGymInfo()?['id'];
               await gymRepo.fetchTransactionsFromSupabase();
-              if (gymId != null && gymId.isNotEmpty) {
+              if (gymId != null && gymId.toString().isNotEmpty) {
                 await financeVm.fetchFinanceSummary(gymId, DateTime.now());
               }
               await vm.fetchDashboardStats();
@@ -152,7 +168,7 @@ class _ReceptionistFinanceScreenState extends State<ReceptionistFinanceScreen> w
                   totalAmount: totalIncome,
                   list: incomeList,
                   btnColor: Colors.green,
-                  onAddTap: () => _showAddTransactionBottomSheet('Revenue'),
+                  onAddTap: () => _showAddTransactionBottomSheet('Income'),
                 )
               : const RestrictedAccessWidget(moduleName: 'Income'),
 
@@ -304,11 +320,15 @@ class _ReceptionistFinanceScreenState extends State<ReceptionistFinanceScreen> w
   }
 
   void _showAddTransactionBottomSheet(String type) {
+    final isIncome = type == 'Income' || type == 'Revenue';
+    final displayType = isIncome ? 'Income' : 'Expense';
+    final dbType = isIncome ? 'Revenue' : 'Expense';
+
     final titleController = TextEditingController();
     final amountController = TextEditingController();
     final vm = Provider.of<ReceptionistViewModel>(context, listen: false);
     
-    final List<String> categories = type == 'Revenue' 
+    final List<String> categories = isIncome 
         ? ['Membership', 'Personal Training', 'Protein Sale', 'Locker Rent', 'Merchandise', 'Other']
         : ['Salary', 'Rent', 'Utilities', 'Maintenance', 'Equipment', 'Other'];
         
@@ -342,7 +362,7 @@ class _ReceptionistFinanceScreenState extends State<ReceptionistFinanceScreen> w
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          'Add $type',
+                          'Add $displayType',
                           style: GoogleFonts.inter(
                             fontWeight: FontWeight.bold,
                             fontSize: 18,
@@ -357,9 +377,9 @@ class _ReceptionistFinanceScreenState extends State<ReceptionistFinanceScreen> w
                     ),
                     const SizedBox(height: 16),
 
-                    // DATE SELECTION FIELD (REVENUE DATE / EXPENSE DATE)
+                    // DATE SELECTION FIELD (INCOME DATE / EXPENSE DATE)
                     Text(
-                      type == 'Revenue' ? 'REVENUE DATE' : 'EXPENSE DATE',
+                      isIncome ? 'INCOME DATE' : 'EXPENSE DATE',
                       style: GoogleFonts.inter(
                         fontSize: 11,
                         fontWeight: FontWeight.bold,
@@ -500,7 +520,7 @@ class _ReceptionistFinanceScreenState extends State<ReceptionistFinanceScreen> w
                     const SizedBox(height: 24),
                     ElevatedButton(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: type == 'Revenue' ? Colors.green : AppTheme.danger,
+                        backgroundColor: isIncome ? Colors.green : AppTheme.danger,
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         elevation: 0,
@@ -527,14 +547,14 @@ class _ReceptionistFinanceScreenState extends State<ReceptionistFinanceScreen> w
                           DateTime.now().minute,
                           DateTime.now().second,
                         ).toIso8601String();
-                        final gymId = vm.staffRecord?.gymId ?? '';
+                        final gymId = vm.staffRecord?.gymId ?? gymRepo.storage.getGymInfo()?['id'] ?? '';
 
                         final tx = FinanceTransaction(
                           id: '',
                           gymId: gymId,
                           title: title,
                           amount: amt,
-                          type: type,
+                          type: dbType,
                           category: selectedCategory,
                           paymentMethod: 'Cash',
                           date: DateFormat('dd MMM yyyy').format(selectedTxDate),
@@ -550,7 +570,7 @@ class _ReceptionistFinanceScreenState extends State<ReceptionistFinanceScreen> w
                         await gymRepo.saveTransaction(tx);
 
                         // 2. Log activity, refresh all viewmodels, close modal & show success dialog
-                        vm.logActivity('$type Added: $title ($selectedCategory - ₹${NumberFormat('#,##,###').format(amt)})', 'finance');
+                        vm.logActivity('$displayType Added: $title ($selectedCategory - ₹${NumberFormat('#,##,###').format(amt)})', 'finance');
                         
                         if (context.mounted) {
                           Navigator.pop(context);
@@ -563,16 +583,16 @@ class _ReceptionistFinanceScreenState extends State<ReceptionistFinanceScreen> w
 
                           SuccessDialog.show(
                             context,
-                            title: '$type Saved Successfully!',
+                            title: '$displayType Saved Successfully!',
                             message: '₹${NumberFormat('#,##,###').format(amt)} recorded for $title ($selectedCategory) on ${DateFormat('dd MMM yyyy').format(selectedTxDate)}.',
                           );
                         }
                       },
                       child: Text(
-                        'Save $type',
+                        'Save $displayType',
                         style: GoogleFonts.inter(
                           fontWeight: FontWeight.bold,
-                          fontSize: 15,
+                          fontSize: 14,
                           color: Colors.white,
                         ),
                       ),
