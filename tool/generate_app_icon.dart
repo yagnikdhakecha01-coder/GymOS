@@ -42,25 +42,34 @@ void main() {
   final croppedHeight = (maxY - minY + 1).clamp(1, logo.height);
   final croppedLogo = img.copyCrop(logo, x: minX, y: minY, width: croppedWidth, height: croppedHeight);
 
-  // Create a 1024x1024 master canvas with a sleek dark background (#070D18 / #0B1329)
-  // Matching GymOS dark aesthetic
+  // Create a 1024x1024 master canvas with a sleek dark radial gradient
+  // Center: #152238, Outer: #060B14
+  // Gives the dark slate bottom of the G and vibrant cyan arc high contrast & depth
   const canvasSize = 1024;
   final masterCanvas = img.Image(width: canvasSize, height: canvasSize);
 
-  // Fill canvas with a rich deep midnight background
-  // Top: #0D1527, Bottom: #070D18
+  const centerX = canvasSize / 2.0;
+  const centerY = canvasSize / 2.0;
+  const maxDist = 724.0; // sqrt(512^2 + 512^2)
+
   for (int y = 0; y < canvasSize; y++) {
-    final double t = y / canvasSize;
-    final r = (13 * (1 - t) + 7 * t).round();
-    final g = (21 * (1 - t) + 13 * t).round();
-    final b = (39 * (1 - t) + 24 * t).round();
     for (int x = 0; x < canvasSize; x++) {
+      final dx = x - centerX;
+      final dy = y - centerY;
+      final dist = (dx * dx + dy * dy);
+      final double t = (dist / (maxDist * maxDist)).clamp(0.0, 1.0);
+
+      // Radial gradient from #18263E at center to #070C17 at outer edges
+      final r = (24 * (1 - t) + 7 * t).round().clamp(0, 255);
+      final g = (38 * (1 - t) + 12 * t).round().clamp(0, 255);
+      final b = (62 * (1 - t) + 23 * t).round().clamp(0, 255);
+
       masterCanvas.setPixelRgba(x, y, r, g, b, 255);
     }
   }
 
-  // Scale the cropped logo to ~68% of the canvas for iOS so it looks bold, centered, and balanced
-  const targetLogoSize = 700;
+  // Scale the cropped logo to ~72% of the canvas for iOS so it looks bold, centered, and balanced
+  const targetLogoSize = 730;
   final scaledLogo = img.copyResize(
     croppedLogo,
     width: targetLogoSize,
@@ -79,9 +88,9 @@ void main() {
   masterFile.writeAsBytesSync(img.encodePng(masterCanvas));
   print('Saved master icon to assets/images/app_icon_master.png');
 
-  // Also create a centered foreground for Android Adaptive Icon (needs ~432x432 inside 1024x1024 safe zone)
+  // Also create a centered foreground for Android Adaptive Icon (needs ~540x540 inside 1024x1024 safe zone)
   final adaptiveForeground = img.Image(width: canvasSize, height: canvasSize);
-  const adaptiveTargetSize = 540;
+  const adaptiveTargetSize = 560;
   final adaptiveScaledLogo = img.copyResize(
     croppedLogo,
     width: adaptiveTargetSize,
