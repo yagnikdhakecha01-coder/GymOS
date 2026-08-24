@@ -612,6 +612,398 @@ Thank you.''';
           },
         );
       },
+  void _showEditMemberDetailsSheet(BuildContext context, Member member) {
+    final membersVm = Provider.of<MembersViewModel>(context, listen: false);
+    final nameController = TextEditingController(text: member.name);
+    final phoneController = TextEditingController(text: member.phone);
+    final emailController = TextEditingController(text: member.email);
+    final addressController = TextEditingController(text: member.extraFields['address']?.toString() ?? '');
+    final notesController = TextEditingController(text: member.notes);
+    
+    DateTime? selectedDob;
+    final dobStr = member.extraFields['dob']?.toString() ?? '';
+    if (dobStr.isNotEmpty) {
+      try {
+        selectedDob = DateTime.parse(dobStr);
+      } catch (_) {}
+    }
+
+    String selectedGender = member.extraFields['gender']?.toString() ?? 'Male';
+    if (!['Male', 'Female', 'Other'].contains(selectedGender)) {
+      selectedGender = 'Male';
+    }
+
+    String selectedBloodGroup = member.extraFields['bloodGroup']?.toString() ?? 'O+';
+    final bloodGroups = ['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-', 'Not Specified'];
+    if (!bloodGroups.contains(selectedBloodGroup)) {
+      selectedBloodGroup = 'Not Specified';
+    }
+
+    bool isSaving = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              padding: EdgeInsets.only(
+                left: 20,
+                right: 20,
+                top: 20,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Edit Member Details',
+                          style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close_rounded, color: AppTheme.textSecondary),
+                          onPressed: () => Navigator.pop(sheetContext),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: nameController,
+                      decoration: const InputDecoration(labelText: 'Full Name *', prefixIcon: Icon(Icons.person_outline_rounded)),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: phoneController,
+                      keyboardType: TextInputType.phone,
+                      decoration: const InputDecoration(labelText: 'Phone Number *', prefixIcon: Icon(Icons.phone_outlined)),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: emailController,
+                      keyboardType: TextInputType.emailAddress,
+                      decoration: const InputDecoration(labelText: 'Email Address', prefixIcon: Icon(Icons.email_outlined)),
+                    ),
+                    const SizedBox(height: 12),
+                    InkWell(
+                      onTap: () async {
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: selectedDob ?? DateTime(1998, 1, 1),
+                          firstDate: DateTime(1940),
+                          lastDate: DateTime.now(),
+                        );
+                        if (picked != null) {
+                          setSheetState(() => selectedDob = picked);
+                        }
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: AppTheme.border),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.cake_outlined, size: 20, color: AppTheme.textSecondary),
+                                const SizedBox(width: 10),
+                                Text(
+                                  selectedDob != null ? DateFormat('dd MMM yyyy').format(selectedDob!) : 'Select Date of Birth',
+                                  style: GoogleFonts.inter(fontSize: 13, color: selectedDob != null ? AppTheme.textPrimary : AppTheme.textMuted),
+                                ),
+                              ],
+                            ),
+                            const Icon(Icons.calendar_today_rounded, size: 16, color: AppTheme.primary),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: selectedGender,
+                            decoration: const InputDecoration(labelText: 'Gender'),
+                            items: ['Male', 'Female', 'Other'].map((g) => DropdownMenuItem(value: g, child: Text(g))).toList(),
+                            onChanged: (val) {
+                              if (val != null) setSheetState(() => selectedGender = val);
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: selectedBloodGroup,
+                            decoration: const InputDecoration(labelText: 'Blood Group'),
+                            items: bloodGroups.map((bg) => DropdownMenuItem(value: bg, child: Text(bg))).toList(),
+                            onChanged: (val) {
+                              if (val != null) setSheetState(() => selectedBloodGroup = val);
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: addressController,
+                      decoration: const InputDecoration(labelText: 'Address', prefixIcon: Icon(Icons.location_on_outlined)),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: notesController,
+                      maxLines: 2,
+                      decoration: const InputDecoration(labelText: 'Notes / Medical Info', prefixIcon: Icon(Icons.notes_rounded)),
+                    ),
+                    const SizedBox(height: 24),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        elevation: 0,
+                      ),
+                      onPressed: isSaving ? null : () async {
+                        final updatedName = nameController.text.trim();
+                        final updatedPhone = phoneController.text.trim();
+                        if (updatedName.isEmpty || updatedPhone.isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Name and Phone cannot be empty.')),
+                          );
+                          return;
+                        }
+
+                        setSheetState(() => isSaving = true);
+
+                        final newExtra = Map<String, dynamic>.from(member.extraFields);
+                        if (selectedDob != null) {
+                          newExtra['dob'] = selectedDob!.toIso8601String().split('T').first;
+                        }
+                        newExtra['gender'] = selectedGender;
+                        newExtra['bloodGroup'] = selectedBloodGroup;
+                        newExtra['address'] = addressController.text.trim();
+
+                        final updated = member.copyWith(
+                          name: updatedName,
+                          phone: updatedPhone,
+                          email: emailController.text.trim(),
+                          notes: notesController.text.trim(),
+                          extraFields: newExtra,
+                        );
+
+                        await membersVm.saveMember(updated);
+
+                        if (Navigator.canPop(sheetContext)) {
+                          Navigator.pop(sheetContext);
+                        }
+
+                        if (mounted) {
+                          setState(() {});
+                          SuccessDialog.show(
+                            context,
+                            title: 'Member Details Updated!',
+                            message: 'Profile information for ${updated.name} has been updated successfully.',
+                          );
+                        }
+                      },
+                      child: isSaving
+                          ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                          : Text('Save Changes', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 14)),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showEditBodyMeasurementsSheet(BuildContext context, Member member) {
+    final membersVm = Provider.of<MembersViewModel>(context, listen: false);
+    final extra = member.extraFields;
+    final Map<String, dynamic> measurements = (extra['measurements'] is Map<String, dynamic>)
+        ? extra['measurements'] as Map<String, dynamic>
+        : (extra['measurements'] is Map ? Map<String, dynamic>.from(extra['measurements'] as Map) : <String, dynamic>{});
+
+    final heightController = TextEditingController(text: measurements['height']?.toString() ?? extra['height']?.toString() ?? '');
+    final weightController = TextEditingController(text: measurements['weight']?.toString() ?? extra['weight']?.toString() ?? '');
+    final chestController = TextEditingController(text: measurements['chest']?.toString() ?? extra['chest']?.toString() ?? '');
+    final waistController = TextEditingController(text: measurements['waist']?.toString() ?? extra['waist']?.toString() ?? '');
+    final bicepsController = TextEditingController(text: measurements['biceps']?.toString() ?? extra['biceps']?.toString() ?? '');
+    final hipController = TextEditingController(text: measurements['hip']?.toString() ?? extra['hip']?.toString() ?? '');
+
+    bool isSaving = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              padding: EdgeInsets.only(
+                left: 20,
+                right: 20,
+                top: 20,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Update Body Measurements',
+                          style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close_rounded, color: AppTheme.textSecondary),
+                          onPressed: () => Navigator.pop(sheetContext),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: heightController,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(labelText: 'Height (cm)', prefixIcon: Icon(Icons.height_rounded)),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextField(
+                            controller: weightController,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(labelText: 'Weight (kg)', prefixIcon: Icon(Icons.monitor_weight_outlined)),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: chestController,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(labelText: 'Chest (in)', prefixIcon: Icon(Icons.fitness_center_rounded)),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextField(
+                            controller: waistController,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(labelText: 'Waist (in)', prefixIcon: Icon(Icons.straighten_rounded)),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: bicepsController,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(labelText: 'Biceps (in)', prefixIcon: Icon(Icons.accessibility_new_rounded)),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextField(
+                            controller: hipController,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(labelText: 'Hip (in)', prefixIcon: Icon(Icons.attribution_rounded)),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        elevation: 0,
+                      ),
+                      onPressed: isSaving ? null : () async {
+                        setSheetState(() => isSaving = true);
+
+                        final newMeasurements = {
+                          'height': heightController.text.trim(),
+                          'weight': weightController.text.trim(),
+                          'chest': chestController.text.trim(),
+                          'waist': waistController.text.trim(),
+                          'biceps': bicepsController.text.trim(),
+                          'hip': hipController.text.trim(),
+                          'updated_at': DateTime.now().toIso8601String(),
+                        };
+
+                        final newExtra = Map<String, dynamic>.from(member.extraFields);
+                        newExtra['measurements'] = newMeasurements;
+                        newExtra['height'] = heightController.text.trim();
+                        newExtra['weight'] = weightController.text.trim();
+                        newExtra['chest'] = chestController.text.trim();
+                        newExtra['waist'] = waistController.text.trim();
+                        newExtra['biceps'] = bicepsController.text.trim();
+                        newExtra['hip'] = hipController.text.trim();
+
+                        final updated = member.copyWith(extraFields: newExtra);
+                        await membersVm.saveMember(updated);
+
+                        if (Navigator.canPop(sheetContext)) {
+                          Navigator.pop(sheetContext);
+                        }
+
+                        if (mounted) {
+                          setState(() {});
+                          SuccessDialog.show(
+                            context,
+                            title: 'Body Measurements Saved!',
+                            message: 'Measurements for ${member.name} have been updated successfully.',
+                          );
+                        }
+                      },
+                      child: isSaving
+                          ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                          : Text('Save Measurements', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 14)),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -1359,7 +1751,7 @@ Thank you.''';
           children: [
             Text('MEMBER INFO', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textSecondary, letterSpacing: 0.5)),
             GestureDetector(
-              onTap: () {},
+              onTap: () => _showEditMemberDetailsSheet(context, member),
               child: Row(
                 children: [
                   const Icon(Icons.edit_outlined, size: 14, color: AppTheme.primary),
@@ -1396,7 +1788,22 @@ Thank you.''';
         const SizedBox(height: 24),
 
         // 5. Body Measurements Section
-        Text('BODY MEASUREMENTS', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textSecondary, letterSpacing: 0.5)),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('BODY MEASUREMENTS', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textSecondary, letterSpacing: 0.5)),
+            GestureDetector(
+              onTap: () => _showEditBodyMeasurementsSheet(context, member),
+              child: Row(
+                children: [
+                  const Icon(Icons.edit_outlined, size: 14, color: AppTheme.primary),
+                  const SizedBox(width: 4),
+                  Text('Edit', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.primary)),
+                ],
+              ),
+            ),
+          ],
+        ),
         const SizedBox(height: 10),
         CustomCard(
           padding: const EdgeInsets.all(16),
@@ -1843,14 +2250,14 @@ Thank you.''';
   }
 
   // More Tab
-  Widget _buildMoreTab() {
+  Widget _buildMoreTab(Member member) {
     final items = [
-      {'title': 'Attendance', 'icon': Icons.co_present_rounded},
-      {'title': 'Body Measurements', 'icon': Icons.scale_rounded},
-      {'title': 'Progress Photos', 'icon': Icons.photo_library_rounded},
-      {'title': 'Documents', 'icon': Icons.folder_shared_rounded},
-      {'title': 'Medical History', 'icon': Icons.medical_services_rounded},
-      {'title': 'Activity Log', 'icon': Icons.history_edu_rounded},
+      {'title': 'Attendance', 'icon': Icons.co_present_rounded, 'action': 'attendance'},
+      {'title': 'Body Measurements', 'icon': Icons.scale_rounded, 'action': 'measurements'},
+      {'title': 'Progress Photos', 'icon': Icons.photo_library_rounded, 'action': 'photos'},
+      {'title': 'Documents', 'icon': Icons.folder_shared_rounded, 'action': 'docs'},
+      {'title': 'Medical History', 'icon': Icons.medical_services_rounded, 'action': 'medical'},
+      {'title': 'Activity Log', 'icon': Icons.history_edu_rounded, 'action': 'logs'},
     ];
 
     return Column(
@@ -1863,16 +2270,34 @@ Thank you.''';
           child: Column(
             children: List.generate(items.length, (idx) {
               final item = items[idx];
+              final isMeasurements = item['action'] == 'measurements';
+
               return Column(
                 children: [
                   ListTile(
+                    onTap: isMeasurements
+                        ? () => _showEditBodyMeasurementsSheet(context, member)
+                        : null,
                     leading: Icon(item['icon'] as IconData, color: AppTheme.primary),
                     title: Text(item['title'] as String, style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 13)),
-                    trailing: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(color: AppTheme.surfaceGray, borderRadius: BorderRadius.circular(8)),
-                      child: Text('Coming Soon', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.bold, color: AppTheme.textSecondary)),
-                    ),
+                    trailing: isMeasurements
+                        ? Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(color: AppTheme.primary.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text('Edit / View', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.primary)),
+                                const SizedBox(width: 4),
+                                const Icon(Icons.chevron_right, size: 14, color: AppTheme.primary),
+                              ],
+                            ),
+                          )
+                        : Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(color: AppTheme.surfaceGray, borderRadius: BorderRadius.circular(8)),
+                            child: Text('Coming Soon', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.bold, color: AppTheme.textSecondary)),
+                          ),
                   ),
                   if (idx < items.length - 1) const Divider(height: 1),
                 ],
@@ -1919,7 +2344,7 @@ Thank you.''';
                         ? _buildHistoryTab(membersVm, member)
                         : _currentTab == 2
                             ? _buildNotesTab()
-                            : _buildMoreTab(),
+                            : _buildMoreTab(member),
               ),
             ),
       bottomNavigationBar: Container(

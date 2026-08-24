@@ -759,6 +759,41 @@ class GymRepository extends ChangeNotifier {
         await _saveQueuesToStorage();
         print('Synced attendance log $attendanceUuid successfully.');
       } catch (e) {
+        final errStr = e.toString();
+        if (errStr.contains('23505') || errStr.contains('uniq_attendance_user_date_shift') || errStr.contains('duplicate key')) {
+          print('Attendance Sync Auto-Heal: Record already exists on server ($attendanceUuid). Updating existing server record.');
+          try {
+            final gymId = item['gym_id'] as String;
+            final date = item['date'] as String;
+            final userId = item['user_id'] as String?;
+            final memberId = item['member_id'] as String?;
+            final staffId = item['staff_id'] as String?;
+            final checkInIso = item['check_in'] as String?;
+            final checkOutIso = item['check_out'] as String?;
+            final status = item['status'] as String?;
+
+            var updateQuery = SupabaseService.client.from('attendance_logs').update({
+              if (checkInIso != null) 'check_in': checkInIso,
+              if (checkOutIso != null) 'check_out': checkOutIso,
+              if (status != null) 'status': status,
+            }).eq('gym_id', gymId).eq('date', date);
+
+            if (userId != null && userId.isNotEmpty) {
+              updateQuery = updateQuery.eq('user_id', userId);
+            } else if (memberId != null && memberId.isNotEmpty) {
+              updateQuery = updateQuery.eq('member_id', memberId);
+            } else if (staffId != null && staffId.isNotEmpty) {
+              updateQuery = updateQuery.eq('staff_id', staffId);
+            }
+            await updateQuery;
+          } catch (_) {}
+
+          // Remove duplicate conflict item from queue so it's resolved cleanly
+          _attendanceQueue.removeWhere((q) => q['attendance_uuid'] == attendanceUuid);
+          await _saveQueuesToStorage();
+          continue;
+        }
+
         print('Error syncing attendance log: $e');
         item['sync_status'] = 'failed';
         item['retry_count'] = (item['retry_count'] ?? 0) + 1;
@@ -884,6 +919,14 @@ class GymRepository extends ChangeNotifier {
         await _saveQueuesToStorage();
         print('Synced CRUD operation $uuid successfully.');
       } catch (e) {
+        final errStr = e.toString();
+        if (errStr.contains('23505') || errStr.contains('uniq_attendance_user_date_shift') || errStr.contains('duplicate key')) {
+          print('CRUD Sync Auto-Heal: Duplicate constraint 23505 encountered ($uuid). Removing conflict from queue.');
+          _crudQueue.removeWhere((q) => q['uuid'] == uuid);
+          await _saveQueuesToStorage();
+          continue;
+        }
+
         print('Error syncing CRUD operation: $e');
         item['sync_status'] = 'failed';
         item['retry_count'] = (item['retry_count'] ?? 0) + 1;

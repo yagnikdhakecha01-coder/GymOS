@@ -20,8 +20,10 @@ class ReceptionistFinanceScreen extends StatefulWidget {
 
 class _ReceptionistFinanceScreenState extends State<ReceptionistFinanceScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  List<Map<String, dynamic>> _transactions = [];
+  List<Map<String, dynamic>> _rawTransactions = [];
   bool _isLoading = false;
+  String _selectedPeriod = 'Today'; // 'Today', 'This Month', 'All Time', 'Custom'
+  DateTime? _customDate;
 
   @override
   void initState() {
@@ -49,30 +51,11 @@ class _ReceptionistFinanceScreenState extends State<ReceptionistFinanceScreen> w
           .select()
           .eq('gym_id', gymId)
           .order('transaction_date', ascending: false)
-          .limit(250);
+          .limit(300);
 
       if (mounted) {
-        final List<Map<String, dynamic>> allTx = List<Map<String, dynamic>>.from(res);
-        final today = DateTime.now();
-        final todayDateStr = DateFormat('yyyy-MM-dd').format(today);
-
-        final todayTx = allTx.where((tx) {
-          final txDateRaw = tx['transaction_date']?.toString() ?? 
-              tx['revenue_date']?.toString() ?? 
-              tx['expense_date']?.toString() ?? 
-              tx['created_at']?.toString();
-          if (txDateRaw == null || txDateRaw.isEmpty) return false;
-          if (txDateRaw.startsWith(todayDateStr)) return true;
-          try {
-            final dt = DateTime.parse(txDateRaw).toLocal();
-            return dt.year == today.year && dt.month == today.month && dt.day == today.day;
-          } catch (_) {
-            return false;
-          }
-        }).toList();
-
         setState(() {
-          _transactions = todayTx;
+          _rawTransactions = List<Map<String, dynamic>>.from(res);
           _isLoading = false;
         });
       }
@@ -82,6 +65,35 @@ class _ReceptionistFinanceScreenState extends State<ReceptionistFinanceScreen> w
         setState(() => _isLoading = false);
       }
     }
+  }
+
+  List<Map<String, dynamic>> _getFilteredTransactions() {
+    final now = DateTime.now();
+    final todayStr = DateFormat('yyyy-MM-dd').format(now);
+
+    return _rawTransactions.where((tx) {
+      final txDateRaw = tx['transaction_date']?.toString() ?? 
+          tx['revenue_date']?.toString() ?? 
+          tx['expense_date']?.toString() ?? 
+          tx['created_at']?.toString();
+      if (txDateRaw == null || txDateRaw.isEmpty) return false;
+
+      DateTime? dt;
+      try {
+        dt = DateTime.parse(txDateRaw).toLocal();
+      } catch (_) {
+        return false;
+      }
+
+      if (_selectedPeriod == 'Today') {
+        return dt.year == now.year && dt.month == now.month && dt.day == now.day;
+      } else if (_selectedPeriod == 'This Month') {
+        return dt.year == now.year && dt.month == now.month;
+      } else if (_selectedPeriod == 'Custom' && _customDate != null) {
+        return dt.year == _customDate!.year && dt.month == _customDate!.month && dt.day == _customDate!.day;
+      }
+      return true; // 'All Time'
+    }).toList();
   }
 
   @override
@@ -99,11 +111,17 @@ class _ReceptionistFinanceScreenState extends State<ReceptionistFinanceScreen> w
       );
     }
 
-    final incomeList = _transactions.where((tx) => tx['type'] == 'Revenue').toList();
-    final expenseList = _transactions.where((tx) => tx['type'] == 'Expense').toList();
+    final filteredTx = _getFilteredTransactions();
+    final incomeList = filteredTx.where((tx) => tx['type'] == 'Revenue').toList();
+    final expenseList = filteredTx.where((tx) => tx['type'] == 'Expense').toList();
 
     final totalIncome = incomeList.fold<double>(0, (sum, item) => sum + ((item['amount'] as num?)?.toDouble() ?? 0.0));
     final totalExpense = expenseList.fold<double>(0, (sum, item) => sum + ((item['amount'] as num?)?.toDouble() ?? 0.0));
+
+    String periodLabel = _selectedPeriod;
+    if (_selectedPeriod == 'Custom' && _customDate != null) {
+      periodLabel = DateFormat('dd MMM yyyy').format(_customDate!);
+    }
 
     return Scaffold(
       backgroundColor: AppTheme.background,
@@ -152,43 +170,149 @@ class _ReceptionistFinanceScreenState extends State<ReceptionistFinanceScreen> w
           labelColor: AppTheme.primary,
           unselectedLabelColor: AppTheme.textSecondary,
           indicatorColor: AppTheme.primary,
+          indicatorWeight: 3,
+          labelStyle: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 13),
           tabs: const [
             Tab(text: 'Income'),
             Tab(text: 'Expense'),
           ],
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
+      body: Column(
         children: [
-          // Income Tab
-          canViewIncome
-              ? _buildFinanceTabContent(
-                  type: 'Income',
-                  totalAmount: totalIncome,
-                  list: incomeList,
-                  btnColor: Colors.green,
-                  onAddTap: () => _showAddTransactionBottomSheet('Income'),
-                )
-              : const RestrictedAccessWidget(moduleName: 'Income'),
+          // Period Filter Chips Row
+          Container(
+            color: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  _buildPeriodChip('Today'),
+                  const SizedBox(width: 8),
+                  _buildPeriodChip('This Month'),
+                  const SizedBox(width: 8),
+                  _buildPeriodChip('All Time'),
+                  const SizedBox(width: 8),
+                  InkWell(
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: _customDate ?? DateTime.now(),
+                        firstDate: DateTime(2020),
+                        lastDate: DateTime(2030),
+                      );
+                      if (picked != null) {
+                        setState(() {
+                          _customDate = picked;
+                          _selectedPeriod = 'Custom';
+                        });
+                      }
+                    },
+                    borderRadius: BorderRadius.circular(20),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: _selectedPeriod == 'Custom' ? AppTheme.primary : AppTheme.surfaceGray,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: _selectedPeriod == 'Custom' ? AppTheme.primary : AppTheme.border),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.calendar_today_rounded,
+                            size: 13,
+                            color: _selectedPeriod == 'Custom' ? Colors.white : AppTheme.textSecondary,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            _selectedPeriod == 'Custom' && _customDate != null
+                                ? DateFormat('dd MMM').format(_customDate!)
+                                : 'Pick Date',
+                            style: GoogleFonts.inter(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: _selectedPeriod == 'Custom' ? Colors.white : AppTheme.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const Divider(height: 1, color: AppTheme.border),
 
-          // Expense Tab
-          canViewExpense
-              ? _buildFinanceTabContent(
-                  type: 'Expense',
-                  totalAmount: totalExpense,
-                  list: expenseList,
-                  btnColor: Colors.red,
-                  onAddTap: () => _showAddTransactionBottomSheet('Expense'),
-                )
-              : const RestrictedAccessWidget(moduleName: 'Expense'),
+          // Tab Views
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                // Income Tab
+                canViewIncome
+                    ? _buildFinanceTabContent(
+                        type: 'Income',
+                        periodLabel: periodLabel,
+                        totalAmount: totalIncome,
+                        list: incomeList,
+                        btnColor: Colors.green,
+                        onAddTap: () => _showAddTransactionBottomSheet('Income'),
+                      )
+                    : const RestrictedAccessWidget(moduleName: 'Income'),
+
+                // Expense Tab
+                canViewExpense
+                    ? _buildFinanceTabContent(
+                        type: 'Expense',
+                        periodLabel: periodLabel,
+                        totalAmount: totalExpense,
+                        list: expenseList,
+                        btnColor: Colors.red,
+                        onAddTap: () => _showAddTransactionBottomSheet('Expense'),
+                      )
+                    : const RestrictedAccessWidget(moduleName: 'Expense'),
+              ],
+            ),
+          ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildPeriodChip(String period) {
+    final isSelected = _selectedPeriod == period;
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _selectedPeriod = period;
+        });
+      },
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected ? AppTheme.primary : AppTheme.surfaceGray,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: isSelected ? AppTheme.primary : AppTheme.border),
+        ),
+        child: Text(
+          period,
+          style: GoogleFonts.inter(
+            fontSize: 11,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+            color: isSelected ? Colors.white : AppTheme.textSecondary,
+          ),
+        ),
       ),
     );
   }
 
   Widget _buildFinanceTabContent({
     required String type,
+    required String periodLabel,
     required double totalAmount,
     required List<Map<String, dynamic>> list,
     required Color btnColor,
@@ -196,7 +320,7 @@ class _ReceptionistFinanceScreenState extends State<ReceptionistFinanceScreen> w
   }) {
     return Column(
       children: [
-        // Daily Summary Card
+        // Summary Card
         Container(
           color: Colors.white,
           padding: const EdgeInsets.all(16),
@@ -206,28 +330,44 @@ class _ReceptionistFinanceScreenState extends State<ReceptionistFinanceScreen> w
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: btnColor.withOpacity(0.04),
+                  color: btnColor.withOpacity(0.05),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: btnColor.withOpacity(0.2)),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Total $type (Today)',
-                      style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Total $type ($periodLabel)',
+                          style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.textSecondary),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: btnColor.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            '${list.length} ${list.length == 1 ? 'record' : 'records'}',
+                            style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.bold, color: btnColor),
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 6),
                     Text(
                       '₹${NumberFormat('#,##,###').format(totalAmount)}',
-                      style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.w800, color: AppTheme.textPrimary),
+                      style: GoogleFonts.inter(fontSize: 26, fontWeight: FontWeight.w800, color: AppTheme.textPrimary),
                     ),
                   ],
                 ),
               ),
               const SizedBox(height: 12),
               SizedBox(
-                height: 40,
+                height: 42,
                 child: ElevatedButton(
                   onPressed: onAddTap,
                   style: ElevatedButton.styleFrom(
@@ -236,16 +376,23 @@ class _ReceptionistFinanceScreenState extends State<ReceptionistFinanceScreen> w
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     elevation: 0,
                   ),
-                  child: Text(
-                    '+ Add $type',
-                    style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.add_circle_outline_rounded, size: 18),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Add $type',
+                        style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold),
+                      ),
+                    ],
                   ),
                 ),
               ),
             ],
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
 
         // Transactions list
         Expanded(
@@ -253,22 +400,55 @@ class _ReceptionistFinanceScreenState extends State<ReceptionistFinanceScreen> w
               ? const Center(child: CircularProgressIndicator(color: AppTheme.primary))
               : list.isEmpty
                   ? Center(
-                      child: Text(
-                        'No $type logged today.',
-                        style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary),
+                      child: Padding(
+                        padding: const EdgeInsets.all(32),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.receipt_long_outlined, size: 48, color: AppTheme.textSecondary.withOpacity(0.4)),
+                            const SizedBox(height: 12),
+                            Text(
+                              'No $type logged for $periodLabel.',
+                              style: GoogleFonts.inter(fontSize: 13, color: AppTheme.textSecondary, fontWeight: FontWeight.w500),
+                            ),
+                            const SizedBox(height: 12),
+                            if (_selectedPeriod != 'This Month')
+                              OutlinedButton.icon(
+                                icon: const Icon(Icons.calendar_month_rounded, size: 14),
+                                label: const Text('View This Month'),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: AppTheme.primary,
+                                  side: const BorderSide(color: AppTheme.primary),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                ),
+                                onPressed: () {
+                                  setState(() => _selectedPeriod = 'This Month');
+                                },
+                              ),
+                          ],
+                        ),
                       ),
                     )
                   : ListView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                       itemCount: list.length,
                       itemBuilder: (context, index) {
                         final tx = list[index];
-                        final title = tx['title'] ?? 'Transaction';
+                        final title = tx['title'] ?? (type == 'Income' ? 'Gym Revenue' : 'Gym Expense');
                         final category = tx['category'] ?? 'General';
+                        final paymentMethod = tx['payment_method'] ?? 'Cash';
                         final amount = (tx['amount'] as num?)?.toDouble() ?? 0.0;
-                        final time = tx['created_at'] != null
-                            ? DateFormat('hh:mm a').format(DateTime.parse(tx['created_at'] as String).toLocal())
-                            : '—';
+                        
+                        String timeStr = '—';
+                        final txDateRaw = tx['transaction_date'] ?? tx['revenue_date'] ?? tx['expense_date'] ?? tx['created_at'];
+                        if (txDateRaw != null) {
+                          try {
+                            final dt = DateTime.parse(txDateRaw.toString()).toLocal();
+                            timeStr = DateFormat('dd MMM, hh:mm a').format(dt);
+                          } catch (_) {
+                            timeStr = txDateRaw.toString();
+                          }
+                        }
 
                         return Container(
                           margin: const EdgeInsets.only(bottom: 8),
@@ -298,16 +478,42 @@ class _ReceptionistFinanceScreenState extends State<ReceptionistFinanceScreen> w
                                       title,
                                       style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
                                     ),
-                                    Text(
-                                      '$category • $time',
-                                      style: GoogleFonts.inter(fontSize: 10, color: AppTheme.textSecondary),
+                                    const SizedBox(height: 2),
+                                    Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                          decoration: BoxDecoration(
+                                            color: AppTheme.surfaceGray,
+                                            borderRadius: BorderRadius.circular(4),
+                                          ),
+                                          child: Text(
+                                            category,
+                                            style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w600, color: AppTheme.textSecondary),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          '• $timeStr',
+                                          style: GoogleFonts.inter(fontSize: 10, color: AppTheme.textSecondary),
+                                        ),
+                                      ],
                                     ),
                                   ],
                                 ),
                               ),
-                              Text(
-                                '₹${NumberFormat('#,##,###').format(amount)}',
-                                style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  Text(
+                                    '₹${NumberFormat('#,##,###').format(amount)}',
+                                    style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w800, color: btnColor),
+                                  ),
+                                  Text(
+                                    paymentMethod,
+                                    style: GoogleFonts.inter(fontSize: 9, color: AppTheme.textMuted),
+                                  ),
+                                ],
                               ),
                             ],
                           ),
@@ -317,6 +523,7 @@ class _ReceptionistFinanceScreenState extends State<ReceptionistFinanceScreen> w
         ),
       ],
     );
+  }
   }
 
   void _showAddTransactionBottomSheet(String type) {
