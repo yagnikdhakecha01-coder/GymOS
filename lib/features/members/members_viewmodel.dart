@@ -32,6 +32,11 @@ class MembersViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> saveMember(Member member) async {
+    await _repository.saveMember(member);
+    await fetchMembers();
+  }
+
   void clearAllData() {
     _searchQuery = '';
     _selectedFilter = 'All';

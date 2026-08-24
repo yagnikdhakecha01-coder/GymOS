@@ -524,7 +524,6 @@ class _ReceptionistFinanceScreenState extends State<ReceptionistFinanceScreen> w
       ],
     );
   }
-  }
 
   void _showAddTransactionBottomSheet(String type) {
     final isIncome = type == 'Income' || type == 'Revenue';

@@ -760,6 +760,7 @@ class GymRepository extends ChangeNotifier {
         print('Synced attendance log $attendanceUuid successfully.');
       } catch (e) {
         final errStr = e.toString();
+        final attendanceUuid = item['attendance_uuid']?.toString() ?? '';
         if (errStr.contains('23505') || errStr.contains('uniq_attendance_user_date_shift') || errStr.contains('duplicate key')) {
           print('Attendance Sync Auto-Heal: Record already exists on server ($attendanceUuid). Updating existing server record.');
           try {
@@ -920,6 +921,7 @@ class GymRepository extends ChangeNotifier {
         print('Synced CRUD operation $uuid successfully.');
       } catch (e) {
         final errStr = e.toString();
+        final uuid = item['uuid']?.toString() ?? '';
         if (errStr.contains('23505') || errStr.contains('uniq_attendance_user_date_shift') || errStr.contains('duplicate key')) {
           print('CRUD Sync Auto-Heal: Duplicate constraint 23505 encountered ($uuid). Removing conflict from queue.');
           _crudQueue.removeWhere((q) => q['uuid'] == uuid);

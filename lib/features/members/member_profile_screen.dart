@@ -607,14 +607,15 @@ Thank you.''';
                     ],
                   ),
                 ),
-              );
-            },
-          );
-        },
-      );
-    }
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
 
-    void _showEditMemberDetailsSheet(BuildContext context, Member member) {
+  void _showEditMemberDetailsSheet(BuildContext context, Member member) {
     final membersVm = Provider.of<MembersViewModel>(context, listen: false);
     final nameController = TextEditingController(text: member.name);
     final phoneController = TextEditingController(text: member.phone);
