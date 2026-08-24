@@ -38,6 +38,7 @@ flutter:
   assets:
     - assets/images/logo.png
     - assets/images/app_icon_master.png
+    - assets/images/app_icon_background.png
     - assets/images/member/
     - assets/images/role/
     - .env
@@ -47,6 +48,6 @@ flutter_launcher_icons:
   ios: true
   image_path: "assets/images/app_icon_master.png"
   min_sdk_android: 21
-  adaptive_icon_background: "#070D18"
+  adaptive_icon_background: "assets/images/app_icon_background.png"
   adaptive_icon_foreground: "assets/images/app_icon_foreground.png"
   remove_alpha_ios: true

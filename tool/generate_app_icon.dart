@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math';
 import 'package:image/image.dart' as img;
 
 void main() {
@@ -26,7 +27,7 @@ void main() {
   for (int y = 0; y < logo.height; y++) {
     for (int x = 0; x < logo.width; x++) {
       final pixel = logo.getPixel(x, y);
-      if (pixel.a > 10) { // non-transparent
+      if (pixel.a > 15) { // non-transparent
         if (x < minX) minX = x;
         if (x > maxX) maxX = x;
         if (y < minY) minY = y;
@@ -42,55 +43,36 @@ void main() {
   final croppedHeight = (maxY - minY + 1).clamp(1, logo.height);
   final croppedLogo = img.copyCrop(logo, x: minX, y: minY, width: croppedWidth, height: croppedHeight);
 
-  // Create a 1024x1024 master canvas with a sleek dark radial gradient
-  // Center: #152238, Outer: #060B14
-  // Gives the dark slate bottom of the G and vibrant cyan arc high contrast & depth
   const canvasSize = 1024;
-  final masterCanvas = img.Image(width: canvasSize, height: canvasSize);
-
   const centerX = canvasSize / 2.0;
   const centerY = canvasSize / 2.0;
   const maxDist = 724.0; // sqrt(512^2 + 512^2)
 
+  // 1. Create rich ambient radial background image for Android Adaptive Icons & iOS Master
+  final bgImage = img.Image(width: canvasSize, height: canvasSize);
   for (int y = 0; y < canvasSize; y++) {
     for (int x = 0; x < canvasSize; x++) {
       final dx = x - centerX;
       final dy = y - centerY;
-      final dist = (dx * dx + dy * dy);
-      final double t = (dist / (maxDist * maxDist)).clamp(0.0, 1.0);
+      final dist = sqrt(dx * dx + dy * dy);
+      final double t = (dist / 512.0).clamp(0.0, 1.0);
 
-      // Radial gradient from #18263E at center to #070C17 at outer edges
-      final r = (24 * (1 - t) + 7 * t).round().clamp(0, 255);
-      final g = (38 * (1 - t) + 12 * t).round().clamp(0, 255);
-      final b = (62 * (1 - t) + 23 * t).round().clamp(0, 255);
+      // Smooth radial gradient from rich deep navy #1B2B4A (center) to #060B14 (corners)
+      final r = (27 * (1 - t * t) + 6 * (t * t)).round().clamp(0, 255);
+      final g = (43 * (1 - t * t) + 11 * (t * t)).round().clamp(0, 255);
+      final b = (74 * (1 - t * t) + 20 * (t * t)).round().clamp(0, 255);
 
-      masterCanvas.setPixelRgba(x, y, r, g, b, 255);
+      bgImage.setPixelRgba(x, y, r, g, b, 255);
     }
   }
 
-  // Scale the cropped logo to ~72% of the canvas for iOS so it looks bold, centered, and balanced
-  const targetLogoSize = 730;
-  final scaledLogo = img.copyResize(
-    croppedLogo,
-    width: targetLogoSize,
-    height: targetLogoSize,
-    interpolation: img.Interpolation.cubic,
-  );
+  final bgFile = File('assets/images/app_icon_background.png');
+  bgFile.writeAsBytesSync(img.encodePng(bgImage));
+  print('Saved background image to assets/images/app_icon_background.png');
 
-  final destX = ((canvasSize - targetLogoSize) / 2).round();
-  final destY = ((canvasSize - targetLogoSize) / 2).round();
-
-  // Composite the scaled logo onto the master canvas
-  img.compositeImage(masterCanvas, scaledLogo, dstX: destX, dstY: destY);
-
-  // Save the master icon
-  final masterFile = File('assets/images/app_icon_master.png');
-  masterFile.writeAsBytesSync(img.encodePng(masterCanvas));
-  print('Saved master icon to assets/images/app_icon_master.png');
-
-  // Also create a centered foreground for Android Adaptive Icon (needs ~540x540 inside 1024x1024 safe zone)
+  // 2. Create Android Adaptive Foreground (Sized to 630px ~61.5% safe zone to fill circle naturally without dark borders)
   final adaptiveForeground = img.Image(width: canvasSize, height: canvasSize);
-  const adaptiveTargetSize = 560;
+  const adaptiveTargetSize = 630;
   final adaptiveScaledLogo = img.copyResize(
     croppedLogo,
     width: adaptiveTargetSize,
@@ -104,4 +86,21 @@ void main() {
   final adaptiveFile = File('assets/images/app_icon_foreground.png');
   adaptiveFile.writeAsBytesSync(img.encodePng(adaptiveForeground));
   print('Saved adaptive foreground to assets/images/app_icon_foreground.png');
+
+  // 3. Create iOS Master Canvas (740px ~72.2% size)
+  final masterCanvas = img.Image.from(bgImage);
+  const masterTargetSize = 740;
+  final masterScaledLogo = img.copyResize(
+    croppedLogo,
+    width: masterTargetSize,
+    height: masterTargetSize,
+    interpolation: img.Interpolation.cubic,
+  );
+  final masterX = ((canvasSize - masterTargetSize) / 2).round();
+  final masterY = ((canvasSize - masterTargetSize) / 2).round();
+  img.compositeImage(masterCanvas, masterScaledLogo, dstX: masterX, dstY: masterY);
+
+  final masterFile = File('assets/images/app_icon_master.png');
+  masterFile.writeAsBytesSync(img.encodePng(masterCanvas));
+  print('Saved master icon to assets/images/app_icon_master.png');
 }
