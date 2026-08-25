@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GymOS — The Complete Gym Management Operating System</title>
+  <meta name="description" content="GymOS is a powerful gym management app for owners, staff, and members. Manage memberships, attendance, finance, workouts, diet plans, and more — all from one platform. Start your 45-day free trial today.">
+  <meta name="keywords" content="gym management software, gym app, gym owner app, membership management, attendance tracking, gym billing, fitness center management, GymOS">
+  <meta name="author" content="GymOS Inc.">
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="GymOS — The Complete Gym Management OS">
+  <meta property="og:description" content="Run your entire gym from a single powerful app. Members, Staff, Finance, Attendance — everything managed.">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="images/logo.png">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="images/logo.png">
+
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- ════════════ NAVBAR ════════════ -->
+  <nav class="navbar" id="navbar">
+    <div class="container">
+      <a href="index.html" class="navbar__brand">
+        <img src="images/logo.png" alt="GymOS Logo" class="navbar__logo">
+        <span class="navbar__name">Gym<span>OS</span></span>
+      </a>
+
+      <div class="navbar__links" id="navLinks">
+        <a href="#features" class="navbar__link">Features</a>
+        <a href="#portals" class="navbar__link">Portals</a>
+        <a href="#pricing" class="navbar__link">Pricing</a>
+        <a href="#faq" class="navbar__link">FAQ</a>
+        <a href="#download" class="navbar__cta">
+          ⬇ Download App
+        </a>
+      </div>
+
+      <button class="navbar__toggle" id="navToggle" aria-label="Toggle navigation">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- Mobile overlay -->
+  <div class="nav-overlay" id="navOverlay"></div>
+
+  <!-- ════════════ HERO SECTION ════════════ -->
+  <section class="hero" id="home">
+    <div class="container">
+      <!-- Left: Content -->
+      <div class="hero__content">
+        <div class="hero__badge">
+          <span class="hero__badge-dot"></span>
+          Now Available — v1.0
+        </div>
+
+        <h1 class="hero__title">
+          The Complete<br>
+          <span class="gradient-text">Gym Management</span><br>
+          Operating System
+        </h1>
+
+        <p class="hero__subtitle">
+          Run your entire gym from a single powerful app. Members, staff, finance, attendance, workouts, diet plans — everything managed beautifully.
+        </p>
+
+        <div class="hero__actions">
+          <a href="#download" class="btn btn--primary">
+            <span class="btn__icon">📲</span>
+            Download Free
+          </a>
+          <a href="#features" class="btn btn--outline">
+            <span class="btn__icon">✨</span>
+            Explore Features
+          </a>
+        </div>
+      </div>
+
+      <!-- Right: Phone Mockup -->
+      <div class="hero__visual">
+        <div class="hero__mockup-wrapper">
+          <div class="hero__glow-ring"></div>
+          <div class="hero__phone-frame">
+            <div class="hero__phone-notch"></div>
+            <div class="hero__phone-screen">
+              <!-- Mock Dashboard UI -->
+              <div class="mock-header">
+                <div>
+                  <div class="mock-greeting">Good Morning 👋</div>
+                  <div class="mock-gym-name">Iron Fitness Gym</div>
+                </div>
+                <div class="mock-avatar">RS</div>
+              </div>
+
+              <div class="mock-stats-grid">
+                <div class="mock-stat-card">
+                  <div class="mock-stat-card__icon">👥</div>
+                  <div class="mock-stat-card__value">248</div>
+                  <div class="mock-stat-card__label">Members</div>
+                </div>
+                <div class="mock-stat-card">
+                  <div class="mock-stat-card__icon">💰</div>
+                  <div class="mock-stat-card__value">₹1.2L</div>
+                  <div class="mock-stat-card__label">Revenue</div>
+                </div>
+                <div class="mock-stat-card">
+                  <div class="mock-stat-card__icon">📊</div>
+                  <div class="mock-stat-card__value">78%</div>
+                  <div class="mock-stat-card__label">Attendance</div>
+                </div>
+                <div class="mock-stat-card">
+                  <div class="mock-stat-card__icon">⚡</div>
+                  <div class="mock-stat-card__value">5</div>
+                  <div class="mock-stat-card__label">Staff</div>
+                </div>
+              </div>
+
+              <div class="mock-chart">
+                <div class="mock-chart__title">Monthly Revenue</div>
+                <div class="mock-chart__bars">
+                  <div class="mock-chart__bar" style="height: 40%"></div>
+                  <div class="mock-chart__bar" style="height: 55%"></div>
+                  <div class="mock-chart__bar" style="height: 45%"></div>
+                  <div class="mock-chart__bar" style="height: 70%"></div>
+                  <div class="mock-chart__bar" style="height: 60%"></div>
+                  <div class="mock-chart__bar" style="height: 85%"></div>
+                  <div class="mock-chart__bar" style="height: 75%"></div>
+                  <div class="mock-chart__bar" style="height: 90%"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════ STATS BAR ════════════ -->
+  <section class="stats-bar">
+    <div class="container">
+      <div class="stat-item animate-on-scroll">
+        <div class="stat-item__number">
+          <span data-count="500" data-suffix="+">0</span>
+        </div>
+        <div class="stat-item__label">Gyms Trust Us</div>
+      </div>
+      <div class="stat-item animate-on-scroll">
+        <div class="stat-item__number">
+          <span data-count="25000" data-suffix="+">0</span>
+        </div>
+        <div class="stat-item__label">Members Managed</div>
+      </div>
+      <div class="stat-item animate-on-scroll">
+        <div class="stat-item__number">
+          <span data-count="100000" data-suffix="+">0</span>
+        </div>
+        <div class="stat-item__label">Check-ins Tracked</div>
+      </div>
+      <div class="stat-item animate-on-scroll">
+        <div class="stat-item__number">
+          <span class="accent">99.9</span>%
+        </div>
+        <div class="stat-item__label">Uptime</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════ FEATURES SECTION ════════════ -->
+  <section class="features" id="features">
+    <div class="container">
+      <div class="section-header animate-on-scroll">
+        <div class="section-badge">✨ Features</div>
+        <h2 class="section-title">Everything You Need to<br><span class="gradient-text">Run Your Gym</span></h2>
+        <p class="section-subtitle">From member management to finance tracking, GymOS packs every tool a gym owner needs into one beautiful, powerful app.</p>
+      </div>
+
+      <div class="features__grid stagger-children">
+        <!-- Feature 1: Dashboard -->
+        <div class="feature-card animate-on-scroll">
+          <div class="feature-card__icon feature-card__icon--violet">📊</div>
+          <h3 class="feature-card__title">Smart Dashboard</h3>
+          <p class="feature-card__desc">Real-time stats — active members, revenue, attendance percentage, sparkline charts, and alerts all on one screen.</p>
+        </div>
+
+        <!-- Feature 2: Member Management -->
+        <div class="feature-card animate-on-scroll">
+          <div class="feature-card__icon feature-card__icon--blue">👥</div>
+          <h3 class="feature-card__title">Member Management</h3>
+          <p class="feature-card__desc">Add members with wizard flow, manage profiles, track payments, expiry alerts, trial members, and custom registration fields.</p>
+        </div>
+
+        <!-- Feature 3: QR Attendance -->
+        <div class="feature-card animate-on-scroll">
+          <div class="feature-card__icon feature-card__icon--green">📱</div>
+          <h3 class="feature-card__title">QR Attendance System</h3>
+          <p class="feature-card__desc">Static & dynamic QR codes, scanner, manual attendance, auto-absent rules, shift management, and full audit logs.</p>
+        </div>
+
+        <!-- Feature 4: Finance -->
+        <div class="feature-card animate-on-scroll">
+          <div class="feature-card__icon feature-card__icon--orange">💰</div>
+          <h3 class="feature-card__title">Finance & Payments</h3>
+          <p class="feature-card__desc">Revenue tracking, pending payments, Razorpay integration, salary management with advances, commissions, and drafts.</p>
+        </div>
+
+        <!-- Feature 5: Staff -->
+        <div class="feature-card animate-on-scroll">
+          <div class="feature-card__icon feature-card__icon--pink">🧑‍💼</div>
+          <h3 class="feature-card__title">Staff Management</h3>
+          <p class="feature-card__desc">Role-based permissions, salary pay with advances, leave & holiday management, staff portal with request approvals.</p>
+        </div>
+
+        <!-- Feature 6: Workout & Diet -->
+        <div class="feature-card animate-on-scroll">
+          <div class="feature-card__icon feature-card__icon--teal">🏋️</div>
+          <h3 class="feature-card__title">Workout & Diet Plans</h3>
+          <p class="feature-card__desc">Create and assign custom workout schedules and diet/meal plans. Members can view their plans directly in the app.</p>
+        </div>
+
+        <!-- Feature 7: Multi-Gym -->
+        <div class="feature-card animate-on-scroll">
+          <div class="feature-card__icon feature-card__icon--indigo">🏢</div>
+          <h3 class="feature-card__title">Multi-Gym Support</h3>
+          <p class="feature-card__desc">Manage multiple gym branches from one account. Seamless gym switching with separate data, staff, and member pools.</p>
+        </div>
+
+        <!-- Feature 8: Reports -->
+        <div class="feature-card animate-on-scroll">
+          <div class="feature-card__icon feature-card__icon--cyan">📈</div>
+          <h3 class="feature-card__title">Reports & Analytics</h3>
+          <p class="feature-card__desc">Revenue reports, member growth analytics, attendance trends, expiry forecasts, and broadcast notification insights.</p>
+        </div>
+
+        <!-- Feature 9: Security -->
+        <div class="feature-card animate-on-scroll">
+          <div class="feature-card__icon feature-card__icon--red">🔒</div>
+          <h3 class="feature-card__title">Cloud Sync & Security</h3>
+          <p class="feature-card__desc">Supabase-powered cloud sync, Google Sign-In, biometric lock, automatic backups, and complete data encryption.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════ PORTALS / MULTI-ROLE SECTION ════════════ -->
+  <section class="portals" id="portals">
+    <div class="container">
+      <div class="section-header animate-on-scroll">
+        <div class="section-badge">👤 Role-Based Access</div>
+        <h2 class="section-title">One App,<br><span class="gradient-text">Three Powerful Portals</span></h2>
+        <p class="section-subtitle">GymOS provides dedicated experiences for gym owners, staff members, and gym members — all within the same app.</p>
+      </div>
+
+      <div class="portals__grid stagger-children">
+        <!-- Owner Portal -->
+        <div class="portal-card animate-on-scroll">
+          <span class="portal-card__emoji">👑</span>
+          <h3 class="portal-card__title">Owner Portal</h3>
+          <p class="portal-card__desc">Full control over your gym operations with the complete management dashboard.</p>
+          <div class="portal-card__features">
+            <div class="portal-card__feature">Complete dashboard with real-time stats</div>
+            <div class="portal-card__feature">Member & staff management</div>
+            <div class="portal-card__feature">Finance tracking & salary pay</div>
+            <div class="portal-card__feature">QR attendance scanner</div>
+            <div class="portal-card__feature">Workout & diet plan creation</div>
+            <div class="portal-card__feature">Gym settings & custom branding</div>
+            <div class="portal-card__feature">Reports & broadcast notifications</div>
+          </div>
+        </div>
+
+        <!-- Staff Portal -->
+        <div class="portal-card animate-on-scroll">
+          <span class="portal-card__emoji">💼</span>
+          <h3 class="portal-card__title">Staff / Trainer Portal</h3>
+          <p class="portal-card__desc">Trainers and staff get their own dedicated dashboard to manage clients and requests.</p>
+          <div class="portal-card__features">
+            <div class="portal-card__feature">Personal staff dashboard</div>
+            <div class="portal-card__feature">Client management & details</div>
+            <div class="portal-card__feature">Salary & payment history</div>
+            <div class="portal-card__feature">Leave & advance requests</div>
+            <div class="portal-card__feature">Request approval workflow</div>
+          </div>
+        </div>
+
+        <!-- Member Portal -->
+        <div class="portal-card animate-on-scroll">
+          <span class="portal-card__emoji">🏆</span>
+          <h3 class="portal-card__title">Member App</h3>
+          <p class="portal-card__desc">Members get a gamified fitness experience with check-ins, achievements, and plan tracking.</p>
+          <div class="portal-card__features">
+            <div class="portal-card__feature">Personal fitness dashboard</div>
+            <div class="portal-card__feature">QR code check-in & attendance</div>
+            <div class="portal-card__feature">Membership & payment details</div>
+            <div class="portal-card__feature">Workout & diet plan viewer</div>
+            <div class="portal-card__feature">Achievements & streak sharing</div>
+            <div class="portal-card__feature">In-app notifications</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════ HOW IT WORKS ════════════ -->
+  <section class="how-it-works">
+    <div class="container">
+      <div class="section-header animate-on-scroll">
+        <div class="section-badge">🚀 Get Started</div>
+        <h2 class="section-title">Up and Running in<br><span class="gradient-text">3 Simple Steps</span></h2>
+        <p class="section-subtitle">Setting up GymOS takes less than 5 minutes. No complex setup, no technical knowledge needed.</p>
+      </div>
+
+      <div class="how-it-works__steps stagger-children">
+        <div class="step-card animate-on-scroll">
+          <div class="step-card__number">1</div>
+          <h3 class="step-card__title">Download & Sign Up</h3>
+          <p class="step-card__desc">Download GymOS from the link below and create your account using Google Sign-In or email. Get 45 days free trial instantly.</p>
+        </div>
+
+        <div class="step-card animate-on-scroll">
+          <div class="step-card__number">2</div>
+          <h3 class="step-card__title">Setup Your Gym</h3>
+          <p class="step-card__desc">Add your gym details — name, logo, timings, address. Configure membership plans, workout plans, and staff roles.</p>
+        </div>
+
+        <div class="step-card animate-on-scroll">
+          <div class="step-card__number">3</div>
+          <h3 class="step-card__title">Start Managing</h3>
+          <p class="step-card__desc">Add members, track attendance with QR codes, manage finances, and watch your gym grow — all from your phone.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════ PRICING SECTION ════════════ -->
+  <section class="pricing" id="pricing">
+    <div class="container">
+      <div class="section-header animate-on-scroll">
+        <div class="section-badge">💎 Pricing</div>
+        <h2 class="section-title">Simple, Transparent<br><span class="gradient-text">Pricing Plans</span></h2>
+        <p class="section-subtitle">Start free for 45 days. Choose the plan that fits your gym size. Upgrade or downgrade anytime.</p>
+      </div>
+
+      <div class="pricing__grid stagger-children">
+        <!-- Starter Plan -->
+        <div class="pricing-card animate-on-scroll">
+          <div class="pricing-card__badge">Popular</div>
+          <h3 class="pricing-card__name">Starter</h3>
+          <p class="pricing-card__desc">Perfect for small gyms just getting started</p>
+
+          <div class="pricing-card__price">
+            <span class="pricing-card__currency">₹</span>
+            <span class="pricing-card__amount">699</span>
+          </div>
+          <p class="pricing-card__period">per month</p>
+
+          <div class="pricing-card__divider"></div>
+
+          <div class="pricing-card__limits">
+            <span class="pricing-card__limit-tag">50 Members</span>
+            <span class="pricing-card__limit-tag">1 Staff</span>
+            <span class="pricing-card__limit-tag">1 Gym</span>
+          </div>
+
+          <div class="pricing-card__features">
+            <div class="pricing-card__feature">Full Gym Dashboard</div>
+            <div class="pricing-card__feature">Member Management</div>
+            <div class="pricing-card__feature">QR Attendance System</div>
+            <div class="pricing-card__feature">Finance Tracking</div>
+            <div class="pricing-card__feature">Basic Reports</div>
+            <div class="pricing-card__feature">Email Support</div>
+          </div>
+
+          <a href="#download" class="pricing-card__btn pricing-card__btn--outline">Get Started</a>
+        </div>
+
+        <!-- Pro Plan -->
+        <div class="pricing-card pricing-card--featured animate-on-scroll">
+          <div class="pricing-card__badge">Best Value</div>
+          <h3 class="pricing-card__name">Pro</h3>
+          <p class="pricing-card__desc">For growing gyms that need more power</p>
+
+          <div class="pricing-card__price">
+            <span class="pricing-card__currency">₹</span>
+            <span class="pricing-card__amount">999</span>
+          </div>
+          <p class="pricing-card__period">per month</p>
+
+          <div class="pricing-card__divider"></div>
+
+          <div class="pricing-card__limits">
+            <span class="pricing-card__limit-tag">200 Members</span>
+            <span class="pricing-card__limit-tag">5 Staff</span>
+            <span class="pricing-card__limit-tag">2 Gyms</span>
+          </div>
+
+          <div class="pricing-card__features">
+            <div class="pricing-card__feature">Everything in Starter</div>
+            <div class="pricing-card__feature">Advanced Reports & Analytics</div>
+            <div class="pricing-card__feature">Custom App Branding</div>
+            <div class="pricing-card__feature">Workout & Diet Plans</div>
+            <div class="pricing-card__feature">Staff Portal Access</div>
+            <div class="pricing-card__feature">Priority Support</div>
+          </div>
+
+          <a href="#download" class="pricing-card__btn pricing-card__btn--primary">Get Started</a>
+        </div>
+
+        <!-- Business Plan -->
+        <div class="pricing-card animate-on-scroll">
+          <h3 class="pricing-card__name">Business</h3>
+          <p class="pricing-card__desc">For large gyms and multi-branch chains</p>
+
+          <div class="pricing-card__price">
+            <span class="pricing-card__currency">₹</span>
+            <span class="pricing-card__amount">1,999</span>
+          </div>
+          <p class="pricing-card__period">per month</p>
+
+          <div class="pricing-card__divider"></div>
+
+          <div class="pricing-card__limits">
+            <span class="pricing-card__limit-tag">Unlimited Members</span>
+            <span class="pricing-card__limit-tag">Unlimited Staff</span>
+            <span class="pricing-card__limit-tag">5 Gyms</span>
+          </div>
+
+          <div class="pricing-card__features">
+            <div class="pricing-card__feature">Everything in Pro</div>
+            <div class="pricing-card__feature">Unlimited Members & Staff</div>
+            <div class="pricing-card__feature">Multi-Branch Management</div>
+            <div class="pricing-card__feature">API Access</div>
+            <div class="pricing-card__feature">Receptionist Portal</div>
+            <div class="pricing-card__feature">Dedicated Support</div>
+          </div>
+
+          <a href="#download" class="pricing-card__btn pricing-card__btn--outline">Get Started</a>
+        </div>
+      </div>
+
+      <div class="pricing__trial animate-on-scroll">
+        <p class="pricing__trial-text">
+          🎁 Start with a <strong>45-day free trial</strong> — No credit card required. All features unlocked during trial.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════ FAQ SECTION ════════════ -->
+  <section class="faq" id="faq">
+    <div class="container">
+      <div class="section-header animate-on-scroll">
+        <div class="section-badge">❓ FAQ</div>
+        <h2 class="section-title">Frequently Asked<br><span class="gradient-text">Questions</span></h2>
+      </div>
+
+      <div class="faq__list">
+        <div class="faq-item">
+          <button class="faq-item__question">
+            What is GymOS?
+            <span class="faq-item__icon">+</span>
+          </button>
+          <div class="faq-item__answer">
+            <p>GymOS is a complete gym management operating system designed for gym owners, trainers, and members. It handles member management, attendance tracking (QR-based), finance, salary, workout & diet plans, and much more — all from a single mobile app.</p>
+          </div>
+        </div>
+
+        <div class="faq-item">
+          <button class="faq-item__question">
+            Is there a free trial?
+            <span class="faq-item__icon">+</span>
+          </button>
+          <div class="faq-item__answer">
+            <p>Yes! Every gym gets a 45-day free trial with all features unlocked. No credit card required. After the trial, you can choose from our Starter (₹699/mo), Pro (₹999/mo), or Business (₹1,999/mo) plans.</p>
+          </div>
+        </div>
+
+        <div class="faq-item">
+          <button class="faq-item__question">
+            Can my staff and members use this app too?
+            <span class="faq-item__icon">+</span>
+          </button>
+          <div class="faq-item__answer">
+            <p>Absolutely! GymOS has three dedicated portals — Owner Portal for gym management, Staff/Trainer Portal for managing clients and requests, and Member App for check-ins, viewing plans, achievements, and more.</p>
+          </div>
+        </div>
+
+        <div class="faq-item">
+          <button class="faq-item__question">
+            How does the QR attendance system work?
+            <span class="faq-item__icon">+</span>
+          </button>
+          <div class="faq-item__answer">
+            <p>GymOS supports both static and dynamic QR codes. Members scan a QR code at the gym to check in. Owners can set up auto-absent rules, manual attendance options, shift-based tracking, and view complete attendance audit logs.</p>
+          </div>
+        </div>
+
+        <div class="faq-item">
+          <button class="faq-item__question">
+            Can I manage multiple gyms?
+            <span class="faq-item__icon">+</span>
+          </button>
+          <div class="faq-item__answer">
+            <p>Yes! With the Pro plan, you can manage up to 2 gyms, and with the Business plan, up to 5 gyms. Each gym has separate member lists, staff, and data with seamless switching between branches.</p>
+          </div>
+        </div>
+
+        <div class="faq-item">
+          <button class="faq-item__question">
+            Is my data safe and synced to the cloud?
+            <span class="faq-item__icon">+</span>
+          </button>
+          <div class="faq-item__answer">
+            <p>Yes! GymOS uses Supabase-powered cloud infrastructure with automatic sync, encrypted storage, and automatic backups. Your data is always safe and accessible from any device. We also support biometric lock for extra security.</p>
+          </div>
+        </div>
+
+        <div class="faq-item">
+          <button class="faq-item__question">
+            What payment methods are supported?
+            <span class="faq-item__icon">+</span>
+          </button>
+          <div class="faq-item__answer">
+            <p>GymOS integrates with Razorpay for secure subscription payments. Your members' payment tracking, pending payments, and salary management are all handled within the app with complete finance reports.</p>
+          </div>
+        </div>
+
+        <div class="faq-item">
+          <button class="faq-item__question">
+            Can I customize the app with my gym's branding?
+            <span class="faq-item__icon">+</span>
+          </button>
+          <div class="faq-item__answer">
+            <p>Yes! The Pro and Business plans include Custom App Branding (whitelabel) — you can set your own gym name and logo within the app, so your staff and members see your brand instead of GymOS.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════ CTA SECTION ════════════ -->
+  <section class="cta-section" id="download">
+    <div class="container">
+      <div class="cta-section__inner animate-on-scroll">
+        <h2 class="cta-section__title">Ready to Transform Your Gym?</h2>
+        <p class="cta-section__subtitle">Join 500+ gyms already using GymOS. Start your 45-day free trial today — no credit card required.</p>
+        <div class="cta-section__actions">
+          <a href="#" class="btn btn--white">
+            <span class="btn__icon">📲</span>
+            Download APK
+          </a>
+          <a href="mailto:support@gymos.com" class="btn btn--ghost">
+            <span class="btn__icon">✉️</span>
+            Contact Us
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════ FOOTER ════════════ -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer__grid">
+        <!-- Brand column -->
+        <div>
+          <a href="index.html" class="navbar__brand">
+            <img src="images/logo.png" alt="GymOS Logo" class="navbar__logo">
+            <span class="navbar__name">Gym<span>OS</span></span>
+          </a>
+          <p class="footer__brand-desc">
+            The complete gym management operating system. Manage members, staff, finance, attendance, workouts, and more — all from one powerful app.
+          </p>
+        </div>
+
+        <!-- Product links -->
+        <div>
+          <h4 class="footer__heading">Product</h4>
+          <a href="#features" class="footer__link">Features</a>
+          <a href="#pricing" class="footer__link">Pricing</a>
+          <a href="#portals" class="footer__link">Portals</a>
+          <a href="#faq" class="footer__link">FAQ</a>
+          <a href="#download" class="footer__link">Download</a>
+        </div>
+
+        <!-- Legal links -->
+        <div>
+          <h4 class="footer__heading">Legal</h4>
+          <a href="privacy-policy.html" class="footer__link">Privacy Policy</a>
+          <a href="terms-of-service.html" class="footer__link">Terms of Service</a>
+          <a href="licensing-agreement.html" class="footer__link">Licensing Agreement</a>
+        </div>
+
+        <!-- Contact -->
+        <div>
+          <h4 class="footer__heading">Contact</h4>
+          <a href="mailto:support@gymos.com" class="footer__link">support@gymos.com</a>
+          <a href="#" class="footer__link">Instagram</a>
+          <a href="#" class="footer__link">YouTube</a>
+        </div>
+      </div>
+
+      <div class="footer__bottom">
+        <p class="footer__copyright">© 2026 GymOS Inc. All rights reserved.</p>
+        <div class="footer__social">
+          <a href="#" class="footer__social-link" aria-label="Instagram">📷</a>
+          <a href="#" class="footer__social-link" aria-label="YouTube">▶️</a>
+          <a href="#" class="footer__social-link" aria-label="Twitter">🐦</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Scripts -->
+  <script src="js/main.js"></script>
+</body>
+</html>

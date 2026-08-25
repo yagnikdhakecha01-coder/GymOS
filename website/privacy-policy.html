@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy — GymOS</title>
+  <meta name="description" content="GymOS Privacy Policy. Learn how we collect, use, and protect your personal information when you use our gym management platform.">
+  <link rel="icon" type="image/png" href="images/logo.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- NAVBAR -->
+  <nav class="navbar scrolled" id="navbar">
+    <div class="container">
+      <a href="index.html" class="navbar__brand">
+        <img src="images/logo.png" alt="GymOS Logo" class="navbar__logo">
+        <span class="navbar__name">Gym<span>OS</span></span>
+      </a>
+      <div class="navbar__links" id="navLinks">
+        <a href="index.html" class="navbar__link">Home</a>
+        <a href="index.html#features" class="navbar__link">Features</a>
+        <a href="index.html#pricing" class="navbar__link">Pricing</a>
+        <a href="index.html#download" class="navbar__cta">⬇ Download App</a>
+      </div>
+      <button class="navbar__toggle" id="navToggle" aria-label="Toggle navigation">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </nav>
+  <div class="nav-overlay" id="navOverlay"></div>
+
+  <!-- PRIVACY POLICY CONTENT -->
+  <section class="legal-page">
+    <div class="container">
+      <div class="legal-page__header">
+        <h1 class="legal-page__title">Privacy Policy</h1>
+        <p class="legal-page__updated">Last updated: August 25, 2026</p>
+      </div>
+
+      <div class="legal-content">
+        <h2>1. Introduction</h2>
+        <p>Welcome to GymOS ("we," "our," or "us"). This Privacy Policy explains how GymOS Inc. collects, uses, discloses, and safeguards your information when you use our mobile application and related services (collectively, the "Service"). By using GymOS, you agree to the collection and use of information in accordance with this policy.</p>
+
+        <h2>2. Information We Collect</h2>
+
+        <h3>2.1 Personal Information</h3>
+        <p>When you register and use GymOS, we may collect the following personal information:</p>
+        <ul>
+          <li><strong>Account Information:</strong> Name, email address, phone number, and profile photo (via Google Sign-In or manual registration)</li>
+          <li><strong>Gym Information:</strong> Gym name, address, logo, operating hours, and gym type</li>
+          <li><strong>Member Data:</strong> Member names, contact details, membership plans, payment records, attendance history, fitness goals, and custom registration fields</li>
+          <li><strong>Staff Data:</strong> Staff names, roles, salary information, attendance records, leave history, and commission details</li>
+          <li><strong>Financial Data:</strong> Payment amounts, transaction history, salary records, advance payments, and pending dues</li>
+        </ul>
+
+        <h3>2.2 Automatically Collected Information</h3>
+        <ul>
+          <li><strong>Device Information:</strong> Device type, operating system version, unique device identifiers</li>
+          <li><strong>Usage Data:</strong> App usage patterns, feature interaction logs, session duration</li>
+          <li><strong>Attendance Data:</strong> QR code scan timestamps, check-in/check-out records, location data (only during attendance scanning, if permitted)</li>
+        </ul>
+
+        <h3>2.3 Biometric Data</h3>
+        <p>If you enable biometric lock (fingerprint/face unlock), this data is processed locally on your device and is <strong>never transmitted or stored</strong> on our servers.</p>
+
+        <h2>3. How We Use Your Information</h2>
+        <p>We use the collected information for the following purposes:</p>
+        <ul>
+          <li>Providing, maintaining, and improving the GymOS platform</li>
+          <li>Managing gym memberships, attendance tracking, and financial records</li>
+          <li>Processing subscription payments through Razorpay</li>
+          <li>Sending push notifications (alerts, membership expiry reminders, broadcast messages)</li>
+          <li>Generating reports and analytics for gym owners</li>
+          <li>Cloud synchronization and data backup</li>
+          <li>Providing customer support and responding to inquiries</li>
+          <li>Ensuring app security and preventing fraud</li>
+        </ul>
+
+        <h2>4. Data Storage & Security</h2>
+        <p>Your data is stored securely using industry-standard measures:</p>
+        <ul>
+          <li><strong>Cloud Infrastructure:</strong> We use Supabase (built on PostgreSQL) for cloud data storage with encrypted connections (TLS/SSL)</li>
+          <li><strong>Local Storage:</strong> Certain preferences and cached data are stored locally on your device using SharedPreferences</li>
+          <li><strong>Row-Level Security (RLS):</strong> Database access is controlled through row-level security policies ensuring users can only access their own gym's data</li>
+          <li><strong>Automatic Backups:</strong> Cloud data is backed up automatically with restore capabilities</li>
+          <li><strong>Biometric Lock:</strong> Optional biometric authentication adds an extra layer of device-level security</li>
+        </ul>
+
+        <h2>5. Third-Party Services</h2>
+        <p>GymOS integrates with the following third-party services:</p>
+        <ul>
+          <li><strong>Supabase:</strong> Cloud database and authentication (<a href="https://supabase.com/privacy" target="_blank" rel="noopener">Supabase Privacy Policy</a>)</li>
+          <li><strong>Google Sign-In:</strong> Authentication service (<a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Google Privacy Policy</a>)</li>
+          <li><strong>Razorpay:</strong> Payment processing for subscriptions (<a href="https://razorpay.com/privacy/" target="_blank" rel="noopener">Razorpay Privacy Policy</a>)</li>
+          <li><strong>Google Fonts:</strong> Typography rendering</li>
+          <li><strong>Firebase Cloud Messaging:</strong> Push notifications</li>
+        </ul>
+
+        <h2>6. Data Sharing & Disclosure</h2>
+        <p>We do <strong>not sell</strong> your personal information. We may share data in the following limited circumstances:</p>
+        <ul>
+          <li><strong>Within Your Gym:</strong> Gym owners can view member and staff data for their registered gym(s). Staff can access data based on their assigned role permissions.</li>
+          <li><strong>Service Providers:</strong> Third-party services listed above that help us provide the Service</li>
+          <li><strong>Legal Requirements:</strong> If required by law, court order, or governmental regulation</li>
+          <li><strong>Business Transfers:</strong> In connection with a merger, acquisition, or sale of assets</li>
+        </ul>
+
+        <h2>7. Data Retention</h2>
+        <p>We retain your data for as long as your account is active or as needed to provide the Service. If you delete your account or gym:</p>
+        <ul>
+          <li>Account data is permanently deleted within 30 days</li>
+          <li>Gym data (members, staff, finance records) is cascaded and deleted</li>
+          <li>Backup copies are purged within 90 days</li>
+        </ul>
+
+        <h2>8. Your Rights</h2>
+        <p>You have the following rights regarding your personal data:</p>
+        <ul>
+          <li><strong>Access:</strong> Request a copy of the data we hold about you</li>
+          <li><strong>Correction:</strong> Update inaccurate or incomplete information</li>
+          <li><strong>Deletion:</strong> Request deletion of your account and associated data</li>
+          <li><strong>Export:</strong> Request an export of your gym data</li>
+          <li><strong>Withdraw Consent:</strong> Opt out of push notifications or data collection at any time through app settings</li>
+        </ul>
+        <p>To exercise these rights, contact us at <a href="mailto:support@gymos.com">support@gymos.com</a>.</p>
+
+        <h2>9. Children's Privacy</h2>
+        <p>GymOS is not intended for use by individuals under the age of 16. We do not knowingly collect personal information from children under 16. If you believe a child has provided us with personal data, please contact us immediately.</p>
+
+        <h2>10. Cookies & Tracking</h2>
+        <p>GymOS is a mobile application and does not use browser cookies. Our website (gymos.com) may use essential cookies for analytics purposes only.</p>
+
+        <h2>11. Changes to This Policy</h2>
+        <p>We may update this Privacy Policy from time to time. Changes will be posted on this page with an updated "Last updated" date. Continued use of the Service after changes constitutes acceptance of the updated policy.</p>
+
+        <h2>12. Contact Us</h2>
+        <p>If you have any questions or concerns about this Privacy Policy, please contact us:</p>
+        <ul>
+          <li><strong>Email:</strong> <a href="mailto:support@gymos.com">support@gymos.com</a></li>
+          <li><strong>Company:</strong> GymOS Inc.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer__grid">
+        <div>
+          <a href="index.html" class="navbar__brand">
+            <img src="images/logo.png" alt="GymOS Logo" class="navbar__logo">
+            <span class="navbar__name">Gym<span>OS</span></span>
+          </a>
+          <p class="footer__brand-desc">The complete gym management operating system.</p>
+        </div>
+        <div>
+          <h4 class="footer__heading">Product</h4>
+          <a href="index.html#features" class="footer__link">Features</a>
+          <a href="index.html#pricing" class="footer__link">Pricing</a>
+          <a href="index.html#download" class="footer__link">Download</a>
+        </div>
+        <div>
+          <h4 class="footer__heading">Legal</h4>
+          <a href="privacy-policy.html" class="footer__link">Privacy Policy</a>
+          <a href="terms-of-service.html" class="footer__link">Terms of Service</a>
+          <a href="licensing-agreement.html" class="footer__link">Licensing Agreement</a>
+        </div>
+        <div>
+          <h4 class="footer__heading">Contact</h4>
+          <a href="mailto:support@gymos.com" class="footer__link">support@gymos.com</a>
+        </div>
+      </div>
+      <div class="footer__bottom">
+        <p class="footer__copyright">© 2026 GymOS Inc. All rights reserved.</p>
+      </div>
+    </div>
+  </footer>
+
+  <script src="js/main.js"></script>
+</body>
+</html>

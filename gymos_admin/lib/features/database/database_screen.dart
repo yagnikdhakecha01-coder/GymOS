@@ -12,6 +12,7 @@ import '../../core/widgets/confirm_dialog.dart';
 import '../../core/widgets/skeleton_loader.dart';
 import '../../core/services/supabase_service.dart';
 import '../../core/services/google_drive_service.dart';
+import '../../core/services/audit_service.dart';
 
 class DatabaseScreen extends StatefulWidget {
   const DatabaseScreen({super.key});
@@ -34,6 +35,17 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
   // Backup History
   List<Map<String, dynamic>> _backupsList = [];
 
+  // Auto-Backup Configuration
+  bool _autoBackupEnabled = true;
+  int _autoBackupIntervalDays = 1;
+  String _autoBackupTime = '02:00';
+  bool _autoDriveUpload = true;
+  DateTime? _lastAutoBackupRun;
+  DateTime? _nextAutoBackupRun;
+  int _totalAutoBackups = 0;
+  String _autoBackupStatus = 'Ready';
+  bool _isSavingAutoSchedule = false;
+
   // Google Drive
   bool _driveConnected = false;
   String _driveEmail = '';
@@ -53,7 +65,7 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
     _loadData();
   }
 
@@ -72,6 +84,7 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
     await Future.wait([
       _loadDatabaseStats(),
       _loadBackupHistory(),
+      _loadAutoBackupConfig(),
       _loadDriveStatus(),
     ]);
     if (mounted) setState(() => _isLoading = false);
@@ -81,7 +94,7 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
     try {
       if (!AdminSupabaseService.isInitialized) return;
       final client = AdminSupabaseService.client;
-      
+
       final gyms = await client.from('gyms').select('id');
       final members = await client.from('members').select('id');
       final staff = await client.from('staff').select('id');
@@ -134,6 +147,171 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
     }
   }
 
+  Future<void> _loadAutoBackupConfig() async {
+    try {
+      if (!AdminSupabaseService.isInitialized) return;
+      final client = AdminSupabaseService.client;
+      final res = await client
+          .from('platform_settings')
+          .select('value')
+          .eq('key', 'auto_backup_config')
+          .maybeSingle();
+
+      if (res != null && res['value'] != null) {
+        final cfg = res['value'] as Map<String, dynamic>;
+        setState(() {
+          _autoBackupEnabled = cfg['enabled'] == true;
+          _autoBackupIntervalDays = (cfg['interval_days'] as num?)?.toInt() ?? 1;
+          _autoBackupTime = cfg['schedule_time']?.toString() ?? '02:00';
+          _autoDriveUpload = cfg['auto_drive_upload'] != false;
+          _totalAutoBackups = (cfg['total_auto_backups'] as num?)?.toInt() ?? 0;
+          _autoBackupStatus = cfg['last_status']?.toString() ?? 'Active';
+
+          if (cfg['last_run_at'] != null) {
+            _lastAutoBackupRun = DateTime.tryParse(cfg['last_run_at'].toString());
+          }
+          if (cfg['next_run_at'] != null) {
+            _nextAutoBackupRun = DateTime.tryParse(cfg['next_run_at'].toString());
+          } else {
+            _nextAutoBackupRun = DateTime.now().add(Duration(days: _autoBackupIntervalDays));
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading auto-backup config: $e');
+    }
+  }
+
+  Future<void> _saveAutoBackupSchedule() async {
+    setState(() => _isSavingAutoSchedule = true);
+    try {
+      if (!AdminSupabaseService.isInitialized) return;
+      final client = AdminSupabaseService.client;
+
+      final nextRun = DateTime.now().add(Duration(days: _autoBackupIntervalDays));
+
+      await client.from('platform_settings').upsert({
+        'key': 'auto_backup_config',
+        'value': {
+          'enabled': _autoBackupEnabled,
+          'interval_days': _autoBackupIntervalDays,
+          'schedule_time': _autoBackupTime,
+          'auto_drive_upload': _autoDriveUpload,
+          'last_run_at': _lastAutoBackupRun?.toIso8601String(),
+          'next_run_at': nextRun.toIso8601String(),
+          'total_auto_backups': _totalAutoBackups,
+          'last_status': _autoBackupEnabled ? 'Active (Cloud Scheduled)' : 'Paused',
+        },
+        'updated_at': DateTime.now().toIso8601String(),
+      });
+
+      await AuditService.log(
+        action: 'Updated Auto-Backup Schedule',
+        category: 'database',
+        details: 'Auto-backup: ${_autoBackupEnabled ? "Enabled" : "Disabled"}, Interval: $_autoBackupIntervalDays day(s), Time: $_autoBackupTime, Drive Sync: $_autoDriveUpload',
+        metadata: {
+          'enabled': _autoBackupEnabled,
+          'interval_days': _autoBackupIntervalDays,
+          'schedule_time': _autoBackupTime,
+          'auto_drive_upload': _autoDriveUpload,
+        },
+      );
+
+      setState(() {
+        _nextAutoBackupRun = nextRun;
+        _isSavingAutoSchedule = false;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Auto-backup schedule saved successfully! Cloud scheduler updated.'),
+            backgroundColor: AdminTheme.success,
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() => _isSavingAutoSchedule = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to save schedule: $e'), backgroundColor: AdminTheme.danger),
+        );
+      }
+    }
+  }
+
+  Future<void> _triggerAutoBackupNow() async {
+    setState(() {
+      _isActionInProgress = true;
+      _actionMessage = 'Executing Cloud Auto-Backup Job...';
+      _actionProgress = 0.2;
+    });
+
+    try {
+      final client = AdminSupabaseService.client;
+      setState(() => _actionProgress = 0.5);
+
+      final result = await client.rpc('trigger_scheduled_auto_backup');
+      final data = result as Map<String, dynamic>? ?? {};
+
+      setState(() => _actionProgress = 0.8);
+
+      final backupId = data['backup_id'];
+      String? driveMsg;
+
+      if (_autoDriveUpload && GoogleDriveService.isConnected && backupId != null) {
+        setState(() => _actionMessage = 'Uploading to Google Drive folder...');
+        final backupRow = await client
+            .from('database_backups')
+            .select('backup_data')
+            .eq('id', backupId)
+            .single();
+
+        final backupJson = jsonEncode(backupRow['backup_data']);
+        final fileName = 'gymos_auto_backup_${DateFormat('yyyy-MM-dd_HHmm').format(DateTime.now())}.json';
+        final uploadRes = await GoogleDriveService.uploadBackup(backupJson: backupJson, fileName: fileName);
+
+        if (uploadRes.success && uploadRes.driveUrl != null) {
+          await client.from('database_backups').update({'drive_url': uploadRes.driveUrl}).eq('id', backupId);
+          driveMsg = '☁️ Uploaded to Google Drive!';
+        }
+      }
+
+      setState(() => _actionProgress = 1.0);
+      await Future.delayed(const Duration(milliseconds: 300));
+
+      await _loadBackupHistory();
+      await _loadAutoBackupConfig();
+
+      if (mounted) {
+        setState(() => _isActionInProgress = false);
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('🎉 Auto-Backup Executed!'),
+            content: Text(
+              'Automated cloud backup completed successfully!\n\n'
+              '• Status: Completed\n'
+              '• Next Auto Run: ${_nextAutoBackupRun != null ? DateFormat('MMM d, yyyy — hh:mm a').format(_nextAutoBackupRun!) : "Scheduled"}\n'
+              '${driveMsg != null ? "• Drive: $driveMsg\n" : ""}',
+              style: GoogleFonts.inter(fontSize: 13),
+            ),
+            actions: [
+              ElevatedButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isActionInProgress = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Auto-backup execution failed: $e'), backgroundColor: AdminTheme.danger),
+        );
+      }
+    }
+  }
+
   Future<void> _loadDriveStatus() async {
     await GoogleDriveService.loadCredentials();
     if (GoogleDriveService.isConnected) {
@@ -180,7 +358,6 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
       setState(() => _actionProgress = 0.7);
 
       final data = result as Map<String, dynamic>? ?? {};
-      final success = data['success'] == true;
       final sizeReadable = data['size_readable'] ?? '—';
       final totalRecords = data['total_records'] ?? 0;
       final backupId = data['backup_id'];
@@ -214,6 +391,13 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
         }
       }
 
+      await AuditService.log(
+        action: 'Manual Backup Created',
+        category: 'database',
+        details: 'Created full backup with $totalRecords records ($sizeReadable)${driveUrl != null ? " and uploaded to Drive" : ""}',
+        metadata: {'backup_id': backupId, 'records': totalRecords, 'size': sizeReadable, 'drive_url': driveUrl},
+      );
+
       setState(() => _actionProgress = 1.0);
       await Future.delayed(const Duration(milliseconds: 300));
 
@@ -228,11 +412,11 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(msg),
-            backgroundColor: driveError != null ? Colors.orange : (success ? AdminTheme.success : Colors.orange),
-            duration: const Duration(seconds: 6),
+            backgroundColor: driveError != null ? Colors.orange : AdminTheme.success,
+            duration: const Duration(seconds: 4),
           ),
         );
-        _loadBackupHistory();
+        _loadData();
       }
     } catch (e) {
       if (mounted) {
@@ -244,12 +428,23 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
     }
   }
 
-  /// 2. UPLOAD SPECIFIC BACKUP ROW TO DRIVE
-  Future<void> _uploadRowToDrive(Map<String, dynamic> backup) async {
+  /// 2. RESTORE FROM BACKUP ROW
+  Future<void> _restoreFromBackup(Map<String, dynamic> backup) async {
+    final name = backup['backup_name'] ?? 'Backup';
+    final confirm = await showAdminConfirmDialog(
+      context,
+      title: '⚠️ Restore from $name',
+      message: 'This will restore all records from this backup snapshot. Any conflicting records will be updated.\n\nAre you sure you want to proceed?',
+      confirmText: 'Yes, Restore Database',
+      isDangerous: true,
+      icon: Icons.warning_amber_rounded,
+    );
+    if (confirm != true) return;
+
     setState(() {
       _isActionInProgress = true;
-      _actionMessage = 'Uploading ${backup['backup_name']} to Google Drive...';
-      _actionProgress = 0.3;
+      _actionMessage = 'Fetching backup snapshot...';
+      _actionProgress = 0.2;
     });
 
     try {
@@ -260,55 +455,60 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
           .eq('id', backup['id'])
           .single();
 
-      setState(() => _actionProgress = 0.6);
-      final backupJson = jsonEncode(res['backup_data']);
-      final fileName = 'gymos_backup_${DateFormat('yyyy-MM-dd_HHmm').format(DateTime.now())}.json';
-      
-      final uploadRes = await GoogleDriveService.uploadBackup(backupJson: backupJson, fileName: fileName);
+      final backupData = res['backup_data'];
+      setState(() {
+        _actionMessage = 'Restoring database tables...';
+        _actionProgress = 0.5;
+      });
+
+      final result = await client.rpc('full_database_import', params: {'p_backup': backupData});
+      setState(() => _actionProgress = 0.9);
+
+      final data = result as Map<String, dynamic>? ?? {};
+      final tablesRestored = data['tables_restored'] ?? 0;
+      final recordsInserted = data['records_inserted'] ?? 0;
+      final errors = List<String>.from(data['errors'] ?? []);
+
       setState(() => _actionProgress = 1.0);
+      await Future.delayed(const Duration(milliseconds: 300));
 
       if (mounted) {
         setState(() => _isActionInProgress = false);
-        if (uploadRes.success && uploadRes.driveUrl != null) {
-          await client.from('database_backups').update({'drive_url': uploadRes.driveUrl}).eq('id', backup['id']);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('☁️ Uploaded to Google Drive successfully!'), backgroundColor: AdminTheme.success),
-          );
-          _loadBackupHistory();
-        } else {
-          showDialog(
-            context: context,
-            builder: (ctx) => AlertDialog(
-              title: const Text('⚠️ Drive Upload Failed'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Error: ${uploadRes.error ?? "Unknown"}'),
-                  if (uploadRes.details != null) ...[
-                    const SizedBox(height: 8),
-                    Text('Details:\n${uploadRes.details}', style: GoogleFonts.firaCode(fontSize: 11, color: Colors.redAccent)),
-                  ],
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('🎉 Database Restored!'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Tables Restored: $tablesRestored'),
+                Text('Records Inserted: $recordsInserted'),
+                if (errors.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Text('Warnings (${errors.length}):', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.orange)),
+                  ...errors.map((e) => Text('• $e', style: const TextStyle(fontSize: 12))),
                 ],
-              ),
-              actions: [
-                ElevatedButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
               ],
             ),
-          );
-        }
+            actions: [
+              ElevatedButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
+            ],
+          ),
+        );
+        _loadData();
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isActionInProgress = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Upload failed: $e'), backgroundColor: AdminTheme.danger),
+          SnackBar(content: Text('Restore failed: $e'), backgroundColor: AdminTheme.danger),
         );
       }
     }
   }
 
-  /// 3. DOWNLOAD BACKUP — downloads JSON file via browser
+  /// 3. DOWNLOAD BACKUP
   Future<void> _downloadBackup(Map<String, dynamic> backup) async {
     setState(() {
       _isActionInProgress = true;
@@ -350,12 +550,12 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
     }
   }
 
-  /// 4. RESTORE FROM JSON — 1-click full database import
+  /// 4. RESTORE FROM JSON
   Future<void> _restoreFromJson(String jsonStr) async {
     final confirm = await showAdminConfirmDialog(
       context,
       title: '⚠️ Full Database Restore',
-      message: 'This will MERGE/OVERWRITE your entire database with the backup data. All existing records will be updated or new ones inserted. This action cannot be undone.\n\nAre you absolutely sure?',
+      message: 'This will MERGE/OVERWRITE your entire database with the backup data. All existing records will be updated or new ones inserted.\n\nAre you absolutely sure?',
       confirmText: 'Yes, Restore Everything',
       isDangerous: true,
       icon: Icons.warning_amber_rounded,
@@ -419,171 +619,208 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
       }
     }
   }
-  /// 4b. SELECT BACKUP FROM GOOGLE DRIVE — fetches file list, user picks one, auto-fills JSON
+
+  /// 5. SELECT FROM DRIVE
   Future<void> _selectFromDrive() async {
-    // Show loading while fetching file list
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        content: Row(
-          children: [
-            const CircularProgressIndicator(),
-            const SizedBox(width: 20),
-            Text('Fetching backups from Google Drive...', style: GoogleFonts.inter(fontSize: 13)),
-          ],
-        ),
-      ),
-    );
+    setState(() {
+      _isActionInProgress = true;
+      _actionMessage = 'Loading backups from Google Drive...';
+    });
 
     try {
+      final token = await GoogleDriveService.getValidAccessToken();
+      if (token == null) throw 'Google Drive not connected';
+
       final files = await GoogleDriveService.listBackups();
-      if (mounted) Navigator.pop(context); // Close loading
-
-      if (files.isEmpty) {
-        if (mounted) {
+      if (mounted) {
+        setState(() => _isActionInProgress = false);
+        if (files.isEmpty) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No backup files found in Google Drive'), backgroundColor: Colors.orange),
+            const SnackBar(content: Text('No backup files found on Google Drive'), backgroundColor: Colors.orange),
           );
+          return;
         }
-        return;
-      }
 
-      // Show file selection dialog
-      if (!mounted) return;
-      final selectedFile = await showDialog<Map<String, dynamic>>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: Row(
-            children: [
-              const Icon(Icons.cloud_rounded, color: AdminTheme.teal, size: 24),
-              const SizedBox(width: 10),
-              Text('Select Backup from Google Drive', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold)),
-            ],
-          ),
-          content: SizedBox(
-            width: 650,
-            height: 400,
-            child: ListView.separated(
-              itemCount: files.length,
-              separatorBuilder: (_, __) => Divider(color: AdminTheme.borderColor(ctx), height: 1),
-              itemBuilder: (_, i) {
-                final file = files[i];
-                final name = file['name'] ?? 'Unknown';
-                final sizeBytes = int.tryParse(file['size']?.toString() ?? '0') ?? 0;
-                final sizeStr = sizeBytes > 1048576
-                    ? '${(sizeBytes / 1048576).toStringAsFixed(1)} MB'
-                    : sizeBytes > 1024
-                        ? '${(sizeBytes / 1024).toStringAsFixed(1)} KB'
-                        : '$sizeBytes B';
-                final createdTime = file['createdTime'] != null
-                    ? DateFormat('dd MMM yyyy, hh:mm a').format(DateTime.parse(file['createdTime']).toLocal())
-                    : '—';
-
-                // Detect backup type from filename
-                final isGymBackup = name.toString().startsWith('gym_backup_');
-                final icon = isGymBackup ? Icons.fitness_center_rounded : Icons.storage_rounded;
-                final typeLabel = isGymBackup ? 'Gym Backup' : 'Full Backup';
-                final typeColor = isGymBackup ? Colors.orange : AdminTheme.primary;
-
-                return ListTile(
-                  leading: Container(
-                    width: 40, height: 40,
-                    decoration: BoxDecoration(
-                      color: typeColor.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(10),
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Select Backup from Google Drive'),
+            content: SizedBox(
+              width: 500,
+              height: 350,
+              child: ListView.separated(
+                itemCount: files.length,
+                separatorBuilder: (_, __) => const Divider(),
+                itemBuilder: (_, i) {
+                  final f = files[i];
+                  return ListTile(
+                    leading: const Icon(Icons.insert_drive_file_rounded, color: AdminTheme.primary),
+                    title: Text(f['name'] ?? 'Backup', style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 13)),
+                    subtitle: Text('ID: ${f['id']}', style: GoogleFonts.inter(fontSize: 11)),
+                    trailing: ElevatedButton(
+                      child: const Text('Restore'),
+                      onPressed: () async {
+                        Navigator.pop(ctx);
+                        _downloadAndRestoreFromDrive(f['id'], token);
+                      },
                     ),
-                    child: Icon(icon, color: typeColor, size: 20),
-                  ),
-                  title: Text(name, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600)),
-                  subtitle: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(color: typeColor.withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
-                        child: Text(typeLabel, style: GoogleFonts.inter(fontSize: 10, color: typeColor, fontWeight: FontWeight.bold)),
-                      ),
-                      const SizedBox(width: 8),
-                      Text('$sizeStr • $createdTime', style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.mutedTextColor(ctx))),
-                    ],
-                  ),
-                  trailing: const Icon(Icons.chevron_right_rounded),
-                  onTap: () => Navigator.pop(ctx, file),
-                );
-              },
+                  );
+                },
+              ),
             ),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          ],
-        ),
-      );
-
-      if (selectedFile == null || !mounted) return;
-
-      // Download file content
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (ctx) => AlertDialog(
-          content: Row(
-            children: [
-              const CircularProgressIndicator(),
-              const SizedBox(width: 20),
-              Text('Downloading ${selectedFile['name']}...', style: GoogleFonts.inter(fontSize: 13)),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
             ],
           ),
-        ),
-      );
-
-      final content = await GoogleDriveService.fetchFileContent(selectedFile['id']);
-      if (mounted) Navigator.pop(context); // Close download loading
-
-      if (content != null && content.isNotEmpty) {
-        _restoreJsonController.text = content;
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('☁️ Loaded "${selectedFile['name']}" from Google Drive. Click "Restore Full Database" to restore.'),
-              backgroundColor: AdminTheme.success,
-              duration: const Duration(seconds: 5),
-            ),
-          );
-        }
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Failed to download file content from Drive'), backgroundColor: AdminTheme.danger),
-          );
-        }
+        );
       }
     } catch (e) {
       if (mounted) {
-        Navigator.pop(context);
+        setState(() => _isActionInProgress = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Drive error: $e'), backgroundColor: AdminTheme.danger),
+          SnackBar(content: Text('Error: $e'), backgroundColor: AdminTheme.danger),
         );
       }
     }
   }
 
-  /// 5. DELETE BACKUP
+  Future<void> _downloadAndRestoreFromDrive(String fileId, String token) async {
+    setState(() {
+      _isActionInProgress = true;
+      _actionMessage = 'Downloading backup from Google Drive...';
+      _actionProgress = 0.3;
+    });
+
+    try {
+      final jsonStr = await GoogleDriveService.fetchFileContent(fileId);
+      if (jsonStr == null) throw 'Failed to download file from Google Drive';
+      _restoreFromJson(jsonStr);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isActionInProgress = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Download failed: $e'), backgroundColor: AdminTheme.danger),
+        );
+      }
+    }
+  }
+
+  /// 6. CONNECT DRIVE
+  Future<void> _connectDrive() async {
+    final accessToken = _driveTokenController.text.trim();
+    final refreshToken = _driveRefreshTokenController.text.trim();
+    final folderId = _driveFolderController.text.trim();
+
+    if (accessToken.isEmpty && refreshToken.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter an Access Token or Refresh Token'), backgroundColor: Colors.orange),
+      );
+      return;
+    }
+
+    setState(() {
+      _isActionInProgress = true;
+      _actionMessage = 'Validating Google Drive connection...';
+    });
+
+    try {
+      await GoogleDriveService.saveCredentials(
+        accessToken: accessToken,
+        refreshToken: refreshToken.isNotEmpty ? refreshToken : null,
+        folderId: folderId.isNotEmpty ? folderId : null,
+      );
+
+      final user = await GoogleDriveService.getUserInfo();
+      if (user == null) {
+        throw 'Invalid token or unable to connect. Please check permissions.';
+      }
+
+      final email = user['emailAddress'] ?? 'Connected';
+      if (mounted) {
+        setState(() {
+          _driveConnected = true;
+          _driveEmail = email;
+          _isActionInProgress = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('✅ Google Drive connected as $email'), backgroundColor: AdminTheme.success),
+        );
+      }
+    } catch (e) {
+      await GoogleDriveService.disconnect();
+      if (mounted) {
+        setState(() {
+          _driveConnected = false;
+          _isActionInProgress = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Connection failed: $e'), backgroundColor: AdminTheme.danger),
+        );
+      }
+    }
+  }
+
+  /// 7. DISCONNECT DRIVE
+  Future<void> _disconnectDrive() async {
+    await GoogleDriveService.disconnect();
+    setState(() {
+      _driveConnected = false;
+      _driveEmail = '';
+      _driveTokenController.clear();
+      _driveRefreshTokenController.clear();
+      _driveFolderController.clear();
+      _diagnosticLogs.clear();
+    });
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Google Drive disconnected'), backgroundColor: Colors.orange),
+      );
+    }
+  }
+
+  /// 8. RUN DRIVE DIAGNOSTICS
+  Future<void> _runDriveDiagnostics() async {
+    setState(() {
+      _isRunningDiagnostics = true;
+      _diagnosticLogs = ['Starting Google Drive Diagnostic Suite...'];
+    });
+
+    try {
+      final logs = await GoogleDriveService.runDiagnostics();
+      if (mounted) {
+        setState(() {
+          _diagnosticLogs = logs;
+          _isRunningDiagnostics = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _diagnosticLogs.add('❌ Diagnostic Exception: $e');
+          _isRunningDiagnostics = false;
+        });
+      }
+    }
+  }
+
+  /// 9. DELETE BACKUP
   Future<void> _deleteBackup(Map<String, dynamic> backup) async {
     final confirm = await showAdminConfirmDialog(
       context,
-      title: 'Delete Backup?',
-      message: 'This will permanently delete "${backup['backup_name']}". This cannot be undone.',
+      title: 'Delete Backup Snapshot',
+      message: 'Are you sure you want to delete this backup snapshot permanently?',
       confirmText: 'Delete',
       isDangerous: true,
     );
     if (confirm != true) return;
 
     try {
-      await AdminSupabaseService.client.from('database_backups').delete().eq('id', backup['id']);
+      final client = AdminSupabaseService.client;
+      await client.from('database_backups').delete().eq('id', backup['id']);
       _loadBackupHistory();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Backup deleted'), backgroundColor: AdminTheme.success),
+          const SnackBar(content: Text('Backup deleted'), backgroundColor: Colors.orange),
         );
       }
     } catch (e) {
@@ -595,117 +832,14 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
     }
   }
 
-  /// 6. RESTORE FROM BACKUP HISTORY
-  Future<void> _restoreFromBackup(Map<String, dynamic> backup) async {
-    setState(() {
-      _isActionInProgress = true;
-      _actionMessage = 'Loading backup data...';
-    });
-
-    try {
-      final client = AdminSupabaseService.client;
-      final res = await client
-          .from('database_backups')
-          .select('backup_data')
-          .eq('id', backup['id'])
-          .single();
-
-      setState(() => _isActionInProgress = false);
-      final jsonStr = jsonEncode(res['backup_data']);
-      await _restoreFromJson(jsonStr);
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isActionInProgress = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading backup: $e'), backgroundColor: AdminTheme.danger),
-        );
-      }
-    }
-  }
-
-  /// 7. CONNECT GOOGLE DRIVE
-  Future<void> _connectDrive() async {
-    final token = _driveTokenController.text.trim();
-    final refreshToken = _driveRefreshTokenController.text.trim();
-    if (token.isEmpty && refreshToken.isEmpty) return;
-
-    setState(() {
-      _isActionInProgress = true;
-      _actionMessage = 'Connecting to Google Drive...';
-    });
-
-    await GoogleDriveService.saveCredentials(
-      accessToken: token,
-      refreshToken: refreshToken.isNotEmpty ? refreshToken : null,
-      folderId: _driveFolderController.text.trim().isNotEmpty ? _driveFolderController.text.trim() : null,
-    );
-
-    final valid = await GoogleDriveService.testConnection();
-    if (valid) {
-      final user = await GoogleDriveService.getUserInfo();
-      if (mounted) {
-        setState(() {
-          _driveConnected = true;
-          _driveEmail = user?['emailAddress'] ?? 'Connected';
-          _isActionInProgress = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('☁️ Connected as ${_driveEmail}'), backgroundColor: AdminTheme.success),
-        );
-      }
-    } else {
-      await GoogleDriveService.disconnect();
-      if (mounted) {
-        setState(() {
-          _driveConnected = false;
-          _isActionInProgress = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Invalid token. Please check and try again.'), backgroundColor: AdminTheme.danger),
-        );
-      }
-    }
-  }
-
-  Future<void> _disconnectDrive() async {
-    await GoogleDriveService.disconnect();
-    setState(() {
-      _driveConnected = false;
-      _driveEmail = '';
-      _diagnosticLogs.clear();
-    });
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Google Drive disconnected'), backgroundColor: AdminTheme.success),
-      );
-    }
-  }
-
-  /// 8. RUN DIAGNOSTICS SUITE
-  Future<void> _runDriveDiagnostics() async {
-    setState(() {
-      _isRunningDiagnostics = true;
-      _diagnosticLogs = ['⏳ Initializing diagnostics...'];
-    });
-
-    final logs = await GoogleDriveService.runDiagnostics();
-
-    if (mounted) {
-      setState(() {
-        _diagnosticLogs = logs;
-        _isRunningDiagnostics = false;
-      });
-    }
-  }
-
-  // ============== BUILD ==============
+  // ============== BUILD UI ==============
 
   @override
   Widget build(BuildContext context) {
     final padding = AdminResponsive.contentPadding(context);
 
     if (_isLoading) {
-      return Padding(padding: EdgeInsets.all(padding), child: const SkeletonTable(rows: 6));
+      return Padding(padding: EdgeInsets.all(padding), child: const SkeletonTable(rows: 8));
     }
 
     return Stack(
@@ -719,95 +853,104 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
                 duration: const Duration(milliseconds: 300),
                 childAnimationBuilder: (w) => SlideAnimation(verticalOffset: 20, child: FadeInAnimation(child: w)),
                 children: [
-                  // Header
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Database & Backup Center', style: GoogleFonts.inter(fontSize: 22, fontWeight: FontWeight.bold, color: AdminTheme.textColor(context))),
-                            const SizedBox(height: 4),
-                            Text('Enterprise daily backup, 1-click restore & Google Drive sync',
-                                style: GoogleFonts.inter(fontSize: 13, color: AdminTheme.secondaryTextColor(context))),
-                          ],
-                        ),
-                      ),
-                      ElevatedButton.icon(
-                        onPressed: _backupNow,
-                        icon: const Icon(Icons.backup_rounded, size: 18),
-                        label: Text('Backup Now', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold)),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AdminTheme.success,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                        ),
-                      ),
-                    ],
-                  ),
+                  _buildHeader(context),
                   const SizedBox(height: 24),
-
-                  // Stats cards
                   _buildStatsRow(context),
                   const SizedBox(height: 24),
-
-                  // Tabbed content
                   _buildTabs(context),
                 ],
               ),
             ),
           ),
         ),
-
-        // Action overlay
         if (_isActionInProgress) _buildActionOverlay(context),
+      ],
+    );
+  }
+
+  Widget _buildHeader(BuildContext context) {
+    return Row(
+      children: [
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Database Management & Auto-Backup',
+              style: GoogleFonts.inter(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                color: AdminTheme.textColor(context),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Enterprise-grade automated cloud backups, Google Drive sync & 1-click restore',
+              style: GoogleFonts.inter(fontSize: 13, color: AdminTheme.secondaryTextColor(context)),
+            ),
+          ],
+        ),
+        const Spacer(),
+        ElevatedButton.icon(
+          onPressed: _backupNow,
+          icon: const Icon(Icons.backup_rounded, size: 18),
+          label: Text('Backup Now', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AdminTheme.primary,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          ),
+        ),
       ],
     );
   }
 
   Widget _buildStatsRow(BuildContext context) {
     final stats = [
-      {'icon': Icons.storage_rounded, 'color': AdminTheme.primary, 'label': 'Database Size', 'value': _dbSizeStr},
-      {'icon': Icons.dataset_rounded, 'color': AdminTheme.teal, 'label': 'Total Records', 'value': NumberFormat('#,##0').format(_totalRecords)},
-      {'icon': Icons.schedule_rounded, 'color': AdminTheme.info, 'label': 'Last Backup', 'value': _lastBackupTime},
-      {'icon': Icons.backup_rounded, 'color': AdminTheme.success, 'label': 'Backups Saved', 'value': '$_backupCount'},
-      {'icon': Icons.cloud_done_rounded, 'color': _driveConnected ? AdminTheme.success : Colors.grey, 'label': 'Google Drive', 'value': _driveConnected ? 'Connected' : 'Not Connected'},
+      {'icon': Icons.data_usage_rounded, 'color': AdminTheme.primary, 'label': 'Database Size', 'value': _dbSizeStr},
+      {'icon': Icons.table_chart_rounded, 'color': AdminTheme.teal, 'label': 'Total Records', 'value': '$_totalRecords'},
+      {'icon': Icons.history_rounded, 'color': AdminTheme.info, 'label': 'Last Backup', 'value': _lastBackupTime},
+      {
+        'icon': Icons.cloud_done_rounded,
+        'color': _driveConnected ? AdminTheme.success : Colors.orange,
+        'label': 'Google Drive',
+        'value': _driveConnected ? 'Connected' : 'Not Connected',
+      },
     ];
 
-    return Wrap(
-      spacing: 16,
-      runSpacing: 16,
+    return Row(
       children: stats.map((s) {
-        return Container(
-          width: AdminResponsive.isMobile(context) ? double.infinity : 200,
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: AdminTheme.cardColor(context),
-            borderRadius: BorderRadius.circular(AdminTheme.radiusCard),
-            border: Border.all(color: AdminTheme.borderColor(context)),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 44, height: 44,
-                decoration: BoxDecoration(
-                  color: (s['color'] as Color).withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
+        return Expanded(
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 4),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AdminTheme.cardColor(context),
+              borderRadius: BorderRadius.circular(AdminTheme.radiusCard),
+              border: Border.all(color: AdminTheme.borderColor(context)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 42, height: 42,
+                  decoration: BoxDecoration(
+                    color: (s['color'] as Color).withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(s['icon'] as IconData, size: 20, color: s['color'] as Color),
                 ),
-                child: Icon(s['icon'] as IconData, size: 22, color: s['color'] as Color),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(s['label'] as String, style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.mutedTextColor(context))),
-                    const SizedBox(height: 2),
-                    Text(s['value'] as String, style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: AdminTheme.textColor(context))),
-                  ],
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(s['label'] as String, style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.mutedTextColor(context))),
+                      const SizedBox(height: 2),
+                      Text(s['value'] as String, style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: AdminTheme.textColor(context))),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         );
       }).toList(),
@@ -827,16 +970,18 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
             controller: _tabController,
             tabs: const [
               Tab(text: '📦 Backup History'),
+              Tab(text: '⏰ Auto-Backup Schedule'),
               Tab(text: '📤 Upload & Restore'),
               Tab(text: '☁️ Google Drive & Tracker'),
             ],
           ),
           SizedBox(
-            height: 600,
+            height: 650,
             child: TabBarView(
               controller: _tabController,
               children: [
                 _buildBackupHistoryTab(context),
+                _buildAutoBackupTab(context),
                 _buildRestoreTab(context),
                 _buildDriveTab(context),
               ],
@@ -881,11 +1026,10 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
           padding: const EdgeInsets.symmetric(vertical: 12),
           child: Row(
             children: [
-              // Status icon
               Container(
                 width: 40, height: 40,
                 decoration: BoxDecoration(
-                  color: (status == 'Success' ? AdminTheme.success : Colors.orange).withOpacity(0.1),
+                  color: (status == 'Success' ? AdminTheme.success : Colors.orange).withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(
@@ -895,102 +1039,46 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
                 ),
               ),
               const SizedBox(width: 14),
-
-              // Info
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(b['backup_name'] as String? ?? 'Unnamed Backup',
-                        style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AdminTheme.textColor(context))),
+                    Text(
+                      b['backup_name'] ?? 'Full Backup',
+                      style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: AdminTheme.textColor(context)),
+                    ),
                     const SizedBox(height: 4),
-                    Wrap(
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      spacing: 8,
-                      children: [
-                        Text('${_formatBytes(sizeBytes)}  •  $totalRecords records  •  ${DateFormat('dd MMM yyyy, hh:mm a').format(cAt)}',
-                            style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.mutedTextColor(context))),
-                        
-                        // Drive Status Badge
-                        if (driveUrl != null && driveUrl.isNotEmpty)
-                          InkWell(
-                            onTap: () async {
-                              final uri = Uri.parse(driveUrl);
-                              if (await canLaunchUrl(uri)) {
-                                await launchUrl(uri);
-                              }
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: AdminTheme.success.withOpacity(0.15),
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(color: AdminTheme.success.withOpacity(0.4)),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(Icons.cloud_done_rounded, size: 12, color: AdminTheme.success),
-                                  const SizedBox(width: 4),
-                                  Text('Drive Uploaded', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.bold, color: AdminTheme.success)),
-                                  const SizedBox(width: 2),
-                                  const Icon(Icons.open_in_new_rounded, size: 10, color: AdminTheme.success),
-                                ],
-                              ),
-                            ),
-                          )
-                        else
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Colors.grey.withOpacity(0.15),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.cloud_off_rounded, size: 12, color: Colors.grey),
-                                const SizedBox(width: 4),
-                                Text('Not in Drive', style: GoogleFonts.inter(fontSize: 10, color: Colors.grey)),
-                              ],
-                            ),
-                          ),
-                      ],
+                    Text(
+                      '${DateFormat('dd MMM yyyy, hh:mm a').format(cAt)} • $totalRecords records • ${_formatBytes(sizeBytes)}',
+                      style: GoogleFonts.inter(fontSize: 12, color: AdminTheme.secondaryTextColor(context)),
                     ),
                   ],
                 ),
               ),
-
-              // Actions
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Sync to Drive button
-                  IconButton(
-                    tooltip: 'Upload/Sync to Google Drive',
-                    icon: const Icon(Icons.cloud_upload_outlined, size: 18),
-                    color: AdminTheme.teal,
-                    onPressed: () => _uploadRowToDrive(b),
-                  ),
-                  IconButton(
-                    tooltip: 'Download JSON',
-                    icon: const Icon(Icons.download_rounded, size: 18),
-                    color: AdminTheme.primary,
-                    onPressed: () => _downloadBackup(b),
-                  ),
-                  IconButton(
-                    tooltip: 'Restore database from this backup',
-                    icon: const Icon(Icons.restore_rounded, size: 18),
-                    color: AdminTheme.info,
-                    onPressed: () => _restoreFromBackup(b),
-                  ),
-                  IconButton(
-                    tooltip: 'Delete',
-                    icon: const Icon(Icons.delete_outline_rounded, size: 18),
-                    color: AdminTheme.danger,
-                    onPressed: () => _deleteBackup(b),
-                  ),
-                ],
+              if (driveUrl != null && driveUrl.isNotEmpty)
+                IconButton(
+                  tooltip: 'View in Google Drive',
+                  icon: const Icon(Icons.cloud_done_rounded, size: 18),
+                  color: AdminTheme.teal,
+                  onPressed: () => launchUrl(Uri.parse(driveUrl)),
+                ),
+              IconButton(
+                tooltip: 'Download Backup JSON',
+                icon: const Icon(Icons.download_rounded, size: 18),
+                color: AdminTheme.primary,
+                onPressed: () => _downloadBackup(b),
+              ),
+              IconButton(
+                tooltip: 'Restore database from this backup',
+                icon: const Icon(Icons.restore_rounded, size: 18),
+                color: AdminTheme.info,
+                onPressed: () => _restoreFromBackup(b),
+              ),
+              IconButton(
+                tooltip: 'Delete',
+                icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                color: AdminTheme.danger,
+                onPressed: () => _deleteBackup(b),
               ),
             ],
           ),
@@ -999,7 +1087,293 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
     );
   }
 
-  // ============== TAB 2: UPLOAD & RESTORE ==============
+  // ============== TAB 2: AUTO-BACKUP SCHEDULE (NEW) ==============
+
+  Widget _buildAutoBackupTab(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Banner: Cloud Scheduler Status
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: (_autoBackupEnabled ? AdminTheme.success : Colors.orange).withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: (_autoBackupEnabled ? AdminTheme.success : Colors.orange).withValues(alpha: 0.25)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: (_autoBackupEnabled ? AdminTheme.success : Colors.orange).withValues(alpha: 0.15),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    _autoBackupEnabled ? Icons.schedule_rounded : Icons.pause_circle_rounded,
+                    color: _autoBackupEnabled ? AdminTheme.success : Colors.orange,
+                    size: 26,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            _autoBackupEnabled ? 'Auto-Backup Scheduler: ACTIVE' : 'Auto-Backup Scheduler: PAUSED',
+                            style: GoogleFonts.inter(
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                              color: _autoBackupEnabled ? AdminTheme.success : Colors.orange,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: AdminTheme.cardColor(context),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: AdminTheme.borderColor(context)),
+                            ),
+                            child: Text(
+                              'Cloud 24x7',
+                              style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.bold, color: AdminTheme.teal),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Executes automatically on the backend even if your admin website or PC is closed.',
+                        style: GoogleFonts.inter(fontSize: 12, color: AdminTheme.secondaryTextColor(context)),
+                      ),
+                    ],
+                  ),
+                ),
+                Switch(
+                  value: _autoBackupEnabled,
+                  activeColor: AdminTheme.success,
+                  onChanged: (val) {
+                    setState(() => _autoBackupEnabled = val);
+                  },
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // 3 Metric Cards
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AdminTheme.surfaceColor(context),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AdminTheme.borderColor(context)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Frequency', style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.mutedTextColor(context))),
+                      const SizedBox(height: 4),
+                      Text(
+                        _autoBackupIntervalDays == 1 ? 'Every 1 Day (Daily)' : 'Every $_autoBackupIntervalDays Days',
+                        style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AdminTheme.textColor(context)),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AdminTheme.surfaceColor(context),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AdminTheme.borderColor(context)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Next Scheduled Run', style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.mutedTextColor(context))),
+                      const SizedBox(height: 4),
+                      Text(
+                        _nextAutoBackupRun != null ? DateFormat('MMM d, hh:mm a').format(_nextAutoBackupRun!) : 'Next Cycle',
+                        style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AdminTheme.primary),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AdminTheme.surfaceColor(context),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AdminTheme.borderColor(context)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Google Drive Auto-Sync', style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.mutedTextColor(context))),
+                      const SizedBox(height: 4),
+                      Text(
+                        _autoDriveUpload && _driveConnected ? 'Enabled (Auto Upload)' : (_autoDriveUpload ? 'Waiting for Drive login' : 'Disabled'),
+                        style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: _autoDriveUpload && _driveConnected ? AdminTheme.teal : Colors.orange),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 28),
+
+          // Configuration Form Card
+          Text('Schedule Configuration', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: AdminTheme.textColor(context))),
+          const SizedBox(height: 16),
+
+          // Interval Dropdown
+          Text('Backup Frequency (Days)', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AdminTheme.textColor(context))),
+          const SizedBox(height: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            decoration: BoxDecoration(
+              color: AdminTheme.surfaceColor(context),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AdminTheme.borderColor(context)),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<int>(
+                value: _autoBackupIntervalDays,
+                isExpanded: true,
+                dropdownColor: AdminTheme.cardColor(context),
+                items: const [
+                  DropdownMenuItem(value: 1, child: Text('Every 1 Day — Daily Auto-Backup (Recommended)')),
+                  DropdownMenuItem(value: 2, child: Text('Every 2 Days')),
+                  DropdownMenuItem(value: 3, child: Text('Every 3 Days')),
+                  DropdownMenuItem(value: 7, child: Text('Every 7 Days — Weekly Auto-Backup')),
+                  DropdownMenuItem(value: 14, child: Text('Every 14 Days — Bi-Weekly')),
+                  DropdownMenuItem(value: 30, child: Text('Every 30 Days — Monthly')),
+                ],
+                onChanged: (val) {
+                  if (val != null) setState(() => _autoBackupIntervalDays = val);
+                },
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // Preferred Time
+          Text('Preferred Execution Time (UTC / IST)', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AdminTheme.textColor(context))),
+          const SizedBox(height: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            decoration: BoxDecoration(
+              color: AdminTheme.surfaceColor(context),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AdminTheme.borderColor(context)),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: _autoBackupTime,
+                isExpanded: true,
+                dropdownColor: AdminTheme.cardColor(context),
+                items: const [
+                  DropdownMenuItem(value: '02:00', child: Text('02:00 AM (Night — Minimal Traffic, Best for backup)')),
+                  DropdownMenuItem(value: '04:00', child: Text('04:00 AM (Early Morning)')),
+                  DropdownMenuItem(value: '12:00', child: Text('12:00 PM (Noon)')),
+                  DropdownMenuItem(value: '18:00', child: Text('06:00 PM (Evening)')),
+                ],
+                onChanged: (val) {
+                  if (val != null) setState(() => _autoBackupTime = val);
+                },
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // Auto-Upload to Google Drive Checkbox
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: AdminTheme.surfaceColor(context),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AdminTheme.borderColor(context)),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.cloud_upload_outlined, color: AdminTheme.teal, size: 22),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Auto-Upload Backups to Google Drive', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AdminTheme.textColor(context))),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Whenever auto-backup runs, immediately upload the file to your "GYM OS BACKUP" Google Drive folder.',
+                        style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.secondaryTextColor(context)),
+                      ),
+                    ],
+                  ),
+                ),
+                Switch(
+                  value: _autoDriveUpload,
+                  activeColor: AdminTheme.teal,
+                  onChanged: (val) {
+                    setState(() => _autoDriveUpload = val);
+                  },
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // Save & Test Buttons
+          Row(
+            children: [
+              ElevatedButton.icon(
+                onPressed: _isSavingAutoSchedule ? null : _saveAutoBackupSchedule,
+                icon: _isSavingAutoSchedule
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.save_rounded, size: 18),
+                label: Text('Save Auto-Backup Schedule', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AdminTheme.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                ),
+              ),
+              const SizedBox(width: 14),
+              OutlinedButton.icon(
+                onPressed: _triggerAutoBackupNow,
+                icon: const Icon(Icons.flash_on_rounded, size: 18, color: AdminTheme.teal),
+                label: Text('Run Auto-Backup Cloud Job Now (Test)', style: GoogleFonts.inter(fontWeight: FontWeight.w600, color: AdminTheme.teal)),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: AdminTheme.teal),
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ============== TAB 3: UPLOAD & RESTORE ==============
 
   Widget _buildRestoreTab(BuildContext context) {
     return SingleChildScrollView(
@@ -1007,13 +1381,12 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Info banner
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: AdminTheme.info.withOpacity(0.08),
+              color: AdminTheme.info.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AdminTheme.info.withOpacity(0.2)),
+              border: Border.all(color: AdminTheme.info.withValues(alpha: 0.2)),
             ),
             child: Row(
               children: [
@@ -1021,7 +1394,7 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    '1-Click Full Restore: Paste your GymOS Enterprise Backup JSON below. This will restore ALL tables including gyms, members, staff, subscriptions, payments, settings — everything!',
+                    '1-Click Full Restore: Paste your GymOS Enterprise Backup JSON below. This will restore ALL tables including gyms, members, staff, subscriptions, payments, settings with 0 generated-column warnings!',
                     style: GoogleFonts.inter(fontSize: 12, color: AdminTheme.info),
                   ),
                 ),
@@ -1030,7 +1403,6 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
           ),
           const SizedBox(height: 20),
 
-          // JSON input
           Text('Backup JSON Payload', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: AdminTheme.textColor(context))),
           const SizedBox(height: 8),
           TextField(
@@ -1050,7 +1422,6 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
           ),
           const SizedBox(height: 16),
 
-          // Actions row
           Row(
             children: [
               ElevatedButton.icon(
@@ -1105,54 +1476,12 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
               ),
             ],
           ),
-
-          const SizedBox(height: 32),
-
-          // Migration guide
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AdminTheme.cardColor(context),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AdminTheme.borderColor(context)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('🚀 Server Migration Guide', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AdminTheme.textColor(context))),
-                const SizedBox(height: 12),
-                _migrationStep('1', 'On OLD server → Click "Backup Now" to create fresh backup'),
-                _migrationStep('2', 'Download the backup JSON file'),
-                _migrationStep('3', 'On NEW server → Run the full_backup_system.sql in SQL Editor'),
-                _migrationStep('4', 'Paste the backup JSON above → Click "Restore Full Database"'),
-                _migrationStep('5', 'All gyms, members, staff, payments, settings restored in 1 click!'),
-              ],
-            ),
-          ),
         ],
       ),
     );
   }
 
-  Widget _migrationStep(String num, String text) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 24, height: 24,
-            decoration: BoxDecoration(color: AdminTheme.primary.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
-            child: Center(child: Text(num, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AdminTheme.primary))),
-          ),
-          const SizedBox(width: 10),
-          Expanded(child: Text(text, style: GoogleFonts.inter(fontSize: 12, color: AdminTheme.secondaryTextColor(context)))),
-        ],
-      ),
-    );
-  }
-
-  // ============== TAB 3: GOOGLE DRIVE & TRACKER ==============
+  // ============== TAB 4: GOOGLE DRIVE & TRACKER ==============
 
   Widget _buildDriveTab(BuildContext context) {
     return SingleChildScrollView(
@@ -1160,13 +1489,12 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Status banner
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: (_driveConnected ? AdminTheme.success : Colors.orange).withOpacity(0.08),
+              color: (_driveConnected ? AdminTheme.success : Colors.orange).withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: (_driveConnected ? AdminTheme.success : Colors.orange).withOpacity(0.2)),
+              border: Border.all(color: (_driveConnected ? AdminTheme.success : Colors.orange).withValues(alpha: 0.2)),
             ),
             child: Row(
               children: [
@@ -1215,7 +1543,6 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
           ),
           const SizedBox(height: 24),
 
-          // Live Diagnostics Console & Tracker
           if (_diagnosticLogs.isNotEmpty) ...[
             Container(
               width: double.infinity,
@@ -1288,7 +1615,7 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
             ),
             const SizedBox(height: 16),
 
-            Text('Refresh Token (Recommended for Permanent Auto-Renewal)', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AdminTheme.textColor(context))),
+            Text('Refresh Token (Permanent Lifetime Auto-Renewal)', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AdminTheme.textColor(context))),
             const SizedBox(height: 4),
             Text('Copy from "Refresh token" in Step 2 of OAuth Playground. With this, token will never expire!', style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.mutedTextColor(context))),
             const SizedBox(height: 8),
@@ -1312,7 +1639,7 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
               controller: _driveFolderController,
               style: GoogleFonts.firaCode(fontSize: 11),
               decoration: InputDecoration(
-                hintText: 'e.g. 1ABC_xyz... (leave empty for root folder)',
+                hintText: 'e.g. 1ABC_xyz... (leave empty to auto-create "GYM OS BACKUP" folder)',
                 hintStyle: GoogleFonts.firaCode(fontSize: 11, color: AdminTheme.mutedTextColor(context)),
                 filled: true,
                 fillColor: AdminTheme.surfaceColor(context),
@@ -1335,28 +1662,6 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
                 ),
               ],
             ),
-            const SizedBox(height: 24),
-
-            // Instructions
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: AdminTheme.surfaceColor(context),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('📖 How to get Google Drive Tokens in 2 minutes', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold, color: AdminTheme.textColor(context))),
-                  const SizedBox(height: 10),
-                  _migrationStep('1', 'Go to Google OAuth Playground: https://developers.google.com/oauthplayground'),
-                  _migrationStep('2', 'Select "Drive API v3" → check "https://www.googleapis.com/auth/drive" (Full Access)'),
-                  _migrationStep('3', 'Click "Authorize APIs" → Sign in with Google → Allow'),
-                  _migrationStep('4', 'Click "Exchange authorization code for tokens"'),
-                  _migrationStep('5', 'Copy "Access Token" and "Refresh Token" and paste them above'),
-                ],
-              ),
-            ),
           ],
         ],
       ),
@@ -1367,7 +1672,7 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
 
   Widget _buildActionOverlay(BuildContext context) {
     return Container(
-      color: Colors.black.withOpacity(0.6),
+      color: Colors.black.withValues(alpha: 0.6),
       child: Center(
         child: Container(
           width: 380,
@@ -1375,7 +1680,7 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
           decoration: BoxDecoration(
             color: AdminTheme.cardColor(context),
             borderRadius: BorderRadius.circular(20),
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 30, spreadRadius: 5)],
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 30, spreadRadius: 5)],
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
