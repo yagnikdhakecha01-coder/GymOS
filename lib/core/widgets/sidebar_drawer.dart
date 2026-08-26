@@ -486,33 +486,77 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
         final endDate = now.add(const Duration(days: 30));
         final startDateStr = now.toIso8601String();
         final endDateStr = endDate.toIso8601String();
+        final planId = _pendingPlanId ?? 'pro';
 
+        double price = 699.0;
+        if (planId == 'pro') price = 999.0;
+        if (planId == 'business') price = 1999.0;
+
+        // 1. Update/Upsert Subscriptions
+        dynamic subId;
         try {
-          await SupabaseService.client.from('subscriptions').upsert({
+          final subRes = await SupabaseService.client.from('subscriptions').upsert({
             'gym_id': _pendingGymId,
             'owner_id': _pendingOwnerId,
-            'plan_id': _pendingPlanId,
+            'plan_id': planId,
             'status': 'active',
             'start_date': startDateStr,
             'end_date': endDateStr,
-            'trial_end': endDateStr,
+            'trial_end': startDateStr,
             'razorpay_subscription_id': paymentId,
             'auto_pay': true,
             'updated_at': startDateStr,
-          }, onConflict: 'gym_id');
+          }, onConflict: 'gym_id').select('id').maybeSingle();
+          subId = subRes?['id'];
         } catch (e) {
           debugPrint('Direct subscription upsert error: $e');
         }
 
+        // 2. Update Gyms table
         try {
           await SupabaseService.client.from('gyms').update({
-            'plan': _pendingPlanId,
+            'plan': planId,
             'status': 'active',
             'expiry_date': endDateStr,
             'is_locked': false,
           }).eq('id', _pendingGymId!);
         } catch (e) {
           debugPrint('Direct gym table update error: $e');
+        }
+
+        // 3. Record Invoice & Payment
+        try {
+          final invoiceNumber = 'INV-${DateTime.now().millisecondsSinceEpoch}';
+          final invRes = await SupabaseService.client.from('invoices').insert({
+            'gym_id': _pendingGymId,
+            'subscription_id': subId,
+            'invoice_number': invoiceNumber,
+            'amount': price,
+            'status': 'paid',
+            'billing_date': startDateStr,
+            'due_date': startDateStr,
+          }).select('id').maybeSingle();
+
+          await SupabaseService.client.from('payments').insert({
+            'gym_id': _pendingGymId,
+            'subscription_id': subId,
+            'invoice_id': invRes?['id'],
+            'amount': price,
+            'status': 'Success',
+            'payment_method': 'Razorpay Gateway',
+            'razorpay_payment_id': paymentId,
+            'created_at': startDateStr,
+          });
+
+          await SupabaseService.client.from('subscription_history').insert({
+            'gym_id': _pendingGymId,
+            'new_plan_id': planId,
+            'action': 'upgrade',
+            'changed_by': _pendingOwnerId,
+            'notes': 'Upgraded to ${planId.toUpperCase()} plan via verified Razorpay checkout ($paymentId).',
+          });
+        } catch (e) {
+          debugPrint('Direct recording invoice/payment in drawer error: $e');
         }
 
         verified = true;

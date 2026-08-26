@@ -426,20 +426,27 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
         final startDateStr = now.toIso8601String();
         final endDateStr = endDate.toIso8601String();
 
+        final planId = _selectedPlanId ?? 'pro';
+        double price = 699.0;
+        if (planId == 'pro') price = 999.0;
+        if (planId == 'business') price = 1999.0;
+
         // 1. Update/Upsert Subscriptions table
+        dynamic subId;
         try {
-          await SupabaseService.client.from('subscriptions').upsert({
+          final subRes = await SupabaseService.client.from('subscriptions').upsert({
             'gym_id': gymId,
             'owner_id': ownerId,
-            'plan_id': _selectedPlanId ?? 'pro',
+            'plan_id': planId,
             'status': 'active',
             'start_date': startDateStr,
             'end_date': endDateStr,
-            'trial_end': endDateStr,
+            'trial_end': startDateStr,
             'razorpay_subscription_id': paymentId,
             'auto_pay': true,
             'updated_at': startDateStr,
-          }, onConflict: 'gym_id');
+          }, onConflict: 'gym_id').select('id').maybeSingle();
+          subId = subRes?['id'];
         } catch (subErr) {
           debugPrint('Direct subscription upsert error: $subErr');
         }
@@ -447,7 +454,7 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
         // 2. Update Gyms table
         try {
           await SupabaseService.client.from('gyms').update({
-            'plan': _selectedPlanId ?? 'pro',
+            'plan': planId,
             'status': 'active',
             'expiry_date': endDateStr,
             'is_locked': false,
@@ -461,28 +468,31 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
           final invoiceNumber = 'INV-${DateTime.now().millisecondsSinceEpoch}';
           final invRes = await SupabaseService.client.from('invoices').insert({
             'gym_id': gymId,
+            'subscription_id': subId,
             'invoice_number': invoiceNumber,
-            'amount': _selectedPrice ?? 999.0,
+            'amount': price,
             'status': 'paid',
             'billing_date': startDateStr,
             'due_date': startDateStr,
-          }).select().maybeSingle();
+          }).select('id').maybeSingle();
 
           await SupabaseService.client.from('payments').insert({
             'gym_id': gymId,
+            'subscription_id': subId,
             'invoice_id': invRes?['id'],
-            'amount': _selectedPrice ?? 999.0,
+            'amount': price,
             'status': 'Success',
             'payment_method': 'Razorpay Gateway',
             'razorpay_payment_id': paymentId,
+            'created_at': startDateStr,
           });
 
           await SupabaseService.client.from('subscription_history').insert({
             'gym_id': gymId,
-            'new_plan_id': _selectedPlanId ?? 'pro',
+            'new_plan_id': planId,
             'action': 'upgrade',
             'changed_by': ownerId,
-            'notes': 'Upgraded to ${_selectedPlanId?.toUpperCase() ?? "PRO"} plan via verified Razorpay checkout ($paymentId).',
+            'notes': 'Upgraded to ${planId.toUpperCase()} plan via verified Razorpay checkout ($paymentId).',
           });
         } catch (recErr) {
           debugPrint('Recording invoice/payment history error: $recErr');
