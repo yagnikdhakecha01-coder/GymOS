@@ -138,10 +138,21 @@ class _GymsScreenState extends State<GymsScreen> {
         final bool hasPaidPlan = rawPlan != 'free_trial' && rawPlan != 'trial';
         final bool isPlanQueuedAfterTrial = !isPaidActive && isTrialActive && hasPaidPlan;
 
-        String trialLeftStr = '-';
-        if (isTrialActive) {
-          final diff = trialEndDate!.difference(DateTime.now()).inDays;
-          trialLeftStr = diff > 0 ? '$diff days' : '1 day left';
+        String daysLeftStr = '-';
+        String daysSubtitleStr = '';
+
+        if (isTrialActive && trialEndDate != null) {
+          final diff = trialEndDate.difference(DateTime.now()).inDays;
+          daysLeftStr = diff > 0 ? '$diff days' : (diff == 0 ? '1 day left' : 'Expired');
+          daysSubtitleStr = 'Trial Ends: ${trialEndDate.toLocal().toString().split(' ')[0]}';
+        } else if (isPaidActive && planEndDate != null) {
+          final diff = planEndDate.difference(DateTime.now()).inDays;
+          daysLeftStr = diff > 0 ? '$diff days' : (diff == 0 ? 'Expires today' : 'Expired');
+          daysSubtitleStr = 'Paid Plan (${PlatformPlan.displayName(rawPlan)})';
+        } else if (planEndDate != null) {
+          final diff = planEndDate.difference(DateTime.now()).inDays;
+          daysLeftStr = diff > 0 ? '$diff days' : (diff == 0 ? 'Expires today' : 'Expired');
+          daysSubtitleStr = 'Expires: ${planEndDate.toLocal().toString().split(' ')[0]}';
         }
 
         String trialEndFormatted = trialEndDate != null ? trialEndDate.toLocal().toString().split(' ')[0] : '-';
@@ -174,7 +185,10 @@ class _GymsScreenState extends State<GymsScreen> {
           'isTrialActive': isTrialActive,
           'hasPaidPlan': hasPaidPlan,
           'isPlanQueuedAfterTrial': isPlanQueuedAfterTrial,
-          'trialLeft': trialLeftStr,
+          'isPaidActive': isPaidActive,
+          'daysLeft': daysLeftStr,
+          'daysSubtitle': daysSubtitleStr,
+          'trialLeft': daysLeftStr,
           'trialEndDate': trialEndFormatted,
           'expiry': planEndFormatted,
           'members': membersCount,
@@ -636,7 +650,7 @@ class _GymsScreenState extends State<GymsScreen> {
               DataColumn(label: Text('MOBILE')),
               DataColumn(label: Text('PLAN')),
               DataColumn(label: Text('STATUS')),
-              DataColumn(label: Text('TRIAL LEFT')),
+              DataColumn(label: Text('DAYS LEFT')),
               DataColumn(label: Text('EXPIRY')),
               DataColumn(label: Text('MEMBERS')),
               DataColumn(label: Text('STAFF')),
@@ -646,6 +660,7 @@ class _GymsScreenState extends State<GymsScreen> {
             rows: gyms.map((gym) {
               final bool isQueued = gym['isPlanQueuedAfterTrial'] == true;
               final bool isTrial = gym['isTrialActive'] == true;
+              final bool isPaidActive = gym['isPaidActive'] == true;
 
               return DataRow(
                 onSelectChanged: (selected) {
@@ -744,15 +759,18 @@ class _GymsScreenState extends State<GymsScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          isTrial ? (gym['trialLeft'] as String) : '-',
+                          gym['daysLeft'] as String,
                           style: GoogleFonts.inter(
-                            fontWeight: isTrial ? FontWeight.bold : FontWeight.normal,
+                            fontWeight: FontWeight.bold,
                             fontSize: 13,
+                            color: gym['status'] == 'active'
+                                ? AdminTheme.success
+                                : (gym['status'] == 'trial' ? AdminTheme.info : AdminTheme.textColor(context)),
                           ),
                         ),
-                        if (isTrial) ...[
+                        if ((gym['daysSubtitle'] as String).isNotEmpty) ...[
                           Text(
-                            'Trial Ends: ${gym['trialEndDate']}',
+                            gym['daysSubtitle'] as String,
                             style: GoogleFonts.inter(fontSize: 10, color: AdminTheme.secondaryTextColor(context)),
                           ),
                         ],
