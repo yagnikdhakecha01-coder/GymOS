@@ -2445,23 +2445,51 @@ class GymRepository extends ChangeNotifier {
   }
 
   Future<void> deleteMember(String id) async {
-    if (_isValidUUID(id)) {
-      _members.removeWhere((m) => m.id == id);
-      await _storage.setString(_membersKey, jsonEncode(_members.map((e) => e.toJson()).toList()));
-      notifyListeners();
-
-      _crudQueue.add({
-        'uuid': _generateUuidV4(),
-        'table': 'members',
-        'action': 'delete',
-        'payload': {'id': id},
-        'created_at': DateTime.now().toIso8601String(),
-        'retry_count': 0,
-        'error_message': null,
-      });
-      await _saveQueuesToStorage();
-      triggerBackgroundSync();
+    if (!_isValidUUID(id)) {
+      throw Exception('Invalid member ID format.');
     }
+    final gymId = _storage.getGymInfo()?['id'];
+
+    // 1. Remove from local list and save to storage
+    _members.removeWhere((m) => m.id == id);
+    await _storage.setString(_membersKey, jsonEncode(_members.map((e) => e.toJson()).toList()));
+
+    // Clean up local cached attendance and memberships
+    _attendance.removeWhere((a) => a.memberId == id || a.userId == id);
+    await _storage.setString(_attendanceKey, jsonEncode(_attendance.map((e) => e.toJson()).toList()));
+    _memberMemberships.removeWhere((mm) => mm.memberId == id);
+    await _storage.setString(_memberMembershipsKey, jsonEncode(_memberMemberships.map((e) => e.toJson()).toList()));
+
+    notifyListeners();
+
+    // 2. Direct Supabase delete if online
+    if (SupabaseService.isInitialized && gymId != null) {
+      try {
+        await SupabaseService.client
+            .from('members')
+            .delete()
+            .eq('id', id)
+            .eq('gym_id', gymId);
+      } catch (e) {
+        print('deleteMember direct Supabase delete skipped/failed: $e. Fallback to queue.');
+      }
+    }
+
+    // 3. Queue delete operation for offline-first sync
+    _crudQueue.add({
+      'uuid': _generateUuidV4(),
+      'table': 'members',
+      'action': 'delete',
+      'payload': {
+        'id': id,
+        if (gymId != null) 'gym_id': gymId,
+      },
+      'created_at': DateTime.now().toIso8601String(),
+      'retry_count': 0,
+      'error_message': null,
+    });
+    await _saveQueuesToStorage();
+    triggerBackgroundSync();
   }
 
   // --- Staff ---
@@ -2593,23 +2621,49 @@ class GymRepository extends ChangeNotifier {
   }
 
   Future<void> deleteStaff(String id) async {
-    if (_isValidUUID(id)) {
-      _staff.removeWhere((s) => s.id == id);
-      await _storage.setString(_staffKey, jsonEncode(_staff.map((e) => e.toJson()).toList()));
-      notifyListeners();
-
-      _crudQueue.add({
-        'uuid': _generateUuidV4(),
-        'table': 'staff',
-        'action': 'delete',
-        'payload': {'id': id},
-        'created_at': DateTime.now().toIso8601String(),
-        'retry_count': 0,
-        'error_message': null,
-      });
-      await _saveQueuesToStorage();
-      triggerBackgroundSync();
+    if (!_isValidUUID(id)) {
+      throw Exception('Invalid staff ID format.');
     }
+    final gymId = _storage.getGymInfo()?['id'];
+
+    // 1. Remove from local list and save to storage
+    _staff.removeWhere((s) => s.id == id);
+    await _storage.setString(_staffKey, jsonEncode(_staff.map((e) => e.toJson()).toList()));
+
+    // Clean up local cached attendance
+    _attendance.removeWhere((a) => a.staffId == id || a.userId == id);
+    await _storage.setString(_attendanceKey, jsonEncode(_attendance.map((e) => e.toJson()).toList()));
+
+    notifyListeners();
+
+    // 2. Direct Supabase delete if online
+    if (SupabaseService.isInitialized && gymId != null) {
+      try {
+        await SupabaseService.client
+            .from('staff')
+            .delete()
+            .eq('id', id)
+            .eq('gym_id', gymId);
+      } catch (e) {
+        print('deleteStaff direct Supabase delete skipped/failed: $e. Fallback to queue.');
+      }
+    }
+
+    // 3. Queue delete operation for offline-first sync
+    _crudQueue.add({
+      'uuid': _generateUuidV4(),
+      'table': 'staff',
+      'action': 'delete',
+      'payload': {
+        'id': id,
+        if (gymId != null) 'gym_id': gymId,
+      },
+      'created_at': DateTime.now().toIso8601String(),
+      'retry_count': 0,
+      'error_message': null,
+    });
+    await _saveQueuesToStorage();
+    triggerBackgroundSync();
   }
 
   // --- Workouts ---

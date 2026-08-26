@@ -33,14 +33,25 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
   final List<String> _days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
   final List<String> _dayTypes = [
     'Chest Day',
+    'Back Day',
     'Leg Day',
     'Shoulder Day',
-    'Rest Day',
-    'Back Day',
+    'Bicep Day',
     'Tricep Day',
+    'Arms Day',
+    'Abs & Core',
     'Cardio & Steam',
     'Aerobics Day',
+    'HIIT Cardio',
+    'CrossFit',
     'Yoga Day',
+    'Stretching & Mobility',
+    'Full Body Workout',
+    'Upper Body',
+    'Lower Body',
+    'Push Day',
+    'Pull Day',
+    'Rest Day',
   ];
 
   @override
@@ -56,18 +67,17 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
       
       // Deep copy schedule
       _schedule = {};
-      p.schedule.forEach((key, list) {
-        _schedule[key] = List.from(list);
-      });
+      for (final day in _days) {
+        final existing = p.schedule[day] ?? [];
+        if (existing.isNotEmpty) {
+          _schedule[day] = List.from(existing);
+        } else {
+          _schedule[day] = [ScheduledWorkout(title: '', description: '')];
+        }
+      }
     } else {
       _schedule = {
-        'Monday': [],
-        'Tuesday': [],
-        'Wednesday': [],
-        'Thursday': [],
-        'Friday': [],
-        'Saturday': [],
-        'Sunday': [],
+        for (final day in _days) day: [ScheduledWorkout(title: '', description: '')],
       };
     }
   }
@@ -79,8 +89,6 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
     super.dispose();
   }
 
-
-
   Future<void> _save() async {
     if (_titleController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -91,19 +99,27 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
 
     final workoutVm = Provider.of<WorkoutViewModel>(context, listen: false);
     final id = widget.workoutPlan?.id ?? SupabaseService.generateUuidV4();
+
+    // Clean up empty routines per day
+    final Map<String, List<ScheduledWorkout>> cleanedSchedule = {};
+    for (final day in _days) {
+      final list = _schedule[day] ?? [];
+      final validWorkouts = list.where((w) => w.title.trim().isNotEmpty).toList();
+      cleanedSchedule[day] = validWorkouts;
+    }
+
     final newPlan = WorkoutPlan(
       id: id,
       title: _titleController.text.trim(),
       goal: _selectedGoal,
       difficulty: _selectedDiff,
       description: _descController.text.trim(),
-      schedule: _schedule,
+      schedule: cleanedSchedule,
     );
 
     final error = await workoutVm.saveWorkout(newPlan);
     if (mounted) {
       if (error != null) {
-        // Show the exact error so user can report it
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('⚠️ $error'),
@@ -120,6 +136,14 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
         );
       }
     }
+  }
+
+  List<String> _getDropdownOptions(String? currentVal) {
+    final options = List<String>.from(_dayTypes);
+    if (currentVal != null && currentVal.isNotEmpty && !options.contains(currentVal)) {
+      options.insert(0, currentVal);
+    }
+    return options;
   }
 
   @override
@@ -230,75 +254,187 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                             style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
                           ),
                           Text(
-                            'Swipe to change days',
+                            'Tap + to add multiple routines',
                             style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted),
                           ),
                         ],
                       ),
                       const SizedBox(height: 8),
 
-                      // Vertical List of Days
+                      // List of Days with Multi-Routine support
                       CustomCard(
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                         child: Column(
-                          children: _days.map((day) {
-                            final list = _schedule[day] ?? [];
-                            final currentDayVal = list.isNotEmpty ? list.first.title : null;
-                            final validatedVal = _dayTypes.contains(currentDayVal) ? currentDayVal : null;
+                          children: List.generate(_days.length, (dayIdx) {
+                            final day = _days[dayIdx];
+                            final list = _schedule[day] ?? [ScheduledWorkout(title: '', description: '')];
 
-                            return Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 8.0),
-                              child: Row(
-                                children: [
-                                  SizedBox(
-                                    width: 100,
-                                    child: Text(
-                                      day,
-                                      style: GoogleFonts.inter(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.bold,
-                                        color: AppTheme.textPrimary,
-                                      ),
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (dayIdx > 0) const Divider(height: 24, color: AppTheme.border),
+                                // Day Header Row
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                          decoration: BoxDecoration(
+                                            color: AppTheme.primaryLight.withOpacity(0.35),
+                                            borderRadius: BorderRadius.circular(6),
+                                          ),
+                                          child: Text(
+                                            day.substring(0, 3).toUpperCase(),
+                                            style: GoogleFonts.inter(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w800,
+                                              color: AppTheme.primary,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          day,
+                                          style: GoogleFonts.inter(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.bold,
+                                            color: AppTheme.textPrimary,
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: DropdownButtonFormField<String>(
-                                      value: validatedVal,
-                                      hint: Text('Select Routine', style: GoogleFonts.inter(fontSize: 13.5, color: AppTheme.textMuted)),
-                                      isExpanded: true,
-                                      decoration: InputDecoration(
-                                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                        border: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(8),
-                                          borderSide: const BorderSide(color: AppTheme.border),
-                                        ),
-                                        enabledBorder: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(8),
-                                          borderSide: const BorderSide(color: AppTheme.border),
-                                        ),
-                                      ),
-                                      items: _dayTypes.map((type) {
-                                        return DropdownMenuItem<String>(
-                                          value: type,
-                                          child: Text(type, style: GoogleFonts.inter(fontSize: 13.5)),
-                                        );
-                                      }).toList(),
-                                      onChanged: (newVal) {
-                                        if (newVal != null) {
-                                          setState(() {
-                                            _schedule[day] = [
-                                              ScheduledWorkout(title: newVal, description: '')
-                                            ];
-                                          });
-                                        }
+                                    // + Add Routine Button
+                                    InkWell(
+                                      onTap: () {
+                                        setState(() {
+                                          if (_schedule[day] == null) {
+                                            _schedule[day] = [];
+                                          }
+                                          _schedule[day]!.add(ScheduledWorkout(title: '', description: ''));
+                                        });
                                       },
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: AppTheme.primary.withOpacity(0.08),
+                                          borderRadius: BorderRadius.circular(8),
+                                          border: Border.all(color: AppTheme.primary.withOpacity(0.2)),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            const Icon(Icons.add_rounded, size: 14, color: AppTheme.primary),
+                                            const SizedBox(width: 3),
+                                            Text(
+                                              'Add Routine',
+                                              style: GoogleFonts.inter(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w700,
+                                                color: AppTheme.primary,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
                                     ),
-                                  ),
-                                ],
-                              ),
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+
+                                // List of Routines for this Day
+                                ...List.generate(list.length, (routineIdx) {
+                                  final routine = list[routineIdx];
+                                  final currentVal = routine.title.isNotEmpty ? routine.title : null;
+                                  final options = _getDropdownOptions(currentVal);
+                                  final validatedVal = options.contains(currentVal) ? currentVal : null;
+
+                                  return Padding(
+                                    padding: EdgeInsets.only(bottom: routineIdx < list.length - 1 ? 8.0 : 0.0),
+                                    child: Row(
+                                      children: [
+                                        if (list.length > 1)
+                                          Container(
+                                            margin: const EdgeInsets.only(right: 8),
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: AppTheme.surfaceGray,
+                                              borderRadius: BorderRadius.circular(4),
+                                            ),
+                                            child: Text(
+                                              '#${routineIdx + 1}',
+                                              style: GoogleFonts.inter(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.bold,
+                                                color: AppTheme.textSecondary,
+                                              ),
+                                            ),
+                                          ),
+                                        Expanded(
+                                          child: DropdownButtonFormField<String>(
+                                            value: validatedVal,
+                                            hint: Text(
+                                              list.length > 1
+                                                  ? 'Select Routine ${routineIdx + 1}'
+                                                  : 'Select Routine',
+                                              style: GoogleFonts.inter(fontSize: 13, color: AppTheme.textMuted),
+                                            ),
+                                            isExpanded: true,
+                                            decoration: InputDecoration(
+                                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                              border: OutlineInputBorder(
+                                                borderRadius: BorderRadius.circular(8),
+                                                borderSide: const BorderSide(color: AppTheme.border),
+                                              ),
+                                              enabledBorder: OutlineInputBorder(
+                                                borderRadius: BorderRadius.circular(8),
+                                                borderSide: const BorderSide(color: AppTheme.border),
+                                              ),
+                                            ),
+                                            items: options.map((type) {
+                                              return DropdownMenuItem<String>(
+                                                value: type,
+                                                child: Text(type, style: GoogleFonts.inter(fontSize: 13)),
+                                              );
+                                            }).toList(),
+                                            onChanged: (newVal) {
+                                              if (newVal != null) {
+                                                setState(() {
+                                                  _schedule[day]![routineIdx] = ScheduledWorkout(
+                                                    title: newVal,
+                                                    description: routine.description,
+                                                  );
+                                                });
+                                              }
+                                            },
+                                          ),
+                                        ),
+                                        if (list.length > 1 || (list.length == 1 && routine.title.isNotEmpty)) ...[
+                                          const SizedBox(width: 6),
+                                          IconButton(
+                                            icon: const Icon(Icons.close_rounded, size: 18, color: AppTheme.textMuted),
+                                            splashRadius: 16,
+                                            tooltip: 'Remove',
+                                            onPressed: () {
+                                              setState(() {
+                                                if (_schedule[day]!.length > 1) {
+                                                  _schedule[day]!.removeAt(routineIdx);
+                                                } else {
+                                                  _schedule[day]![0] = ScheduledWorkout(title: '', description: '');
+                                                }
+                                              });
+                                            },
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  );
+                                }),
+                              ],
                             );
-                          }).toList(),
+                          }),
                         ),
                       ),
                     ],

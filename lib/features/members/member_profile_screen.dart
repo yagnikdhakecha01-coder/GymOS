@@ -19,6 +19,9 @@ import '../../core/models/workout_plan.dart';
 import '../../core/models/diet_plan.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../staff/staff_viewmodel.dart';
+import '../authentication/auth_viewmodel.dart';
+import '../receptionist/receptionist_viewmodel.dart';
+import '../../core/models/association_model.dart';
 import '../../core/services/supabase_service.dart';
 class MemberProfileScreen extends StatefulWidget {
   final Member member;
@@ -2308,6 +2311,49 @@ Thank you.''';
             }),
           ),
         ),
+        if (_canDeleteMember(context)) ...[
+          const SizedBox(height: 24),
+          Text('Danger Zone', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.danger)),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFEF2F2),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFFCA5A5)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.warning_amber_rounded, color: AppTheme.danger, size: 20),
+                    const SizedBox(width: 8),
+                    Text('Delete Member', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.danger)),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Permanently delete this member from the gym database. This will reclaim and free up 1 membership slot.',
+                  style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF7F1D1D)),
+                ),
+                const SizedBox(height: 14),
+                ElevatedButton.icon(
+                  onPressed: () => _confirmDeleteMember(context, member),
+                  icon: const Icon(Icons.delete_forever_rounded, size: 18),
+                  label: const Text('Delete Member'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.danger,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -2329,10 +2375,32 @@ Thank you.''';
           onPressed: () => Navigator.pop(context),
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.more_vert),
-            onPressed: () {},
-          ),
+          if (_canDeleteMember(context))
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert),
+              onSelected: (val) {
+                if (val == 'delete') {
+                  _confirmDeleteMember(context, member);
+                }
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: 'delete',
+                  child: Row(
+                    children: [
+                      Icon(Icons.delete_outline_rounded, color: AppTheme.danger, size: 20),
+                      SizedBox(width: 10),
+                      Text('Delete Member', style: TextStyle(color: AppTheme.danger, fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                ),
+              ],
+            )
+          else
+            IconButton(
+              icon: const Icon(Icons.more_vert),
+              onPressed: () {},
+            ),
         ],
       ),
       body: _isLoading
@@ -2413,6 +2481,133 @@ Thank you.''';
         ],
       ),
     );
+  }
+
+  bool _canDeleteMember(BuildContext context) {
+    try {
+      final authVm = Provider.of<AuthViewModel>(context, listen: false);
+      final isOwner = authVm.selectedRole?.toLowerCase() == 'owner' ||
+          authVm.activeAssociation?.role == UserRole.owner;
+      if (isOwner) return true;
+
+      // Staff permissions
+      final staffPerms = authVm.staffRecord?.permissions;
+      if (staffPerms != null && staffPerms['delete_member'] == true) {
+        return true;
+      }
+      final isReceptionist = authVm.selectedRole?.toLowerCase().contains('reception') == true ||
+          authVm.staffRecord?.role.toLowerCase().contains('reception') == true;
+      if (isReceptionist) return true;
+    } catch (_) {
+      return true;
+    }
+    return false;
+  }
+
+  Future<void> _confirmDeleteMember(BuildContext context, Member member) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppTheme.danger.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.delete_forever_rounded, color: AppTheme.danger, size: 24),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Delete Member',
+                style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 18, color: AppTheme.textPrimary),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Are you sure you want to permanently delete "${member.name}"?',
+              style: GoogleFonts.inter(fontSize: 14, color: AppTheme.textPrimary),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF2F2),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFFCA5A5)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.info_outline, color: AppTheme.danger, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'This will permanently remove this member and free up 1 membership slot in your gym.',
+                      style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF991B1B), fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx, false),
+            child: Text('Cancel', style: GoogleFonts.inter(color: AppTheme.textSecondary, fontWeight: FontWeight.w600)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.danger,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: () => Navigator.pop(dialogCtx, true),
+            child: Text('Delete Member', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      final membersVm = Provider.of<MembersViewModel>(context, listen: false);
+      try {
+        await membersVm.deleteMember(member.id);
+        
+        try {
+          final recVm = Provider.of<ReceptionistViewModel>(context, listen: false);
+          recVm.logActivity('Member Deleted', 'members', targetMember: member.name);
+          recVm.fetchDashboardStats();
+        } catch (_) {}
+
+        if (mounted) {
+          Navigator.pop(context);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Member "${member.name}" deleted successfully. 1 membership slot freed.'),
+              backgroundColor: AppTheme.success,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to delete member: $e'),
+              backgroundColor: AppTheme.danger,
+            ),
+          );
+        }
+      }
+    }
   }
 
   bool _isLoading = false;

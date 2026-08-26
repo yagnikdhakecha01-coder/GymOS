@@ -538,13 +538,32 @@ Thank you.''';
           centerTitle: true,
           actions: widget.isOwnerView
               ? [
-                  IconButton(
-                    icon: Icon(
-                      _currentTabIndex == 1 ? Icons.calendar_month_outlined : Icons.more_vert,
-                      color: AppTheme.textPrimary,
+                  if (_currentTabIndex == 1)
+                    IconButton(
+                      icon: const Icon(Icons.calendar_month_outlined, color: AppTheme.textPrimary),
+                      onPressed: () {},
+                    )
+                  else
+                    PopupMenuButton<String>(
+                      icon: const Icon(Icons.more_vert, color: AppTheme.textPrimary),
+                      onSelected: (val) {
+                        if (val == 'delete') {
+                          _confirmDeleteStaff(context, staff);
+                        }
+                      },
+                      itemBuilder: (context) => [
+                        const PopupMenuItem(
+                          value: 'delete',
+                          child: Row(
+                            children: [
+                              Icon(Icons.delete_outline_rounded, color: AppTheme.danger, size: 20),
+                              SizedBox(width: 10),
+                              Text('Delete Staff', style: TextStyle(color: AppTheme.danger, fontWeight: FontWeight.w600)),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
-                    onPressed: () {},
-                  ),
                 ]
               : null,
         ),
@@ -916,6 +935,48 @@ Thank you.''';
               const SizedBox(height: 12),
               _buildReceptionistPermissionsCard(staff),
             ],
+            const SizedBox(height: 24),
+            // ── DANGER ZONE (OWNER ONLY) ──
+            Text('DANGER ZONE', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.danger, letterSpacing: 0.5)),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF2F2),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFFCA5A5)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.warning_amber_rounded, color: AppTheme.danger, size: 20),
+                      const SizedBox(width: 8),
+                      Text('Delete Staff Member', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.danger)),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Permanently delete this staff member from your gym. This will free up 1 staff slot in your subscription plan.',
+                    style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF7F1D1D)),
+                  ),
+                  const SizedBox(height: 14),
+                  ElevatedButton.icon(
+                    onPressed: () => _confirmDeleteStaff(context, staff),
+                    icon: const Icon(Icons.delete_forever_rounded, size: 18),
+                    label: const Text('Delete Staff Member'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.danger,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
             const SizedBox(height: 24),
           ],
         ],
@@ -2238,6 +2299,7 @@ Thank you.''';
   Widget _buildReceptionistPermissionsCard(Staff staff) {
     final permissionsList = [
       {'key': 'add_member', 'label': 'Add Member', 'icon': Icons.person_add_outlined},
+      {'key': 'delete_member', 'label': 'Delete Member', 'icon': Icons.person_remove_outlined},
       {'key': 'scan_attendance', 'label': 'Scan Attendance', 'icon': Icons.qr_code_scanner_rounded},
       {'key': 'renew_membership', 'label': 'Renew Membership', 'icon': Icons.autorenew_rounded},
       {'key': 'add_income', 'label': 'Add Income', 'icon': Icons.add_chart_rounded},
@@ -2398,6 +2460,105 @@ Thank you.''';
         );
       },
     );
+  }
+
+  Future<void> _confirmDeleteStaff(BuildContext context, Staff staff) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppTheme.danger.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.delete_forever_rounded, color: AppTheme.danger, size: 24),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Delete Staff',
+                style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 18, color: AppTheme.textPrimary),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Are you sure you want to permanently delete ${staff.name} (${staff.role})?',
+              style: GoogleFonts.inter(fontSize: 14, color: AppTheme.textPrimary),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF2F2),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFFCA5A5)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.info_outline, color: AppTheme.danger, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'This will remove all staff credentials and free up 1 staff slot in your plan.',
+                      style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF991B1B), fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx, false),
+            child: Text('Cancel', style: GoogleFonts.inter(color: AppTheme.textSecondary, fontWeight: FontWeight.w600)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.danger,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: () => Navigator.pop(dialogCtx, true),
+            child: Text('Delete Staff', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      final staffVm = Provider.of<StaffViewModel>(context, listen: false);
+      try {
+        await staffVm.deleteStaff(staff.id);
+        if (mounted) {
+          Navigator.pop(context);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Staff member "${staff.name}" deleted successfully. 1 staff slot freed.'),
+              backgroundColor: AppTheme.success,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to delete staff: $e'),
+              backgroundColor: AppTheme.danger,
+            ),
+          );
+        }
+      }
+    }
   }
 }
 
@@ -2750,8 +2911,6 @@ class _SalaryHistoryItemWidgetState extends State<SalaryHistoryItemWidget> {
                       ],
                     );
                   }),
-                ],
-              ),
             ],
           ],
         ),

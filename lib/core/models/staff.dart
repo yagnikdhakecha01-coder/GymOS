@@ -71,6 +71,7 @@ class Staff {
     this.notes = '',
     this.permissions = const {
       'add_member': true,
+      'delete_member': true,
       'scan_attendance': true,
       'renew_membership': true,
       'add_income': true,
@@ -156,6 +157,7 @@ class Staff {
       notes: json['notes'] as String? ?? '',
       permissions: json['permissions'] as Map<String, dynamic>? ?? const {
         'add_member': true,
+        'delete_member': true,
         'scan_attendance': true,
         'renew_membership': true,
         'add_income': true,

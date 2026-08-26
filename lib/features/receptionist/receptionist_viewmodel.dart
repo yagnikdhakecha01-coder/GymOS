@@ -58,6 +58,7 @@ class ReceptionistViewModel extends ChangeNotifier {
   Map<String, dynamic> get permissions {
     return _staffRecord?.permissions ?? const {
       'add_member': true,
+      'delete_member': true,
       'scan_attendance': true,
       'renew_membership': true,
       'add_income': true,
@@ -224,5 +225,12 @@ class ReceptionistViewModel extends ChangeNotifier {
     } catch (e) {
       print('Error logging activity: $e');
     }
+  }
+
+  Future<void> deleteMember(String memberId, {String? memberName}) async {
+    await _repository.deleteMember(memberId);
+    await logActivity('Member Deleted', 'members', targetMember: memberName);
+    await fetchDashboardStats();
+    notifyListeners();
   }
 }

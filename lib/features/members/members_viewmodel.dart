@@ -37,6 +37,11 @@ class MembersViewModel extends ChangeNotifier {
     await fetchMembers();
   }
 
+  Future<void> deleteMember(String memberId) async {
+    await _repository.deleteMember(memberId);
+    notifyListeners();
+  }
+
   void clearAllData() {
     _searchQuery = '';
     _selectedFilter = 'All';
