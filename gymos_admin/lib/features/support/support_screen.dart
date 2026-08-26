@@ -154,13 +154,26 @@ class _SupportScreenState extends State<SupportScreen> {
     // Filter tickets based on selection
     final query = _searchController.text.toLowerCase().trim();
     final filteredTickets = _tickets.where((t) {
-      final matchesFilter = _filter == 'all' || t['status'].toString().toLowerCase() == _filter;
+      final status = (t['status'] ?? '').toString().toLowerCase().trim();
+      final bool matchesFilter;
+      if (_filter == 'all') {
+        // Exclude closed tickets from 'All' view! Closed tickets only show in 'closed' tab
+        matchesFilter = status != 'closed';
+      } else {
+        matchesFilter = status == _filter;
+      }
       final matchesQuery = query.isEmpty ||
-          t['title'].toString().toLowerCase().contains(query) ||
-          t['description'].toString().toLowerCase().contains(query) ||
-          t['gym_name'].toString().toLowerCase().contains(query);
+          (t['title'] ?? '').toString().toLowerCase().contains(query) ||
+          (t['description'] ?? '').toString().toLowerCase().contains(query) ||
+          (t['gym_name'] ?? '').toString().toLowerCase().contains(query);
       return matchesFilter && matchesQuery;
     }).toList();
+
+    final activeAllCount = _tickets.where((t) => (t['status'] ?? '').toString().toLowerCase().trim() != 'closed').length;
+    final openCount = _tickets.where((t) => (t['status'] ?? '').toString().toLowerCase().trim() == 'open').length;
+    final inProgressCount = _tickets.where((t) => (t['status'] ?? '').toString().toLowerCase().trim() == 'in progress').length;
+    final resolvedCount = _tickets.where((t) => (t['status'] ?? '').toString().toLowerCase().trim() == 'resolved').length;
+    final closedCount = _tickets.where((t) => (t['status'] ?? '').toString().toLowerCase().trim() == 'closed').length;
 
     return SingleChildScrollView(
       padding: EdgeInsets.all(padding),
@@ -205,11 +218,11 @@ class _SupportScreenState extends State<SupportScreen> {
                 scrollDirection: Axis.horizontal,
                 child: Row(
                   children: [
-                    _chip('All', 'all'),
-                    _chip('Open', 'open'),
-                    _chip('In Progress', 'in progress'),
-                    _chip('Resolved', 'resolved'),
-                    _chip('Closed', 'closed'),
+                    _chip('All', 'all', activeAllCount),
+                    _chip('Open', 'open', openCount),
+                    _chip('In Progress', 'in progress', inProgressCount),
+                    _chip('Resolved', 'resolved', resolvedCount),
+                    _chip('Closed', 'closed', closedCount),
                   ],
                 ),
               ),
@@ -223,7 +236,10 @@ class _SupportScreenState extends State<SupportScreen> {
                     children: [
                       Icon(Icons.support_agent_rounded, size: 48, color: AdminTheme.mutedTextColor(context)),
                       const SizedBox(height: 16),
-                      Text('No tickets found', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600, color: AdminTheme.secondaryTextColor(context))),
+                      Text(
+                        _filter == 'closed' ? 'No closed tickets' : 'No active tickets found',
+                        style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600, color: AdminTheme.secondaryTextColor(context)),
+                      ),
                     ],
                   ),
                 )
@@ -236,7 +252,7 @@ class _SupportScreenState extends State<SupportScreen> {
     );
   }
 
-  Widget _chip(String label, String value) {
+  Widget _chip(String label, String value, [int? count]) {
     final isActive = _filter == value;
     return Padding(
       padding: const EdgeInsets.only(right: 8),
@@ -251,13 +267,36 @@ class _SupportScreenState extends State<SupportScreen> {
             borderRadius: BorderRadius.circular(20),
             border: Border.all(color: isActive ? AdminTheme.primary.withValues(alpha: 0.4) : Colors.transparent),
           ),
-          child: Text(
-            label,
-            style: GoogleFonts.inter(
-              fontSize: 13,
-              fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
-              color: isActive ? AdminTheme.primary : AdminTheme.secondaryTextColor(context),
-            ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
+                  color: isActive ? AdminTheme.primary : AdminTheme.secondaryTextColor(context),
+                ),
+              ),
+              if (count != null) ...[
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: isActive ? AdminTheme.primary.withValues(alpha: 0.2) : AdminTheme.borderColor(context),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    count.toString(),
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: isActive ? AdminTheme.primary : AdminTheme.mutedTextColor(context),
+                    ),
+                  ),
+                ),
+              ],
+            ],
           ),
         ),
       ),
