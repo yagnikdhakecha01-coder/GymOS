@@ -59,7 +59,7 @@ class RoleSelectionScreen extends StatelessWidget {
                   }
                 },
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 14),
               _RoleCard(
                 title: 'Gym Staff',
                 subtitle: 'Trainer / Reception',
@@ -79,7 +79,7 @@ class RoleSelectionScreen extends StatelessWidget {
                   }
                 },
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 14),
               _RoleCard(
                 title: 'Gym Member',
                 subtitle: 'Access your account',
@@ -157,31 +157,48 @@ class _RoleCard extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(AppTheme.radiusCard),
+        borderRadius: BorderRadius.circular(16),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           decoration: BoxDecoration(
-            color: AppTheme.primaryLight.withValues(alpha: 0.4),
-            borderRadius: BorderRadius.circular(AppTheme.radiusCard),
-            border: Border.all(color: AppTheme.primaryLight),
+            color: const Color(0xFFF9F7FD),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppTheme.primaryLight.withValues(alpha: 0.8), width: 1.2),
+            boxShadow: [
+              BoxShadow(
+                color: AppTheme.primary.withValues(alpha: 0.04),
+                blurRadius: 10,
+                offset: const Offset(0, 3),
+              ),
+            ],
           ),
           child: Row(
             children: [
               Container(
-                width: 48,
-                height: 48,
+                width: 60,
+                height: 60,
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppTheme.primary.withValues(alpha: 0.15), width: 1.5),
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppTheme.primary.withValues(alpha: 0.18), width: 1.5),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppTheme.primary.withValues(alpha: 0.08),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(12),
                   child: Image.asset(
                     imagePath,
                     fit: BoxFit.cover,
+                    alignment: const Alignment(0, -0.3),
+                    filterQuality: FilterQuality.medium,
                     errorBuilder: (_, __, ___) => Container(
-                      color: AppTheme.primary.withValues(alpha: 0.1),
-                      child: Icon(icon, color: AppTheme.primary, size: 24),
+                      color: AppTheme.primaryLight.withValues(alpha: 0.4),
+                      child: Icon(icon, color: AppTheme.primary, size: 28),
                     ),
                   ),
                 ),
@@ -193,20 +210,46 @@ class _RoleCard extends StatelessWidget {
                   children: [
                     Text(
                       'I am',
-                      style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted),
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.primary,
+                      ),
                     ),
+                    const SizedBox(height: 1),
                     Text(
                       title,
-                      style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.textPrimary),
+                      style: GoogleFonts.inter(
+                        fontSize: 16.5,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.textPrimary,
+                        letterSpacing: -0.2,
+                      ),
                     ),
+                    const SizedBox(height: 2),
                     Text(
                       subtitle,
-                      style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary),
+                      style: GoogleFonts.inter(
+                        fontSize: 12.5,
+                        color: AppTheme.textSecondary,
+                      ),
                     ),
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right_rounded, color: AppTheme.textMuted),
+              Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryLight.withValues(alpha: 0.6),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.chevron_right_rounded,
+                  color: AppTheme.primary,
+                  size: 20,
+                ),
+              ),
             ],
           ),
         ),
