@@ -57,10 +57,10 @@ class _PaymentsScreenState extends State<PaymentsScreen> with SingleTickerProvid
       }
       final client = AdminSupabaseService.client;
 
-      // 1. Fetch Transactions (Payments)
+      // 1. Fetch Transactions (Payments) with rich gym & customer data
       final paymentsRes = await client
           .from('payments')
-          .select('amount, status, payment_method, created_at, razorpay_payment_id, gyms(name)')
+          .select('*, gyms(id, name, plan, email, phone_number, user_gym_associations(role, profiles(full_name, email, phone_number))), invoices(invoice_number)')
           .order('created_at', ascending: false);
 
       final paymentsList = paymentsRes as List;
@@ -72,18 +72,52 @@ class _PaymentsScreenState extends State<PaymentsScreen> with SingleTickerProvid
       for (var item in paymentsList) {
         final payment = Map<String, dynamic>.from(item);
         final gymData = payment['gyms'];
-        final gymName = (gymData != null) ? gymData['name'] : 'Active Gym';
+        final gymName = (gymData != null) ? (gymData['name'] ?? 'Active Gym') : 'Active Gym';
+        final planName = (gymData != null && gymData['plan'] != null) ? gymData['plan'] : 'Pro';
         final amt = double.tryParse(payment['amount'].toString()) ?? 0.0;
         final cAt = DateTime.tryParse(payment['created_at'] ?? '') ?? DateTime.now();
         final status = payment['status'] ?? 'Success';
 
+        String customerName = '-';
+        String customerEmail = (gymData != null) ? (gymData['email'] ?? '-') : '-';
+        String customerPhone = (gymData != null) ? (gymData['phone_number'] ?? '-') : '-';
+
+        final associations = gymData != null ? gymData['user_gym_associations'] as List? : null;
+        if (associations != null) {
+          for (var assoc in associations) {
+            if (assoc['role'] == 'owner') {
+              final profile = assoc['profiles'];
+              if (profile != null) {
+                customerName = profile['full_name'] ?? customerName;
+                if (profile['email'] != null && profile['email'].toString().isNotEmpty) {
+                  customerEmail = profile['email'];
+                }
+                if (profile['phone_number'] != null && profile['phone_number'].toString().isNotEmpty) {
+                  customerPhone = profile['phone_number'];
+                }
+              }
+              break;
+            }
+          }
+        }
+
+        final invoiceData = payment['invoices'];
+        final invoiceNum = invoiceData != null ? invoiceData['invoice_number'] : '-';
+        final paymentId = payment['razorpay_payment_id'] ?? 'PAY-${payment['id'].toString().substring(0, 8)}';
+        final rawMethod = payment['payment_method'] ?? 'Razorpay Gateway';
+
         final mapItem = {
           'gym': gymName,
+          'customerName': customerName,
+          'customerEmail': customerEmail,
+          'customerPhone': customerPhone,
           'amount': '₹${amt.toStringAsFixed(0)}',
-          'method': payment['payment_method'] ?? 'Razorpay',
+          'plan': planName.toString().toUpperCase(),
+          'method': rawMethod,
           'status': status,
-          'id': payment['razorpay_payment_id'] ?? 'PAY-REF-${cAt.millisecondsSinceEpoch.toString().substring(6)}',
-          'date': '${cAt.day} ${_getMonthName(cAt.month)}, ${cAt.year}',
+          'id': paymentId,
+          'invoiceNum': invoiceNum,
+          'date': _formatDateTime(cAt),
         };
 
         if (status == 'Failed') {
@@ -156,6 +190,122 @@ class _PaymentsScreenState extends State<PaymentsScreen> with SingleTickerProvid
       _subscriptions = [];
       _isLoading = false;
     });
+  }
+
+  String _formatDateTime(DateTime dt) {
+    final local = dt.toLocal();
+    final day = local.day;
+    final month = _getMonthName(local.month);
+    final year = local.year;
+    final hour24 = local.hour;
+    final hour12 = hour24 == 0 ? 12 : (hour24 > 12 ? hour24 - 12 : hour24);
+    final period = hour24 >= 12 ? 'PM' : 'AM';
+    final minute = local.minute.toString().padLeft(2, '0');
+    return '$day $month $year, $hour12:$minute $period';
+  }
+
+  void _showPaymentReceipt(BuildContext context, Map<String, dynamic> tx) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        backgroundColor: AdminTheme.cardColor(context),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AdminTheme.success.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.receipt_long_rounded, color: AdminTheme.success, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Payment Receipt Details',
+                style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.bold, color: AdminTheme.textColor(context)),
+              ),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: 440,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AdminTheme.surfaceColor(context),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AdminTheme.borderColor(context)),
+                  ),
+                  child: Column(
+                    children: [
+                      Text('Amount Paid', style: GoogleFonts.inter(fontSize: 12, color: AdminTheme.mutedTextColor(context))),
+                      const SizedBox(height: 4),
+                      Text(tx['amount'] as String, style: GoogleFonts.inter(fontSize: 26, fontWeight: FontWeight.w800, color: AdminTheme.success)),
+                      const SizedBox(height: 4),
+                      Text('${tx['plan']} Subscription', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AdminTheme.primary)),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _receiptRow('Razorpay Payment ID', tx['id'] as String, context, isHighlight: true),
+                if (tx['invoiceNum'] != '-' && tx['invoiceNum'] != null)
+                  _receiptRow('Invoice Number', tx['invoiceNum'] as String, context),
+                _receiptRow('Payment Method', tx['method'] as String, context),
+                _receiptRow('Date & Time', tx['date'] as String, context),
+                _receiptRow('Status', tx['status'] as String, context),
+                const Divider(height: 24),
+                Text('CUSTOMER & GYM DETAILS', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: AdminTheme.mutedTextColor(context), letterSpacing: 0.8)),
+                const SizedBox(height: 8),
+                _receiptRow('Gym Name', tx['gym'] as String, context),
+                if (tx['customerName'] != '-')
+                  _receiptRow('Owner Name', tx['customerName'] as String, context),
+                _receiptRow('Phone Number', tx['customerPhone'] as String, context),
+                _receiptRow('Email Address', tx['customerEmail'] as String, context),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Close', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _receiptRow(String label, String value, BuildContext context, {bool isHighlight = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 140,
+            child: Text(label, style: GoogleFonts.inter(fontSize: 12, color: AdminTheme.secondaryTextColor(context))),
+          ),
+          Expanded(
+            child: SelectableText(
+              value,
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                fontWeight: isHighlight ? FontWeight.w700 : FontWeight.w500,
+                color: isHighlight ? AdminTheme.primary : AdminTheme.textColor(context),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -259,26 +409,56 @@ class _PaymentsScreenState extends State<PaymentsScreen> with SingleTickerProvid
         final t = items[i];
         final isFailed = t['status'] == 'Failed';
         return ListTile(
-          contentPadding: const EdgeInsets.symmetric(vertical: 4),
+          contentPadding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+          onTap: () => _showPaymentReceipt(context, t),
           leading: Container(
-            width: 40, height: 40,
+            width: 42, height: 42,
             decoration: BoxDecoration(
-              color: (isFailed ? AdminTheme.danger : AdminTheme.primary).withOpacity(0.1), 
+              color: (isFailed ? AdminTheme.danger : AdminTheme.primary).withValues(alpha: 0.1), 
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(Icons.payment_rounded, color: isFailed ? AdminTheme.danger : AdminTheme.primary, size: 20),
+            child: Icon(
+              (t['method'] as String).toLowerCase().contains('upi') ? Icons.qr_code_rounded : Icons.payment_rounded,
+              color: isFailed ? AdminTheme.danger : AdminTheme.primary,
+              size: 22,
+            ),
           ),
-          title: Text('${t['gym']}  •  ${t['amount']}', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: AdminTheme.textColor(context))),
-          subtitle: Text('${t['method']}  •  ${t['date']}  •  ID: ${t['id']}', style: GoogleFonts.inter(fontSize: 12, color: AdminTheme.mutedTextColor(context))),
+          title: Row(
+            children: [
+              Text(t['gym'] as String, style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: AdminTheme.textColor(context))),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(color: AdminTheme.indigo.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(4)),
+                child: Text(t['plan'] as String, style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.bold, color: AdminTheme.indigo)),
+              ),
+              const Spacer(),
+              Text(t['amount'] as String, style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w800, color: AdminTheme.success)),
+            ],
+          ),
+          subtitle: Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '${t['customerPhone'] != '-' ? "${t['customerPhone']} • " : ""}${t['customerEmail']}  |  ${t['method']}  |  ${t['date']}  |  ID: ${t['id']}',
+                    style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.mutedTextColor(context)),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
           trailing: isFailed
               ? Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(color: AdminTheme.dangerLight, borderRadius: BorderRadius.circular(4)),
+                  decoration: BoxDecoration(color: AdminTheme.danger.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(4)),
                   child: Text('Failed', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: AdminTheme.danger)),
                 )
               : Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(color: AdminTheme.successLight, borderRadius: BorderRadius.circular(4)),
+                  decoration: BoxDecoration(color: AdminTheme.success.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(4)),
                   child: Text('Success', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: AdminTheme.success)),
                 ),
         );

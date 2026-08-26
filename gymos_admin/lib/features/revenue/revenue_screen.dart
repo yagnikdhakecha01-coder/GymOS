@@ -59,10 +59,10 @@ class _RevenueScreenState extends State<RevenueScreen> {
       }
       final client = AdminSupabaseService.client;
 
-      // 1. Fetch successful and pending payments
+      // 1. Fetch successful and pending payments with full gym, profile, and invoice details
       final response = await client
           .from('payments')
-          .select('amount, status, payment_method, created_at, gyms(name, plan)')
+          .select('*, gyms(id, name, plan, email, phone_number, user_gym_associations(role, profiles(full_name, email, phone_number))), invoices(invoice_number, billing_date)')
           .order('created_at', ascending: false);
 
       final paymentsList = response as List;
@@ -114,7 +114,6 @@ class _RevenueScreenState extends State<RevenueScreen> {
       final List<String> labels = [];
 
       if (_period == 'daily') {
-        // Last 15 days
         final dailyMap = <int, double>{};
         for (int i = 0; i < 15; i++) {
           dailyMap[i] = 0.0;
@@ -135,7 +134,6 @@ class _RevenueScreenState extends State<RevenueScreen> {
           spots.add(FlSpot(i.toDouble(), dailyMap[i] ?? 0.0));
         }
       } else if (_period == 'monthly') {
-        // Last 12 months
         final monthlyMap = <int, double>{};
         for (int i = 0; i < 12; i++) {
           monthlyMap[i] = 0.0;
@@ -156,7 +154,6 @@ class _RevenueScreenState extends State<RevenueScreen> {
           spots.add(FlSpot(i.toDouble(), monthlyMap[i] ?? 0.0));
         }
       } else {
-        // Last 5 years
         final yearlyMap = <int, double>{};
         for (int i = 0; i < 5; i++) {
           yearlyMap[i] = 0.0;
@@ -177,22 +174,57 @@ class _RevenueScreenState extends State<RevenueScreen> {
         }
       }
 
-      // 3. Format dynamic transactions table
+      // 3. Format dynamic transactions table with full details
       final List<Map<String, dynamic>> transactionItems = [];
       for (var item in paymentsList) {
         final payment = Map<String, dynamic>.from(item);
         final gymData = payment['gyms'];
-        final gymName = (gymData != null) ? gymData['name'] : 'Active Gym';
-        final planName = (gymData != null) ? gymData['plan'] : 'Starter';
+        final gymName = (gymData != null) ? (gymData['name'] ?? 'Active Gym') : 'Active Gym';
+        final planName = (gymData != null && gymData['plan'] != null) ? gymData['plan'] : 'Pro';
+        
+        String customerName = '-';
+        String customerEmail = (gymData != null) ? (gymData['email'] ?? '-') : '-';
+        String customerPhone = (gymData != null) ? (gymData['phone_number'] ?? '-') : '-';
+
+        final associations = gymData != null ? gymData['user_gym_associations'] as List? : null;
+        if (associations != null) {
+          for (var assoc in associations) {
+            if (assoc['role'] == 'owner') {
+              final profile = assoc['profiles'];
+              if (profile != null) {
+                customerName = profile['full_name'] ?? customerName;
+                if (profile['email'] != null && profile['email'].toString().isNotEmpty) {
+                  customerEmail = profile['email'];
+                }
+                if (profile['phone_number'] != null && profile['phone_number'].toString().isNotEmpty) {
+                  customerPhone = profile['phone_number'];
+                }
+              }
+              break;
+            }
+          }
+        }
+
+        final invoiceData = payment['invoices'];
+        final invoiceNum = invoiceData != null ? invoiceData['invoice_number'] : '-';
+        final paymentId = payment['razorpay_payment_id'] ?? 'PAY-${payment['id'].toString().substring(0, 8)}';
+        final rawMethod = payment['payment_method'] ?? 'Razorpay Gateway';
         final cAt = DateTime.tryParse(payment['created_at'] ?? '') ?? DateTime.now();
 
         transactionItems.add({
           'gym': gymName,
+          'customerName': customerName,
+          'customerEmail': customerEmail,
+          'customerPhone': customerPhone,
+          'paymentId': paymentId,
+          'invoiceNum': invoiceNum,
           'amount': '₹${(double.tryParse(payment['amount'].toString()) ?? 0.0).toStringAsFixed(0)}',
-          'plan': planName?.toString() ?? 'Starter',
+          'rawAmount': double.tryParse(payment['amount'].toString()) ?? 0.0,
+          'plan': planName.toString().toUpperCase(),
           'status': payment['status'] ?? 'Success',
-          'date': '${cAt.day} ${_getMonthName(cAt.month)} ${cAt.year}',
-          'method': payment['payment_method'] ?? 'Razorpay',
+          'date': _formatDateTime(cAt),
+          'method': rawMethod,
+          'rawPayment': payment,
         });
       }
 
@@ -209,7 +241,7 @@ class _RevenueScreenState extends State<RevenueScreen> {
 
           _spots = spots;
           _chartLabels = labels;
-          _transactions = transactionItems.take(15).toList();
+          _transactions = transactionItems.take(25).toList();
           _isLoading = false;
         });
       }
@@ -236,6 +268,122 @@ class _RevenueScreenState extends State<RevenueScreen> {
       _transactions = [];
       _isLoading = false;
     });
+  }
+
+  String _formatDateTime(DateTime dt) {
+    final local = dt.toLocal();
+    final day = local.day;
+    final month = _getMonthName(local.month);
+    final year = local.year;
+    final hour24 = local.hour;
+    final hour12 = hour24 == 0 ? 12 : (hour24 > 12 ? hour24 - 12 : hour24);
+    final period = hour24 >= 12 ? 'PM' : 'AM';
+    final minute = local.minute.toString().padLeft(2, '0');
+    return '$day $month $year, $hour12:$minute $period';
+  }
+
+  void _showTransactionDetails(BuildContext context, Map<String, dynamic> tx) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        backgroundColor: AdminTheme.cardColor(context),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AdminTheme.success.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.receipt_long_rounded, color: AdminTheme.success, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Transaction Receipt',
+                style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.bold, color: AdminTheme.textColor(context)),
+              ),
+            ),
+            _statusBadge(tx['status'] as String),
+          ],
+        ),
+        content: SizedBox(
+          width: 440,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AdminTheme.surfaceColor(context),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AdminTheme.borderColor(context)),
+                  ),
+                  child: Column(
+                    children: [
+                      Text('Amount Paid', style: GoogleFonts.inter(fontSize: 12, color: AdminTheme.mutedTextColor(context))),
+                      const SizedBox(height: 4),
+                      Text(tx['amount'] as String, style: GoogleFonts.inter(fontSize: 26, fontWeight: FontWeight.w800, color: AdminTheme.success)),
+                      const SizedBox(height: 4),
+                      Text('${tx['plan']} Subscription', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AdminTheme.primary)),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _receiptRow('Razorpay Payment ID', tx['paymentId'] as String, context, isHighlight: true),
+                if (tx['invoiceNum'] != '-' && tx['invoiceNum'] != null)
+                  _receiptRow('Invoice Number', tx['invoiceNum'] as String, context),
+                _receiptRow('Payment Method', tx['method'] as String, context),
+                _receiptRow('Date & Time', tx['date'] as String, context),
+                const Divider(height: 24),
+                Text('CUSTOMER & GYM DETAILS', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: AdminTheme.mutedTextColor(context), letterSpacing: 0.8)),
+                const SizedBox(height: 8),
+                _receiptRow('Gym Name', tx['gym'] as String, context),
+                if (tx['customerName'] != '-')
+                  _receiptRow('Owner Name', tx['customerName'] as String, context),
+                _receiptRow('Phone Number', tx['customerPhone'] as String, context),
+                _receiptRow('Email Address', tx['customerEmail'] as String, context),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Close', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _receiptRow(String label, String value, BuildContext context, {bool isHighlight = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 140,
+            child: Text(label, style: GoogleFonts.inter(fontSize: 12, color: AdminTheme.secondaryTextColor(context))),
+          ),
+          Expanded(
+            child: SelectableText(
+              value,
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                fontWeight: isHighlight ? FontWeight.w700 : FontWeight.w500,
+                color: isHighlight ? AdminTheme.primary : AdminTheme.textColor(context),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -363,7 +511,20 @@ class _RevenueScreenState extends State<RevenueScreen> {
         children: [
           Padding(
             padding: const EdgeInsets.all(20),
-            child: Text('Recent Transactions', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600, color: AdminTheme.textColor(context))),
+            child: Row(
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Recent Transactions', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600, color: AdminTheme.textColor(context))),
+                    const SizedBox(height: 2),
+                    Text('Click any row to view full payment breakdown & customer receipt', style: GoogleFonts.inter(fontSize: 12, color: AdminTheme.mutedTextColor(context))),
+                  ],
+                ),
+                const Spacer(),
+                Text('${_transactions.length} payments', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AdminTheme.primary)),
+              ],
+            ),
           ),
           if (_transactions.isEmpty)
             Padding(
@@ -379,20 +540,129 @@ class _RevenueScreenState extends State<RevenueScreen> {
                 headingRowColor: WidgetStatePropertyAll(AdminTheme.surfaceColor(context)),
                 headingTextStyle: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AdminTheme.secondaryTextColor(context)),
                 dataTextStyle: GoogleFonts.inter(fontSize: 13, color: AdminTheme.textColor(context)),
-                columnSpacing: 24, horizontalMargin: 20,
+                columnSpacing: 24,
+                horizontalMargin: 20,
+                dataRowMinHeight: 60,
+                dataRowMaxHeight: 60,
                 columns: const [
-                  DataColumn(label: Text('GYM')), DataColumn(label: Text('AMOUNT')),
-                  DataColumn(label: Text('PLAN')), DataColumn(label: Text('STATUS')),
-                  DataColumn(label: Text('DATE')), DataColumn(label: Text('METHOD')),
+                  DataColumn(label: Text('GYM & CUSTOMER')),
+                  DataColumn(label: Text('TRANSACTION ID')),
+                  DataColumn(label: Text('AMOUNT')),
+                  DataColumn(label: Text('PLAN')),
+                  DataColumn(label: Text('METHOD')),
+                  DataColumn(label: Text('DATE & TIME')),
+                  DataColumn(label: Text('STATUS')),
+                  DataColumn(label: Text('RECEIPT')),
                 ],
-                rows: _transactions.map((t) => DataRow(cells: [
-                  DataCell(Text(t['gym'] as String, style: GoogleFonts.inter(fontWeight: FontWeight.w600))),
-                  DataCell(Text(t['amount'] as String, style: GoogleFonts.inter(fontWeight: FontWeight.w600, color: AdminTheme.success))),
-                  DataCell(Text(t['plan'] as String)),
-                  DataCell(_statusBadge(t['status'] as String)),
-                  DataCell(Text(t['date'] as String)),
-                  DataCell(Text(t['method'] as String)),
-                ])).toList(),
+                rows: _transactions.map((t) {
+                  return DataRow(
+                    onSelectChanged: (_) => _showTransactionDetails(context, t),
+                    cells: [
+                      // Gym & Customer
+                      DataCell(
+                        Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              t['gym'] as String,
+                              style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 13),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              t['customerPhone'] != '-' ? '${t['customerPhone']} • ${t['customerEmail']}' : (t['customerEmail'] as String),
+                              style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.mutedTextColor(context)),
+                            ),
+                          ],
+                        ),
+                      ),
+                      // Transaction ID
+                      DataCell(
+                        Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: AdminTheme.primary.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                t['paymentId'] as String,
+                                style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: AdminTheme.primary),
+                              ),
+                            ),
+                            if (t['invoiceNum'] != '-' && t['invoiceNum'] != null) ...[
+                              const SizedBox(height: 2),
+                              Text(
+                                t['invoiceNum'] as String,
+                                style: GoogleFonts.inter(fontSize: 10, color: AdminTheme.secondaryTextColor(context)),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      // Amount
+                      DataCell(
+                        Text(
+                          t['amount'] as String,
+                          style: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 14, color: AdminTheme.success),
+                        ),
+                      ),
+                      // Plan
+                      DataCell(
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: AdminTheme.indigo.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            t['plan'] as String,
+                            style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: AdminTheme.indigo),
+                          ),
+                        ),
+                      ),
+                      // Method
+                      DataCell(
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              (t['method'] as String).toLowerCase().contains('upi') ? Icons.qr_code_rounded : Icons.credit_card_rounded,
+                              size: 14,
+                              color: AdminTheme.secondaryTextColor(context),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              t['method'] as String,
+                              style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w500),
+                            ),
+                          ],
+                        ),
+                      ),
+                      // Date & Time
+                      DataCell(
+                        Text(
+                          t['date'] as String,
+                          style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w500, color: AdminTheme.secondaryTextColor(context)),
+                        ),
+                      ),
+                      // Status
+                      DataCell(_statusBadge(t['status'] as String)),
+                      // Action Receipt
+                      DataCell(
+                        IconButton(
+                          icon: const Icon(Icons.receipt_long_rounded, size: 18),
+                          tooltip: 'View Receipt',
+                          color: AdminTheme.primary,
+                          onPressed: () => _showTransactionDetails(context, t),
+                        ),
+                      ),
+                    ],
+                  );
+                }).toList(),
               ),
             ),
         ],
