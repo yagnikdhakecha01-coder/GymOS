@@ -2454,11 +2454,9 @@ class GymRepository extends ChangeNotifier {
     _members.removeWhere((m) => m.id == id);
     await _storage.setString(_membersKey, jsonEncode(_members.map((e) => e.toJson()).toList()));
 
-    // Clean up local cached attendance and memberships
-    _attendance.removeWhere((a) => a.memberId == id || a.userId == id);
+    // Clean up local cached attendance
+    _attendance.removeWhere((a) => a.userId == id);
     await _storage.setString(_attendanceKey, jsonEncode(_attendance.map((e) => e.toJson()).toList()));
-    _memberMemberships.removeWhere((mm) => mm.memberId == id);
-    await _storage.setString(_memberMembershipsKey, jsonEncode(_memberMemberships.map((e) => e.toJson()).toList()));
 
     notifyListeners();
 

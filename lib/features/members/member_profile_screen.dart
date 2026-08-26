@@ -22,6 +22,7 @@ import '../staff/staff_viewmodel.dart';
 import '../authentication/auth_viewmodel.dart';
 import '../receptionist/receptionist_viewmodel.dart';
 import '../../core/models/association_model.dart';
+import '../../core/models/user_profile.dart';
 import '../../core/services/supabase_service.dart';
 class MemberProfileScreen extends StatefulWidget {
   final Member member;

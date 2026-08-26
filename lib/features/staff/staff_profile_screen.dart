@@ -2911,6 +2911,8 @@ class _SalaryHistoryItemWidgetState extends State<SalaryHistoryItemWidget> {
                       ],
                     );
                   }),
+                ],
+              ),
             ],
           ],
         ),

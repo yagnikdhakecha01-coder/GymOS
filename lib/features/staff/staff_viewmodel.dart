@@ -34,11 +34,6 @@ class StaffViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> deleteStaff(String staffId) async {
-    await _repository.deleteStaff(staffId);
-    notifyListeners();
-  }
-
   void clearAllData() {
     _searchQuery = '';
     _selectedFilter = 'All';
