@@ -114944,8 +114944,8 @@ l(){var s=this.r
 s.R$=$.aj()
 s.J$=0
 this.au()},
-fh(){var s=0,r=A.y(t.H),q,p=2,o=[],n=this,m,l,k,j,i,h,g,f,e,d,c,b,a,a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,b0,b1,b2,b3,b4,b5,b6,b7,b8,b9,c0,c1,c2,c3,c4,c5,c6,c7,c8,c9,d0,d1,d2,d3,d4,d5,d6,d7,d8,d9,e0,e1,e2,e3,e4,e5,e6,e7,e8,e9,f0,f1
-var $async$fh=A.u(function(f2,f3){if(f2===1){o.push(f3)
+fh(){var s=0,r=A.y(t.H),q,p=2,o=[],n=this,m,l,k,j,i,h,g,f,e,d,c,b,a,a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,b0,b1,b2,b3,b4,b5,b6,b7,b8,b9,c0,c1,c2,c3,c4,c5,c6,c7,c8,c9,d0,d1,d2,d3,d4,d5,d6,d7,d8,d9,e0,e1,e2,e3,e4,e5,e6,e7,e8,e9,f0,f1,f2
+var $async$fh=A.u(function(f3,f4){if(f3===1){o.push(f4)
 s=p}for(;;)switch(s){case 0:p=4
 if(n.c==null){s=1
 break}n.E(new A.aMR(n))
@@ -114953,25 +114953,25 @@ s=$.c2==null?7:8
 break
 case 7:s=9
 return A.k(A.xU(),$async$fh)
-case 9:case 8:c3=$.c2
-if(c3==null){n.E(new A.aMS(n))
+case 9:case 8:c4=$.c2
+if(c4==null){n.E(new A.aMS(n))
 s=1
-break}m=c3
+break}m=c4
 p=11
 s=14
 return A.k(m.aI("platform_settings").cl(0,"*").bz("key","default_free_trial").vK(),$async$fh)
-case 14:l=f3
+case 14:l=f4
 if(l!=null&&J.q(l,"value")!=null){k=A.e2(J.q(l,"value"),t.N,t.z)
-c3=A.xz(J.q(k,"duration_value"))
-n.x=B.e.d7(c3==null?30:c3)
-c3=J.q(k,"duration_unit")
-n.y=J.av(c3==null?"days":c3)
+c4=A.xz(J.q(k,"duration_value"))
+n.x=B.e.d7(c4==null?30:c4)
+c4=J.q(k,"duration_unit")
+n.y=J.av(c4==null?"days":c4)
 n.z=J.c(J.q(k,"enabled"),!0)}p=4
 s=13
 break
 case 11:p=10
-e9=o.pop()
-j=A.V(e9)
+f0=o.pop()
+j=A.V(f0)
 A.c7().$1("Could not fetch default_free_trial setting: "+A.i(j))
 s=13
 break
@@ -114979,114 +114979,117 @@ case 10:s=4
 break
 case 13:s=15
 return A.k(m.aI("gyms").cl(0,"*, members(count), staff(count), user_gym_associations(role, user_id, profiles(full_name, phone_number))"),$async$fh)
-case 15:i=f3
-c3=t.Y
-h=A.b([],c3)
+case 15:i=f4
+c4=t.Y
+h=A.b([],c4)
 p=17
 s=20
 return A.k(m.aI("subscriptions").cl(0,"*"),$async$fh)
-case 20:g=f3
-if(t.j.b(g)){c5=J.h0(g,new A.aMT(),t.a)
-c6=A.a5(c5,c5.$ti.i("al.E"))
-h=c6}p=4
+case 20:g=f4
+if(t.j.b(g)){c6=J.h0(g,new A.aMT(),t.a)
+c7=A.a5(c6,c6.$ti.i("al.E"))
+h=c7}p=4
 s=19
 break
 case 17:p=16
-f0=o.pop()
-f=A.V(f0)
+f1=o.pop()
+f=A.V(f1)
 A.c7().$1("Warning: Could not fetch subscriptions table ("+A.i(f)+"). Falling back to gyms table dates.")
 s=19
 break
 case 16:s=4
 break
-case 19:e=A.b([],c3)
-for(c3=J.aU(i),c5=t.N,c7=t.z,c8=t.kc;c3.u();){d=c3.gN(c3)
-c=A.e2(d,c5,c7)
+case 19:e=A.b([],c4)
+for(c4=J.aU(i),c6=t.N,c8=t.z,c9=t.kc;c4.u();){d=c4.gN(c4)
+c=A.e2(d,c6,c8)
 b="-"
 a="-"
-a0=c8.a(J.q(c,"user_gym_associations"))
-if(a0!=null)for(c9=J.aU(a0);c9.u();){a1=c9.gN(c9)
+a0=c9.a(J.q(c,"user_gym_associations"))
+if(a0!=null)for(d0=J.aU(a0);d0.u();){a1=d0.gN(d0)
 if(J.c(J.q(a1,"role"),"owner")){a2=J.q(a1,"profiles")
-if(a2!=null){d0=J.q(a2,"full_name")
-b=d0==null?"-":d0
-d1=J.q(a2,"phone_number")
-a=d1==null?"-":d1}break}}c9=c8.a(J.q(c,"members"))
-if(c9==null)d2=null
-else{c9=A.Wl(c9)
-c9=c9==null?null:J.q(c9,"count")
-d2=c9}a3=d2==null?0:d2
-c9=c8.a(J.q(c,"staff"))
-if(c9==null)d3=null
-else{c9=A.Wl(c9)
-c9=c9==null?null:J.q(c9,"count")
-d3=c9}a4=d3==null?0:d3
+if(a2!=null){d1=J.q(a2,"full_name")
+b=d1==null?"-":d1
+d2=J.q(a2,"phone_number")
+a=d2==null?"-":d2}break}}d0=c9.a(J.q(c,"members"))
+if(d0==null)d3=null
+else{d0=A.Wl(d0)
+d0=d0==null?null:J.q(d0,"count")
+d3=d0}a3=d3==null?0:d3
+d0=c9.a(J.q(c,"staff"))
+if(d0==null)d4=null
+else{d0=A.Wl(d0)
+d0=d0==null?null:J.q(d0,"count")
+d4=d0}a4=d4==null?0:d4
 a5=J.bfQ(h,new A.aMU(c),new A.aMV())
-c9=J.q(a5,"plan_id")
-if(c9==null)c9=J.q(c,"plan")
-a6=J.av(c9==null?"free_trial":c9).toLowerCase()
-c9=J.q(a5,"status")
-if(c9==null)c9=J.q(c,"status")
-a7=J.av(c9==null?"trial":c9).toLowerCase()
-d4=J.q(a5,"trial_end")
-a8=d4==null?J.q(c,"trial_end_date"):d4
-d5=J.q(a5,"end_date")
-a9=d5==null?J.q(c,"expiry_date"):d5
+d0=J.q(a5,"plan_id")
+if(d0==null)d0=J.q(c,"plan")
+a6=J.av(d0==null?"free_trial":d0).toLowerCase()
+d0=J.q(a5,"status")
+if(d0==null)d0=J.q(c,"status")
+a7=J.av(d0==null?"trial":d0).toLowerCase()
+d5=J.q(a5,"trial_end")
+a8=d5==null?J.q(c,"trial_end_date"):d5
+d6=J.q(a5,"end_date")
+a9=d6==null?J.q(c,"expiry_date"):d6
 b0=null
 if(a8!=null)b0=A.d7(a8)
 b1=null
 if(a9!=null)b1=A.d7(a9)
-if(b0!=null){c9=b0
-d6=Date.now()
-d7=c9.a
-if(d7<=d6){c9=d7===d6&&c9.b>0
-d8=c9}else d8=!0}else d8=!1
-b2=d8
-b3=!J.c(a6,"free_trial")
-b4=b2&&b3
-b5="-"
-if(b2){c9=b0
-d6=Date.now()
-d7=c9.a
-b6=B.j.bc(c9.b+1000*(d7-d6),864e8)
-b5=b6>0?A.i(b6)+" days":"1 day left"}b7=b0!=null?b0.lU().j(0).split(" ")[0]:"-"
-b8=b1!=null?b1.lU().j(0).split(" ")[0]:b7
-b9="Never"
-if(J.q(c,"last_login_at")!=null){c0=A.d7(J.q(c,"last_login_at"))
-if(c0!=null){c9=Date.now()
-d6=c0
-d7=d6.a
-c1=new A.bv(0-d6.b+1000*(c9-d7))
-if(B.j.bc(c1.a,6e7)<60)b9=""+B.j.bc(c1.a,6e7)+"m ago"
-else if(B.j.bc(c1.a,36e8)<24)b9=""+B.j.bc(c1.a,36e8)+"h ago"
-else b9=""+B.j.bc(c1.a,864e8)+"d ago"}}c9=J.q(c,"id")
-d6=J.q(c,"name")
-if(d6==null)d6="Unnamed Gym"
-d7=b
-d9=J.q(c,"email")
-if(d9==null)d9="-"
-if(!J.c(a,"-"))e0=a
-else{e0=J.q(c,"phone_number")
-if(e0==null)e0="-"}e1=A.b7M(a6)
-e2=b4?"trial":a7
-e3=b5
-e4=b9
-e5=J.q(c,"app_version")
-if(e5==null)e5="v2.4.1"
-e6=J.q(c,"notes")
-if(e6==null)e6=""
-e7=J.q(c,"is_locked")
-if(e7==null)e7=!1
-e8=J.q(c,"custom_branding_allowed")
+b2=J.c(a7,"active")&&!J.c(a6,"free_trial")&&!J.c(a6,"trial")
+d7=!1
+if(!b2)if(b0!=null){d0=b0
+d8=Date.now()
+d9=d0.a
+if(d9<=d8)d0=d9===d8&&d0.b>0
+else d0=!0
+d7=d0}b3=d7
+b4=!J.c(a6,"free_trial")&&!J.c(a6,"trial")
+b5=!b2&&b3&&b4
+b6="-"
+if(b3){d0=b0
+d8=Date.now()
+d9=d0.a
+b7=B.j.bc(d0.b+1000*(d9-d8),864e8)
+b6=b7>0?A.i(b7)+" days":"1 day left"}b8=b0!=null?b0.lU().j(0).split(" ")[0]:"-"
+b9=b1!=null?b1.lU().j(0).split(" ")[0]:b8
+c0="Never"
+if(J.q(c,"last_login_at")!=null){c1=A.d7(J.q(c,"last_login_at"))
+if(c1!=null){d0=Date.now()
+d8=c1
+d9=d8.a
+c2=new A.bv(0-d8.b+1000*(d0-d9))
+if(B.j.bc(c2.a,6e7)<60)c0=""+B.j.bc(c2.a,6e7)+"m ago"
+else if(B.j.bc(c2.a,36e8)<24)c0=""+B.j.bc(c2.a,36e8)+"h ago"
+else c0=""+B.j.bc(c2.a,864e8)+"d ago"}}d0=J.q(c,"id")
+d8=J.q(c,"name")
+if(d8==null)d8="Unnamed Gym"
+d9=b
+e0=J.q(c,"email")
+if(e0==null)e0="-"
+if(!J.c(a,"-"))e1=a
+else{e1=J.q(c,"phone_number")
+if(e1==null)e1="-"}e2=A.b7M(a6)
+if(b2)e3="active"
+else e3=b5?"trial":a7
+e4=b6
+e5=c0
+e6=J.q(c,"app_version")
+if(e6==null)e6="v2.4.1"
+e7=J.q(c,"notes")
+if(e7==null)e7=""
+e8=J.q(c,"is_locked")
 if(e8==null)e8=!1
-J.bq(e,A.T(["id",c9,"name",d6,"owner",d7,"email",d9,"mobile",e0,"plan",e1,"rawPlan",a6,"status",e2,"isTrialActive",b2,"hasPaidPlan",b3,"isPlanQueuedAfterTrial",b4,"trialLeft",e3,"trialEndDate",b7,"expiry",b8,"members",a3,"staff",a4,"lastLogin",e4,"appVersion",e5,"notes",e6,"is_locked",e7,"custom_branding_allowed",e8,"rawGym",c],c5,c7))}if(n.c==null){s=1
+e9=J.q(c,"custom_branding_allowed")
+if(e9==null)e9=!1
+J.bq(e,A.T(["id",d0,"name",d8,"owner",d9,"email",e0,"mobile",e1,"plan",e2,"rawPlan",a6,"status",e3,"isTrialActive",b3,"hasPaidPlan",b4,"isPlanQueuedAfterTrial",b5,"trialLeft",e4,"trialEndDate",b8,"expiry",b9,"members",a3,"staff",a4,"lastLogin",e5,"appVersion",e6,"notes",e7,"is_locked",e8,"custom_branding_allowed",e9,"rawGym",c],c6,c8))}if(n.c==null){s=1
 break}n.E(new A.aMW(n,e))
 p=2
 s=6
 break
 case 4:p=3
-f1=o.pop()
-c2=A.V(f1)
-A.c7().$1("Error fetching gyms from Supabase: "+A.i(c2))
+f2=o.pop()
+c3=A.V(f2)
+A.c7().$1("Error fetching gyms from Supabase: "+A.i(c3))
 if(n.c!=null)n.E(new A.aMX(n))
 s=6
 break

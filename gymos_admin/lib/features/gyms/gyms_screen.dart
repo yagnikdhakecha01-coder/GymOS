@@ -133,9 +133,10 @@ class _GymsScreenState extends State<GymsScreen> {
         DateTime? planEndDate;
         if (planEndIso != null) planEndDate = DateTime.tryParse(planEndIso.toString());
 
-        final bool isTrialActive = trialEndDate != null && trialEndDate.isAfter(DateTime.now());
-        final bool hasPaidPlan = rawPlan != 'free_trial';
-        final bool isPlanQueuedAfterTrial = isTrialActive && hasPaidPlan;
+        final bool isPaidActive = rawStatus == 'active' && rawPlan != 'free_trial' && rawPlan != 'trial';
+        final bool isTrialActive = !isPaidActive && trialEndDate != null && trialEndDate.isAfter(DateTime.now());
+        final bool hasPaidPlan = rawPlan != 'free_trial' && rawPlan != 'trial';
+        final bool isPlanQueuedAfterTrial = !isPaidActive && isTrialActive && hasPaidPlan;
 
         String trialLeftStr = '-';
         if (isTrialActive) {
@@ -169,7 +170,7 @@ class _GymsScreenState extends State<GymsScreen> {
           'mobile': ownerMobile != '-' ? ownerMobile : (gymMap['phone_number'] ?? '-'),
           'plan': PlatformPlan.displayName(rawPlan),
           'rawPlan': rawPlan,
-          'status': isPlanQueuedAfterTrial ? 'trial' : rawStatus,
+          'status': isPaidActive ? 'active' : (isPlanQueuedAfterTrial ? 'trial' : rawStatus),
           'isTrialActive': isTrialActive,
           'hasPaidPlan': hasPaidPlan,
           'isPlanQueuedAfterTrial': isPlanQueuedAfterTrial,
