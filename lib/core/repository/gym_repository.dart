@@ -522,6 +522,25 @@ class GymRepository extends ChangeNotifier {
   List<ManualAttendanceEntry> get manualAttendanceQueue => List.unmodifiable(_manualAttendanceQueue);
   List<AttendanceAuditLog> get auditLogs => List.unmodifiable(_auditLogs);
 
+  /// Returns true only if there are queue items older than [threshold].
+  /// Fresh items (created within threshold) are likely still being synced
+  /// in the background and should NOT trigger the dashboard warning.
+  bool hasStaleQueueItems(Duration threshold) {
+    final cutoff = DateTime.now().subtract(threshold);
+
+    bool hasStaleAttendance = _attendanceQueue.any((item) {
+      final createdAt = DateTime.tryParse(item['created_at']?.toString() ?? '');
+      return createdAt == null || createdAt.isBefore(cutoff);
+    });
+
+    bool hasStaleCrud = _crudQueue.any((item) {
+      final createdAt = DateTime.tryParse(item['created_at']?.toString() ?? '');
+      return createdAt == null || createdAt.isBefore(cutoff);
+    });
+
+    return hasStaleAttendance || hasStaleCrud;
+  }
+
   void _loadQueuesFromStorage() {
     final rawAtt = _storage.getString(LocalStorageService.keyAttendanceQueue);
     if (rawAtt != null && rawAtt.isNotEmpty) {
@@ -1669,19 +1688,33 @@ class GymRepository extends ChangeNotifier {
       'check_out': formatToIso(newCheckOut ?? existing?.checkOutTime),
     };
 
-    _crudQueue.add({
-      'uuid': _generateUuidV4(),
-      'table': 'attendance_logs',
-      'action': 'update',
-      'payload': updatePayload,
-      'sync_status': 'pending',
-      'retry_count': 0,
-      'created_at': DateTime.now().toIso8601String(),
-    });
-    await _saveQueuesToStorage();
-    notifyListeners();
+    // Try direct Supabase update first to avoid unnecessary queueing
+    bool isDirectlyUpdated = false;
+    if (SupabaseService.isInitialized) {
+      try {
+        final id = updatePayload['id'] as String;
+        final updateData = Map<String, dynamic>.from(updatePayload)..remove('id')..remove('uuid');
+        await SupabaseService.client.from('attendance_logs').update(updateData).eq('id', id);
+        isDirectlyUpdated = true;
+      } catch (e) {
+        print('correctAttendanceLog direct update failed, queueing: $e');
+      }
+    }
 
-    triggerBackgroundSync();
+    if (!isDirectlyUpdated) {
+      _crudQueue.add({
+        'uuid': _generateUuidV4(),
+        'table': 'attendance_logs',
+        'action': 'update',
+        'payload': updatePayload,
+        'sync_status': 'pending',
+        'retry_count': 0,
+        'created_at': DateTime.now().toIso8601String(),
+      });
+      await _saveQueuesToStorage();
+      triggerBackgroundSync();
+    }
+    notifyListeners();
 
     return {'success': true, 'message': 'Attendance corrected successfully'};
   }
@@ -2156,49 +2189,88 @@ class GymRepository extends ChangeNotifier {
     };
 
     // Direct Supabase upsert when online to prevent FK errors in child tables (e.g. invitations)
+    bool isDirectlyInserted = false;
     if (SupabaseService.isInitialized) {
       try {
         await SupabaseService.client.from('members').upsert(data);
+        isDirectlyInserted = true;
       } catch (e) {
         print('saveMember direct Supabase upsert skipped/failed: $e. Fallback to queue.');
       }
     }
 
-    _crudQueue.add({
-      'uuid': _generateUuidV4(),
-      'table': 'members',
-      'action': 'insert',
-      'payload': data,
-      'created_at': DateTime.now().toIso8601String(),
-      'retry_count': 0,
-      'error_message': null,
-    });
-
-    // 3. Queue PT assignment update offline if applicable
-    if (member.ptMember && _isValidUUID(member.ptTrainer)) {
-      final matchingStaff = _staff.where((s) => s.id == member.ptTrainer).toList();
-      final commissionPercentage = matchingStaff.isNotEmpty ? matchingStaff.first.commissionPercentage : 0.0;
-      
+    // Only queue if direct insert failed (prevents double-queueing)
+    if (!isDirectlyInserted) {
       _crudQueue.add({
         'uuid': _generateUuidV4(),
-        'table': 'pt_assignments',
+        'table': 'members',
         'action': 'insert',
-        'payload': {
-          'gym_id': gymId,
-          'member_id': member.id,
-          'staff_id': member.ptTrainer,
-          'commission_percentage': commissionPercentage,
-          'assignment_status': 'Active',
-          'pt_start_date': DateTime.now().toIso8601String().substring(0, 10),
-        },
+        'payload': data,
         'created_at': DateTime.now().toIso8601String(),
         'retry_count': 0,
         'error_message': null,
       });
     }
 
-    await _saveQueuesToStorage();
-    triggerBackgroundSync();
+    // 3. Queue PT assignment update offline if applicable
+    if (member.ptMember && _isValidUUID(member.ptTrainer)) {
+      final matchingStaff = _staff.where((s) => s.id == member.ptTrainer).toList();
+      final commissionPercentage = matchingStaff.isNotEmpty ? matchingStaff.first.commissionPercentage : 0.0;
+
+      if (!isDirectlyInserted) {
+        _crudQueue.add({
+          'uuid': _generateUuidV4(),
+          'table': 'pt_assignments',
+          'action': 'insert',
+          'payload': {
+            'gym_id': gymId,
+            'member_id': member.id,
+            'staff_id': member.ptTrainer,
+            'commission_percentage': commissionPercentage,
+            'assignment_status': 'Active',
+            'pt_start_date': DateTime.now().toIso8601String().substring(0, 10),
+          },
+          'created_at': DateTime.now().toIso8601String(),
+          'retry_count': 0,
+          'error_message': null,
+        });
+      } else {
+        // Direct insert succeeded for member, also try PT assignment directly
+        try {
+          await SupabaseService.client.from('pt_assignments').upsert({
+            'gym_id': gymId,
+            'member_id': member.id,
+            'staff_id': member.ptTrainer,
+            'commission_percentage': commissionPercentage,
+            'assignment_status': 'Active',
+            'pt_start_date': DateTime.now().toIso8601String().substring(0, 10),
+          });
+        } catch (e) {
+          print('saveMember direct PT assignment upsert failed, queueing: $e');
+          _crudQueue.add({
+            'uuid': _generateUuidV4(),
+            'table': 'pt_assignments',
+            'action': 'insert',
+            'payload': {
+              'gym_id': gymId,
+              'member_id': member.id,
+              'staff_id': member.ptTrainer,
+              'commission_percentage': commissionPercentage,
+              'assignment_status': 'Active',
+              'pt_start_date': DateTime.now().toIso8601String().substring(0, 10),
+            },
+            'created_at': DateTime.now().toIso8601String(),
+            'retry_count': 0,
+            'error_message': null,
+          });
+        }
+      }
+    }
+
+    if (!isDirectlyInserted) {
+      await _saveQueuesToStorage();
+      triggerBackgroundSync();
+    }
   }
 
   /// Save an old/imported member WITHOUT creating PT assignment or commission entries.
@@ -2303,26 +2375,30 @@ class GymRepository extends ChangeNotifier {
       'p_commission_percentage': commissionPercentage,
     };
 
+    bool isDirectlyDone = false;
     if (SupabaseService.isInitialized) {
       try {
         await SupabaseService.client.rpc('change_member_pt', params: payload);
+        isDirectlyDone = true;
       } catch (e) {
         print('updateMemberPtAssignment RPC skipped/failed: $e. Fallback to queue.');
       }
     }
 
-    _crudQueue.add({
-      'uuid': _generateUuidV4(),
-      'table': 'rpc_change_member_pt',
-      'action': 'rpc',
-      'payload': payload,
-      'created_at': DateTime.now().toIso8601String(),
-      'retry_count': 0,
-      'error_message': null,
-    });
+    if (!isDirectlyDone) {
+      _crudQueue.add({
+        'uuid': _generateUuidV4(),
+        'table': 'rpc_change_member_pt',
+        'action': 'rpc',
+        'payload': payload,
+        'created_at': DateTime.now().toIso8601String(),
+        'retry_count': 0,
+        'error_message': null,
+      });
 
-    await _saveQueuesToStorage();
-    triggerBackgroundSync();
+      await _saveQueuesToStorage();
+      triggerBackgroundSync();
+    }
   }
 
   /// Queue an update to member_memberships to keep paid_amount in sync
@@ -2338,24 +2414,37 @@ class GymRepository extends ChangeNotifier {
     final gymId = _storage.getGymInfo()?['id'];
     if (gymId == null || !_isValidUUID(memberId)) return;
 
-    // Queue a direct update to member_memberships via RPC
-    // This updates the most recent membership's paid_amount to match app state
-    _crudQueue.add({
-      'uuid': _generateUuidV4(),
-      'table': 'rpc_sync_member_payment_amounts',
-      'action': 'rpc',
-      'payload': {
-        'p_member_id': memberId,
-        'p_gym_id': gymId,
-        'p_payment_amount': paymentAmount,
-        'p_new_total_received': newTotalReceived,
-        'p_new_pending_amount': newPendingAmount,
-      },
-      'created_at': DateTime.now().toIso8601String(),
-      'retry_count': 0,
-      'error_message': null,
-    });
-    await _saveQueuesToStorage();
+    // Try direct RPC call first, only queue on failure
+    final rpcPayload = {
+      'p_member_id': memberId,
+      'p_gym_id': gymId,
+      'p_payment_amount': paymentAmount,
+      'p_new_total_received': newTotalReceived,
+      'p_new_pending_amount': newPendingAmount,
+    };
+
+    bool isDirectlyDone = false;
+    if (SupabaseService.isInitialized) {
+      try {
+        await SupabaseService.client.rpc('sync_member_payment_amounts', params: rpcPayload);
+        isDirectlyDone = true;
+      } catch (e) {
+        print('updateMemberMembershipPayment direct RPC failed, queueing: $e');
+      }
+    }
+
+    if (!isDirectlyDone) {
+      _crudQueue.add({
+        'uuid': _generateUuidV4(),
+        'table': 'rpc_sync_member_payment_amounts',
+        'action': 'rpc',
+        'payload': rpcPayload,
+        'created_at': DateTime.now().toIso8601String(),
+        'retry_count': 0,
+        'error_message': null,
+      });
+      await _saveQueuesToStorage();
+    }
   }
 
   Future<void> saveTrialMember(TrialMember trial) async {
@@ -2461,6 +2550,7 @@ class GymRepository extends ChangeNotifier {
     notifyListeners();
 
     // 2. Direct Supabase delete if online
+    bool isDirectlyDeleted = false;
     if (SupabaseService.isInitialized && gymId != null) {
       try {
         await SupabaseService.client
@@ -2468,26 +2558,29 @@ class GymRepository extends ChangeNotifier {
             .delete()
             .eq('id', id)
             .eq('gym_id', gymId);
+        isDirectlyDeleted = true;
       } catch (e) {
         print('deleteMember direct Supabase delete skipped/failed: $e. Fallback to queue.');
       }
     }
 
-    // 3. Queue delete operation for offline-first sync
-    _crudQueue.add({
-      'uuid': _generateUuidV4(),
-      'table': 'members',
-      'action': 'delete',
-      'payload': {
-        'id': id,
-        if (gymId != null) 'gym_id': gymId,
-      },
-      'created_at': DateTime.now().toIso8601String(),
-      'retry_count': 0,
-      'error_message': null,
-    });
-    await _saveQueuesToStorage();
-    triggerBackgroundSync();
+    // 3. Queue delete operation only if direct delete failed
+    if (!isDirectlyDeleted) {
+      _crudQueue.add({
+        'uuid': _generateUuidV4(),
+        'table': 'members',
+        'action': 'delete',
+        'payload': {
+          'id': id,
+          if (gymId != null) 'gym_id': gymId,
+        },
+        'created_at': DateTime.now().toIso8601String(),
+        'retry_count': 0,
+        'error_message': null,
+      });
+      await _saveQueuesToStorage();
+      triggerBackgroundSync();
+    }
   }
 
   // --- Staff ---
@@ -2569,23 +2662,28 @@ class GymRepository extends ChangeNotifier {
     };
 
     // Direct Supabase upsert when online to prevent FK errors in child tables (e.g. invitations)
+    bool isDirectlyInserted = false;
     if (SupabaseService.isInitialized) {
       try {
         await SupabaseService.client.from('staff').upsert(data);
+        isDirectlyInserted = true;
       } catch (e) {
         print('saveStaff direct Supabase upsert skipped/failed: $e. Fallback to queue.');
       }
     }
 
-    _crudQueue.add({
-      'uuid': _generateUuidV4(),
-      'table': 'staff',
-      'action': 'insert',
-      'payload': data,
-      'created_at': DateTime.now().toIso8601String(),
-      'retry_count': 0,
-      'error_message': null,
-    });
+    // Only queue if direct insert failed (prevents double-queueing)
+    if (!isDirectlyInserted) {
+      _crudQueue.add({
+        'uuid': _generateUuidV4(),
+        'table': 'staff',
+        'action': 'insert',
+        'payload': data,
+        'created_at': DateTime.now().toIso8601String(),
+        'retry_count': 0,
+        'error_message': null,
+      });
+    }
 
     // 3. Queue staff shift assignment
     String mappedAssignmentType = 'Single Shift';
@@ -2598,24 +2696,46 @@ class GymRepository extends ChangeNotifier {
       mappedAssignmentType = 'Evening Shift';
     }
 
-    _crudQueue.add({
-      'uuid': _generateUuidV4(),
-      'table': 'staff_shift_assignments',
-      'action': 'insert',
-      'payload': {
-        'staff_id': staff.id,
-        'gym_id': gymId,
-        'assignment_type': mappedAssignmentType,
-        'effective_from': DateTime.now().toLocal().toIso8601String().substring(0, 10),
-        'status': 'Active',
-      },
-      'created_at': DateTime.now().toIso8601String(),
-      'retry_count': 0,
-      'error_message': null,
-    });
+    final shiftPayload = {
+      'staff_id': staff.id,
+      'gym_id': gymId,
+      'assignment_type': mappedAssignmentType,
+      'effective_from': DateTime.now().toLocal().toIso8601String().substring(0, 10),
+      'status': 'Active',
+    };
 
-    await _saveQueuesToStorage();
-    triggerBackgroundSync();
+    if (isDirectlyInserted) {
+      // Staff already on server, try shift assignment directly too
+      try {
+        await SupabaseService.client.from('staff_shift_assignments').upsert(shiftPayload);
+      } catch (e) {
+        print('saveStaff direct shift assignment upsert failed, queueing: $e');
+        _crudQueue.add({
+          'uuid': _generateUuidV4(),
+          'table': 'staff_shift_assignments',
+          'action': 'insert',
+          'payload': shiftPayload,
+          'created_at': DateTime.now().toIso8601String(),
+          'retry_count': 0,
+          'error_message': null,
+        });
+      }
+    } else {
+      _crudQueue.add({
+        'uuid': _generateUuidV4(),
+        'table': 'staff_shift_assignments',
+        'action': 'insert',
+        'payload': shiftPayload,
+        'created_at': DateTime.now().toIso8601String(),
+        'retry_count': 0,
+        'error_message': null,
+      });
+    }
+
+    if (!isDirectlyInserted) {
+      await _saveQueuesToStorage();
+      triggerBackgroundSync();
+    }
   }
 
   Future<void> deleteStaff(String id) async {
@@ -2635,6 +2755,7 @@ class GymRepository extends ChangeNotifier {
     notifyListeners();
 
     // 2. Direct Supabase delete if online
+    bool isDirectlyDeleted = false;
     if (SupabaseService.isInitialized && gymId != null) {
       try {
         await SupabaseService.client
@@ -2642,26 +2763,29 @@ class GymRepository extends ChangeNotifier {
             .delete()
             .eq('id', id)
             .eq('gym_id', gymId);
+        isDirectlyDeleted = true;
       } catch (e) {
         print('deleteStaff direct Supabase delete skipped/failed: $e. Fallback to queue.');
       }
     }
 
-    // 3. Queue delete operation for offline-first sync
-    _crudQueue.add({
-      'uuid': _generateUuidV4(),
-      'table': 'staff',
-      'action': 'delete',
-      'payload': {
-        'id': id,
-        if (gymId != null) 'gym_id': gymId,
-      },
-      'created_at': DateTime.now().toIso8601String(),
-      'retry_count': 0,
-      'error_message': null,
-    });
-    await _saveQueuesToStorage();
-    triggerBackgroundSync();
+    // 3. Queue delete operation only if direct delete failed
+    if (!isDirectlyDeleted) {
+      _crudQueue.add({
+        'uuid': _generateUuidV4(),
+        'table': 'staff',
+        'action': 'delete',
+        'payload': {
+          'id': id,
+          if (gymId != null) 'gym_id': gymId,
+        },
+        'created_at': DateTime.now().toIso8601String(),
+        'retry_count': 0,
+        'error_message': null,
+      });
+      await _saveQueuesToStorage();
+      triggerBackgroundSync();
+    }
   }
 
   // --- Workouts ---
@@ -3881,17 +4005,30 @@ class GymRepository extends ChangeNotifier {
     await _storage.setString(_salaryAdvancesKey, jsonEncode(_salaryAdvances));
     notifyListeners();
 
-    _crudQueue.add({
-      'uuid': _generateUuidV4(),
-      'table': 'salary_advance_ledger',
-      'action': 'insert',
-      'payload': item,
-      'created_at': DateTime.now().toIso8601String(),
-      'retry_count': 0,
-      'error_message': null,
-    });
-    await _saveQueuesToStorage();
-    triggerBackgroundSync();
+    // Try direct Supabase insert first
+    bool isDirectlyInserted = false;
+    if (SupabaseService.isInitialized) {
+      try {
+        await SupabaseService.client.from('salary_advance_ledger').upsert(item);
+        isDirectlyInserted = true;
+      } catch (e) {
+        print('saveSalaryAdvanceOffline direct insert failed, queueing: $e');
+      }
+    }
+
+    if (!isDirectlyInserted) {
+      _crudQueue.add({
+        'uuid': _generateUuidV4(),
+        'table': 'salary_advance_ledger',
+        'action': 'insert',
+        'payload': item,
+        'created_at': DateTime.now().toIso8601String(),
+        'retry_count': 0,
+        'error_message': null,
+      });
+      await _saveQueuesToStorage();
+      triggerBackgroundSync();
+    }
   }
 
   Future<void> paySalaryDraftOffline({
@@ -3908,21 +4045,35 @@ class GymRepository extends ChangeNotifier {
       notifyListeners();
     }
 
-    _crudQueue.add({
-      'uuid': _generateUuidV4(),
-      'table': 'rpc_pay_salary_draft',
-      'action': 'rpc',
-      'payload': {
-        'p_draft_id': draftId,
-        'p_payment_mode': paymentMode,
-        'p_notes': notes,
-      },
-      'created_at': DateTime.now().toIso8601String(),
-      'retry_count': 0,
-      'error_message': null,
-    });
-    await _saveQueuesToStorage();
-    triggerBackgroundSync();
+    // Try direct RPC call first
+    final rpcPayload = {
+      'p_draft_id': draftId,
+      'p_payment_mode': paymentMode,
+      'p_notes': notes,
+    };
+    bool isDirectlyDone = false;
+    if (SupabaseService.isInitialized) {
+      try {
+        await SupabaseService.client.rpc('pay_salary_draft_v2', params: rpcPayload);
+        isDirectlyDone = true;
+      } catch (e) {
+        print('paySalaryDraftOffline direct RPC failed, queueing: $e');
+      }
+    }
+
+    if (!isDirectlyDone) {
+      _crudQueue.add({
+        'uuid': _generateUuidV4(),
+        'table': 'rpc_pay_salary_draft',
+        'action': 'rpc',
+        'payload': rpcPayload,
+        'created_at': DateTime.now().toIso8601String(),
+        'retry_count': 0,
+        'error_message': null,
+      });
+      await _saveQueuesToStorage();
+      triggerBackgroundSync();
+    }
   }
 
   Future<void> createLeaveRequestOffline({
@@ -3954,17 +4105,30 @@ class GymRepository extends ChangeNotifier {
     await _storage.setString(_leaveRequestsKey, jsonEncode(_leaveRequests));
     notifyListeners();
 
-    _crudQueue.add({
-      'uuid': _generateUuidV4(),
-      'table': 'leave_requests',
-      'action': 'insert',
-      'payload': item,
-      'created_at': DateTime.now().toIso8601String(),
-      'retry_count': 0,
-      'error_message': null,
-    });
-    await _saveQueuesToStorage();
-    triggerBackgroundSync();
+    // Try direct Supabase insert first
+    bool isDirectlyInserted = false;
+    if (SupabaseService.isInitialized) {
+      try {
+        await SupabaseService.client.from('leave_requests').upsert(item);
+        isDirectlyInserted = true;
+      } catch (e) {
+        print('createLeaveRequestOffline direct insert failed, queueing: $e');
+      }
+    }
+
+    if (!isDirectlyInserted) {
+      _crudQueue.add({
+        'uuid': _generateUuidV4(),
+        'table': 'leave_requests',
+        'action': 'insert',
+        'payload': item,
+        'created_at': DateTime.now().toIso8601String(),
+        'retry_count': 0,
+        'error_message': null,
+      });
+      await _saveQueuesToStorage();
+      triggerBackgroundSync();
+    }
   }
 
   Future<void> updateLeaveStatusOffline({
@@ -4112,21 +4276,35 @@ class GymRepository extends ChangeNotifier {
     await _storage.setString(_gymShiftsListKey, jsonEncode(shiftsList));
     notifyListeners();
 
-    _crudQueue.add({
-      'uuid': _generateUuidV4(),
-      'table': 'rpc_save_gym_operating_hours',
-      'action': 'rpc',
-      'payload': {
-        'p_gym_id': gymId,
-        'p_mode': mode,
-        'p_shifts': shiftsList,
-      },
-      'created_at': DateTime.now().toIso8601String(),
-      'retry_count': 0,
-      'error_message': null,
-    });
-    await _saveQueuesToStorage();
-    triggerBackgroundSync();
+    // Try direct RPC call first
+    final rpcPayload = {
+      'p_gym_id': gymId,
+      'p_mode': mode,
+      'p_shifts': shiftsList,
+    };
+    bool isDirectlyDone = false;
+    if (SupabaseService.isInitialized) {
+      try {
+        await SupabaseService.client.rpc('save_gym_operating_hours', params: rpcPayload);
+        isDirectlyDone = true;
+      } catch (e) {
+        print('saveOperatingHoursOffline direct RPC failed, queueing: $e');
+      }
+    }
+
+    if (!isDirectlyDone) {
+      _crudQueue.add({
+        'uuid': _generateUuidV4(),
+        'table': 'rpc_save_gym_operating_hours',
+        'action': 'rpc',
+        'payload': rpcPayload,
+        'created_at': DateTime.now().toIso8601String(),
+        'retry_count': 0,
+        'error_message': null,
+      });
+      await _saveQueuesToStorage();
+      triggerBackgroundSync();
+    }
     return true;
   }
 
@@ -4246,18 +4424,30 @@ class GymRepository extends ChangeNotifier {
     await _storage.setString(LocalStorageService.keyAttendanceSettings, jsonEncode(settings.toJson()));
     notifyListeners();
 
-    // 2. Queue for database sync
-    _crudQueue.add({
-      'uuid': _generateUuidV4(),
-      'table': 'attendance_settings',
-      'action': 'insert',
-      'payload': settings.toJson(),
-      'created_at': DateTime.now().toIso8601String(),
-      'retry_count': 0,
-      'error_message': null,
-    });
-    await _saveQueuesToStorage();
-    triggerBackgroundSync();
+    // 2. Try direct Supabase upsert first
+    bool isDirectlyInserted = false;
+    if (SupabaseService.isInitialized) {
+      try {
+        await SupabaseService.client.from('attendance_settings').upsert(settings.toJson());
+        isDirectlyInserted = true;
+      } catch (e) {
+        print('saveAttendanceSettingsToSupabase direct upsert failed, queueing: $e');
+      }
+    }
+
+    if (!isDirectlyInserted) {
+      _crudQueue.add({
+        'uuid': _generateUuidV4(),
+        'table': 'attendance_settings',
+        'action': 'insert',
+        'payload': settings.toJson(),
+        'created_at': DateTime.now().toIso8601String(),
+        'retry_count': 0,
+        'error_message': null,
+      });
+      await _saveQueuesToStorage();
+      triggerBackgroundSync();
+    }
   }
 
   Future<void> fetchDisplaySessionsFromSupabase() async {

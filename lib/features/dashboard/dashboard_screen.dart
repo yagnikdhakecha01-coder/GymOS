@@ -482,7 +482,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ],
               ),
               const SizedBox(height: 20),
-              if (repo.attendanceQueue.isNotEmpty || repo.crudQueue.isNotEmpty) ...[
+              if (repo.hasStaleQueueItems(const Duration(seconds: 10))) ...[
                 GestureDetector(
                   onTap: () {
                     Navigator.push(
