@@ -522,23 +522,31 @@ class GymRepository extends ChangeNotifier {
   List<ManualAttendanceEntry> get manualAttendanceQueue => List.unmodifiable(_manualAttendanceQueue);
   List<AttendanceAuditLog> get auditLogs => List.unmodifiable(_auditLogs);
 
-  /// Returns true only if there are queue items older than [threshold].
-  /// Fresh items (created within threshold) are likely still being synced
-  /// in the background and should NOT trigger the dashboard warning.
-  bool hasStaleQueueItems(Duration threshold) {
-    final cutoff = DateTime.now().subtract(threshold);
+  /// Returns true only if there are queue items that have actually failed to sync
+  /// (e.g. after network retry or error). Normal pending/in-flight items will NOT trigger warnings.
+  bool get hasFailedQueueItems {
+    final hasFailedAttendance = _attendanceQueue.any((item) =>
+        item['sync_status'] == 'failed' || (item['retry_count'] ?? 0) > 0 || item['error_message'] != null);
 
-    bool hasStaleAttendance = _attendanceQueue.any((item) {
-      final createdAt = DateTime.tryParse(item['created_at']?.toString() ?? '');
-      return createdAt == null || createdAt.isBefore(cutoff);
-    });
+    final hasFailedCrud = _crudQueue.any((item) =>
+        item['sync_status'] == 'failed' || (item['retry_count'] ?? 0) > 0 || item['error_message'] != null);
 
-    bool hasStaleCrud = _crudQueue.any((item) {
-      final createdAt = DateTime.tryParse(item['created_at']?.toString() ?? '');
-      return createdAt == null || createdAt.isBefore(cutoff);
-    });
+    final hasFailedManual = _manualAttendanceQueue.any((item) =>
+        item.syncStatus == 'failed' || item.retryCount > 0 || item.errorMessage != null);
 
-    return hasStaleAttendance || hasStaleCrud;
+    return hasFailedAttendance || hasFailedCrud || hasFailedManual;
+  }
+
+  /// Returns count of failed queue items
+  int get failedQueueCount {
+    int count = 0;
+    count += _attendanceQueue.where((item) =>
+        item['sync_status'] == 'failed' || (item['retry_count'] ?? 0) > 0 || item['error_message'] != null).length;
+    count += _crudQueue.where((item) =>
+        item['sync_status'] == 'failed' || (item['retry_count'] ?? 0) > 0 || item['error_message'] != null).length;
+    count += _manualAttendanceQueue.where((item) =>
+        item.syncStatus == 'failed' || item.retryCount > 0 || item.errorMessage != null).length;
+    return count;
   }
 
   void _loadQueuesFromStorage() {

@@ -239,7 +239,7 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
                   ],
                 ),
                 const SizedBox(height: 20),
-                if (repo.hasStaleQueueItems(const Duration(seconds: 10))) ...[
+                if (repo.hasFailedQueueItems) ...[
                   GestureDetector(
                     onTap: () {
                       Navigator.push(
@@ -261,7 +261,7 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
                           const SizedBox(width: 12),
                           Expanded(
                             child: Text(
-                              'You have offline data pending sync. Tap to sync.',
+                              'Data sync failed (${repo.failedQueueCount} item${repo.failedQueueCount > 1 ? 's' : ''}). Tap to review & retry.',
                               style: GoogleFonts.inter(fontSize: 12, color: AppTheme.danger, fontWeight: FontWeight.bold),
                             ),
                           ),
