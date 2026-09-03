@@ -1,8 +1,12 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/theme/theme.dart';
 import '../member_app_viewmodel.dart';
+import 'member_guided_workout_screen.dart';
+import 'member_exercise_library_screen.dart';
 
 class MemberTrainingScreen extends StatelessWidget {
   const MemberTrainingScreen({super.key});
@@ -115,7 +119,9 @@ class MemberTrainingScreen extends StatelessWidget {
 
                         // Subtitle
                         Text(
-                          "Ask your trainer for today's exercises\nand plan.",
+                          muscle.contains('Rest') 
+                              ? 'Rest day — recovery is part of training!'
+                              : 'Ready to crush ${muscle.toLowerCase()}?',
                           textAlign: TextAlign.center,
                           style: GoogleFonts.inter(
                             fontSize: 13,
@@ -125,14 +131,59 @@ class MemberTrainingScreen extends StatelessWidget {
                         ),
                         const SizedBox(height: 20),
 
-                        // Complete Workout Button
-                        SizedBox(
-                          width: 200,
-                          height: 46,
-                          child: ElevatedButton(
-                            onPressed: vm.isTrainingCompleted
-                                ? null
-                                : () async {
+                        // 🏋️ START GUIDED WORKOUT BUTTON
+                        if (!muscle.contains('Rest'))
+                          SizedBox(
+                            width: double.infinity,
+                            height: 50,
+                            child: ElevatedButton.icon(
+                              icon: const Text('🏋️', style: TextStyle(fontSize: 18)),
+                              label: Text(
+                                vm.isTrainingCompleted ? 'Workout Done 🎉' : 'Start Guided Workout',
+                                style: GoogleFonts.inter(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                  color: vm.isTrainingCompleted ? const Color(0xFF15803D) : Colors.white,
+                                ),
+                              ),
+                              onPressed: vm.isTrainingCompleted ? null : () async {
+                                // Build exercise list for today's muscle group
+                                final prefs = await SharedPreferences.getInstance();
+                                final gymInfoStr = prefs.getString('gymos_gym_info');
+                                String gymId = '';
+                                String memberId = vm.memberId;
+                                if (gymInfoStr != null) {
+                                  try {
+                                    final gi = jsonDecode(gymInfoStr) as Map<String, dynamic>;
+                                    gymId = gi['id'] ?? '';
+                                  } catch (_) {}
+                                }
+                                final exercisesCache = prefs.getString('gymos_exercises_cache');
+                                List<Map<String, dynamic>> todayExercises = [];
+                                if (exercisesCache != null) {
+                                  try {
+                                    final all = (jsonDecode(exercisesCache) as List)
+                                        .map((e) => Map<String, dynamic>.from(e as Map)).toList();
+                                    todayExercises = all
+                                        .where((e) => (e['muscle_group'] as String? ?? '')
+                                            .toLowerCase() == muscle.toLowerCase())
+                                        .take(5)
+                                        .toList();
+                                  } catch (_) {}
+                                }
+                                if (context.mounted) {
+                                  final result = await Navigator.push<bool>(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => MemberGuidedWorkoutScreen(
+                                        memberId: memberId,
+                                        gymId: gymId,
+                                        muscleGroup: muscle,
+                                        exercises: todayExercises,
+                                      ),
+                                    ),
+                                  );
+                                  if (result == true && context.mounted) {
                                     final res = await vm.completeTodayWorkout(context);
                                     if (context.mounted) {
                                       ScaffoldMessenger.of(context).showSnackBar(
@@ -140,43 +191,58 @@ class MemberTrainingScreen extends StatelessWidget {
                                           content: Text(res['message']?.toString() ?? ''),
                                           backgroundColor: res['success'] == true ? AppTheme.success : AppTheme.danger,
                                           behavior: SnackBarBehavior.floating,
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                          margin: const EdgeInsets.all(12),
                                         ),
                                       );
                                     }
-                                  },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppTheme.primary,
-                              foregroundColor: Colors.white,
-                              disabledBackgroundColor: const Color(0xFFDCFCE7),
-                              disabledForegroundColor: const Color(0xFF15803D),
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(20),
+                                  }
+                                }
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: vm.isTrainingCompleted ? const Color(0xFFDCFCE7) : AppTheme.primary,
+                                foregroundColor: vm.isTrainingCompleted ? const Color(0xFF15803D) : Colors.white,
+                                disabledBackgroundColor: const Color(0xFFDCFCE7),
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
                               ),
                             ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  vm.isTrainingCompleted ? Icons.check_circle_rounded : Icons.task_alt_rounded,
-                                  size: 18,
-                                  color: vm.isTrainingCompleted ? const Color(0xFF15803D) : Colors.white,
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  vm.isTrainingCompleted ? 'Workout Done 🎉' : 'Complete Workout',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w700,
-                                    color: vm.isTrainingCompleted ? const Color(0xFF15803D) : Colors.white,
-                                  ),
-                                ),
-                              ],
-                            ),
                           ),
-                        ),
                       ],
                     ),
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                // ═══════ QUICK ACCESS CARDS ═══════
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _QuickActionCard(
+                          emoji: '📚',
+                          title: 'Exercise Library',
+                          subtitle: '40+ exercises',
+                          color: AppTheme.info,
+                          onTap: () => Navigator.push(context,
+                            MaterialPageRoute(builder: (_) => const MemberExerciseLibraryScreen())),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _QuickActionCard(
+                          emoji: '🏆',
+                          title: 'My PRs',
+                          subtitle: 'Personal records',
+                          color: const Color(0xFFF59E0B),
+                          onTap: () => _showPRsSheet(context, vm),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 24),
@@ -262,6 +328,126 @@ class MemberTrainingScreen extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+
+  void _showPRsSheet(BuildContext context, MemberAppViewModel vm) {
+    final prefs = SharedPreferences.getInstance();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => FutureBuilder<SharedPreferences>(
+        future: prefs,
+        builder: (ctx, snap) {
+          if (!snap.hasData) return const SizedBox();
+          final cached = snap.data!.getString('member_prs_${vm.memberId}');
+          Map<String, double> prs = {};
+          if (cached != null) {
+            try {
+              prs = (jsonDecode(cached) as Map<String, dynamic>)
+                  .map((k, v) => MapEntry(k, (v as num).toDouble()));
+            } catch (_) {}
+          }
+          return Container(
+            margin: const EdgeInsets.only(top: 80),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Column(
+              children: [
+                Container(
+                  margin: const EdgeInsets.only(top: 12),
+                  width: 36, height: 4,
+                  decoration: BoxDecoration(color: AppTheme.border, borderRadius: BorderRadius.circular(2)),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Text(
+                    '🏆 Personal Records',
+                    style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w800, color: AppTheme.textPrimary),
+                  ),
+                ),
+                if (prs.isEmpty)
+                  Expanded(child: Center(
+                    child: Text('No PRs yet — start your first guided workout!',
+                      style: GoogleFonts.inter(fontSize: 14, color: AppTheme.textMuted),
+                      textAlign: TextAlign.center),
+                  ))
+                else
+                  Expanded(
+                    child: ListView(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      children: prs.entries.map((e) => Container(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFFBEB),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: const Color(0xFFFDE68A)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Text('🏆', style: TextStyle(fontSize: 20)),
+                            const SizedBox(width: 12),
+                            Expanded(child: Text(e.key,
+                              style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.textPrimary))),
+                            Text('${e.value}kg',
+                              style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800, color: const Color(0xFFD97706))),
+                          ],
+                        ),
+                      )).toList(),
+                    ),
+                  ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+// Quick Action Card widget
+class _QuickActionCard extends StatelessWidget {
+  final String emoji;
+  final String title;
+  final String subtitle;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _QuickActionCard({
+    required this.emoji,
+    required this.title,
+    required this.subtitle,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: color.withValues(alpha: 0.2)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(emoji, style: const TextStyle(fontSize: 22)),
+            const SizedBox(height: 8),
+            Text(title,
+              style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
+            Text(subtitle,
+              style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted)),
+          ],
+        ),
+      ),
     );
   }
 }

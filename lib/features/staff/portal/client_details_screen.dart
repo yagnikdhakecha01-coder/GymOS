@@ -41,6 +41,12 @@ class _ClientDetailsScreenState extends State<ClientDetailsScreen> {
   String _expiryDate = '';
   String _ptStartDate = '';
 
+  // Client Fitness & Workout Data
+  List<Map<String, dynamic>> _clientBodyLogs = [];
+  List<Map<String, dynamic>> _clientPRs = [];
+  List<Map<String, dynamic>> _clientRecentWorkouts = [];
+  bool _loadingFitnessData = false;
+
   @override
   void initState() {
     super.initState();
@@ -121,7 +127,51 @@ class _ClientDetailsScreenState extends State<ClientDetailsScreen> {
     }
 
     await _loadCommissionHistory(staff);
+    await _loadClientFitnessData();
     if (mounted) setState(() => _loading = false);
+  }
+
+  Future<void> _loadClientFitnessData() async {
+    if (!SupabaseService.isInitialized || _currentMember.id.isEmpty) return;
+    if (mounted) setState(() => _loadingFitnessData = true);
+    try {
+      // 1. Fetch body logs
+      final bodyLogsRes = await SupabaseService.client
+          .from('member_body_logs')
+          .select()
+          .eq('member_id', _currentMember.id)
+          .order('logged_date', ascending: false)
+          .limit(20);
+      if (mounted && bodyLogsRes is List) {
+        _clientBodyLogs = List<Map<String, dynamic>>.from(bodyLogsRes);
+      }
+
+      // 2. Fetch personal records
+      final prsRes = await SupabaseService.client
+          .from('member_personal_records')
+          .select()
+          .eq('member_id', _currentMember.id)
+          .order('best_weight_kg', ascending: false);
+      if (mounted && prsRes is List) {
+        _clientPRs = List<Map<String, dynamic>>.from(prsRes);
+      }
+
+      // 3. Fetch recent workout sets
+      final workoutsRes = await SupabaseService.client
+          .from('member_workout_sets')
+          .select()
+          .eq('member_id', _currentMember.id)
+          .order('session_date', ascending: false)
+          .order('set_number', ascending: true)
+          .limit(50);
+      if (mounted && workoutsRes is List) {
+        _clientRecentWorkouts = List<Map<String, dynamic>>.from(workoutsRes);
+      }
+    } catch (e) {
+      print('Error loading client fitness data: $e');
+    } finally {
+      if (mounted) setState(() => _loadingFitnessData = false);
+    }
   }
 
   Future<void> _loadCommissionHistory(Staff? staff) async {
@@ -173,7 +223,7 @@ class _ClientDetailsScreenState extends State<ClientDetailsScreen> {
         : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=150';
 
     return DefaultTabController(
-      length: 4,
+      length: 5,
       child: Scaffold(
         backgroundColor: AppTheme.background,
         appBar: AppBar(
@@ -225,7 +275,8 @@ class _ClientDetailsScreenState extends State<ClientDetailsScreen> {
                 dividerColor: const Color(0xFFF3F4F6),
                 tabs: const [
                   Tab(text: 'Overview'),
-                  Tab(text: 'Body'),
+                  Tab(text: 'Body & Stats'),
+                  Tab(text: 'Workouts & PRs'),
                   Tab(text: 'Membership'),
                   Tab(text: 'Commission'),
                 ],
@@ -236,6 +287,7 @@ class _ClientDetailsScreenState extends State<ClientDetailsScreen> {
                 children: [
                   _buildOverviewTab(),
                   _buildProgressTab(),
+                  _buildWorkoutsAndPRsTab(),
                   _buildMembershipTab(),
                   _buildCommissionTab(),
                 ],
@@ -432,7 +484,7 @@ class _ClientDetailsScreenState extends State<ClientDetailsScreen> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(
-              'Body Measurements',
+              'Current Measurements',
               style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
             ),
             IconButton(
@@ -442,7 +494,7 @@ class _ClientDetailsScreenState extends State<ClientDetailsScreen> {
           ],
         ),
         const SizedBox(height: 8),
-        measurements.isEmpty
+        measurements.isEmpty && _clientBodyLogs.isEmpty
             ? CustomCard(
                 padding: const EdgeInsets.all(24),
                 child: Center(
@@ -465,18 +517,341 @@ class _ClientDetailsScreenState extends State<ClientDetailsScreen> {
                   children: [
                     _buildProgramRow('HEIGHT', '${measurements['height'] ?? '—'} cm'),
                     const Divider(height: 1, color: Color(0xFFF3F4F6)),
-                    _buildProgramRow('WEIGHT', '${measurements['weight'] ?? '—'} kg'),
+                    _buildProgramRow('WEIGHT', '${measurements['weight'] ?? (_clientBodyLogs.isNotEmpty ? _clientBodyLogs.first['weight_kg'] : null) ?? '—'} kg'),
                     const Divider(height: 1, color: Color(0xFFF3F4F6)),
-                    _buildProgramRow('CHEST', '${measurements['chest'] ?? '—'} in'),
+                    _buildProgramRow('CHEST', '${measurements['chest'] ?? (_clientBodyLogs.isNotEmpty ? _clientBodyLogs.first['chest_cm'] : null) ?? '—'} in'),
                     const Divider(height: 1, color: Color(0xFFF3F4F6)),
-                    _buildProgramRow('WAIST', '${measurements['waist'] ?? '—'} in'),
+                    _buildProgramRow('WAIST', '${measurements['waist'] ?? (_clientBodyLogs.isNotEmpty ? _clientBodyLogs.first['waist_cm'] : null) ?? '—'} in'),
                     const Divider(height: 1, color: Color(0xFFF3F4F6)),
-                    _buildProgramRow('BICEPS', '${measurements['biceps'] ?? '—'} in'),
+                    _buildProgramRow('BICEPS', '${measurements['biceps'] ?? (_clientBodyLogs.isNotEmpty ? _clientBodyLogs.first['arms_cm'] : null) ?? '—'} in'),
                     const Divider(height: 1, color: Color(0xFFF3F4F6)),
                     _buildProgramRow('HIP', '${measurements['hip'] ?? '—'} in'),
                   ],
                 ),
               ),
+
+        const SizedBox(height: 20),
+
+        // ── Body Logs History ──
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Logged Body History',
+              style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+            ),
+            if (_clientBodyLogs.isNotEmpty)
+              Text(
+                '${_clientBodyLogs.length} entries',
+                style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (_loadingFitnessData)
+          const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator(color: AppTheme.primary, strokeWidth: 2)))
+        else if (_clientBodyLogs.isEmpty)
+          CustomCard(
+            padding: const EdgeInsets.all(20),
+            child: Center(
+              child: Text(
+                'No body logs recorded by client yet.',
+                style: GoogleFonts.inter(fontSize: 12.5, color: AppTheme.textMuted),
+              ),
+            ),
+          )
+        else
+          Column(
+            children: _clientBodyLogs.map((log) {
+              final date = log['logged_date']?.toString() ?? '';
+              final weight = log['weight_kg'];
+              final fat = log['body_fat_pct'];
+              final chest = log['chest_cm'];
+              final waist = log['waist_cm'];
+              final arms = log['arms_cm'];
+
+              return CustomCard(
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            const Text('⚖️', style: TextStyle(fontSize: 14)),
+                            const SizedBox(width: 6),
+                            Text(_formatDate(date), style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
+                          ],
+                        ),
+                        if (weight != null)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: AppTheme.primaryLight,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              '$weight kg',
+                              style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: AppTheme.primary),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 6,
+                      children: [
+                        if (fat != null)
+                          Text('Fat: $fat%', style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary)),
+                        if (chest != null)
+                          Text('Chest: $chest cm', style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary)),
+                        if (waist != null)
+                          Text('Waist: $waist cm', style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary)),
+                        if (arms != null)
+                          Text('Arms: $arms cm', style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary)),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildWorkoutsAndPRsTab() {
+    if (_loadingFitnessData) {
+      return const Center(child: CircularProgressIndicator(color: AppTheme.primary));
+    }
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        // ── 1. Personal Records (PRs / 1RM) ──
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                const Text('🏆', style: TextStyle(fontSize: 16)),
+                const SizedBox(width: 6),
+                Text(
+                  'Personal Records (PRs)',
+                  style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                ),
+              ],
+            ),
+            if (_clientPRs.isNotEmpty)
+              Text(
+                '${_clientPRs.length} PRs',
+                style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (_clientPRs.isEmpty)
+          CustomCard(
+            padding: const EdgeInsets.all(20),
+            child: Center(
+              child: Column(
+                children: [
+                  const Text('🏋️', style: TextStyle(fontSize: 32)),
+                  const SizedBox(height: 8),
+                  Text(
+                    'No PRs recorded yet.',
+                    style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textPrimary),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'When client completes workouts, their best lifts and 1RM will automatically appear here.',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.inter(fontSize: 11.5, color: AppTheme.textMuted),
+                  ),
+                ],
+              ),
+            ),
+          )
+        else
+          Column(
+            children: _clientPRs.map((pr) {
+              final exerciseName = pr['exercise_name']?.toString() ?? 'Exercise';
+              final bestWeight = (pr['best_weight_kg'] as num?)?.toDouble() ?? 0.0;
+              final est1RM = (pr['estimated_1rm_kg'] as num?)?.toDouble() ?? bestWeight;
+              final bestReps = pr['best_reps'] ?? 1;
+              final date = pr['achieved_at']?.toString() ?? '';
+
+              return CustomCard(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFFBEB),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFFFDE68A)),
+                      ),
+                      child: const Center(child: Text('🏆', style: TextStyle(fontSize: 18))),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            exerciseName,
+                            style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Best: ${bestWeight.toStringAsFixed(1)} kg × $bestReps reps • ${_formatDate(date)}',
+                            style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          '${est1RM.toStringAsFixed(1)} kg',
+                          style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w800, color: const Color(0xFFD97706)),
+                        ),
+                        Text(
+                          'Est. 1RM',
+                          style: GoogleFonts.inter(fontSize: 9.5, color: AppTheme.textMuted, fontWeight: FontWeight.w500),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+          ),
+
+        const SizedBox(height: 20),
+
+        // ── 2. Recent Workout Activity ──
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                const Text('📊', style: TextStyle(fontSize: 16)),
+                const SizedBox(width: 6),
+                Text(
+                  'Recent Workout Sets',
+                  style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                ),
+              ],
+            ),
+            if (_clientRecentWorkouts.isNotEmpty)
+              Text(
+                'Last ${_clientRecentWorkouts.length} sets',
+                style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (_clientRecentWorkouts.isEmpty)
+          CustomCard(
+            padding: const EdgeInsets.all(20),
+            child: Center(
+              child: Text(
+                'No workout sessions recorded yet.',
+                style: GoogleFonts.inter(fontSize: 12.5, color: AppTheme.textMuted),
+              ),
+            ),
+          )
+        else
+          Column(
+            children: _clientRecentWorkouts.map((set) {
+              final date = set['session_date']?.toString() ?? '';
+              final exName = set['exercise_name']?.toString() ?? 'Exercise';
+              final muscle = set['muscle_group']?.toString() ?? '';
+              final setNum = set['set_number'] ?? 1;
+              final weight = set['weight_kg'];
+              final reps = set['reps'];
+              final duration = set['duration_secs'];
+              final isPr = set['is_pr'] == true;
+
+              return CustomCard(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        color: isPr ? const Color(0xFFFEF3C7) : AppTheme.surfaceGray,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Center(
+                        child: Text(
+                          isPr ? '🏆' : '$setNum',
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: isPr ? const Color(0xFFD97706) : AppTheme.textPrimary,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Text(
+                                exName,
+                                style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textPrimary),
+                              ),
+                              if (muscle.isNotEmpty) ...[
+                                const SizedBox(width: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.primaryLight,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    muscle,
+                                    style: GoogleFonts.inter(fontSize: 9.5, color: AppTheme.primary, fontWeight: FontWeight.w600),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                          Text(
+                            _formatDate(date),
+                            style: GoogleFonts.inter(fontSize: 10.5, color: AppTheme.textMuted),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Text(
+                      weight != null ? '$weight kg × ${reps ?? 0}' : '${duration ?? 0}s',
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: isPr ? const Color(0xFFD97706) : AppTheme.textPrimary,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+          ),
       ],
     );
   }
@@ -931,6 +1306,30 @@ class _ClientDetailsScreenState extends State<ClientDetailsScreen> {
                               final updatedMember = _currentMember.copyWith(extraFields: updatedExtra);
                               await repo.saveMember(updatedMember);
                             }
+
+                            // Sync directly to member_body_logs table
+                            if (SupabaseService.isInitialized && _currentMember.id.isNotEmpty) {
+                              try {
+                                final todayIso = DateFormat('yyyy-MM-dd').format(DateTime.now());
+                                final gymId = (staff != null && staff.gymId.isNotEmpty)
+                                    ? staff.gymId
+                                    : (_currentMember.extraFields['gym_id']?.toString() ?? '');
+                                if (gymId.isNotEmpty) {
+                                  await SupabaseService.client.from('member_body_logs').upsert({
+                                    'gym_id': gymId,
+                                    'member_id': _currentMember.id,
+                                    'logged_date': todayIso,
+                                    'weight_kg': newWeight,
+                                    'chest_cm': newChest != null ? (newChest * 2.54).roundToDouble() : null,
+                                    'waist_cm': newWaist != null ? (newWaist * 2.54).roundToDouble() : null,
+                                    'arms_cm': newBiceps != null ? (newBiceps * 2.54).roundToDouble() : null,
+                                    'notes': 'Recorded by Trainer',
+                                  }, onConflict: 'member_id, logged_date');
+                                }
+                              } catch (_) {}
+                            }
+
+                            await _loadClientFitnessData();
 
                             if (mounted) {
                               Navigator.pop(context);

@@ -848,10 +848,40 @@ class MemberAppViewModel extends ChangeNotifier {
         }
 
         final extra = memberData['extra_fields'] as Map<String, dynamic>? ?? {};
-        _weight = extra['weight'] ?? _weight;
-        _height = extra['height'] ?? _height;
-        _bodyFat = extra['body_fat'] ?? extra['bodyFat'] ?? _bodyFat;
-        _fitnessGoal = extra['fitness_goal'] ?? extra['fitnessGoal'] ?? _fitnessGoal;
+        if (extra['weight'] != null) {
+          final w = extra['weight'].toString();
+          _weight = w.endsWith('kg') ? w : '$w kg';
+        }
+        if (extra['height'] != null) {
+          final h = extra['height'].toString();
+          _height = h.endsWith('cm') ? h : '$h cm';
+        }
+        if (extra['body_fat'] != null || extra['bodyFat'] != null) {
+          final bf = (extra['body_fat'] ?? extra['bodyFat']).toString();
+          _bodyFat = bf.endsWith('%') ? bf : '$bf%';
+        }
+        if (extra['fitness_goal'] != null || extra['fitnessGoal'] != null) {
+          _fitnessGoal = (extra['fitness_goal'] ?? extra['fitnessGoal']).toString();
+        }
+
+        // Fetch latest weight and body fat from member_body_logs table
+        try {
+          final latestBodyLog = await SupabaseService.client
+              .from('member_body_logs')
+              .select('weight_kg, body_fat_pct')
+              .eq('member_id', _memberId)
+              .order('logged_date', ascending: false)
+              .limit(1)
+              .maybeSingle();
+          if (latestBodyLog != null) {
+            if (latestBodyLog['weight_kg'] != null) {
+              _weight = '${latestBodyLog['weight_kg']} kg';
+            }
+            if (latestBodyLog['body_fat_pct'] != null) {
+              _bodyFat = '${latestBodyLog['body_fat_pct']}%';
+            }
+          }
+        } catch (_) {}
 
         _pendingAmount = (memberData['pending_amount'] as num?)?.toDouble() ?? 0.0;
 

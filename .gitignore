@@ -49,6 +49,7 @@ app.*.map.json
 
 # Binary APKs and temporary scratch scripts
 *.apk
+*.zip
 scratch/
 supabase/.temp/
 

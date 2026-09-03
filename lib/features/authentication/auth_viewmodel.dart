@@ -629,7 +629,7 @@ class AuthViewModel extends ChangeNotifier {
       }
 
       await loadCurrentProfile();
-      return SupabaseService.client.auth.currentSession != null && _isLoggedIn;
+      return SupabaseService.client.auth.currentSession != null || _authService.currentUser != null;
     } on AuthException catch (ae) {
       print('signInWithGoogle AuthException: $ae');
       throw Exception('Google Sign-in failed (400): ${ae.message}');
@@ -733,6 +733,7 @@ class AuthViewModel extends ChangeNotifier {
 
   /// Syncs user profile state on boot
   Future<void> loadCurrentProfile() async {
+    final authUser = _authService.currentUser;
     var profile = await _authService.getVerifiedProfile();
     
     // Fallback for offline/mock mode
@@ -744,11 +745,26 @@ class AuthViewModel extends ChangeNotifier {
       
       final savedGymInfo = _storage.getGymInfo();
       profile = UserProfile(
-        id: 'mock_user_123',
-        email: savedGymInfo?['email'] ?? 'owner@gymos.com',
+        id: authUser?.id ?? 'mock_user_123',
+        email: authUser?.email ?? savedGymInfo?['email'] ?? 'owner@gymos.com',
         role: role,
         gymId: savedGymInfo != null ? (savedGymInfo['id'] ?? 'mock_gym_123') : null,
         setupCompleted: savedGymInfo != null,
+      );
+    } else if (profile == null && authUser != null) {
+      final roleStr = _selectedRole ?? _storage.getUserRole() ?? 'owner';
+      final role = roleStr == 'owner' 
+          ? UserRole.owner 
+          : (roleStr == 'staff' ? UserRole.staff : UserRole.member);
+
+      profile = UserProfile(
+        id: authUser.id,
+        email: authUser.email ?? '',
+        fullName: authUser.userMetadata?['full_name'] ?? authUser.userMetadata?['name'] ?? '',
+        photoUrl: authUser.userMetadata?['avatar_url'] ?? authUser.userMetadata?['picture'],
+        role: role,
+        gymId: null,
+        setupCompleted: false,
       );
     }
 
@@ -758,14 +774,19 @@ class AuthViewModel extends ChangeNotifier {
     }
     _staffRecord = null;
 
-    if (profile != null) {
+    if (profile != null || authUser != null) {
       _isLoggedIn = true;
       await _storage.setLoggedIn(true);
 
-      // Fetch associations
-      final allAssociations = await _authService.getUserGymAssociations(profile.id);
-      if (allAssociations != null) {
-        _userAssociations = allAssociations;
+      final uid = profile?.id ?? authUser?.id;
+      if (uid != null) {
+        // Fetch associations
+        final allAssociations = await _authService.getUserGymAssociations(uid);
+        if (allAssociations != null) {
+          _userAssociations = allAssociations;
+        } else {
+          _userAssociations = [];
+        }
       }
 
       if (_userAssociations.isNotEmpty) {
@@ -785,7 +806,14 @@ class AuthViewModel extends ChangeNotifier {
         final assoc = matchedAssoc ?? _userAssociations.first;
         _activeAssociation = assoc;
         _selectedRole = assoc.role.name;
-        _currentProfile = profile.copyWith(
+        final activeProf = profile ?? UserProfile(
+          id: uid!,
+          email: authUser?.email ?? '',
+          role: assoc.role,
+          gymId: assoc.gymId,
+          setupCompleted: assoc.setupCompleted,
+        );
+        _currentProfile = activeProf.copyWith(
           role: assoc.role,
           gymId: assoc.gymId,
           setupCompleted: assoc.setupCompleted,
@@ -797,7 +825,7 @@ class AuthViewModel extends ChangeNotifier {
             final res = await SupabaseService.client
                 .from('staff')
                 .select()
-                .eq('user_id', profile.id)
+                .eq('user_id', activeProf.id)
                 .eq('gym_id', assoc.gymId)
                 .maybeSingle();
             if (res != null) {
@@ -834,8 +862,8 @@ class AuthViewModel extends ChangeNotifier {
               'logo': gymData['logo_url'] ?? '',
               'logo_url': gymData['logo_url'] ?? '',
               'gym_code': gymData['gym_code'],
-              'owner': profile.email,
-              'email': gymData['email'] ?? profile.email,
+              'owner': activeProf.email,
+              'email': gymData['email'] ?? activeProf.email,
               'phone': gymData['phone_number'] ?? '',
               'address': gymData['address'] ?? '',
               'city': gymData['city'] ?? '',
@@ -882,7 +910,7 @@ class AuthViewModel extends ChangeNotifier {
             'id': assoc.gymId,
             'name': assoc.gymName ?? 'GYMOS',
             'gym_code': assoc.gymCode ?? 'MOCK1234',
-            'owner': profile.email,
+            'owner': activeProf.email,
           };
           _gymInfo = info;
           await _storage.setGymInfo(info);

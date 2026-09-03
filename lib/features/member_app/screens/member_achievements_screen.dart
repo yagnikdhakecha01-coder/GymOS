@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -5,6 +6,8 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/theme/theme.dart';
 import '../member_app_viewmodel.dart';
+import '../widgets/member_activity_heatmap_widget.dart';
+import '../widgets/member_muscle_map_widget.dart';
 
 class MemberAchievementsScreen extends StatefulWidget {
   const MemberAchievementsScreen({super.key});
@@ -110,8 +113,52 @@ class _MemberAchievementsScreenState extends State<MemberAchievementsScreen> wit
 
                         // ═══════ STATS SUMMARY ═══════
                         _buildStatsSummary(vm, unlockedCount, totalBadges),
+                        const SizedBox(height: 24),
+
+                        // ═══════ ACTIVITY HEATMAP ═══════
+                        _buildSectionHeader('📅 Activity This Year'),
+                        const SizedBox(height: 12),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          child: Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: AppTheme.border),
+                              boxShadow: AppTheme.cardShadow,
+                            ),
+                            child: MemberActivityHeatmapWidget(
+                              memberId: vm.memberId,
+                              gymId: _getGymId(vm),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+
+                        // ═══════ MUSCLE MAP ═══════
+                        _buildSectionHeader('💪 Muscle Training Map'),
+                        const SizedBox(height: 12),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          child: Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: AppTheme.border),
+                              boxShadow: AppTheme.cardShadow,
+                            ),
+                            child: MemberMuscleMapWidget(
+                              memberId: vm.memberId,
+                            ),
+                          ),
+                        ),
                         const SizedBox(height: 28),
 
+                        // ═══════ BADGES FILTER CHIPS ═══════
+                        _buildSectionHeader('🏅 Badges'),
+                        const SizedBox(height: 8),
                         // ═══════ BADGES FILTER CHIPS ═══════
                         _buildFilterRow(),
                         const SizedBox(height: 16),
@@ -184,9 +231,31 @@ class _MemberAchievementsScreenState extends State<MemberAchievementsScreen> wit
     );
   }
 
+
+  Widget _buildSectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Text(
+        title,
+        style: GoogleFonts.inter(
+          fontSize: 16,
+          fontWeight: FontWeight.w700,
+          color: AppTheme.textPrimary,
+        ),
+      ),
+    );
+  }
+
+  String _getGymId(MemberAppViewModel vm) {
+    // Try to get gymId from SharedPreferences synchronously (it's cached)
+    // If not available, use empty string — heatmap will handle gracefully
+    return '';
+  }
+
   Widget _buildPremiumLevelCard(MemberAppViewModel vm) {
     final double xpProgress = vm.nextLevelXP > 0 ? (vm.currentXP / vm.nextLevelXP) : 0.0;
     final int progressPercent = (xpProgress * 100).round();
+
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),

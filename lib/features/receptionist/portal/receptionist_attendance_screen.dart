@@ -96,12 +96,13 @@ class _ReceptionistAttendanceScreenState extends State<ReceptionistAttendanceScr
               child: Column(
                 children: [
                   GestureDetector(
-                    onTap: () {
-                      Navigator.push(
+                    onTap: () async {
+                      await Navigator.push(
                         context,
                         MaterialPageRoute(builder: (_) => const OwnerQRScannerScreen(isCheckIn: true)),
-                        _fetchTodayLogs();
-                        vm.fetchDashboardStats();
+                      );
+                      _fetchTodayLogs();
+                      vm.fetchDashboardStats();
                     },
                     child: Container(
                       height: 180,

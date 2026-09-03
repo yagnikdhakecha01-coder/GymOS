@@ -97,31 +97,40 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
           nextScreen = const MemberCodeScreen();
         }
       } else {
-        final profile = authVm.currentProfile!;
+        final profile = authVm.currentProfile;
         Widget targetScreen;
         bool shouldSync = false;
-        switch (profile.role) {
-          case UserRole.owner:
-            if (profile.setupCompleted) {
-              targetScreen = const MainNavigationHolder();
+        if (profile == null) {
+          final role = authVm.selectedRole ?? '';
+          if (role == 'owner') {
+            targetScreen = const FirstTimeSetupScreen();
+          } else {
+            targetScreen = const MemberCodeScreen();
+          }
+        } else {
+          switch (profile.role) {
+            case UserRole.owner:
+              if (profile.setupCompleted) {
+                targetScreen = const MainNavigationHolder();
+                shouldSync = true;
+              } else {
+                targetScreen = const FirstTimeSetupScreen();
+              }
+              break;
+            case UserRole.staff:
+              final staffRole = authVm.staffRecord?.role.toLowerCase() ?? '';
+              if (staffRole.contains('reception')) {
+                targetScreen = const ReceptionistShell();
+              } else {
+                targetScreen = const StaffShell();
+              }
               shouldSync = true;
-            } else {
-              targetScreen = const FirstTimeSetupScreen();
-            }
-            break;
-          case UserRole.staff:
-            final staffRole = authVm.staffRecord?.role.toLowerCase() ?? '';
-            if (staffRole.contains('reception')) {
-              targetScreen = const ReceptionistShell();
-            } else {
-              targetScreen = const StaffShell();
-            }
-            shouldSync = true;
-            break;
-          case UserRole.member:
-            targetScreen = const MemberShell();
-            shouldSync = true;
-            break;
+              break;
+            case UserRole.member:
+              targetScreen = const MemberShell();
+              shouldSync = true;
+              break;
+          }
         }
         nextScreen = targetScreen;
       }

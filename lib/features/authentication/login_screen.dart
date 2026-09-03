@@ -93,7 +93,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _navigateToRoleDashboard(AuthViewModel authVm) async {
     if (!mounted) return;
 
-    if (!authVm.isLoggedIn ||
+    if (!authVm.isLoggedIn &&
         SupabaseService.client.auth.currentSession == null) {
       return;
     }
@@ -117,43 +117,51 @@ class _LoginScreenState extends State<LoginScreen> {
         targetScreen = const MemberCodeScreen();
       }
     } else {
-      final profile = authVm.currentProfile!;
+      final profile = authVm.currentProfile;
 
-      if (profile.role == UserRole.staff || profile.role == UserRole.member) {
-        final unlinked = await authVm.forceLogoutIfUnlinked();
-        if (unlinked) {
-          if (!mounted) return;
-          Navigator.pushAndRemoveUntil(
-            context,
-            AppRouter.scaleRoute(RoleSelectionScreen()),
-            (route) => false,
-          );
-          return;
+      if (profile == null) {
+        if (authVm.selectedRole == 'owner') {
+          targetScreen = const FirstTimeSetupScreen();
+        } else {
+          targetScreen = const MemberCodeScreen();
         }
-      }
+      } else {
+        if (profile.role == UserRole.staff || profile.role == UserRole.member) {
+          final unlinked = await authVm.forceLogoutIfUnlinked();
+          if (unlinked) {
+            if (!mounted) return;
+            Navigator.pushAndRemoveUntil(
+              context,
+              AppRouter.scaleRoute(RoleSelectionScreen()),
+              (route) => false,
+            );
+            return;
+          }
+        }
 
-      switch (profile.role) {
-        case UserRole.owner:
-          if (profile.setupCompleted) {
-            targetScreen = const MainNavigationHolder();
+        switch (profile.role) {
+          case UserRole.owner:
+            if (profile.setupCompleted) {
+              targetScreen = const MainNavigationHolder();
+              shouldSync = true;
+            } else {
+              targetScreen = const FirstTimeSetupScreen();
+            }
+            break;
+          case UserRole.staff:
+            final staffRole = authVm.staffRecord?.role.toLowerCase() ?? '';
+            if (staffRole.contains('reception')) {
+              targetScreen = const ReceptionistShell();
+            } else {
+              targetScreen = const StaffShell();
+            }
             shouldSync = true;
-          } else {
-            targetScreen = const FirstTimeSetupScreen();
-          }
-          break;
-        case UserRole.staff:
-          final staffRole = authVm.staffRecord?.role.toLowerCase() ?? '';
-          if (staffRole.contains('reception')) {
-            targetScreen = const ReceptionistShell();
-          } else {
-            targetScreen = const StaffShell();
-          }
-          shouldSync = true;
-          break;
-        case UserRole.member:
-          targetScreen = const MemberShell();
-          shouldSync = true;
-          break;
+            break;
+          case UserRole.member:
+            targetScreen = const MemberShell();
+            shouldSync = true;
+            break;
+        }
       }
     }
 
@@ -206,10 +214,10 @@ class _LoginScreenState extends State<LoginScreen> {
                     setState(() => _isLoading = true);
                     try {
                       final authVm = Provider.of<AuthViewModel>(context, listen: false);
+                      await _applySelectedRole(authVm);
                       final signedIn = await authVm.signInWithGoogle();
                       if (!signedIn || !mounted) return;
 
-                      await _applySelectedRole(authVm);
                       if (!kIsWeb) {
                         await _navigateToRoleDashboard(authVm);
                       }

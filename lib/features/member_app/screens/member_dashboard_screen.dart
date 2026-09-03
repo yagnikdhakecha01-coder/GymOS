@@ -1,13 +1,18 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/theme/theme.dart';
 import '../member_app_viewmodel.dart';
 import 'member_training_screen.dart';
 import 'member_diet_screen.dart';
-
+import 'member_body_stats_screen.dart';
+import 'member_exercise_library_screen.dart';
+import 'member_scan_qr_screen.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'member_notifications_screen.dart';
 import '../../dashboard/gym_switcher_bottom_sheet.dart';
 
@@ -485,6 +490,151 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen>
                       ),
                     ),
                   )),
+                  const SizedBox(height: 16),
+
+                  // ═══════ QUICK ACCESS — Body Stats & Exercise Library ═══════
+                  _animated(3, Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: IntrinsicHeight(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Expanded(
+                            child: Material(
+                              color: Colors.transparent,
+                              borderRadius: BorderRadius.circular(18),
+                              child: InkWell(
+                                onTap: () async {
+                                  final prefs = await SharedPreferences.getInstance();
+                                  final gymInfoStr = prefs.getString('gymos_gym_info');
+                                  String gymId = '';
+                                  if (gymInfoStr != null) {
+                                    try {
+                                      final gi = (jsonDecode(gymInfoStr) as Map<String, dynamic>);
+                                      gymId = gi['id'] ?? '';
+                                    } catch (_) {}
+                                  }
+                                  if (context.mounted) {
+                                    Navigator.push(context, MaterialPageRoute(
+                                      builder: (_) => MemberBodyStatsScreen(
+                                        memberId: vm.memberId,
+                                        gymId: gymId,
+                                      ),
+                                    ));
+                                  }
+                                },
+                                borderRadius: BorderRadius.circular(18),
+                                child: Container(
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    gradient: const LinearGradient(
+                                      colors: [Color(0xFF7C3AED), Color(0xFF6D28D9)],
+                                      begin: Alignment.topLeft, end: Alignment.bottomRight,
+                                    ),
+                                    borderRadius: BorderRadius.circular(18),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: const Color(0xFF7C3AED).withValues(alpha: 0.25),
+                                        blurRadius: 12,
+                                        offset: const Offset(0, 4),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.all(8),
+                                            decoration: BoxDecoration(
+                                              color: Colors.white.withValues(alpha: 0.2),
+                                              borderRadius: BorderRadius.circular(10),
+                                            ),
+                                            child: const Text('⚖️', style: TextStyle(fontSize: 20)),
+                                          ),
+                                          const Icon(Icons.arrow_forward_rounded, color: Colors.white70, size: 16),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 14),
+                                      Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text('Body Stats', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
+                                          const SizedBox(height: 3),
+                                          Text('Track weight & goals', style: GoogleFonts.inter(fontSize: 11, color: Colors.white.withValues(alpha: 0.85))),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Material(
+                              color: Colors.transparent,
+                              borderRadius: BorderRadius.circular(18),
+                              child: InkWell(
+                                onTap: () => Navigator.push(context, MaterialPageRoute(
+                                  builder: (_) => const MemberExerciseLibraryScreen())),
+                                borderRadius: BorderRadius.circular(18),
+                                child: Container(
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    gradient: const LinearGradient(
+                                      colors: [Color(0xFF0284C7), Color(0xFF0369A1)],
+                                      begin: Alignment.topLeft, end: Alignment.bottomRight,
+                                    ),
+                                    borderRadius: BorderRadius.circular(18),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: const Color(0xFF0284C7).withValues(alpha: 0.25),
+                                        blurRadius: 12,
+                                        offset: const Offset(0, 4),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.all(8),
+                                            decoration: BoxDecoration(
+                                              color: Colors.white.withValues(alpha: 0.2),
+                                              borderRadius: BorderRadius.circular(10),
+                                            ),
+                                            child: const Text('📚', style: TextStyle(fontSize: 20)),
+                                          ),
+                                          const Icon(Icons.arrow_forward_rounded, color: Colors.white70, size: 16),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 14),
+                                      Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text('Exercises', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
+                                          const SizedBox(height: 3),
+                                          Text('50+ workout library', style: GoogleFonts.inter(fontSize: 11, color: Colors.white.withValues(alpha: 0.85))),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )),
                   const SizedBox(height: 20),
 
                   // ═══════ TODAY'S DIET CARD ═══════
@@ -674,8 +824,12 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen>
                         _buildQuickAction(Icons.fitness_center_rounded, 'Training', AppTheme.primary, () {
                           Navigator.push(context, MaterialPageRoute(builder: (_) => const MemberTrainingScreen()));
                         }),
-                        _buildQuickAction(Icons.qr_code_scanner_rounded, 'Scan QR', const Color(0xFF3B82F6), () {}),
-                        _buildQuickAction(Icons.share_rounded, 'Share', const Color(0xFFF59E0B), () {}),
+                        _buildQuickAction(Icons.qr_code_scanner_rounded, 'Scan QR', const Color(0xFF3B82F6), () {
+                          Navigator.push(context, MaterialPageRoute(builder: (_) => const MemberScanQRScreen()));
+                        }),
+                        _buildQuickAction(Icons.share_rounded, 'Share', const Color(0xFFF59E0B), () {
+                          _showShareSheet(context, vm);
+                        }),
                       ],
                     ),
                   )),
@@ -745,6 +899,97 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen>
           const SizedBox(height: 6),
           Text(label, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
         ],
+      ),
+    );
+  }
+
+  void _showShareSheet(BuildContext context, MemberAppViewModel vm) {
+    final gymName = vm.gymName.isNotEmpty ? vm.gymName : 'GYMOS';
+    final shareText = 'Join me at $gymName on GYMOS! Workout, track your daily progress, and smash your fitness goals together! 💪🔥';
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        padding: const EdgeInsets.all(24),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                width: 40, height: 4,
+                decoration: BoxDecoration(color: AppTheme.border, borderRadius: BorderRadius.circular(2)),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Share $gymName',
+              style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w800, color: AppTheme.textPrimary),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Invite workout partners or share your fitness journey!',
+              style: GoogleFonts.inter(fontSize: 12.5, color: AppTheme.textSecondary),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 20),
+
+            // Share via WhatsApp
+            ElevatedButton.icon(
+              icon: const Text('💬', style: TextStyle(fontSize: 18)),
+              label: Text('Share on WhatsApp', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF25D366),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+              onPressed: () async {
+                Navigator.pop(context);
+                final uri = Uri.parse('whatsapp://send?text=${Uri.encodeComponent(shareText)}');
+                if (await canLaunchUrl(uri)) {
+                  await launchUrl(uri);
+                } else {
+                  await Clipboard.setData(ClipboardData(text: shareText));
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('📋 Copied message to clipboard!'), backgroundColor: AppTheme.primary),
+                    );
+                  }
+                }
+              },
+            ),
+            const SizedBox(height: 10),
+
+            // Copy Message Link
+            OutlinedButton.icon(
+              icon: const Icon(Icons.copy_rounded, size: 18),
+              label: Text('Copy Referral Message', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700)),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppTheme.primary,
+                side: const BorderSide(color: AppTheme.primary),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+              onPressed: () async {
+                Navigator.pop(context);
+                await Clipboard.setData(ClipboardData(text: shareText));
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('✅ Message copied to clipboard!'), backgroundColor: AppTheme.success),
+                  );
+                }
+              },
+            ),
+            const SizedBox(height: 10),
+          ],
+        ),
       ),
     );
   }
