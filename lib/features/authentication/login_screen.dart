@@ -350,38 +350,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   isLoading: _isLoading,
                   onPressed: _handleLogin,
                 ),
-                const SizedBox(height: 16),
-
-                Row(
-                  children: [
-                    const Expanded(child: Divider(color: AppTheme.border)),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Text('OR', style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textMuted)),
-                    ),
-                    const Expanded(child: Divider(color: AppTheme.border)),
-                  ],
-                ),
-                const SizedBox(height: 16),
-
-                // Apple Sign In
-                OutlinedButton(
-                  onPressed: () {},
-                  style: OutlinedButton.styleFrom(
-                    backgroundColor: AppTheme.textPrimary,
-                    side: BorderSide.none,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusInput)),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.apple_rounded, color: Colors.white, size: 22),
-                      const SizedBox(width: 10),
-                      Text('Sign in with Apple', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w500, color: Colors.white)),
-                    ],
-                  ),
-                ),
                 const SizedBox(height: 24),
 
                 if (widget.role == 'Gym Owner')

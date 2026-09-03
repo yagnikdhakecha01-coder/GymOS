@@ -240,19 +240,34 @@ class _AboutGymOSScreenState extends State<AboutGymOSScreen> {
                     ListTile(
                       title: Text('Terms of Service', style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.w600)),
                       trailing: const Icon(Icons.open_in_new_rounded, size: 16, color: AppTheme.textMuted),
-                      onTap: () {},
+                      onTap: () async {
+                        final uri = Uri.parse('https://gymos.tech/terms-of-service.html');
+                        if (await canLaunchUrl(uri)) {
+                          await launchUrl(uri, mode: LaunchMode.externalApplication);
+                        }
+                      },
                     ),
                     const Divider(height: 1),
                     ListTile(
                       title: Text('Privacy Policy', style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.w600)),
                       trailing: const Icon(Icons.open_in_new_rounded, size: 16, color: AppTheme.textMuted),
-                      onTap: () {},
+                      onTap: () async {
+                        final uri = Uri.parse('https://gymos.tech/privacy-policy.html');
+                        if (await canLaunchUrl(uri)) {
+                          await launchUrl(uri, mode: LaunchMode.externalApplication);
+                        }
+                      },
                     ),
                     const Divider(height: 1),
                     ListTile(
                       title: Text('Licensing Agreement', style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.w600)),
                       trailing: const Icon(Icons.open_in_new_rounded, size: 16, color: AppTheme.textMuted),
-                      onTap: () {},
+                      onTap: () async {
+                        final uri = Uri.parse('https://gymos.tech/licensing-agreement.html');
+                        if (await canLaunchUrl(uri)) {
+                          await launchUrl(uri, mode: LaunchMode.externalApplication);
+                        }
+                      },
                     ),
                   ],
                 ),

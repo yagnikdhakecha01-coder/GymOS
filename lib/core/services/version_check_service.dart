@@ -121,14 +121,16 @@ class VersionCheckService {
         final String latestV = response['version_name'] ?? AppConfig.appVersion;
         final int latestBuild = response['build_number'] ?? AppConfig.buildNumber;
         final String minSupported = response['min_supported_version'] ?? AppConfig.appVersion;
-        final String dlUrl = response['download_url'] ?? '';
+        final String rawDl = (response['download_url'] as String? ?? '').trim();
+        final String dlUrl = rawDl.isNotEmpty ? rawDl : 'https://gymos.tech/';
         final String notes = response['release_notes'] ?? '';
         final bool isForce = response['is_force_update'] ?? false;
         final bool isOptional = response['is_optional_update'] ?? false;
 
         // Version comparisons
-        final hasNewerVersion = compareVersions(AppConfig.appVersion, latestV) < 0;
-        final isBelowMin = compareVersions(AppConfig.appVersion, minSupported) < 0;
+        final versionCmp = compareVersions(AppConfig.appVersion, latestV);
+        final bool hasNewerVersion = versionCmp < 0 || (versionCmp == 0 && latestBuild > AppConfig.buildNumber);
+        final bool isBelowMin = compareVersions(AppConfig.appVersion, minSupported) < 0;
 
         final result = VersionCheckResult(
           latestVersion: latestV,

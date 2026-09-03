@@ -120,12 +120,16 @@ class _MemberExerciseLibraryScreenState
             .select()
             .order('name');
         if (res is List && res.isNotEmpty && mounted) {
-          // Merge gym-specific custom exercises if any
+          bool updated = false;
           for (final row in res) {
-            final exists =
-                _allExercises.any((e) => e['id'].toString() == row['id'].toString());
+            final rowName =
+                (row['name'] as String? ?? '').trim().toLowerCase();
+            if (rowName.isEmpty) continue;
+            // Do not prepend if exercise already exists in openGym dataset
+            final exists = _allExercises.any((e) =>
+                (e['n'] as String? ?? '').trim().toLowerCase() == rowName);
             if (!exists) {
-              _allExercises.insert(0, {
+              _allExercises.add({
                 'id': row['id'].toString(),
                 'n': row['name'] ?? '',
                 'bp': row['muscle_group'] ?? 'Chest',
@@ -138,9 +142,10 @@ class _MemberExerciseLibraryScreenState
                 'img': '',
                 'gif': '',
               });
+              updated = true;
             }
           }
-          if (mounted) {
+          if (updated && mounted) {
             setState(() => _applyFilters());
           }
         }
@@ -417,144 +422,258 @@ class _MemberExerciseLibraryScreenState
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // ── Search Bar ──
+          // ── Search & Dual Filter Header Panel ──
           Container(
-            color: Colors.white,
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
-            child: TextField(
-              controller: _searchCtrl,
-              onChanged: (v) {
-                _searchQuery = v;
-                _applyFilters();
-              },
-              style: GoogleFonts.inter(
-                  fontSize: 14, color: AppTheme.textPrimary),
-              decoration: InputDecoration(
-                hintText: 'Search 1300+ exercises, muscle, equipment...',
-                hintStyle: GoogleFonts.inter(
-                    fontSize: 13.5, color: const Color(0xFF94A3B8)),
-                prefixIcon: const Icon(Icons.search_rounded,
-                    color: Color(0xFF94A3B8), size: 20),
-                suffixIcon: _searchQuery.isNotEmpty
-                    ? GestureDetector(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 1. Search Bar
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+                  child: TextField(
+                    controller: _searchCtrl,
+                    onChanged: (v) {
+                      _searchQuery = v;
+                      _applyFilters();
+                    },
+                    style: GoogleFonts.inter(
+                        fontSize: 14, color: AppTheme.textPrimary),
+                    decoration: InputDecoration(
+                      hintText: 'Search 1300+ exercises, muscles, equipment...',
+                      hintStyle: GoogleFonts.inter(
+                          fontSize: 13.5, color: const Color(0xFF94A3B8)),
+                      prefixIcon: const Icon(Icons.search_rounded,
+                          color: Color(0xFF94A3B8), size: 20),
+                      suffixIcon: _searchQuery.isNotEmpty
+                          ? GestureDetector(
+                              onTap: () {
+                                _searchCtrl.clear();
+                                _searchQuery = '';
+                                _applyFilters();
+                              },
+                              child: const Icon(Icons.close_rounded,
+                                  color: Color(0xFF94A3B8), size: 18),
+                            )
+                          : null,
+                      filled: true,
+                      fillColor: const Color(0xFFF8FAFC),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: const BorderSide(color: AppTheme.primary, width: 1.5),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                ),
+
+                // 2. Row 1: Target / Body Part Chips
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 18),
+                  child: Row(
+                    children: [
+                      Text(
+                        'BODY PART',
+                        style: GoogleFonts.inter(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.8,
+                          color: const Color(0xFF94A3B8),
+                        ),
+                      ),
+                      if (_selectedBodyPart != 'All') ...[
+                        const SizedBox(width: 8),
+                        GestureDetector(
+                          onTap: () {
+                            setState(() => _selectedBodyPart = 'All');
+                            _applyFilters();
+                          },
+                          child: Text(
+                            'Reset',
+                            style: GoogleFonts.inter(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w700,
+                              color: AppTheme.primary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 6),
+                SizedBox(
+                  height: 38,
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    itemCount: _bodyParts.length,
+                    itemBuilder: (context, i) {
+                      final bp = _bodyParts[i];
+                      final isSelected = _selectedBodyPart == bp;
+                      return GestureDetector(
                         onTap: () {
-                          _searchCtrl.clear();
-                          _searchQuery = '';
+                          setState(() => _selectedBodyPart = bp);
                           _applyFilters();
                         },
-                        child: const Icon(Icons.close_rounded,
-                            color: Color(0xFF94A3B8), size: 18),
-                      )
-                    : null,
-                filled: true,
-                fillColor: const Color(0xFFF1F5F9),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide.none,
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          margin: const EdgeInsets.only(right: 8),
+                          padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
+                          decoration: BoxDecoration(
+                            gradient: isSelected
+                                ? const LinearGradient(
+                                    colors: [Color(0xFF7C3AED), Color(0xFF6D28D9)],
+                                  )
+                                : null,
+                            color: isSelected ? null : const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: isSelected
+                                  ? Colors.transparent
+                                  : const Color(0xFFE2E8F0),
+                              width: 1,
+                            ),
+                            boxShadow: isSelected
+                                ? [
+                                    BoxShadow(
+                                      color: const Color(0xFF7C3AED).withValues(alpha: 0.3),
+                                      blurRadius: 8,
+                                      offset: const Offset(0, 3),
+                                    )
+                                  ]
+                                : null,
+                          ),
+                          child: Center(
+                            child: Text(
+                              bp,
+                              style: GoogleFonts.inter(
+                                fontSize: 12.5,
+                                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                                color: isSelected ? Colors.white : const Color(0xFF334155),
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
                 ),
-                contentPadding: const EdgeInsets.symmetric(vertical: 12),
-              ),
-            ),
-          ),
 
-          // ── Filter Row 1: Target / Body Part Chips ──
-          Container(
-            color: Colors.white,
-            height: 42,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: _bodyParts.length,
-              itemBuilder: (context, i) {
-                final bp = _bodyParts[i];
-                final isSelected = _selectedBodyPart == bp;
-                return GestureDetector(
-                  onTap: () {
-                    setState(() => _selectedBodyPart = bp);
-                    _applyFilters();
-                  },
-                  child: Container(
-                    margin: const EdgeInsets.only(right: 8, bottom: 4),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? AppTheme.primary
-                          : const Color(0xFFF1F5F9),
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: isSelected
-                          ? [
-                              BoxShadow(
-                                color: AppTheme.primary.withValues(alpha: 0.25),
-                                blurRadius: 6,
-                                offset: const Offset(0, 2),
-                              )
-                            ]
-                          : null,
-                    ),
-                    child: Text(
-                      bp,
-                      style: GoogleFonts.inter(
-                        fontSize: 12.5,
-                        fontWeight:
-                            isSelected ? FontWeight.w700 : FontWeight.w500,
-                        color: isSelected
-                            ? Colors.white
-                            : const Color(0xFF475569),
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
+                const SizedBox(height: 12),
 
-          // ── Filter Row 2: Equipment Chips ──
-          Container(
-            color: Colors.white,
-            height: 44,
-            padding: const EdgeInsets.only(bottom: 8),
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: _equipments.length,
-              itemBuilder: (context, i) {
-                final eq = _equipments[i];
-                final isSelected = _selectedEquipment == eq;
-                return GestureDetector(
-                  onTap: () {
-                    setState(() => _selectedEquipment = eq);
-                    _applyFilters();
-                  },
-                  child: Container(
-                    margin: const EdgeInsets.only(right: 8),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? const Color(0xFF10B981)
-                          : Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: isSelected
-                            ? const Color(0xFF10B981)
-                            : const Color(0xFFE2E8F0),
+                // 3. Row 2: Equipment Chips
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 18),
+                  child: Row(
+                    children: [
+                      Text(
+                        'EQUIPMENT',
+                        style: GoogleFonts.inter(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.8,
+                          color: const Color(0xFF94A3B8),
+                        ),
                       ),
-                    ),
-                    child: Text(
-                      eq,
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        fontWeight:
-                            isSelected ? FontWeight.w700 : FontWeight.w500,
-                        color: isSelected
-                            ? Colors.white
-                            : const Color(0xFF64748B),
-                      ),
-                    ),
+                      if (_selectedEquipment != 'Any equipment') ...[
+                        const SizedBox(width: 8),
+                        GestureDetector(
+                          onTap: () {
+                            setState(() => _selectedEquipment = 'Any equipment');
+                            _applyFilters();
+                          },
+                          child: Text(
+                            'Reset',
+                            style: GoogleFonts.inter(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w700,
+                              color: AppTheme.primary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
-                );
-              },
+                ),
+                const SizedBox(height: 6),
+                SizedBox(
+                  height: 38,
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    itemCount: _equipments.length,
+                    itemBuilder: (context, i) {
+                      final eq = _equipments[i];
+                      final isSelected = _selectedEquipment == eq;
+                      return GestureDetector(
+                        onTap: () {
+                          setState(() => _selectedEquipment = eq);
+                          _applyFilters();
+                        },
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          margin: const EdgeInsets.only(right: 8),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          decoration: BoxDecoration(
+                            gradient: isSelected
+                                ? const LinearGradient(
+                                    colors: [Color(0xFF0F172A), Color(0xFF1E293B)],
+                                  )
+                                : null,
+                            color: isSelected ? null : const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: isSelected
+                                  ? Colors.transparent
+                                  : const Color(0xFFE2E8F0),
+                              width: 1,
+                            ),
+                            boxShadow: isSelected
+                                ? [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(alpha: 0.2),
+                                      blurRadius: 6,
+                                      offset: const Offset(0, 2),
+                                    )
+                                  ]
+                                : null,
+                          ),
+                          child: Center(
+                            child: Text(
+                              eq,
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                                color: isSelected ? Colors.white : const Color(0xFF64748B),
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 14),
+              ],
             ),
           ),
 
@@ -711,16 +830,20 @@ class _MemberExerciseLibraryScreenState
                                                 );
                                               },
                                               errorBuilder:
-                                                  (_, __, ___) => const Center(
-                                                child: Text('🏋️',
-                                                    style: TextStyle(
-                                                        fontSize: 24)),
+                                                  (_, __, ___) => Center(
+                                                child: Icon(
+                                                  Icons.fitness_center_rounded,
+                                                  color: AppTheme.primary.withValues(alpha: 0.5),
+                                                  size: 24,
+                                                ),
                                               ),
                                             )
-                                          : const Center(
-                                              child: Text('🏋️',
-                                                  style: TextStyle(
-                                                      fontSize: 24)),
+                                          : Center(
+                                              child: Icon(
+                                                Icons.fitness_center_rounded,
+                                                color: AppTheme.primary.withValues(alpha: 0.5),
+                                                size: 24,
+                                              ),
                                             ),
                                     ),
                                   ),

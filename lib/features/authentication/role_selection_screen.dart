@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme/theme.dart';
 import '../../core/navigation/app_router.dart';
 import 'login_screen.dart';
@@ -122,10 +123,48 @@ class RoleSelectionScreen extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 12),
-              Text(
-                'By continuing you agree to our Terms & Privacy Policy',
-                style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted),
-                textAlign: TextAlign.center,
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    'By continuing you agree to our ',
+                    style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted),
+                  ),
+                  GestureDetector(
+                    onTap: () => launchUrl(
+                      Uri.parse('https://gymos.tech/terms-of-service.html'),
+                      mode: LaunchMode.externalApplication,
+                    ),
+                    child: Text(
+                      'Terms',
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        color: AppTheme.primary,
+                        fontWeight: FontWeight.w600,
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    ' & ',
+                    style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted),
+                  ),
+                  GestureDetector(
+                    onTap: () => launchUrl(
+                      Uri.parse('https://gymos.tech/privacy-policy.html'),
+                      mode: LaunchMode.externalApplication,
+                    ),
+                    child: Text(
+                      'Privacy Policy',
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        color: AppTheme.primary,
+                        fontWeight: FontWeight.w600,
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 16),
             ],
