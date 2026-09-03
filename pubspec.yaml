@@ -41,6 +41,7 @@ flutter:
     - assets/images/app_icon_background.png
     - assets/images/member/
     - assets/images/role/
+    - assets/data/
     - .env
 
 flutter_launcher_icons:

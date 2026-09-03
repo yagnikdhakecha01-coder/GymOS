@@ -1,15 +1,14 @@
 import 'dart:convert';
-import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/theme/theme.dart';
 import '../../../core/services/supabase_service.dart';
 
 // ─────────────────────────────────────────────────────────────
-// Exercise Library Screen
-// Searchable, filterable list of all exercises (global + gym-custom)
-// Offline-first: caches exercise list in SharedPreferences
+// GymOS Exercise Library Screen
+// Powered by openGym & ExerciseDB Dataset (1,324 exercises with animations)
 // ─────────────────────────────────────────────────────────────
 
 class MemberExerciseLibraryScreen extends StatefulWidget {
@@ -22,32 +21,52 @@ class MemberExerciseLibraryScreen extends StatefulWidget {
 
 class _MemberExerciseLibraryScreenState
     extends State<MemberExerciseLibraryScreen> {
-  List<Map<String, dynamic>> _exercises = [];
+  List<Map<String, dynamic>> _allExercises = [];
   List<Map<String, dynamic>> _filtered = [];
   String _searchQuery = '';
-  String _selectedMuscle = 'All';
+  String _selectedBodyPart = 'All';
+  String _selectedEquipment = 'Any equipment';
   bool _isLoading = true;
   final TextEditingController _searchCtrl = TextEditingController();
 
-  static const List<String> _muscles = [
-    'All', 'Chest', 'Back', 'Legs', 'Shoulders', 'Arms', 'Core', 'Cardio',
+  static const String _imgBase =
+      'https://cdn.jsdelivr.net/gh/hasaneyldrm/exercises-dataset@7455efae41b330c265e7cd4b78dfa848e7ce5ebd/images/';
+  static const String _gifBase =
+      'https://cdn.jsdelivr.net/gh/hasaneyldrm/exercises-dataset@7455efae41b330c265e7cd4b78dfa848e7ce5ebd/videos/';
+
+  static const List<String> _bodyParts = [
+    'All',
+    'Chest',
+    'Back',
+    'Upper Legs',
+    'Lower Legs',
+    'Upper Arms',
+    'Lower Arms',
+    'Shoulders',
+    'Waist',
+    'Cardio',
+    'Neck',
   ];
 
-  static const Map<String, Color> _muscleColors = {
-    'Chest': Color(0xFFEF4444),
-    'Back': Color(0xFF3B82F6),
-    'Legs': Color(0xFF10B981),
-    'Shoulders': Color(0xFFF59E0B),
-    'Arms': Color(0xFF8B5CF6),
-    'Core': Color(0xFFEC4899),
-    'Cardio': Color(0xFF06B6D4),
-  };
+  static const List<String> _equipments = [
+    'Any equipment',
+    'Body Weight',
+    'Dumbbell',
+    'Barbell',
+    'Cable',
+    'Leverage Machine',
+    'Band',
+    'Kettlebell',
+    'Medicine Ball',
+    'Stability Ball',
+    'Ez Barbell',
+    'Smith Machine',
+    'Rope',
+  ];
 
   @override
   void initState() {
     super.initState();
-    _exercises = List<Map<String, dynamic>>.from(_defaultExercises);
-    _applyFilters();
     _loadExercises();
   }
 
@@ -60,615 +79,362 @@ class _MemberExerciseLibraryScreenState
   Future<void> _loadExercises() async {
     final prefs = await SharedPreferences.getInstance();
 
-    // 1. Load from cache for instant display
-    final cached = prefs.getString('gymos_exercises_cache');
-    if (cached != null) {
-      try {
-        final list = (jsonDecode(cached) as List)
-            .map((e) => Map<String, dynamic>.from(e as Map))
-            .toList();
-        if (list.isNotEmpty && mounted) {
-          setState(() {
-            _exercises = list;
-            _applyFilters();
-            _isLoading = false;
-          });
-        }
-      } catch (_) {}
-    } else {
+    try {
+      // 1. Load full 1,324 openGym exercise database from bundled asset
+      final jsonStr =
+          await rootBundle.loadString('assets/data/exercises.json');
+      final List rawList = jsonDecode(jsonStr);
+      final List<Map<String, dynamic>> exercises = rawList
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+
+      // 2. Load any custom exercises created by user/gym
+      final customStr = prefs.getString('gymos_custom_exercises');
+      if (customStr != null) {
+        try {
+          final List customList = jsonDecode(customStr);
+          for (final c in customList.reversed) {
+            exercises.insert(0, Map<String, dynamic>.from(c as Map));
+          }
+        } catch (_) {}
+      }
+
       if (mounted) {
         setState(() {
-          _exercises = List<Map<String, dynamic>>.from(_defaultExercises);
-          _applyFilters();
+          _allExercises = exercises;
           _isLoading = false;
+          _applyFilters();
         });
       }
-    }
-
-    // 2. Fetch from Supabase
-    if (!SupabaseService.isInitialized) {
-      if (mounted) setState(() => _isLoading = false);
-      return;
-    }
-
-    try {
-      final result = await SupabaseService.client
-          .from('exercises')
-          .select()
-          .order('muscle_group')
-          .order('name');
-
-      if (result is List && result.isNotEmpty) {
-        final exercises = result
-            .map((e) => Map<String, dynamic>.from(e as Map))
-            .toList();
-
-        await prefs.setString('gymos_exercises_cache', jsonEncode(exercises));
-
-        if (mounted) {
-          setState(() {
-            _exercises = exercises;
-            _applyFilters();
-            _isLoading = false;
-          });
-        }
-      } else {
-        if (mounted) setState(() => _isLoading = false);
-      }
     } catch (e) {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+
+    // 3. Background sync custom exercises from Supabase if online
+    if (SupabaseService.isInitialized) {
+      try {
+        final res = await SupabaseService.client
+            .from('exercises')
+            .select()
+            .order('name');
+        if (res is List && res.isNotEmpty && mounted) {
+          // Merge gym-specific custom exercises if any
+          for (final row in res) {
+            final exists =
+                _allExercises.any((e) => e['id'].toString() == row['id'].toString());
+            if (!exists) {
+              _allExercises.insert(0, {
+                'id': row['id'].toString(),
+                'n': row['name'] ?? '',
+                'bp': row['muscle_group'] ?? 'Chest',
+                'eq': row['equipment'] ?? 'Dumbbell',
+                'tg': row['muscle_group'] ?? '',
+                'sm': row['secondary_muscles'] ?? [],
+                'st': [row['description'] ?? '', row['tips'] ?? '']
+                    .where((s) => (s as String).isNotEmpty)
+                    .toList(),
+                'img': '',
+                'gif': '',
+              });
+            }
+          }
+          if (mounted) {
+            setState(() => _applyFilters());
+          }
+        }
+      } catch (_) {}
     }
   }
 
   void _applyFilters() {
+    final q = _searchQuery.trim().toLowerCase();
+    final bp = _selectedBodyPart.toLowerCase();
+    final eq = _selectedEquipment.toLowerCase();
+
     setState(() {
-      _filtered = _exercises.where((ex) {
-        final muscle = (ex['muscle_group'] as String? ?? '').trim();
-        final matchMuscle = _selectedMuscle == 'All' ||
-            muscle.toLowerCase() == _selectedMuscle.toLowerCase();
-        final name = (ex['name'] as String? ?? '').toLowerCase();
-        final equipment = (ex['equipment'] as String? ?? '').toLowerCase();
-        final query = _searchQuery.trim().toLowerCase();
-        final matchSearch = query.isEmpty ||
-            name.contains(query) ||
-            muscle.toLowerCase().contains(query) ||
-            equipment.contains(query);
-        return matchMuscle && matchSearch;
+      _filtered = _allExercises.where((e) {
+        // Body part filter
+        if (bp != 'all') {
+          final itemBp = (e['bp'] as String? ?? '').toLowerCase();
+          final itemTg = (e['tg'] as String? ?? '').toLowerCase();
+          if (itemBp != bp && !itemTg.contains(bp) && !bp.contains(itemBp)) {
+            return false;
+          }
+        }
+
+        // Equipment filter
+        if (eq != 'any equipment') {
+          final itemEq = (e['eq'] as String? ?? '').toLowerCase();
+          if (!itemEq.contains(eq) && !eq.contains(itemEq)) {
+            return false;
+          }
+        }
+
+        // Search query
+        if (q.isNotEmpty) {
+          final name = (e['n'] as String? ?? '').toLowerCase();
+          final target = (e['tg'] as String? ?? '').toLowerCase();
+          final itemEq = (e['eq'] as String? ?? '').toLowerCase();
+          final itemBp = (e['bp'] as String? ?? '').toLowerCase();
+          return name.contains(q) ||
+              target.contains(q) ||
+              itemEq.contains(q) ||
+              itemBp.contains(q);
+        }
+
+        return true;
       }).toList();
     });
   }
 
-  static const List<Map<String, dynamic>> _defaultExercises = [
-    // ── Chest ──
-    {
-      'name': 'Barbell Bench Press',
-      'muscle_group': 'Chest',
-      'secondary_muscles': ['Triceps', 'Shoulders'],
-      'equipment': 'Barbell',
-      'category': 'Strength',
-      'description': 'The standard barbell flat bench press builds upper body pressing strength and chest mass.',
-      'tips': 'Plant feet firmly, retract shoulder blades, touch mid-chest with control.',
-      'is_timed': false,
-      'is_bodyweight': false,
-    },
-    {
-      'name': 'Incline Barbell Press',
-      'muscle_group': 'Chest',
-      'secondary_muscles': ['Shoulders', 'Triceps'],
-      'equipment': 'Barbell',
-      'category': 'Strength',
-      'description': 'Incline press on a 30-45 degree bench targeting clavicular upper chest fibers.',
-      'tips': 'Keep wrists straight, touch upper chest, don\'t flare elbows too wide.',
-      'is_timed': false,
-      'is_bodyweight': false,
-    },
-    {
-      'name': 'Incline Dumbbell Press',
-      'muscle_group': 'Chest',
-      'secondary_muscles': ['Shoulders', 'Triceps'],
-      'equipment': 'Dumbbells',
-      'category': 'Hypertrophy',
-      'description': 'Pressing dumbbells on an incline allows independent arm work and deep stretch.',
-      'tips': 'Lower with control to armpit level and press up in an arc.',
-      'is_timed': false,
-      'is_bodyweight': false,
-    },
-    {
-      'name': 'Dumbbell Fly',
-      'muscle_group': 'Chest',
-      'secondary_muscles': ['Shoulders'],
-      'equipment': 'Dumbbells',
-      'category': 'Isolation',
-      'description': 'Flat bench fly emphasizing full pectoral stretch and contraction.',
-      'tips': 'Maintain slight bend in elbows throughout, imagine hugging a large tree.',
-      'is_timed': false,
-      'is_bodyweight': false,
-    },
-    {
-      'name': 'Cable Crossover',
-      'muscle_group': 'Chest',
-      'secondary_muscles': ['Shoulders'],
-      'equipment': 'Cable Machine',
-      'category': 'Isolation',
-      'description': 'Standing cable fly providing continuous tension across the chest.',
-      'tips': 'Squeeze inner chest at crossover, control eccentric phase.',
-      'is_timed': false,
-      'is_bodyweight': false,
-    },
-    {
-      'name': 'Push-Up',
-      'muscle_group': 'Chest',
-      'secondary_muscles': ['Triceps', 'Core'],
-      'equipment': 'Bodyweight',
-      'category': 'Hypertrophy',
-      'description': 'Foundational bodyweight pushing exercise building chest and core stability.',
-      'tips': 'Maintain rigid plank posture, lower until chest is an inch from floor.',
-      'is_timed': false,
-      'is_bodyweight': true,
-    },
-    {
-      'name': 'Dips (Chest Focus)',
-      'muscle_group': 'Chest',
-      'secondary_muscles': ['Triceps', 'Shoulders'],
-      'equipment': 'Bodyweight',
-      'category': 'Hypertrophy',
-      'description': 'Parallel bar dips with forward torso lean to activate lower pectorals.',
-      'tips': 'Lean torso 30 degrees forward, don\'t shrug shoulders up.',
-      'is_timed': false,
-      'is_bodyweight': true,
-    },
-    // ── Back ──
-    {
-      'name': 'Deadlift',
-      'muscle_group': 'Back',
-      'secondary_muscles': ['Hamstrings', 'Glutes', 'Traps'],
-      'equipment': 'Barbell',
-      'category': 'Strength',
-      'description': 'Conventional barbell deadlift building full posterior chain power and dense back musculature.',
-      'tips': 'Keep bar close to shins, engage lats, drive hips forward to lockout.',
-      'is_timed': false,
-      'is_bodyweight': false,
-    },
-    {
-      'name': 'Pull-Up',
-      'muscle_group': 'Back',
-      'secondary_muscles': ['Biceps', 'Forearms'],
-      'equipment': 'Bodyweight',
-      'category': 'Strength',
-      'description': 'Overhand grip pull-up targeting latissimus dorsi width and upper back thickness.',
-      'tips': 'Pull chest to bar, initiate movement by depressing scapulae.',
-      'is_timed': false,
-      'is_bodyweight': true,
-    },
-    {
-      'name': 'Barbell Row',
-      'muscle_group': 'Back',
-      'secondary_muscles': ['Biceps', 'Rear Delts'],
-      'equipment': 'Barbell',
-      'category': 'Strength',
-      'description': 'Bent-over barbell row pulling to lower ribcage for lat and rhomboid density.',
-      'tips': 'Hinge hips at 45 degrees, keep spine neutral, pull with elbows.',
-      'is_timed': false,
-      'is_bodyweight': false,
-    },
-    {
-      'name': 'Lat Pulldown',
-      'muscle_group': 'Back',
-      'secondary_muscles': ['Biceps'],
-      'equipment': 'Cable Machine',
-      'category': 'Hypertrophy',
-      'description': 'Wide grip vertical pulling movement building V-taper lat width.',
-      'tips': 'Pull bar down to upper chest, avoid leaning excessively backward.',
-      'is_timed': false,
-      'is_bodyweight': false,
-    },
-    {
-      'name': 'Seated Cable Row',
-      'muscle_group': 'Back',
-      'secondary_muscles': ['Biceps', 'Traps'],
-      'equipment': 'Cable Machine',
-      'category': 'Hypertrophy',
-      'description': 'Horizontal cable row targeting mid-back thickness, rhomboids, and lower lats.',
-      'tips': 'Sit tall, pull handles to abdomen, squeeze shoulder blades together.',
-      'is_timed': false,
-      'is_bodyweight': false,
-    },
-    {
-      'name': 'T-Bar Row',
-      'muscle_group': 'Back',
-      'secondary_muscles': ['Biceps', 'Lower Back'],
-      'equipment': 'Barbell',
-      'category': 'Strength',
-      'description': 'Heavy compound row supporting big upper back overload.',
-      'tips': 'Brace core, maintain bent posture, pull handles tight to chest.',
-      'is_timed': false,
-      'is_bodyweight': false,
-    },
-    // ── Legs ──
-    {
-      'name': 'Barbell Back Squat',
-      'muscle_group': 'Legs',
-      'secondary_muscles': ['Glutes', 'Hamstrings', 'Core'],
-      'equipment': 'Barbell',
-      'category': 'Strength',
-      'description': 'The king of lower body exercises developing quadricep power, glutes, and overall leg size.',
-      'tips': 'Descend until hip crease is below knee level, push knees outward over toes.',
-      'is_timed': false,
-      'is_bodyweight': false,
-    },
-    {
-      'name': 'Front Squat',
-      'muscle_group': 'Legs',
-      'secondary_muscles': ['Glutes', 'Core'],
-      'equipment': 'Barbell',
-      'category': 'Strength',
-      'description': 'Barbell resting across front deltoids placing primary focus on the quadriceps and core.',
-      'tips': 'Keep elbows pointed straight forward and chest upright.',
-      'is_timed': false,
-      'is_bodyweight': false,
-    },
-    {
-      'name': 'Leg Press',
-      'muscle_group': 'Legs',
-      'secondary_muscles': ['Glutes', 'Hamstrings'],
-      'equipment': 'Machine',
-      'category': 'Hypertrophy',
-      'description': 'Incline sled leg press for high-volume quad and leg development without spinal loading.',
-      'tips': 'Lower sled until knees reach 90 degrees, do not lock knees violently at top.',
-      'is_timed': false,
-      'is_bodyweight': false,
-    },
-    {
-      'name': 'Romanian Deadlift',
-      'muscle_group': 'Legs',
-      'secondary_muscles': ['Glutes', 'Lower Back'],
-      'equipment': 'Barbell',
-      'category': 'Hypertrophy',
-      'description': 'Hip hinge movement emphasizing hamstring elongation and glute hypertrophy.',
-      'tips': 'Push hips backward while keeping shins vertical and back completely flat.',
-      'is_timed': false,
-      'is_bodyweight': false,
-    },
-    {
-      'name': 'Bulgarian Split Squat',
-      'muscle_group': 'Legs',
-      'secondary_muscles': ['Glutes', 'Quads'],
-      'equipment': 'Dumbbells',
-      'category': 'Hypertrophy',
-      'description': 'Elevated rear-foot unilateral squat targeting glute activation and quad mass.',
-      'tips': 'Descend smoothly on front leg until back knee almost touches ground.',
-      'is_timed': false,
-      'is_bodyweight': false,
-    },
-    {
-      'name': 'Leg Extension',
-      'muscle_group': 'Legs',
-      'secondary_muscles': [],
-      'equipment': 'Machine',
-      'category': 'Isolation',
-      'description': 'Machine exercise isolating the quadriceps through knee extension.',
-      'tips': 'Hold contraction for 1 second at top, lower slowly with continuous resistance.',
-      'is_timed': false,
-      'is_bodyweight': false,
-    },
-    {
-      'name': 'Seated Leg Curl',
-      'muscle_group': 'Legs',
-      'secondary_muscles': ['Calves'],
-      'equipment': 'Machine',
-      'category': 'Isolation',
-      'description': 'Machine exercise isolating hamstrings through knee flexion.',
-      'tips': 'Keep thighs firmly secured under pad, curl heels under with control.',
-      'is_timed': false,
-      'is_bodyweight': false,
-    },
-    {
-      'name': 'Standing Calf Raise',
-      'muscle_group': 'Legs',
-      'secondary_muscles': [],
-      'equipment': 'Machine',
-      'category': 'Isolation',
-      'description': 'Straight-leg calf raises targeting gastrocnemius muscle mass.',
-      'tips': 'Full deep stretch at bottom, rise high on toes and pause 1 second.',
-      'is_timed': false,
-      'is_bodyweight': false,
-    },
-    // ── Shoulders ──
-    {
-      'name': 'Overhead Press',
-      'muscle_group': 'Shoulders',
-      'secondary_muscles': ['Triceps', 'Upper Chest', 'Core'],
-      'equipment': 'Barbell',
-      'category': 'Strength',
-      'description': 'Standing strict military barbell press building powerful deltoids and shoulder stability.',
-      'tips': 'Squeeze glutes and abs, press straight up and lock arms overhead.',
-      'is_timed': false,
-      'is_bodyweight': false,
-    },
-    {
-      'name': 'Seated Dumbbell Shoulder Press',
-      'muscle_group': 'Shoulders',
-      'secondary_muscles': ['Triceps'],
-      'equipment': 'Dumbbells',
-      'category': 'Strength',
-      'description': 'Vertical pressing with dumbbells providing natural shoulder range of motion.',
-      'tips': 'Lower dumbbells to ear level, press up without clanking weights together.',
-      'is_timed': false,
-      'is_bodyweight': false,
-    },
-    {
-      'name': 'Dumbbell Lateral Raise',
-      'muscle_group': 'Shoulders',
-      'secondary_muscles': ['Traps'],
-      'equipment': 'Dumbbells',
-      'category': 'Isolation',
-      'description': 'Lateral raises building wide 3D lateral deltoids and shoulder width.',
-      'tips': 'Lead with elbows, keep pinkies slightly elevated, avoid swinging body.',
-      'is_timed': false,
-      'is_bodyweight': false,
-    },
-    {
-      'name': 'Face Pull',
-      'muscle_group': 'Shoulders',
-      'secondary_muscles': ['Upper Back', 'Rotator Cuff'],
-      'equipment': 'Cable Machine',
-      'category': 'Hypertrophy',
-      'description': 'Rope cable pull toward forehead with external shoulder rotation for rear delts and rotator cuffs.',
-      'tips': 'Pull rope apart at eye level, squeeze rear delts and hold peak 1 sec.',
-      'is_timed': false,
-      'is_bodyweight': false,
-    },
-    {
-      'name': 'Front Dumbbell Raise',
-      'muscle_group': 'Shoulders',
-      'secondary_muscles': ['Upper Chest'],
-      'equipment': 'Dumbbells',
-      'category': 'Isolation',
-      'description': 'Alternating or bilateral forward dumbbell raise targeting anterior deltoids.',
-      'tips': 'Raise dumbbell smoothly to eye level, lower under tension.',
-      'is_timed': false,
-      'is_bodyweight': false,
-    },
-    // ── Arms ──
-    {
-      'name': 'Barbell Bicep Curl',
-      'muscle_group': 'Arms',
-      'secondary_muscles': ['Forearms'],
-      'equipment': 'Barbell',
-      'category': 'Isolation',
-      'description': 'Standard standing barbell curl for bicep mass and peak development.',
-      'tips': 'Pin elbows to sides, curl barbell upward without rocking torso.',
-      'is_timed': false,
-      'is_bodyweight': false,
-    },
-    {
-      'name': 'Dumbbell Hammer Curl',
-      'muscle_group': 'Arms',
-      'secondary_muscles': ['Brachialis', 'Forearms'],
-      'equipment': 'Dumbbells',
-      'category': 'Isolation',
-      'description': 'Neutral grip curl developing brachialis muscle for arm thickness.',
-      'tips': 'Keep palms facing each other throughout the curl.',
-      'is_timed': false,
-      'is_bodyweight': false,
-    },
-    {
-      'name': 'Preacher Curl',
-      'muscle_group': 'Arms',
-      'secondary_muscles': ['Forearms'],
-      'equipment': 'EZ Bar',
-      'category': 'Isolation',
-      'description': 'Curling on preacher bench pad preventing momentum and isolating bicep peak.',
-      'tips': 'Don\'t bounce off bottom pad, control the negative extension.',
-      'is_timed': false,
-      'is_bodyweight': false,
-    },
-    {
-      'name': 'Tricep Rope Pushdown',
-      'muscle_group': 'Arms',
-      'secondary_muscles': [],
-      'equipment': 'Cable Machine',
-      'category': 'Isolation',
-      'description': 'Cable pushdown with rope attachment targeting lateral and medial tricep heads.',
-      'tips': 'Lock upper arms stationary, spread rope outward at full extension.',
-      'is_timed': false,
-      'is_bodyweight': false,
-    },
-    {
-      'name': 'Skull Crusher',
-      'muscle_group': 'Arms',
-      'secondary_muscles': [],
-      'equipment': 'EZ Bar',
-      'category': 'Isolation',
-      'description': 'Lying tricep extension behind head isolating long tricep head.',
-      'tips': 'Lower bar slowly toward forehead or hairline, press upward from elbows.',
-      'is_timed': false,
-      'is_bodyweight': false,
-    },
-    {
-      'name': 'Close-Grip Bench Press',
-      'muscle_group': 'Arms',
-      'secondary_muscles': ['Chest', 'Shoulders'],
-      'equipment': 'Barbell',
-      'category': 'Strength',
-      'description': 'Compound pressing with hands shoulder-width apart overloading triceps.',
-      'tips': 'Tuck elbows close to ribs, touch lower sternum.',
-      'is_timed': false,
-      'is_bodyweight': false,
-    },
-    // ── Core ──
-    {
-      'name': 'Plank',
-      'muscle_group': 'Core',
-      'secondary_muscles': ['Shoulders', 'Glutes'],
-      'equipment': 'Bodyweight',
-      'category': 'Endurance',
-      'description': 'Isometric core stability hold strengthening transverse abdominis and pelvic floor.',
-      'tips': 'Maintain straight line from head to heels, squeeze glutes and brace abs.',
-      'is_timed': true,
-      'is_bodyweight': true,
-    },
-    {
-      'name': 'Hanging Leg Raise',
-      'muscle_group': 'Core',
-      'secondary_muscles': ['Hip Flexors'],
-      'equipment': 'Pull-up Bar',
-      'category': 'Strength',
-      'description': 'Hanging from pull-up bar and curling pelvis upward for lower abdominal definition.',
-      'tips': 'Avoid swinging, curl pelvis upward at top of movement.',
-      'is_timed': false,
-      'is_bodyweight': true,
-    },
-    {
-      'name': 'Ab Wheel Rollout',
-      'muscle_group': 'Core',
-      'secondary_muscles': ['Lats', 'Shoulders'],
-      'equipment': 'Ab Wheel',
-      'category': 'Strength',
-      'description': 'Advanced anti-extension core builder rolling wheel out from knees.',
-      'tips': 'Keep back slightly rounded into hollow posture, don\'t let lower back sag.',
-      'is_timed': false,
-      'is_bodyweight': true,
-    },
-    {
-      'name': 'Cable Woodchopper',
-      'muscle_group': 'Core',
-      'secondary_muscles': ['Shoulders'],
-      'equipment': 'Cable Machine',
-      'category': 'Functional',
-      'description': 'Rotational cable movement strengthening obliques and functional core power.',
-      'tips': 'Pivot on back foot, rotate through torso while keeping arms extended.',
-      'is_timed': false,
-      'is_bodyweight': false,
-    },
-    // ── Cardio ──
-    {
-      'name': 'Treadmill Run',
-      'muscle_group': 'Cardio',
-      'secondary_muscles': ['Legs', 'Calves'],
-      'equipment': 'Cardio Machine',
-      'category': 'Endurance',
-      'description': 'Aerobic running intervals or steady state conditioning for cardiovascular health.',
-      'tips': 'Land midfoot with upright posture and relaxed shoulders.',
-      'is_timed': true,
-      'is_bodyweight': false,
-    },
-    {
-      'name': 'Stationary Bike',
-      'muscle_group': 'Cardio',
-      'secondary_muscles': ['Quads', 'Calves'],
-      'equipment': 'Cardio Machine',
-      'category': 'Endurance',
-      'description': 'Low impact cardiovascular cycling conditioning.',
-      'tips': 'Adjust saddle height so knee has slight bend at lowest pedal position.',
-      'is_timed': true,
-      'is_bodyweight': false,
-    },
-    {
-      'name': 'Jump Rope',
-      'muscle_group': 'Cardio',
-      'secondary_muscles': ['Calves', 'Shoulders'],
-      'equipment': 'Jump Rope',
-      'category': 'HIIT',
-      'description': 'High-intensity interval skipping building rhythm, coordination, and footwork.',
-      'tips': 'Stay light on the balls of your feet, rotate rope from wrists.',
-      'is_timed': true,
-      'is_bodyweight': true,
-    },
-    {
-      'name': 'Battle Ropes',
-      'muscle_group': 'Cardio',
-      'secondary_muscles': ['Shoulders', 'Arms', 'Core'],
-      'equipment': 'Ropes',
-      'category': 'HIIT',
-      'description': 'Alternating or double wave rope slams for anaerobic endurance.',
-      'tips': 'Slight bend in knees, brace core, drive power from shoulders and hips.',
-      'is_timed': true,
-      'is_bodyweight': false,
-    },
-    {
-      'name': 'Rowing Machine',
-      'muscle_group': 'Cardio',
-      'secondary_muscles': ['Back', 'Legs'],
-      'equipment': 'Cardio Machine',
-      'category': 'Endurance',
-      'description': 'Total-body cardiovascular ergometer engaging 85% of body musculature.',
-      'tips': 'Push with legs first, swing hips back, then pull handle to sternum.',
-      'is_timed': true,
-      'is_bodyweight': false,
-    },
-  ];
+  static String _capitalize(String s) {
+    if (s.isEmpty) return '';
+    return s.split(' ').map((word) {
+      if (word.isEmpty) return '';
+      return word[0].toUpperCase() + word.substring(1);
+    }).join(' ');
+  }
 
   void _openExerciseDetail(Map<String, dynamic> exercise) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _ExerciseDetailSheet(exercise: exercise),
+      builder: (_) => _OpenGymExerciseDetailSheet(
+        exercise: exercise,
+        imgBase: _imgBase,
+        gifBase: _gifBase,
+      ),
+    );
+  }
+
+  void _openCreateCustomExercise() {
+    final nameCtrl = TextEditingController();
+    String bodyPart = 'Chest';
+    String equipment = 'Dumbbell';
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) => Container(
+          padding: EdgeInsets.fromLTRB(
+            24,
+            20,
+            24,
+            MediaQuery.of(ctx).viewInsets.bottom + 24,
+          ),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppTheme.border,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
+              Text(
+                'Create Your Own Exercise',
+                style: GoogleFonts.inter(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: AppTheme.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Add custom exercise to your personal library',
+                style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textMuted),
+              ),
+              const SizedBox(height: 18),
+              TextField(
+                controller: nameCtrl,
+                autofocus: true,
+                style: GoogleFonts.inter(fontSize: 14, color: AppTheme.textPrimary),
+                decoration: InputDecoration(
+                  labelText: 'Exercise Name',
+                  hintText: 'e.g. Dumbbell Floor Press',
+                  labelStyle: GoogleFonts.inter(color: AppTheme.primary),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              DropdownButtonFormField<String>(
+                value: bodyPart,
+                decoration: InputDecoration(
+                  labelText: 'Body Part / Muscle',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                items: _bodyParts
+                    .where((bp) => bp != 'All')
+                    .map((bp) => DropdownMenuItem(value: bp, child: Text(bp)))
+                    .toList(),
+                onChanged: (val) {
+                  if (val != null) setModalState(() => bodyPart = val);
+                },
+              ),
+              const SizedBox(height: 14),
+              DropdownButtonFormField<String>(
+                value: equipment,
+                decoration: InputDecoration(
+                  labelText: 'Equipment',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                items: _equipments
+                    .where((eq) => eq != 'Any equipment')
+                    .map((eq) => DropdownMenuItem(value: eq, child: Text(eq)))
+                    .toList(),
+                onChanged: (val) {
+                  if (val != null) setModalState(() => equipment = val);
+                },
+              ),
+              const SizedBox(height: 22),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                onPressed: () async {
+                  final name = nameCtrl.text.trim();
+                  if (name.isEmpty) return;
+                  final newEx = {
+                    'id': 'custom_${DateTime.now().millisecondsSinceEpoch}',
+                    'n': name,
+                    'bp': bodyPart.toLowerCase(),
+                    'eq': equipment.toLowerCase(),
+                    'tg': bodyPart.toLowerCase(),
+                    'sm': [],
+                    'st': ['Perform with proper form and control.'],
+                    'img': '',
+                    'gif': '',
+                  };
+
+                  final prefs = await SharedPreferences.getInstance();
+                  final customStr = prefs.getString('gymos_custom_exercises');
+                  List customList = [];
+                  if (customStr != null) {
+                    try {
+                      customList = jsonDecode(customStr);
+                    } catch (_) {}
+                  }
+                  customList.add(newEx);
+                  await prefs.setString(
+                      'gymos_custom_exercises', jsonEncode(customList));
+
+                  setState(() {
+                    _allExercises.insert(0, newEx);
+                    _applyFilters();
+                  });
+
+                  if (ctx.mounted) Navigator.pop(ctx);
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Custom exercise added! 💪'),
+                        backgroundColor: AppTheme.primary,
+                      ),
+                    );
+                  }
+                },
+                child: Text(
+                  'Add Exercise',
+                  style: GoogleFonts.inter(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppTheme.background,
+      backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
         scrolledUnderElevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_rounded,
-              size: 20, color: AppTheme.textPrimary),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded,
+              color: AppTheme.textPrimary, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
           'Exercise Library',
           style: GoogleFonts.inter(
-            fontSize: 17,
-            fontWeight: FontWeight.w700,
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
             color: AppTheme.textPrimary,
           ),
         ),
         actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: AppTheme.primaryLight,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                '${_filtered.length} exercises',
-                style: GoogleFonts.inter(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: AppTheme.primary,
-                ),
+          Container(
+            margin: const EdgeInsets.only(right: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: AppTheme.primary.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              '${_allExercises.length} with animations',
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: AppTheme.primary,
               ),
             ),
           ),
         ],
       ),
       body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // ── Search bar ──
+          // ── Search Bar ──
           Container(
             color: Colors.white,
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
             child: TextField(
               controller: _searchCtrl,
               onChanged: (v) {
                 _searchQuery = v;
                 _applyFilters();
               },
-              style: GoogleFonts.inter(fontSize: 14, color: AppTheme.textPrimary),
+              style: GoogleFonts.inter(
+                  fontSize: 14, color: AppTheme.textPrimary),
               decoration: InputDecoration(
-                hintText: 'Search exercises...',
+                hintText: 'Search 1300+ exercises, muscle, equipment...',
                 hintStyle: GoogleFonts.inter(
-                    fontSize: 14, color: AppTheme.textMuted),
+                    fontSize: 13.5, color: const Color(0xFF94A3B8)),
                 prefixIcon: const Icon(Icons.search_rounded,
-                    color: AppTheme.textMuted, size: 20),
+                    color: Color(0xFF94A3B8), size: 20),
                 suffixIcon: _searchQuery.isNotEmpty
                     ? GestureDetector(
                         onTap: () {
@@ -677,57 +443,113 @@ class _MemberExerciseLibraryScreenState
                           _applyFilters();
                         },
                         child: const Icon(Icons.close_rounded,
-                            color: AppTheme.textMuted, size: 18),
+                            color: Color(0xFF94A3B8), size: 18),
                       )
                     : null,
                 filled: true,
-                fillColor: AppTheme.surfaceGray,
+                fillColor: const Color(0xFFF1F5F9),
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(14),
                   borderSide: BorderSide.none,
                 ),
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                contentPadding: const EdgeInsets.symmetric(vertical: 12),
               ),
             ),
           ),
 
-          // ── Muscle filter chips ──
+          // ── Filter Row 1: Target / Body Part Chips ──
           Container(
             color: Colors.white,
-            height: 44,
+            height: 42,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: _muscles.length,
+              itemCount: _bodyParts.length,
               itemBuilder: (context, i) {
-                final muscle = _muscles[i];
-                final isSelected = _selectedMuscle == muscle;
-                final chipColor = muscle == 'All'
-                    ? AppTheme.primary
-                    : (_muscleColors[muscle] ?? AppTheme.primary);
+                final bp = _bodyParts[i];
+                final isSelected = _selectedBodyPart == bp;
                 return GestureDetector(
                   onTap: () {
-                    setState(() => _selectedMuscle = muscle);
+                    setState(() => _selectedBodyPart = bp);
+                    _applyFilters();
+                  },
+                  child: Container(
+                    margin: const EdgeInsets.only(right: 8, bottom: 4),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? AppTheme.primary
+                          : const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: isSelected
+                          ? [
+                              BoxShadow(
+                                color: AppTheme.primary.withValues(alpha: 0.25),
+                                blurRadius: 6,
+                                offset: const Offset(0, 2),
+                              )
+                            ]
+                          : null,
+                    ),
+                    child: Text(
+                      bp,
+                      style: GoogleFonts.inter(
+                        fontSize: 12.5,
+                        fontWeight:
+                            isSelected ? FontWeight.w700 : FontWeight.w500,
+                        color: isSelected
+                            ? Colors.white
+                            : const Color(0xFF475569),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+
+          // ── Filter Row 2: Equipment Chips ──
+          Container(
+            color: Colors.white,
+            height: 44,
+            padding: const EdgeInsets.only(bottom: 8),
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: _equipments.length,
+              itemBuilder: (context, i) {
+                final eq = _equipments[i];
+                final isSelected = _selectedEquipment == eq;
+                return GestureDetector(
+                  onTap: () {
+                    setState(() => _selectedEquipment = eq);
                     _applyFilters();
                   },
                   child: Container(
                     margin: const EdgeInsets.only(right: 8),
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 6),
+                        horizontal: 14, vertical: 5),
                     decoration: BoxDecoration(
-                      color: isSelected ? chipColor : Colors.white,
+                      color: isSelected
+                          ? const Color(0xFF10B981)
+                          : Colors.white,
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(
-                        color: isSelected ? chipColor : AppTheme.border,
+                        color: isSelected
+                            ? const Color(0xFF10B981)
+                            : const Color(0xFFE2E8F0),
                       ),
                     ),
                     child: Text(
-                      muscle,
+                      eq,
                       style: GoogleFonts.inter(
                         fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: isSelected ? Colors.white : AppTheme.textSecondary,
+                        fontWeight:
+                            isSelected ? FontWeight.w700 : FontWeight.w500,
+                        color: isSelected
+                            ? Colors.white
+                            : const Color(0xFF64748B),
                       ),
                     ),
                   ),
@@ -738,50 +560,238 @@ class _MemberExerciseLibraryScreenState
 
           const SizedBox(height: 8),
 
-          // ── Exercise list ──
+          // ── Exercise List ──
           Expanded(
             child: _isLoading
                 ? const Center(
                     child: CircularProgressIndicator(color: AppTheme.primary),
                   )
-                : _filtered.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Text('🏋️',
-                                style: TextStyle(fontSize: 48)),
-                            const SizedBox(height: 12),
-                            Text(
-                              'No exercises found',
-                              style: GoogleFonts.inter(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: AppTheme.textPrimary,
+                : ListView.builder(
+                    padding: const EdgeInsets.only(bottom: 24),
+                    itemCount: _filtered.length + 1, // +1 for Custom Ex card
+                    itemBuilder: (context, i) {
+                      // Top Banner: Create Your Own Exercise (Screenshot 2)
+                      if (i == 0) {
+                        return Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                          child: InkWell(
+                            onTap: _openCreateCustomExercise,
+                            borderRadius: BorderRadius.circular(16),
+                            child: Container(
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [
+                                    const Color(0xFF1E1B4B),
+                                    const Color(0xFF312E81),
+                                  ],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ),
+                                borderRadius: BorderRadius.circular(16),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: const Color(0xFF1E1B4B)
+                                        .withValues(alpha: 0.18),
+                                    blurRadius: 10,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
+                              ),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 44,
+                                    height: 44,
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: const Center(
+                                      child: Text('✨',
+                                          style: TextStyle(fontSize: 20)),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Create your own exercise',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 14.5,
+                                            fontWeight: FontWeight.w700,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          'name + body part, custom exercise',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 11.5,
+                                            color: Colors.white70,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const Icon(Icons.add_rounded,
+                                      color: Colors.white, size: 22),
+                                ],
                               ),
                             ),
-                            Text(
-                              'Try a different filter',
-                              style: GoogleFonts.inter(
-                                  fontSize: 13, color: AppTheme.textMuted),
+                          ),
+                        );
+                      }
+
+                      final ex = _filtered[i - 1];
+                      final name = _capitalize(ex['n'] as String? ?? '');
+                      final target =
+                          _capitalize(ex['tg'] as String? ?? ex['bp'] ?? '');
+                      final equipment =
+                          _capitalize(ex['eq'] as String? ?? '');
+                      final imgUrl = ex['img'] != null &&
+                              (ex['img'] as String).isNotEmpty
+                          ? '$_imgBase${ex['img']}'
+                          : '';
+
+                      return Container(
+                        margin: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                              color: const Color(0xFFE2E8F0), width: 1),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.02),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
                             ),
                           ],
                         ),
-                      )
-                    : ListView.builder(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 4),
-                        physics: const BouncingScrollPhysics(),
-                        itemCount: _filtered.length,
-                        itemBuilder: (context, i) {
-                          final ex = _filtered[i];
-                          return _ExerciseCard(
-                            exercise: ex,
-                            muscleColors: _muscleColors,
+                        child: Material(
+                          color: Colors.transparent,
+                          borderRadius: BorderRadius.circular(16),
+                          child: InkWell(
                             onTap: () => _openExerciseDetail(ex),
-                          );
-                        },
-                      ),
+                            borderRadius: BorderRadius.circular(16),
+                            child: Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Row(
+                                children: [
+                                  // Left: Anatomical Exercise Illustration
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: Container(
+                                      width: 58,
+                                      height: 58,
+                                      color: const Color(0xFFF8FAFC),
+                                      child: imgUrl.isNotEmpty
+                                          ? Image.network(
+                                              imgUrl,
+                                              fit: BoxFit.contain,
+                                              loadingBuilder: (context,
+                                                  child, progress) {
+                                                if (progress == null)
+                                                  return child;
+                                                return const Center(
+                                                  child: SizedBox(
+                                                    width: 18,
+                                                    height: 18,
+                                                    child:
+                                                        CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                      color: AppTheme.primary,
+                                                    ),
+                                                  ),
+                                                );
+                                              },
+                                              errorBuilder:
+                                                  (_, __, ___) => const Center(
+                                                child: Text('🏋️',
+                                                    style: TextStyle(
+                                                        fontSize: 24)),
+                                              ),
+                                            )
+                                          : const Center(
+                                              child: Text('🏋️',
+                                                  style: TextStyle(
+                                                      fontSize: 24)),
+                                            ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 14),
+
+                                  // Center: Title + Target Muscle & Equipment
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          name,
+                                          style: GoogleFonts.inter(
+                                            fontSize: 14.5,
+                                            fontWeight: FontWeight.w700,
+                                            color: const Color(0xFF0F172A),
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          '$target · $equipment',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 12.5,
+                                            fontWeight: FontWeight.w500,
+                                            color: const Color(0xFF64748B),
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+
+                                  // Right: + Plan Action Button
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 7),
+                                    decoration: BoxDecoration(
+                                      color: AppTheme.primary
+                                          .withValues(alpha: 0.08),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(Icons.add_rounded,
+                                            size: 15,
+                                            color: AppTheme.primary),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          'Plan',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 12.5,
+                                            fontWeight: FontWeight.w700,
+                                            color: AppTheme.primary,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
           ),
         ],
       ),
@@ -789,292 +799,501 @@ class _MemberExerciseLibraryScreenState
   }
 }
 
-class _ExerciseCard extends StatelessWidget {
-  final Map<String, dynamic> exercise;
-  final Map<String, Color> muscleColors;
-  final VoidCallback onTap;
+// ─────────────────────────────────────────────────────────────
+// Rich Exercise Detail Sheet with High-Res Animated GIF (Screenshot 3)
+// ─────────────────────────────────────────────────────────────
 
-  const _ExerciseCard({
+class _OpenGymExerciseDetailSheet extends StatefulWidget {
+  final Map<String, dynamic> exercise;
+  final String imgBase;
+  final String gifBase;
+
+  const _OpenGymExerciseDetailSheet({
     required this.exercise,
-    required this.muscleColors,
-    required this.onTap,
+    required this.imgBase,
+    required this.gifBase,
   });
 
   @override
-  Widget build(BuildContext context) {
-    final muscle = exercise['muscle_group'] as String? ?? 'Other';
-    final color = muscleColors[muscle] ?? AppTheme.primary;
-    final isBodyweight = exercise['is_bodyweight'] as bool? ?? false;
-    final isTimed = exercise['is_timed'] as bool? ?? false;
-    final equipment = exercise['equipment'] as String? ?? 'Bodyweight';
-
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppTheme.border),
-          boxShadow: AppTheme.cardShadow,
-        ),
-        child: Row(
-          children: [
-            // Muscle color indicator
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Center(
-                child: Text(
-                  _muscleEmoji(muscle),
-                  style: const TextStyle(fontSize: 20),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    exercise['name'] as String? ?? '',
-                    style: GoogleFonts.inter(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: AppTheme.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  Row(
-                    children: [
-                      _tag(muscle, color),
-                      const SizedBox(width: 6),
-                      _tag(equipment, AppTheme.textMuted),
-                      if (isTimed) ...[
-                        const SizedBox(width: 6),
-                        _tag('⏱ Timed', AppTheme.info),
-                      ],
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            const Icon(
-              Icons.arrow_forward_ios_rounded,
-              size: 14,
-              color: AppTheme.textMuted,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _tag(String label, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text(
-        label,
-        style: GoogleFonts.inter(
-          fontSize: 10,
-          fontWeight: FontWeight.w600,
-          color: color,
-        ),
-      ),
-    );
-  }
-
-  String _muscleEmoji(String muscle) {
-    return {
-      'Chest': '🫁',
-      'Back': '🔙',
-      'Legs': '🦵',
-      'Shoulders': '💪',
-      'Arms': '💪',
-      'Core': '🎯',
-      'Cardio': '❤️',
-    }[muscle] ?? '🏋️';
-  }
+  State<_OpenGymExerciseDetailSheet> createState() =>
+      _OpenGymExerciseDetailSheetState();
 }
 
-// ─────────────────────────────────────────────────────────────
-// Exercise Detail Bottom Sheet
-// ─────────────────────────────────────────────────────────────
-class _ExerciseDetailSheet extends StatelessWidget {
-  final Map<String, dynamic> exercise;
+class _OpenGymExerciseDetailSheetState
+    extends State<_OpenGymExerciseDetailSheet> {
+  double _weightKg = 20.0;
+  int _reps = 5;
 
-  const _ExerciseDetailSheet({required this.exercise});
+  double get _estimated1RM {
+    // Epley formula: 1RM = w * (1 + r / 30)
+    if (_reps == 1) return _weightKg;
+    return _weightKg * (1.0 + (_reps / 30.0));
+  }
+
+  static String _cap(String s) {
+    if (s.isEmpty) return '';
+    return s.split(' ').map((w) {
+      if (w.isEmpty) return '';
+      return w[0].toUpperCase() + w.substring(1);
+    }).join(' ');
+  }
 
   @override
   Widget build(BuildContext context) {
-    final muscle = exercise['muscle_group'] as String? ?? '';
-    final name = exercise['name'] as String? ?? '';
-    final desc = exercise['description'] as String? ?? '';
-    final tips = exercise['tips'] as String? ?? '';
-    final equipment = exercise['equipment'] as String? ?? 'Bodyweight';
-    final isTimed = exercise['is_timed'] as bool? ?? false;
-    final isBodyweight = exercise['is_bodyweight'] as bool? ?? false;
-    final secondary = (exercise['secondary_muscles'] as List?)
-            ?.map((e) => e.toString())
-            .toList() ??
-        [];
+    final ex = widget.exercise;
+    final name = _cap(ex['n'] as String? ?? '');
+    final bp = _cap(ex['bp'] as String? ?? '');
+    final tg = _cap(ex['tg'] as String? ?? '');
+    final eq = _cap(ex['eq'] as String? ?? '');
+    final sm = (ex['sm'] as List? ?? []).map((e) => _cap(e.toString())).toList();
+    final st = (ex['st'] as List? ?? []).map((e) => e.toString()).toList();
+
+    final gifUrl = ex['gif'] != null && (ex['gif'] as String).isNotEmpty
+        ? '${widget.gifBase}${ex['gif']}'
+        : '';
+    final imgUrl = ex['img'] != null && (ex['img'] as String).isNotEmpty
+        ? '${widget.imgBase}${ex['img']}'
+        : '';
 
     return Container(
-      margin: const EdgeInsets.only(top: 60),
+      margin: const EdgeInsets.only(top: 40),
       decoration: const BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       child: Column(
         children: [
-          // Handle bar
+          // Top handle bar
           Container(
-            margin: const EdgeInsets.only(top: 12, bottom: 4),
-            width: 36,
+            margin: const EdgeInsets.only(top: 12, bottom: 8),
+            width: 38,
             height: 4,
             decoration: BoxDecoration(
-              color: AppTheme.border,
+              color: const Color(0xFFCBD5E1),
               borderRadius: BorderRadius.circular(2),
             ),
           ),
+
+          // Scrollable detail content
           Expanded(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+              padding: const EdgeInsets.fromLTRB(20, 10, 20, 36),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Header
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              name,
-                              style: GoogleFonts.inter(
-                                fontSize: 22,
-                                fontWeight: FontWeight.w800,
-                                color: AppTheme.textPrimary,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            Wrap(
-                              spacing: 6,
-                              runSpacing: 4,
-                              children: [
-                                _chipTag(muscle, AppTheme.primary),
-                                _chipTag(equipment, AppTheme.textSecondary),
-                                if (isTimed)
-                                  _chipTag('⏱ Timed', AppTheme.info),
-                                if (isBodyweight)
-                                  _chipTag('Bodyweight', AppTheme.success),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                      Container(
-                        width: 64,
-                        height: 64,
-                        decoration: BoxDecoration(
-                          color: AppTheme.primaryLight,
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Center(
-                          child: Text(
-                            isTimed ? '⏱️' : (isBodyweight ? '🤸' : '🏋️'),
-                            style: const TextStyle(fontSize: 28),
-                          ),
-                        ),
-                      ),
-                    ],
+                  // Title
+                  Text(
+                    name,
+                    style: GoogleFonts.inter(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFF0F172A),
+                    ),
                   ),
+                  const SizedBox(height: 14),
 
-                  if (secondary.isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    Text(
-                      'Secondary Muscles',
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.textMuted,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Wrap(
-                      spacing: 6,
-                      children: secondary
-                          .map((m) => _chipTag(m, AppTheme.textSecondary))
-                          .toList(),
-                    ),
-                  ],
-
-                  if (desc.isNotEmpty) ...[
-                    const SizedBox(height: 20),
-                    Text(
-                      'About',
-                      style: GoogleFonts.inter(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: AppTheme.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      desc,
-                      style: GoogleFonts.inter(
-                        fontSize: 14,
-                        color: AppTheme.textSecondary,
-                        height: 1.6,
-                      ),
-                    ),
-                  ],
-
-                  if (tips.isNotEmpty) ...[
-                    const SizedBox(height: 20),
-                    Container(
-                      padding: const EdgeInsets.all(14),
+                  // ── High-Res Animated GIF Container (Screenshot 3) ──
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(20),
+                    child: Container(
+                      width: double.infinity,
+                      height: 280,
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF0FDF4),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFBBF7D0)),
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: const Color(0xFFE2E8F0),
+                          width: 1.5,
+                        ),
                       ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      child: Stack(
                         children: [
-                          const Text('💡', style: TextStyle(fontSize: 16)),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              tips,
-                              style: GoogleFonts.inter(
-                                fontSize: 13,
-                                color: const Color(0xFF166534),
-                                height: 1.5,
+                          Positioned.fill(
+                            child: gifUrl.isNotEmpty
+                                ? Image.network(
+                                    gifUrl,
+                                    fit: BoxFit.contain,
+                                    loadingBuilder:
+                                        (context, child, progress) {
+                                      if (progress == null) return child;
+                                      return Center(
+                                        child: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            const CircularProgressIndicator(
+                                              color: AppTheme.primary,
+                                            ),
+                                            const SizedBox(height: 8),
+                                            Text(
+                                              'Loading animation...',
+                                              style: GoogleFonts.inter(
+                                                fontSize: 12,
+                                                color: const Color(0xFF94A3B8),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    },
+                                    errorBuilder: (_, __, ___) {
+                                      // Fallback to static illustration if gif errors
+                                      if (imgUrl.isNotEmpty) {
+                                        return Image.network(imgUrl,
+                                            fit: BoxFit.contain);
+                                      }
+                                      return const Center(
+                                        child: Text('🏋️',
+                                            style: TextStyle(fontSize: 48)),
+                                      );
+                                    },
+                                  )
+                                : (imgUrl.isNotEmpty
+                                    ? Image.network(imgUrl, fit: BoxFit.contain)
+                                    : const Center(
+                                        child: Text('🏋️',
+                                            style: TextStyle(fontSize: 48)))),
+                          ),
+
+                          // Overlay badge: Animated demonstration
+                          Positioned(
+                            bottom: 12,
+                            right: 12,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.65),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.play_circle_fill_rounded,
+                                      color: Colors.white, size: 14),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'Animated Guide',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ),
                         ],
                       ),
                     ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // ── Muscle & Equipment Tags (Screenshot 3) ──
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      if (bp.isNotEmpty)
+                        _buildTag(bp, AppTheme.primary, Colors.white),
+                      if (tg.isNotEmpty && tg != bp)
+                        _buildTag('🎯 $tg', const Color(0xFFF1F5F9),
+                            const Color(0xFF334155)),
+                      if (eq.isNotEmpty)
+                        _buildTag('🏋️ $eq', const Color(0xFFF1F5F9),
+                            const Color(0xFF334155)),
+                      ...sm.map((m) => _buildTag(
+                          m, const Color(0xFFF8FAFC), const Color(0xFF64748B))),
+                    ],
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  // ── Primary Action Button: + Add to my plan (Screenshot 3) ──
+                  ElevatedButton.icon(
+                    icon: const Icon(Icons.add_rounded, size: 20),
+                    label: Text(
+                      'Add to my plan',
+                      style: GoogleFonts.inter(
+                        fontSize: 15.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 15),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      elevation: 0,
+                      minimumSize: const Size(double.infinity, 50),
+                    ),
+                    onPressed: () {
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            'Added $name to your workout routine! 💪',
+                            style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                          ),
+                          backgroundColor: AppTheme.primary,
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    },
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  // ── Estimated 1RM Calculator (Screenshot 3) ──
+                  Container(
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: const Color(0xFFE2E8F0),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Estimated 1RM Calculator',
+                          style: GoogleFonts.inter(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF0F172A),
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+
+                        // Steppers: Weight & Reps
+                        Row(
+                          children: [
+                            // Weight (kg)
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Weight (kg)',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w600,
+                                      color: const Color(0xFF64748B),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 6, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                          color: const Color(0xFFCBD5E1)),
+                                    ),
+                                    child: Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        IconButton(
+                                          icon: const Icon(Icons.remove_rounded,
+                                              size: 18),
+                                          constraints: const BoxConstraints(),
+                                          padding: const EdgeInsets.all(6),
+                                          onPressed: () {
+                                            if (_weightKg > 2.5) {
+                                              setState(() => _weightKg -= 2.5);
+                                            }
+                                          },
+                                        ),
+                                        Text(
+                                          _weightKg % 1 == 0
+                                              ? _weightKg.toInt().toString()
+                                              : _weightKg.toStringAsFixed(1),
+                                          style: GoogleFonts.inter(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w800,
+                                            color: const Color(0xFF0F172A),
+                                          ),
+                                        ),
+                                        IconButton(
+                                          icon: const Icon(Icons.add_rounded,
+                                              size: 18),
+                                          constraints: const BoxConstraints(),
+                                          padding: const EdgeInsets.all(6),
+                                          onPressed: () {
+                                            setState(() => _weightKg += 2.5);
+                                          },
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 14),
+
+                            // Reps
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Reps',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w600,
+                                      color: const Color(0xFF64748B),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 6, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                          color: const Color(0xFFCBD5E1)),
+                                    ),
+                                    child: Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        IconButton(
+                                          icon: const Icon(Icons.remove_rounded,
+                                              size: 18),
+                                          constraints: const BoxConstraints(),
+                                          padding: const EdgeInsets.all(6),
+                                          onPressed: () {
+                                            if (_reps > 1) {
+                                              setState(() => _reps -= 1);
+                                            }
+                                          },
+                                        ),
+                                        Text(
+                                          '$_reps',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w800,
+                                            color: const Color(0xFF0F172A),
+                                          ),
+                                        ),
+                                        IconButton(
+                                          icon: const Icon(Icons.add_rounded,
+                                              size: 18),
+                                          constraints: const BoxConstraints(),
+                                          padding: const EdgeInsets.all(6),
+                                          onPressed: () {
+                                            setState(() => _reps += 1);
+                                          },
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+
+                        const SizedBox(height: 14),
+
+                        // Result
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Estimate',
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFF64748B),
+                              ),
+                            ),
+                            Text(
+                              '${_estimated1RM.toStringAsFixed(1)} kg',
+                              style: GoogleFonts.inter(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w800,
+                                color: const Color(0xFF10B981),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Epley formula — a calculation from one set, not a tested max.',
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            color: const Color(0xFF94A3B8),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  // ── Step-by-Step Instructions ("How to") (Screenshot 3) ──
+                  if (st.isNotEmpty) ...[
+                    Text(
+                      'How to Perform',
+                      style: GoogleFonts.inter(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF0F172A),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    ...st.asMap().entries.map((entry) {
+                      final idx = entry.key + 1;
+                      final step = entry.value;
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              width: 24,
+                              height: 24,
+                              margin: const EdgeInsets.only(top: 2),
+                              decoration: BoxDecoration(
+                                color: AppTheme.primary.withValues(alpha: 0.1),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Center(
+                                child: Text(
+                                  '$idx',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppTheme.primary,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                step,
+                                style: GoogleFonts.inter(
+                                  fontSize: 13.5,
+                                  color: const Color(0xFF334155),
+                                  height: 1.5,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
                   ],
-
-                  const SizedBox(height: 28),
-
-                  // ── How to do it (generic based on type) ──
-                  _howToSection(isTimed, isBodyweight),
                 ],
               ),
             ),
@@ -1084,97 +1303,19 @@ class _ExerciseDetailSheet extends StatelessWidget {
     );
   }
 
-  Widget _howToSection(bool isTimed, bool isBodyweight) {
-    final steps = isTimed
-        ? [
-            'Get into position',
-            'Engage your core',
-            'Hold for the target duration',
-            'Breathe steadily throughout',
-          ]
-        : isBodyweight
-            ? [
-                'Set up proper stance / grip',
-                'Lower with control (2-3 secs)',
-                'Push / pull explosively',
-                'Full range of motion',
-              ]
-            : [
-                'Set up the weight on equipment',
-                'Grip firmly, brace your core',
-                'Perform the movement with full ROM',
-                'Control the negative (eccentric) phase',
-              ];
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'How to Perform',
-          style: GoogleFonts.inter(
-            fontSize: 14,
-            fontWeight: FontWeight.w700,
-            color: AppTheme.textPrimary,
-          ),
-        ),
-        const SizedBox(height: 12),
-        ...steps.asMap().entries.map((e) {
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 24,
-                  height: 24,
-                  decoration: BoxDecoration(
-                    color: AppTheme.primary,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Center(
-                    child: Text(
-                      '${e.key + 1}',
-                      style: GoogleFonts.inter(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    e.value,
-                    style: GoogleFonts.inter(
-                      fontSize: 13,
-                      color: AppTheme.textSecondary,
-                      height: 1.5,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          );
-        }),
-      ],
-    );
-  }
-
-  Widget _chipTag(String label, Color color) {
+  Widget _buildTag(String text, Color bg, Color textCol) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withValues(alpha: 0.2)),
+        color: bg,
+        borderRadius: BorderRadius.circular(14),
       ),
       child: Text(
-        label,
+        text,
         style: GoogleFonts.inter(
-          fontSize: 11,
+          fontSize: 12,
           fontWeight: FontWeight.w600,
-          color: color,
+          color: textCol,
         ),
       ),
     );
