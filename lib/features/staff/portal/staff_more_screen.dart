@@ -272,7 +272,7 @@ class StaffMoreScreen extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
 
             // Logout Button Card
             CustomCard(
@@ -295,8 +295,111 @@ class StaffMoreScreen extends StatelessWidget {
                 },
               ),
             ),
+            const SizedBox(height: 12),
+
+            // Delete Account Card
+            CustomCard(
+              padding: EdgeInsets.zero,
+              child: ListTile(
+                leading: const Icon(Icons.delete_forever_rounded, color: Colors.red),
+                title: Text(
+                  'Delete Account',
+                  style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.red),
+                ),
+                subtitle: Text(
+                  'Permanently delete your staff account and profile',
+                  style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted),
+                ),
+                onTap: () => _showDeleteAccountDialog(context, authVm),
+              ),
+            ),
+            const SizedBox(height: 24),
           ],
         ),
+      ),
+    );
+  }
+
+  void _showDeleteAccountDialog(BuildContext context, AuthViewModel authVm) {
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.red.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.warning_amber_rounded, color: Colors.red, size: 24),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Delete Staff Account?',
+                style: GoogleFonts.inter(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                  color: const Color(0xFF0F172A),
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          'Are you sure you want to delete your staff account? This will permanently erase your profile, assigned clients, and staff attendance history. This action CANNOT be undone.',
+          style: GoogleFonts.inter(
+            fontSize: 13.5,
+            color: const Color(0xFF64748B),
+            height: 1.5,
+          ),
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.inter(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF64748B),
+              ),
+            ),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              elevation: 0,
+            ),
+            onPressed: () async {
+              Navigator.pop(dialogCtx);
+              final success = await authVm.deleteAccount();
+              if (context.mounted && success) {
+                Navigator.pushAndRemoveUntil(
+                  context,
+                  AppRouter.scaleRoute(const RoleSelectionScreen()),
+                  (route) => false,
+                );
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Your staff account has been permanently deleted.'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            },
+            child: Text(
+              'Delete Forever',
+              style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
       ),
     );
   }

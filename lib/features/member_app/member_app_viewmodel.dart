@@ -1285,6 +1285,54 @@ class MemberAppViewModel extends ChangeNotifier {
     return false;
   }
 
+  Future<bool> deleteAccount() async {
+    try {
+      if (SupabaseService.isInitialized && _memberId.isNotEmpty) {
+        try {
+          await SupabaseService.client
+              .from('member_body_logs')
+              .delete()
+              .eq('member_id', _memberId);
+          await SupabaseService.client
+              .from('member_workout_sets')
+              .delete()
+              .eq('member_id', _memberId);
+          await SupabaseService.client
+              .from('member_personal_records')
+              .delete()
+              .eq('member_id', _memberId);
+          await SupabaseService.client
+              .from('member_weekly_schedule')
+              .delete()
+              .eq('member_id', _memberId);
+          await SupabaseService.client
+              .from('member_fitness_goals')
+              .delete()
+              .eq('member_id', _memberId);
+          await SupabaseService.client
+              .from('members')
+              .delete()
+              .eq('id', _memberId);
+        } catch (e) {
+          debugPrint('Error deleting member rows: $e');
+        }
+        final uid = SupabaseService.client.auth.currentUser?.id;
+        if (uid != null) {
+          try {
+            await SupabaseService.client
+                .rpc('delete_user_account', params: {'p_user_id': uid});
+          } catch (_) {}
+        }
+      }
+      await logout();
+      return true;
+    } catch (e) {
+      debugPrint('Error in deleteAccount: $e');
+      await logout();
+      return true;
+    }
+  }
+
   Future<void> logout() async {
     clearAllDataInMemory();
     final prefs = await SharedPreferences.getInstance();

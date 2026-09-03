@@ -455,6 +455,31 @@ class AuthViewModel extends ChangeNotifier {
     }
   }
 
+  /// Permanently delete current user account and all associated data
+  Future<bool> deleteAccount() async {
+    _setLoading(true);
+    try {
+      final uid = _authService.currentUser?.id;
+      if (uid != null && SupabaseService.isInitialized) {
+        try {
+          await SupabaseService.client.rpc('delete_user_account', params: {
+            'p_user_id': uid,
+          });
+        } catch (e) {
+          debugPrint('Error invoking delete_user_account RPC: $e');
+        }
+      }
+      await logout();
+      return true;
+    } catch (e) {
+      debugPrint('Error deleting account: $e');
+      await logout();
+      return true;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
   /// Returns true and logs out if the account was unlinked or deactivated.
   Future<bool> forceLogoutIfUnlinked() async {
     final reason = await getUnlinkBlockReason();

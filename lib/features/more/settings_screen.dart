@@ -9,6 +9,8 @@ import '../../core/widgets/success_dialog.dart';
 import '../../core/services/supabase_service.dart';
 import '../../core/services/biometric_service.dart';
 import '../authentication/auth_viewmodel.dart';
+import '../authentication/role_selection_screen.dart';
+import '../../core/navigation/app_router.dart';
 import '../gym_settings/online_database_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -455,8 +457,122 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ],
               ),
             ),
+            const SizedBox(height: 24),
+
+            // Danger Zone
+            Text('DANGER ZONE', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.red, letterSpacing: 1.2)),
+            const SizedBox(height: 8),
+            CustomCard(
+              padding: EdgeInsets.zero,
+              child: ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.delete_forever_rounded, color: Colors.red, size: 20),
+                ),
+                title: Text(
+                  'Delete Account',
+                  style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: Colors.red),
+                ),
+                subtitle: Text(
+                  'Permanently erase your account and all associated gym data',
+                  style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted),
+                ),
+                trailing: const Icon(Icons.chevron_right_rounded, color: Colors.red),
+                onTap: () => _showDeleteAccountDialog(context),
+              ),
+            ),
+            const SizedBox(height: 32),
           ],
         ),
+      ),
+    );
+  }
+
+  void _showDeleteAccountDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.red.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.warning_amber_rounded, color: Colors.red, size: 24),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Delete Account?',
+                style: GoogleFonts.inter(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                  color: const Color(0xFF0F172A),
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          'Are you sure you want to permanently delete your account? All your gym records, profiles, staff and members will be permanently erased. This action CANNOT be undone.',
+          style: GoogleFonts.inter(
+            fontSize: 13.5,
+            color: const Color(0xFF64748B),
+            height: 1.5,
+          ),
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.inter(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF64748B),
+              ),
+            ),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              elevation: 0,
+            ),
+            onPressed: () async {
+              Navigator.pop(dialogCtx);
+              final authVm = Provider.of<AuthViewModel>(context, listen: false);
+              final success = await authVm.deleteAccount();
+              if (context.mounted && success) {
+                Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+                  AppRouter.scaleRoute(const RoleSelectionScreen()),
+                  (route) => false,
+                );
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Your account has been permanently deleted.'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            },
+            child: Text(
+              'Delete Forever',
+              style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
       ),
     );
   }
