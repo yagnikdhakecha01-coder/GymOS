@@ -200,6 +200,16 @@ class _MemberScanQRScreenState extends State<MemberScanQRScreen>
                         );
                       },
                     ),
+                    if (_isScanCompleted)
+                      Container(
+                        color: Colors.black54,
+                        child: const Center(
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2.5,
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -221,54 +231,29 @@ class _MemberScanQRScreenState extends State<MemberScanQRScreen>
             'Make sure the QR code is clearly visible',
             style: GoogleFonts.inter(fontSize: 12, color: Colors.white54),
           ),
-          const SizedBox(height: 32),
+          const SizedBox(height: 24),
 
-          // ═══════ SIMULATE CHECK-IN BUTTON ═══════
+          // ═══════ HELPFUL QR SCANNING TIP ═══════
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 40),
-            child: SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton(
-                onPressed: () async {
-                  final vm = Provider.of<MemberAppViewModel>(context, listen: false);
-                  final result = await vm.markCheckIn();
-                  if (context.mounted) {
-                    if (result['success'] == true) {
-                      final bool alreadyMarked = result['already_marked'] == true;
-                      try {
-                        final repo = Provider.of<GymRepository>(context, listen: false);
-                        await repo.fetchAttendanceLogsFromSupabase();
-                      } catch (e) {
-                        print('Error reloading attendance calendar logs: $e');
-                      }
-                      if (context.mounted) {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => MemberCheckInSuccess(
-                              alreadyMarked: alreadyMarked,
-                            ),
-                          ),
-                        );
-                      }
-                    } else {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(result['reason'] ?? 'Attendance verification failed'),
-                          backgroundColor: Colors.redAccent,
-                        ),
-                      );
-                    }
-                  }
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primary,
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                ),
-                child: Text('Simulate Check-in', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700)),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.verified_user_rounded, color: AppTheme.primary, size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Attendance is verified securely through live QR code scanning.',
+                      style: GoogleFonts.inter(fontSize: 12, color: Colors.white70, height: 1.3),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),

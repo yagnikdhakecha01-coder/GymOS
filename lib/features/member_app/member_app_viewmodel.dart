@@ -116,6 +116,7 @@ class MemberAppViewModel extends ChangeNotifier {
   String _checkInTime = '';
   String _checkInDate = '';
   bool _checkedInToday = false;
+  bool _isCheckingIn = false;
 
   MemberAppViewModel() {
     _generateCurrentWeek();
@@ -235,6 +236,7 @@ class MemberAppViewModel extends ChangeNotifier {
   String get checkInTime => _checkInTime;
   String get checkInDate => _checkInDate;
   bool get checkedInToday => _checkedInToday;
+  bool get isCheckingIn => _isCheckingIn;
 
   String get greeting {
     final hour = DateTime.now().hour;
@@ -552,12 +554,24 @@ class MemberAppViewModel extends ChangeNotifier {
               _assignedWorkoutTitle = wData['title'] ?? '';
               
               // Determine today's muscle group/day type dynamically from schedule
-              final rawSchedule = wData['schedule'] as Map<String, dynamic>? ?? {};
+              dynamic rawSchedule = wData['schedule'];
+              if (rawSchedule is String && rawSchedule.isNotEmpty) {
+                try {
+                  rawSchedule = jsonDecode(rawSchedule);
+                } catch (_) {}
+              }
               final todayName = DateFormat('EEEE').format(DateTime.now()); // e.g. 'Monday'
-              final todayList = rawSchedule[todayName] as List?;
-              if (todayList != null && todayList.isNotEmpty) {
-                final firstVal = todayList.first as Map<String, dynamic>?;
-                _todayMuscleGroup = firstVal?['title'] ?? 'Rest Day';
+              dynamic todayList;
+              if (rawSchedule is Map) {
+                todayList = rawSchedule[todayName];
+              }
+              if (todayList is List && todayList.isNotEmpty) {
+                final firstVal = todayList.first;
+                if (firstVal is Map) {
+                  _todayMuscleGroup = firstVal['title']?.toString() ?? 'Rest Day';
+                } else {
+                  _todayMuscleGroup = firstVal?.toString() ?? 'Rest Day';
+                }
               } else {
                 _todayMuscleGroup = 'Rest Day';
               }
@@ -782,7 +796,7 @@ class MemberAppViewModel extends ChangeNotifier {
             }
 
             // Get assigned workout plan schedule
-            Map<String, dynamic> rawSchedule = {};
+            dynamic rawSchedule;
             if (_assignedWorkoutId.isNotEmpty) {
               try {
                 final wPlan = await SupabaseService.client
@@ -791,7 +805,12 @@ class MemberAppViewModel extends ChangeNotifier {
                     .eq('id', _assignedWorkoutId)
                     .maybeSingle();
                 if (wPlan != null) {
-                  rawSchedule = wPlan['schedule'] as Map<String, dynamic>? ?? {};
+                  rawSchedule = wPlan['schedule'];
+                  if (rawSchedule is String && rawSchedule.isNotEmpty) {
+                    try {
+                      rawSchedule = jsonDecode(rawSchedule);
+                    } catch (_) {}
+                  }
                 }
               } catch (_) {}
             }
@@ -805,11 +824,18 @@ class MemberAppViewModel extends ChangeNotifier {
 
               // Determine muscle group for this day
               final dayName = DateFormat('EEEE').format(pastDate);
-              final dayList = rawSchedule[dayName] as List?;
+              dynamic dayList;
+              if (rawSchedule is Map) {
+                dayList = rawSchedule[dayName];
+              }
               String muscle = 'Rest Day';
-              if (dayList != null && dayList.isNotEmpty) {
-                final firstVal = dayList.first as Map<String, dynamic>?;
-                muscle = firstVal?['title'] ?? 'Rest Day';
+              if (dayList is List && dayList.isNotEmpty) {
+                final firstVal = dayList.first;
+                if (firstVal is Map) {
+                  muscle = firstVal['title']?.toString() ?? 'Rest Day';
+                } else {
+                  muscle = firstVal?.toString() ?? 'Rest Day';
+                }
               }
 
               if (dbLogsMap.containsKey(pastDateIso)) {
@@ -1411,8 +1437,27 @@ class MemberAppViewModel extends ChangeNotifier {
   }
 
   // ── Check-in ──
-  Future<Map<String, dynamic>> markCheckIn([String? qrToken]) async {
-    final tokenToUse = qrToken ?? 'static_default_token';
+  Future<Map<String, dynamic>> markCheckIn(String qrToken) async {
+    final tokenToUse = qrToken.trim();
+    if (tokenToUse.isEmpty) {
+      return {
+        'success': false,
+        'reason': 'QR code is required. Please scan a valid QR code.',
+        'message': 'No QR code detected. Please scan the QR code to check in.',
+      };
+    }
+
+    if (_isCheckingIn) {
+      return {
+        'success': false,
+        'reason': 'Check-in is already in progress. Please wait a moment.',
+        'message': 'Check-in in progress.',
+      };
+    }
+
+    _isCheckingIn = true;
+    notifyListeners();
+
     try {
       if (SupabaseService.isInitialized) {
         final res = await SupabaseService.client.rpc('process_qr_attendance', params: {
@@ -1449,6 +1494,9 @@ class MemberAppViewModel extends ChangeNotifier {
     } catch (e) {
       print('Error marking member check-in: $e');
       return {'success': false, 'reason': e.toString()};
+    } finally {
+      _isCheckingIn = false;
+      notifyListeners();
     }
     return {'success': false, 'reason': 'Supabase service not initialized.'};
   }
