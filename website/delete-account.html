@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Account & Data Deletion — GymOS</title>
+  <meta name="description" content="Request permanent deletion of your GymOS account and associated data. In compliance with Google Play Store User Data policies.">
+  <link rel="icon" type="image/png" href="images/logo.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    .delete-card {
+      background: var(--bg-card, #1E293B);
+      border: 1px solid var(--border-light, rgba(255, 255, 255, 0.1));
+      border-radius: 16px;
+      padding: 32px;
+      margin: 28px 0;
+    }
+    .delete-card--danger {
+      border-color: rgba(239, 68, 68, 0.35);
+      background: rgba(239, 68, 68, 0.05);
+    }
+    .step-badge {
+      display: inline-block;
+      width: 28px;
+      height: 28px;
+      line-height: 28px;
+      text-align: center;
+      background: var(--primary, #6C3AED);
+      color: #fff;
+      border-radius: 50%;
+      font-weight: 700;
+      margin-right: 8px;
+    }
+    .btn-delete {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: #EF4444;
+      color: #fff;
+      font-weight: 600;
+      padding: 12px 24px;
+      border-radius: 10px;
+      margin-top: 16px;
+      transition: background 0.2s ease;
+    }
+    .btn-delete:hover {
+      background: #DC2626;
+      color: #fff;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- NAVBAR -->
+  <nav class="navbar scrolled" id="navbar">
+    <div class="container">
+      <a href="index.html" class="navbar__brand">
+        <img src="images/logo.png" alt="GymOS Logo" class="navbar__logo" onerror="this.style.display='none'">
+        <span class="navbar__name">Gym<span>OS</span></span>
+      </a>
+      <div class="navbar__links" id="navLinks">
+        <a href="index.html" class="navbar__link">Home</a>
+        <a href="index.html#features" class="navbar__link">Features</a>
+        <a href="index.html#pricing" class="navbar__link">Pricing</a>
+        <a href="privacy-policy.html" class="navbar__link">Privacy</a>
+        <a href="#" onclick="showPlayStoreNotice(event)" class="navbar__cta">Google Play</a>
+      </div>
+      <button class="navbar__toggle" id="navToggle" aria-label="Toggle navigation">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </nav>
+  <div class="nav-overlay" id="navOverlay"></div>
+
+  <!-- CONTENT -->
+  <section class="legal-page">
+    <div class="container">
+      <div class="legal-page__header">
+        <div class="section-badge" style="display:inline-flex; align-items:center; gap:6px; padding:6px 16px; background:rgba(108, 58, 237, 0.12); border:1px solid rgba(108, 58, 237, 0.3); border-radius:100px; color:#8B5CF6; font-size:0.85rem; margin-bottom:12px;">Google Play Policy Compliance</div>
+        <h1 class="legal-page__title">Account & Data Deletion</h1>
+        <p class="legal-page__updated">Last updated: September 16, 2026</p>
+      </div>
+
+      <div class="legal-content">
+        <p>At GymOS, we deeply respect your right to privacy and data sovereignty. In accordance with the <strong>Google Play Developer Program Policies on User Data & Account Deletion</strong>, this page provides transparent instructions on how you can request the permanent deletion of your GymOS account and all associated personal data.</p>
+
+        <div class="delete-card">
+          <h2>Option 1: Direct In-App Deletion (Instant & Recommended)</h2>
+          <p>You can permanently delete your account directly from within the GymOS mobile app without waiting for manual verification:</p>
+          <ol style="margin-left: 20px; line-height: 1.8;">
+            <li>Open the <strong>GymOS</strong> app on your device.</li>
+            <li>Log in to your account if you haven't already.</li>
+            <li>Navigate to the <strong>More / Settings</strong> tab from the bottom navigation bar.</li>
+            <li>Tap on <strong>Settings & Privacy</strong>.</li>
+            <li>Scroll to the bottom of the page and tap the red <strong>"Delete Account"</strong> button.</li>
+            <li>Read the confirmation dialog outlining what data will be erased, and confirm by tapping <strong>"Confirm Delete"</strong>.</li>
+          </ol>
+          <p style="margin-top: 12px; font-size: 0.95rem; color: var(--text-muted, #94A3B8);">
+            <em>Note: Once confirmed, your session is immediately terminated, and your account credentials are permanently disabled.</em>
+          </p>
+        </div>
+
+        <div class="delete-card delete-card--danger">
+          <h2>Option 2: Web-Based Deletion Request (If App is Uninstalled)</h2>
+          <p>If you no longer have access to the GymOS mobile app, you can submit an official account deletion request via email or through our support desk:</p>
+          <ul>
+            <li><strong>Email:</strong> Send an email from your registered email address to <a href="mailto:support@gymos.com?subject=Account%20and%20Data%20Deletion%20Request">support@gymos.com</a>.</li>
+            <li><strong>Subject Line:</strong> <code>Account and Data Deletion Request</code></li>
+            <li><strong>Required Information in Email:</strong>
+              <ul style="margin-top: 8px;">
+                <li>Your registered Full Name</li>
+                <li>Your registered Email Address or Phone Number</li>
+                <li>Your Role (Gym Owner, Trainer/Staff, or Member)</li>
+                <li>Registered Gym Name (if applicable)</li>
+              </ul>
+            </li>
+          </ul>
+          <a href="mailto:support@gymos.com?subject=Account%20and%20Data%20Deletion%20Request&body=Hello%20GymOS%20Support,%0A%0APlease%20permanently%20delete%20my%20GymOS%20account%20and%20associated%20data.%0A%0ARegistered%20Email:%20%0AFull%20Name:%20%0ARole%20(Owner/Staff/Member):%20%0A%0AThank%20you." class="btn-delete">
+            ✉ Submit Deletion Request via Email
+          </a>
+          <p style="margin-top: 14px; font-size: 0.9rem; color: var(--text-muted, #94A3B8);">
+            Our security team verifies ownership and processes all web requests within <strong>48 to 72 business hours</strong>.
+          </p>
+        </div>
+
+        <h2>What Data Is Permanently Deleted?</h2>
+        <p>Upon execution of an account deletion request, the following records are permanently erased from our primary databases (Supabase / PostgreSQL cloud storage):</p>
+        <ul>
+          <li><strong>Authentication & Profile Data:</strong> Name, email address, password hashes, OAuth tokens, phone number, and uploaded profile avatars.</li>
+          <li><strong>Gym Owner Data (if applicable):</strong> Gym profile, staff registries, member lists, custom membership plans, and workout/diet assignments.</li>
+          <li><strong>Member & Staff Records:</strong> Attendance logs, check-in history, salary records, commission calculations, and fitness progress tracking.</li>
+          <li><strong>Device & Notification Tokens:</strong> Firebase Cloud Messaging device push tokens.</li>
+        </ul>
+
+        <h2>Data Retention Period & Legal Exceptions</h2>
+        <p>In accordance with data protection regulations and applicable tax and commercial laws:</p>
+        <ul>
+          <li><strong>Active Production Purge:</strong> Primary databases purge your identity and profile records immediately or within a maximum of 30 days.</li>
+          <li><strong>Disaster Recovery Backups:</strong> Secure cryptographic backup snapshots are purged on our regular 90-day rolling cycle.</li>
+          <li><strong>Statutory Financial Records:</strong> Any payment transaction IDs, invoices, or billing records processed via Razorpay are retained for the minimum statutory period strictly required by law for taxation and auditing purposes. These records cannot be used for any marketing or commercial purpose.</li>
+        </ul>
+
+        <h2>Questions or Assistance?</h2>
+        <p>If you have any questions regarding our account deletion procedure, please contact our Data Protection Officer at <a href="mailto:support@gymos.com">support@gymos.com</a>.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer__grid">
+        <div>
+          <a href="index.html" class="navbar__brand">
+            <img src="images/logo.png" alt="GymOS Logo" class="navbar__logo" onerror="this.style.display='none'">
+            <span class="navbar__name">Gym<span>OS</span></span>
+          </a>
+          <p class="footer__brand-desc">The complete gym management operating system.</p>
+        </div>
+        <div>
+          <h4 class="footer__heading">Product</h4>
+          <a href="index.html#features" class="footer__link">Features</a>
+          <a href="index.html#pricing" class="footer__link">Pricing</a>
+          <a href="index.html#download" class="footer__link">Download</a>
+        </div>
+        <div>
+          <h4 class="footer__heading">Legal & Compliance</h4>
+          <a href="privacy-policy.html" class="footer__link">Privacy Policy</a>
+          <a href="terms-of-service.html" class="footer__link">Terms of Service</a>
+          <a href="delete-account.html" class="footer__link" style="color:#EF4444; font-weight:600;">Delete Account</a>
+          <a href="licensing-agreement.html" class="footer__link">Licensing Agreement</a>
+        </div>
+        <div>
+          <h4 class="footer__heading">Contact</h4>
+          <a href="mailto:support@gymos.com" class="footer__link">support@gymos.com</a>
+        </div>
+      </div>
+      <div class="footer__bottom">
+        <p class="footer__copyright">© 2026 GymOS Inc. All rights reserved.</p>
+      </div>
+    </div>
+  </footer>
+
+  <script src="js/main.js"></script>
+</body>
+</html>
