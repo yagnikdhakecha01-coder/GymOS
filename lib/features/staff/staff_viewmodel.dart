@@ -268,8 +268,58 @@ class StaffViewModel extends ChangeNotifier {
     }
   }
 
+  /// Checks if staff was employed during or before the given month.
+  /// If an employee joined in month 9 (e.g. September), they must NOT be visible
+  /// or payable in salary tabs for month 8 (e.g. August) or earlier.
+  bool isStaffEmployedInMonth(Staff staff, String monthStr) {
+    if (staff.joinDate.trim().isEmpty) return true;
+
+    DateTime? salaryMonthDate;
+    try {
+      salaryMonthDate = DateFormat('MMMM yyyy').parse(monthStr.trim());
+    } catch (_) {
+      try {
+        salaryMonthDate = DateFormat('MMM yyyy').parse(monthStr.trim());
+      } catch (_) {
+        return true;
+      }
+    }
+
+    DateTime? joinDate;
+    final rawJoin = staff.joinDate.trim();
+    final formats = [
+      'dd MMM yyyy',
+      'd MMM yyyy',
+      'yyyy-MM-dd',
+      'dd-MM-yyyy',
+      'dd/MM/yyyy',
+      'MMMM yyyy',
+      'MMM yyyy',
+    ];
+
+    for (final fmt in formats) {
+      try {
+        joinDate = DateFormat(fmt).parse(rawJoin);
+        break;
+      } catch (_) {}
+    }
+
+    if (joinDate == null) {
+      joinDate = DateTime.tryParse(rawJoin);
+    }
+
+    if (joinDate == null) return true;
+
+    // Staff joining month value vs salary month value
+    final salaryMonthVal = salaryMonthDate.year * 12 + salaryMonthDate.month;
+    final joinMonthVal = joinDate.year * 12 + joinDate.month;
+
+    return salaryMonthVal >= joinMonthVal;
+  }
+
   List<Staff> getPendingSalaryStaff(String month) {
     return allStaff.where((s) {
+      if (!isStaffEmployedInMonth(s, month)) return false;
       if (isSalaryPaid(s.id, month)) return false;
       final payable = getStaffCachedPayable(s.id);
       return payable > 0;
@@ -313,6 +363,7 @@ class StaffViewModel extends ChangeNotifier {
     required Staff staff,
     required String salaryMonth,
   }) async {
+    if (!isStaffEmployedInMonth(staff, salaryMonth)) return 0;
     if (isSalaryPaid(staff.id, salaryMonth)) return 0;
 
     final draft = await getOrCreateSalaryDraft(gymId, staff.id, salaryMonth);
@@ -360,6 +411,10 @@ class StaffViewModel extends ChangeNotifier {
     await fetchGymSalaryAdvances(gymId);
 
     for (final staff in allStaff.where((s) => s.status != 'Inactive')) {
+      if (!isStaffEmployedInMonth(staff, month)) {
+        _payableByStaff[staff.id] = 0;
+        continue;
+      }
       try {
         _payableByStaff[staff.id] = await getStaffPendingPayable(
           gymId: gymId,
