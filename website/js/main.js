@@ -54,6 +54,21 @@ function initScrollAnimations() {
 }
 
 /* ── FAQ Accordion ── */
+function toggleFAQ(button) {
+  const item = button.closest('.faq-item');
+  if (!item) return;
+  const wasActive = item.classList.contains('active');
+
+  // Close all
+  document.querySelectorAll('.faq-item').forEach((i) => i.classList.remove('active'));
+
+  // Toggle current
+  if (!wasActive) {
+    item.classList.add('active');
+  }
+}
+window.toggleFAQ = toggleFAQ;
+
 function initFAQ() {
   const faqItems = document.querySelectorAll('.faq-item');
   if (!faqItems.length) return;
@@ -62,17 +77,11 @@ function initFAQ() {
     const question = item.querySelector('.faq-item__question');
     if (!question) return;
 
-    question.addEventListener('click', () => {
-      const wasActive = item.classList.contains('active');
-
-      // Close all
-      faqItems.forEach((i) => i.classList.remove('active'));
-
-      // Toggle current
-      if (!wasActive) {
-        item.classList.add('active');
-      }
-    });
+    // Avoid double event listeners if onclick is present or already bound
+    if (!question.getAttribute('onclick') && !question.dataset.faqBound) {
+      question.dataset.faqBound = 'true';
+      question.addEventListener('click', () => toggleFAQ(question));
+    }
   });
 }
 
@@ -213,3 +222,11 @@ function closePlayStoreModal() {
   if (modal) modal.classList.remove('active');
   document.body.style.overflow = '';
 }
+
+window.showPlayStoreNotice = showPlayStoreNotice;
+window.closePlayStoreModal = closePlayStoreModal;
+
+// Close modal on Escape key
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closePlayStoreModal();
+});
