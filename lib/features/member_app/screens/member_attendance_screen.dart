@@ -135,6 +135,19 @@ class _MemberAttendanceScreenState extends State<MemberAttendanceScreen> {
                         const SizedBox(height: 8),
                         // Calendar grid
                         _buildCalendarGrid(vm),
+                        const SizedBox(height: 8),
+                        // Calendar Legend
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            children: [
+                              _buildLegendItem('Present', AppTheme.success),
+                              _buildLegendItem('Absent', AppTheme.danger),
+                              _buildLegendItem('Holiday / Sunday', const Color(0xFF9333EA)),
+                            ],
+                          ),
+                        ),
                         const SizedBox(height: 12),
                       ],
                     ),
@@ -234,17 +247,16 @@ class _MemberAttendanceScreenState extends State<MemberAttendanceScreen> {
       final dayDate = DateTime(_currentMonth.year, _currentMonth.month, day);
       final dateStr = DateFormat('dd-MM-yyyy').format(dayDate);
       final dateIsoStr = DateFormat('yyyy-MM-dd').format(dayDate);
+      final isSunday = dayDate.weekday == DateTime.sunday;
       final isDeclaredHoliday = vm.declaredHolidays.contains(dateIsoStr) || vm.declaredHolidays.contains(dateStr);
+      final isHoliday = isSunday || isDeclaredHoliday;
       final logsForDay = logsThisMonth.where((l) => l.date == dateStr).toList();
       
       Color bgColor = Colors.transparent;
       Color textColor = AppTheme.textPrimary;
       final isToday = isCurrentMonth && day == today;
       
-      if (isDeclaredHoliday) {
-        bgColor = isToday ? const Color(0xFF9333EA) : const Color(0xFFF3E8FF);
-        textColor = isToday ? Colors.white : const Color(0xFF9333EA);
-      } else if (logsForDay.isNotEmpty) {
+      if (logsForDay.isNotEmpty) {
         final status = logsForDay.first.status;
         if (isToday) {
           // Today (Solid background, white text)
@@ -283,6 +295,9 @@ class _MemberAttendanceScreenState extends State<MemberAttendanceScreen> {
             textColor = const Color(0xFF9333EA);
           }
         }
+      } else if (isHoliday) {
+        bgColor = isToday ? const Color(0xFF9333EA) : const Color(0xFFF3E8FF);
+        textColor = isToday ? Colors.white : const Color(0xFF9333EA);
       }
 
       if (isToday && bgColor == Colors.transparent) {
@@ -331,5 +346,30 @@ class _MemberAttendanceScreenState extends State<MemberAttendanceScreen> {
     }
 
     return Column(children: rows);
+  }
+
+  Widget _buildLegendItem(String label, Color color) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: color,
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: GoogleFonts.inter(
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+            color: AppTheme.textSecondary,
+          ),
+        ),
+      ],
+    );
   }
 }

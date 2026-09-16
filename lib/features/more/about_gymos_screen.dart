@@ -269,6 +269,17 @@ class _AboutGymOSScreenState extends State<AboutGymOSScreen> {
                         }
                       },
                     ),
+                    const Divider(height: 1),
+                    ListTile(
+                      title: Text('Account & Data Deletion', style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                      trailing: const Icon(Icons.open_in_new_rounded, size: 16, color: AppTheme.textMuted),
+                      onTap: () async {
+                        final uri = Uri.parse('https://gymos.tech/delete-account.html');
+                        if (await canLaunchUrl(uri)) {
+                          await launchUrl(uri, mode: LaunchMode.externalApplication);
+                        }
+                      },
+                    ),
                   ],
                 ),
               ),

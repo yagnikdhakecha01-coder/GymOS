@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 class ScheduledWorkout {
   final String title;
   final String description; // sets/reps or details
@@ -6,8 +8,8 @@ class ScheduledWorkout {
 
   factory ScheduledWorkout.fromJson(Map<String, dynamic> json) {
     return ScheduledWorkout(
-      title: json['title'] as String? ?? '',
-      description: json['description'] as String? ?? '',
+      title: json['title']?.toString() ?? '',
+      description: json['description']?.toString() ?? '',
     );
   }
 
@@ -52,11 +54,21 @@ class WorkoutPlan {
 
   factory WorkoutPlan.fromJson(Map<String, dynamic> json) {
     final Map<String, List<ScheduledWorkout>> parsedSchedule = {};
-    final rawSchedule = json['schedule'] as Map<String, dynamic>?;
-    if (rawSchedule != null) {
+    dynamic rawSchedule = json['schedule'];
+    if (rawSchedule is String && rawSchedule.isNotEmpty) {
+      try {
+        rawSchedule = jsonDecode(rawSchedule);
+      } catch (_) {}
+    }
+    if (rawSchedule is Map) {
       rawSchedule.forEach((key, val) {
         if (val is List) {
-          parsedSchedule[key] = val.map((e) => ScheduledWorkout.fromJson(e as Map<String, dynamic>)).toList();
+          parsedSchedule[key.toString()] = val.map((e) {
+            if (e is Map) {
+              return ScheduledWorkout.fromJson(Map<String, dynamic>.from(e));
+            }
+            return ScheduledWorkout(title: e?.toString() ?? '', description: '');
+          }).toList();
         }
       });
     }
@@ -73,22 +85,22 @@ class WorkoutPlan {
       final exercisesList = json['exercises'] as List;
       if (exercisesList.isNotEmpty) {
         parsedSchedule['Monday'] = exercisesList.take(2).map((e) => ScheduledWorkout(
-          title: e['name'] as String? ?? 'Exercise',
-          description: '${e['sets'] ?? 3} sets x ${e['reps'] ?? '12 reps'}',
+          title: (e is Map ? e['name'] : null)?.toString() ?? 'Exercise',
+          description: '${e is Map ? e['sets'] ?? 3 : 3} sets x ${e is Map ? e['reps'] ?? '12 reps' : '12 reps'}',
         )).toList();
         parsedSchedule['Wednesday'] = exercisesList.skip(2).take(2).map((e) => ScheduledWorkout(
-          title: e['name'] as String? ?? 'Exercise',
-          description: '${e['sets'] ?? 3} sets x ${e['reps'] ?? '12 reps'}',
+          title: (e is Map ? e['name'] : null)?.toString() ?? 'Exercise',
+          description: '${e is Map ? e['sets'] ?? 3 : 3} sets x ${e is Map ? e['reps'] ?? '12 reps' : '12 reps'}',
         )).toList();
       }
     }
 
     return WorkoutPlan(
-      id: json['id'] as String,
-      title: json['title'] as String,
-      goal: json['goal'] as String? ?? 'Fitness',
-      difficulty: json['difficulty'] as String? ?? 'Beginner',
-      description: json['description'] as String? ?? '',
+      id: (json['id'] ?? '').toString(),
+      title: (json['title'] ?? '').toString(),
+      goal: (json['goal'] ?? 'Fitness').toString(),
+      difficulty: (json['difficulty'] ?? 'Beginner').toString(),
+      description: (json['description'] ?? '').toString(),
       schedule: parsedSchedule,
     );
   }

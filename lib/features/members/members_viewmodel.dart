@@ -140,6 +140,10 @@ class MembersViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Update member profile details (avatar, name, phone, notes, measurements, etc.)
+  /// directly without creating any financial transactions.
+  Future<void> updateMemberProfile(Member member) => saveMember(member);
+
   // Update
   Future<void> updateMember(Member member, {String paymentMethod = 'Cash', double? transactionAmount, bool isRenewal = false}) async {
     await _repository.saveMember(member);

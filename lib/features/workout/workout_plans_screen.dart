@@ -20,6 +20,14 @@ class _WorkoutPlansScreenState extends State<WorkoutPlansScreen> {
   String _difficultyFilter = 'All';
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Provider.of<WorkoutViewModel>(context, listen: false).fetchWorkouts();
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final workoutVm = Provider.of<WorkoutViewModel>(context);
     final settingsVm = Provider.of<GymSettingsViewModel>(context);
@@ -164,24 +172,42 @@ class _WorkoutPlansScreenState extends State<WorkoutPlansScreen> {
 
             // Workout List
             Expanded(
-              child: filteredWorkouts.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.fitness_center_outlined, size: 48, color: AppTheme.textMuted.withValues(alpha: 0.5)),
-                          const SizedBox(height: 8),
-                          Text('No Workout Plans found', style: GoogleFonts.inter(fontSize: 14, color: AppTheme.textMuted)),
-                        ],
-                      ),
-                    )
-                  : ListView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: AppTheme.pagePadding, vertical: 8),
-                      itemCount: filteredWorkouts.length,
-                      itemBuilder: (context, index) {
-                        final plan = filteredWorkouts[index];
-                        return _buildWorkoutCard(context, workoutVm, plan);
-                      },
+              child: workoutVm.isLoading && workoutVm.workouts.isEmpty
+                  ? const Center(child: CircularProgressIndicator())
+                  : RefreshIndicator(
+                      onRefresh: () => workoutVm.fetchWorkouts(),
+                      child: filteredWorkouts.isEmpty
+                          ? ListView(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              children: [
+                                SizedBox(height: MediaQuery.of(context).size.height * 0.2),
+                                Center(
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.fitness_center_outlined, size: 48, color: AppTheme.textMuted.withValues(alpha: 0.5)),
+                                      const SizedBox(height: 8),
+                                      Text('No Workout Plans found', style: GoogleFonts.inter(fontSize: 14, color: AppTheme.textMuted)),
+                                      const SizedBox(height: 12),
+                                      OutlinedButton.icon(
+                                        onPressed: () => workoutVm.fetchWorkouts(),
+                                        icon: const Icon(Icons.refresh, size: 16),
+                                        label: const Text('Refresh'),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            )
+                          : ListView.builder(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              padding: const EdgeInsets.symmetric(horizontal: AppTheme.pagePadding, vertical: 8),
+                              itemCount: filteredWorkouts.length,
+                              itemBuilder: (context, index) {
+                                final plan = filteredWorkouts[index];
+                                return _buildWorkoutCard(context, workoutVm, plan);
+                              },
+                            ),
                     ),
             ),
           ],

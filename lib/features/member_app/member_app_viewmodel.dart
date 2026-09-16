@@ -67,11 +67,8 @@ class MemberAppViewModel extends ChangeNotifier {
   String _amountPaid = '₹12,000';
   String _nextDue = '30 May 2026';
 
-  // Payment History Mock
-  final List<Map<String, dynamic>> _paymentHistory = [
-    {'invoice': 'INV-2026-004', 'date': '01 Jan 2026', 'amount': '₹12,000', 'status': 'Paid'},
-    {'invoice': 'INV-2025-012', 'date': '01 Jul 2025', 'amount': '₹12,000', 'status': 'Paid'},
-  ];
+  // Payment History
+  final List<Map<String, dynamic>> _paymentHistory = [];
 
   // ── Achievements & Milestones ──
   int _currentLevel = 1;
@@ -697,9 +694,10 @@ class MemberAppViewModel extends ChangeNotifier {
           print('Error loading member_memberships: $e');
         }
 
-        // Fetch real payment history from database
+        // Fetch real payment history from database (strictly deduplicated)
         _paymentHistory.clear();
         final Set<String> processedMembershipIds = {};
+        final Set<String> seenPaymentKeys = {};
 
         List<dynamic>? membershipsList;
         try {
@@ -713,8 +711,46 @@ class MemberAppViewModel extends ChangeNotifier {
           print('Error loading member_memberships for payments: $e');
         }
 
+        // 2. Fetch official revenue finance transactions for this member
         try {
-          // 2. Fetch explicit membership payments (might fail due to RLS, which we handle independently)
+          final financeData = await SupabaseService.client
+              .from('finance_transactions')
+              .select('id, amount, transaction_date, revenue_date, created_at, notes')
+              .eq('reference_id', _memberId)
+              .eq('type', 'Revenue')
+              .order('created_at', ascending: false);
+
+          if (financeData != null && financeData.isNotEmpty) {
+            for (var tx in financeData) {
+              final amtVal = tx['amount'];
+              if (amtVal == null || (amtVal is num && amtVal <= 0)) continue;
+              final rawDate = tx['revenue_date'] ?? tx['transaction_date'] ?? tx['created_at'];
+              final pDate = DateTime.tryParse(rawDate?.toString() ?? '') ?? DateTime.now();
+              final formattedDate = DateFormat('dd MMM yyyy').format(pDate);
+              final amtNum = (amtVal is num) ? amtVal.toDouble() : double.tryParse(amtVal.toString()) ?? 0.0;
+              final amtStr = '₹${amtNum.toStringAsFixed(0)}';
+              final dedupKey = '${pDate.year}-${pDate.month}-${pDate.day}_${amtNum.toStringAsFixed(0)}';
+
+              if (!seenPaymentKeys.contains(dedupKey) && !seenPaymentKeys.contains(tx['id'].toString())) {
+                seenPaymentKeys.add(dedupKey);
+                seenPaymentKeys.add(tx['id'].toString());
+                final invoiceNum = 'INV-${pDate.year}-${tx['id'].toString().replaceAll('-', '').substring(0, 4).toUpperCase()}';
+                _paymentHistory.add({
+                  'invoice': invoiceNum,
+                  'date': formattedDate,
+                  'amount': amtStr,
+                  'status': 'Paid',
+                  'raw_date': pDate,
+                });
+              }
+            }
+          }
+        } catch (e) {
+          print('Error loading finance transactions for payments: $e');
+        }
+
+        try {
+          // 3. Fetch explicit membership payments
           final paymentsData = await SupabaseService.client
               .from('membership_payments')
               .select('id, amount, payment_date, member_membership_id')
@@ -726,16 +762,26 @@ class MemberAppViewModel extends ChangeNotifier {
               final belongsToUser = membershipsList?.any((m) => m['id'].toString() == mId) ?? false;
               if (belongsToUser) {
                 processedMembershipIds.add(mId);
+                final amtVal = pay['amount'];
+                if (amtVal == null || (amtVal is num && amtVal <= 0)) continue;
                 final pDate = DateTime.tryParse(pay['payment_date'] ?? '') ?? DateTime.now();
                 final formattedDate = DateFormat('dd MMM yyyy').format(pDate);
-                final invoiceNum = 'INV-${pDate.year}-${pay['id'].toString().substring(0, 4).toUpperCase()}';
-                final amtVal = pay['amount'] ?? 0;
-                _paymentHistory.add({
-                  'invoice': invoiceNum,
-                  'date': formattedDate,
-                  'amount': '₹$amtVal',
-                  'status': 'Paid',
-                });
+                final amtNum = (amtVal is num) ? amtVal.toDouble() : double.tryParse(amtVal.toString()) ?? 0.0;
+                final amtStr = '₹${amtNum.toStringAsFixed(0)}';
+                final dedupKey = '${pDate.year}-${pDate.month}-${pDate.day}_${amtNum.toStringAsFixed(0)}';
+
+                if (!seenPaymentKeys.contains(dedupKey) && !seenPaymentKeys.contains(pay['id'].toString())) {
+                  seenPaymentKeys.add(dedupKey);
+                  seenPaymentKeys.add(pay['id'].toString());
+                  final invoiceNum = 'INV-${pDate.year}-${pay['id'].toString().replaceAll('-', '').substring(0, 4).toUpperCase()}';
+                  _paymentHistory.add({
+                    'invoice': invoiceNum,
+                    'date': formattedDate,
+                    'amount': amtStr,
+                    'status': 'Paid',
+                    'raw_date': pDate,
+                  });
+                }
               }
             }
           }
@@ -743,7 +789,7 @@ class MemberAppViewModel extends ChangeNotifier {
           print('Error loading membership_payments: $e');
         }
 
-        // 3. Fallback: for memberships that don't have explicit payments in membership_payments,
+        // 4. Fallback: for memberships that don't have explicit payments in membership_payments,
         // but have paid_amount > 0 in member_memberships, synthesize a payment history entry!
         if (membershipsList != null) {
           for (var mship in membershipsList) {
@@ -753,17 +799,32 @@ class MemberAppViewModel extends ChangeNotifier {
             if (!processedMembershipIds.contains(mId) && paidAmount > 0) {
               final pDate = DateTime.tryParse(mship['start_date'] ?? '') ?? DateTime.now();
               final formattedDate = DateFormat('dd MMM yyyy').format(pDate);
-              final invoiceNum = 'INV-${pDate.year}-${mId.substring(0, 4).toUpperCase()}';
-              final statusStr = mship['payment_status']?.toString() ?? 'Paid';
-              _paymentHistory.add({
-                'invoice': invoiceNum,
-                'date': formattedDate,
-                'amount': '₹$paidAmount',
-                'status': statusStr == 'Fully Paid' ? 'Paid' : statusStr,
-              });
+              final amtStr = '₹${paidAmount.toStringAsFixed(0)}';
+              final dedupKey = '${pDate.year}-${pDate.month}-${pDate.day}_${paidAmount.toStringAsFixed(0)}';
+
+              if (!seenPaymentKeys.contains(dedupKey) && !seenPaymentKeys.contains(mId)) {
+                seenPaymentKeys.add(dedupKey);
+                seenPaymentKeys.add(mId);
+                final invoiceNum = 'INV-${pDate.year}-${mId.replaceAll('-', '').substring(0, 4).toUpperCase()}';
+                final statusStr = mship['payment_status']?.toString() ?? 'Paid';
+                _paymentHistory.add({
+                  'invoice': invoiceNum,
+                  'date': formattedDate,
+                  'amount': amtStr,
+                  'status': statusStr == 'Fully Paid' ? 'Paid' : statusStr,
+                  'raw_date': pDate,
+                });
+              }
             }
           }
         }
+
+        // Sort payments descending by date
+        _paymentHistory.sort((a, b) {
+          final da = a['raw_date'] as DateTime? ?? DateTime(2000);
+          final db = b['raw_date'] as DateTime? ?? DateTime(2000);
+          return db.compareTo(da);
+        });
 
         // Fetch workout logs for the last 30 days and clean up old ones
         try {

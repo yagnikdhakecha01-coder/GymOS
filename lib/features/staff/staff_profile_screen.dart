@@ -1217,7 +1217,21 @@ Thank you.''';
   // TAB 2: ATTENDANCE (Premium Calendar View)
   // ═══════════════════════════════════════════════════════
   Widget _buildAttendanceTab(Staff staff) {
-    final records = _attendanceRecords;
+    final records = _attendanceRecords.where((r) {
+      final d = r['date'] as DateTime;
+      return d.year == _attendanceMonth.year && d.month == _attendanceMonth.month;
+    }).map((r) {
+      final d = r['date'] as DateTime;
+      final rawStatus = r['status'] as String;
+      // Sundays without check-in are Weekly Holidays, NEVER Absent
+      if (d.weekday == DateTime.sunday && (rawStatus == 'Absent' || (r['checkIn'] as String).isEmpty)) {
+        final mod = Map<String, dynamic>.from(r);
+        mod['status'] = 'Holiday';
+        return mod;
+      }
+      return r;
+    }).toList();
+
     final present = records.where((r) => r['status'] == 'Present').length;
     final absent = records.where((r) => r['status'] == 'Absent').length;
     final holiday = records.where((r) => r['status'] == 'Holiday').length;

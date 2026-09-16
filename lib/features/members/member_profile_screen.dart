@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
@@ -41,6 +43,337 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
 
   double _activeCommissionPercentage = 0.0;
   bool _loadingPt = false;
+  bool _isUploadingPhoto = false;
+
+  Future<void> _pickAndUploadPhoto(ImageSource source, Member member) async {
+    try {
+      final picker = ImagePicker();
+      final pickedFile = await picker.pickImage(
+        source: source,
+        imageQuality: 80,
+        maxWidth: 800,
+        maxHeight: 800,
+      );
+      if (pickedFile == null) return;
+
+      final file = File(pickedFile.path);
+      final bytes = await file.readAsBytes();
+
+      if (mounted) {
+        setState(() => _isUploadingPhoto = true);
+      }
+
+      final authVm = Provider.of<AuthViewModel>(context, listen: false);
+      final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'] ?? 'default_gym';
+      final fileName = 'member_${member.id}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final path = '$gymId/members/$fileName';
+
+      await SupabaseService.client.storage
+          .from('avatars')
+          .uploadBinary(path, bytes);
+
+      final publicUrl = SupabaseService.client.storage
+          .from('avatars')
+          .getPublicUrl(path);
+
+      final updated = member.copyWith(avatar: publicUrl);
+      final membersVm = Provider.of<MembersViewModel>(context, listen: false);
+      await membersVm.updateMemberProfile(updated);
+
+      if (mounted) {
+        setState(() => _isUploadingPhoto = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Member photo updated successfully!'),
+            backgroundColor: AppTheme.success,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isUploadingPhoto = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to upload photo: $e'),
+            backgroundColor: AppTheme.danger,
+          ),
+        );
+      }
+    }
+  }
+
+  void _showFullPhotoDialog(BuildContext context, Member member) {
+    if (member.avatar.isEmpty) {
+      _showPhotoPickerBottomSheet(context, member);
+      return;
+    }
+
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'MemberPhoto',
+      barrierColor: Colors.black.withOpacity(0.92),
+      transitionDuration: const Duration(milliseconds: 260),
+      pageBuilder: (dialogContext, anim1, anim2) {
+        return Scaffold(
+          backgroundColor: Colors.transparent,
+          body: SafeArea(
+            child: Column(
+              children: [
+                // Header with Member Details & Close Button
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 18,
+                            backgroundImage: NetworkImage(member.avatar),
+                            backgroundColor: AppTheme.primaryLight,
+                          ),
+                          const SizedBox(width: 10),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                member.name,
+                                style: GoogleFonts.inter(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              Text(
+                                'Profile Photo',
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  color: Colors.white70,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded, color: Colors.white, size: 28),
+                        onPressed: () => Navigator.pop(dialogContext),
+                      ),
+                    ],
+                  ),
+                ),
+                // Center Zoomable Photo with InteractiveViewer
+                Expanded(
+                  child: Center(
+                    child: InteractiveViewer(
+                      minScale: 0.5,
+                      maxScale: 4.0,
+                      child: Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 16),
+                        constraints: BoxConstraints(
+                          maxHeight: MediaQuery.of(dialogContext).size.height * 0.65,
+                        ),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.6),
+                              blurRadius: 28,
+                              spreadRadius: 6,
+                            ),
+                          ],
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(20),
+                          child: Image.network(
+                            member.avatar,
+                            fit: BoxFit.contain,
+                            loadingBuilder: (context, child, loadingProgress) {
+                              if (loadingProgress == null) return child;
+                              return SizedBox(
+                                height: 260,
+                                child: Center(
+                                  child: CircularProgressIndicator(
+                                    value: loadingProgress.expectedTotalBytes != null
+                                        ? loadingProgress.cumulativeBytesLoaded /
+                                            loadingProgress.expectedTotalBytes!
+                                        : null,
+                                    color: AppTheme.primary,
+                                  ),
+                                ),
+                              );
+                            },
+                            errorBuilder: (_, __, ___) => Container(
+                              height: 260,
+                              color: Colors.white10,
+                              child: const Center(
+                                child: Icon(Icons.broken_image_rounded, color: Colors.white54, size: 64),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                // Bottom Action Button: Change Photo
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                            Navigator.pop(dialogContext);
+                            _showPhotoPickerBottomSheet(context, member);
+                          },
+                          icon: const Icon(Icons.camera_alt_outlined, color: Colors.white, size: 20),
+                          label: Text(
+                            'Change Photo',
+                            style: GoogleFonts.inter(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: Colors.white38),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+      transitionBuilder: (context, anim1, anim2, child) {
+        return FadeTransition(
+          opacity: anim1,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.85, end: 1.0).animate(
+              CurvedAnimation(parent: anim1, curve: Curves.easeOutCubic),
+            ),
+            child: child,
+          ),
+        );
+      },
+    );
+  }
+
+  void _showPhotoPickerBottomSheet(BuildContext context, Member member) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Member Photo',
+                      style: GoogleFonts.inter(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.textPrimary,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded),
+                      onPressed: () => Navigator.pop(sheetContext),
+                    ),
+                  ],
+                ),
+                Text(
+                  member.name,
+                  style: GoogleFonts.inter(fontSize: 13, color: AppTheme.textSecondary),
+                ),
+                const SizedBox(height: 16),
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primaryLight,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.photo_library_outlined, color: AppTheme.primary),
+                  ),
+                  title: Text('Upload from Gallery', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600)),
+                  subtitle: Text('Choose a photo from your device', style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary)),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _pickAndUploadPhoto(ImageSource.gallery, member);
+                  },
+                ),
+                const Divider(height: 16),
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primaryLight,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.camera_alt_outlined, color: AppTheme.primary),
+                  ),
+                  title: Text('Take Photo', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600)),
+                  subtitle: Text('Capture new photo with camera', style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary)),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _pickAndUploadPhoto(ImageSource.camera, member);
+                  },
+                ),
+                if (member.avatar.isNotEmpty) ...[
+                  const Divider(height: 16),
+                  ListTile(
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFEE2E2),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(Icons.delete_outline_rounded, color: AppTheme.danger),
+                    ),
+                    title: Text('Remove Photo', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.danger)),
+                    subtitle: Text('Revert to initial avatar', style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary)),
+                    onTap: () async {
+                      Navigator.pop(sheetContext);
+                      final updated = member.copyWith(avatar: '');
+                      final membersVm = Provider.of<MembersViewModel>(context, listen: false);
+                      await membersVm.updateMemberProfile(updated);
+                      if (mounted) {
+                        setState(() {});
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Member photo removed.')),
+                        );
+                      }
+                    },
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
 
   void _shareInvitationCode(String code, String phone) {
     showModalBottomSheet(
@@ -1464,24 +1797,56 @@ Thank you.''';
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Stack(
-              children: [
-                CircleAvatar(
-                  radius: 40,
-                  backgroundImage: member.avatar.isNotEmpty ? NetworkImage(member.avatar) : null,
-                  backgroundColor: AppTheme.primaryLight,
-                  child: member.avatar.isEmpty ? Text(member.name[0], style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.bold)) : null,
-                ),
-                Positioned(
-                  bottom: 0,
-                  right: 0,
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-                    child: const Icon(Icons.camera_alt_outlined, size: 14, color: AppTheme.textPrimary),
+            InkWell(
+              onTap: _isUploadingPhoto ? null : () => _showFullPhotoDialog(context, member),
+              onLongPress: _isUploadingPhoto
+                  ? null
+                  : () {
+                      HapticFeedback.mediumImpact();
+                      _showPhotoPickerBottomSheet(context, member);
+                    },
+              borderRadius: BorderRadius.circular(40),
+              child: Stack(
+                children: [
+                  CircleAvatar(
+                    radius: 40,
+                    backgroundImage: member.avatar.isNotEmpty ? NetworkImage(member.avatar) : null,
+                    backgroundColor: AppTheme.primaryLight,
+                    child: _isUploadingPhoto
+                        ? const SizedBox(
+                            width: 28,
+                            height: 28,
+                            child: CircularProgressIndicator(strokeWidth: 3, color: AppTheme.primary),
+                          )
+                        : (member.avatar.isEmpty
+                            ? Text(
+                                member.name.isNotEmpty ? member.name[0].toUpperCase() : 'M',
+                                style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.bold, color: AppTheme.primary),
+                              )
+                            : null),
                   ),
-                ),
-              ],
+                  if (!_isUploadingPhoto)
+                    Positioned(
+                      bottom: 0,
+                      right: 0,
+                      child: GestureDetector(
+                        onTap: () {
+                          HapticFeedback.lightImpact();
+                          _showPhotoPickerBottomSheet(context, member);
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(5),
+                          decoration: BoxDecoration(
+                            color: AppTheme.primary,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 2),
+                          ),
+                          child: const Icon(Icons.camera_alt_rounded, size: 14, color: Colors.white),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
             const SizedBox(width: 16),
             Expanded(
@@ -2376,15 +2741,40 @@ Thank you.''';
           onPressed: () => Navigator.pop(context),
         ),
         actions: [
-          if (_canDeleteMember(context))
-            PopupMenuButton<String>(
-              icon: const Icon(Icons.more_vert),
-              onSelected: (val) {
-                if (val == 'delete') {
-                  _confirmDeleteMember(context, member);
-                }
-              },
-              itemBuilder: (context) => [
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert),
+            onSelected: (val) {
+              if (val == 'photo') {
+                _showPhotoPickerBottomSheet(context, member);
+              } else if (val == 'edit') {
+                _showEditMemberDetailsSheet(context, member);
+              } else if (val == 'delete') {
+                _confirmDeleteMember(context, member);
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'photo',
+                child: Row(
+                  children: [
+                    Icon(Icons.camera_alt_outlined, color: AppTheme.primary, size: 20),
+                    SizedBox(width: 10),
+                    Text('Change Photo', style: TextStyle(fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'edit',
+                child: Row(
+                  children: [
+                    Icon(Icons.edit_outlined, color: AppTheme.textPrimary, size: 20),
+                    SizedBox(width: 10),
+                    Text('Edit Member Details', style: TextStyle(fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
+              if (_canDeleteMember(context)) ...[
+                const PopupMenuDivider(),
                 const PopupMenuItem(
                   value: 'delete',
                   child: Row(
@@ -2396,12 +2786,8 @@ Thank you.''';
                   ),
                 ),
               ],
-            )
-          else
-            IconButton(
-              icon: const Icon(Icons.more_vert),
-              onPressed: () {},
-            ),
+            ],
+          ),
         ],
       ),
       body: _isLoading

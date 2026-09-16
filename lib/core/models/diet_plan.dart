@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 class Meal {
   final String name; // Breakfast, Lunch, Snack, Dinner, etc.
   final String items;
@@ -11,9 +13,9 @@ class Meal {
 
   factory Meal.fromJson(Map<String, dynamic> json) {
     return Meal(
-      name: json['name'] as String,
-      items: json['items'] as String? ?? '',
-      time: json['time'] as String? ?? '',
+      name: json['name']?.toString() ?? '',
+      items: json['items']?.toString() ?? '',
+      time: json['time']?.toString() ?? '',
     );
   }
 
@@ -46,17 +48,43 @@ class DietPlan {
   });
 
   factory DietPlan.fromJson(Map<String, dynamic> json) {
-    var rawMeals = json['meals'] as List? ?? [];
-    List<Meal> mealsList = rawMeals.map((e) => Meal.fromJson(e as Map<String, dynamic>)).toList();
+    List<Meal> mealsList = [];
+    final rawMeals = json['meals'];
+    if (rawMeals is List) {
+      for (final item in rawMeals) {
+        if (item is Map) {
+          mealsList.add(Meal.fromJson(Map<String, dynamic>.from(item)));
+        }
+      }
+    } else if (rawMeals is String && rawMeals.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(rawMeals);
+        if (decoded is List) {
+          for (final item in decoded) {
+            if (item is Map) {
+              mealsList.add(Meal.fromJson(Map<String, dynamic>.from(item)));
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    final rawCalories = json['calories'] ?? json['calories_goal'];
+    int parsedCalories = 2000;
+    if (rawCalories is num) {
+      parsedCalories = rawCalories.toInt();
+    } else if (rawCalories != null) {
+      parsedCalories = int.tryParse(rawCalories.toString()) ?? 2000;
+    }
 
     return DietPlan(
-      id: json['id'] as String,
-      title: json['title'] as String,
-      goal: json['goal'] as String? ?? 'Fitness',
-      calories: json['calories'] as int? ?? 2000,
+      id: json['id']?.toString() ?? '',
+      title: json['title']?.toString() ?? '',
+      goal: json['goal']?.toString() ?? 'Fitness',
+      calories: parsedCalories,
       meals: mealsList,
-      notes: json['notes'] as String? ?? '',
-      status: json['status'] as String? ?? 'Active',
+      notes: (json['notes'] ?? json['description'])?.toString() ?? '',
+      status: json['status']?.toString() ?? 'Active',
     );
   }
 

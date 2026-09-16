@@ -34,15 +34,16 @@ android {
 
     signingConfigs {
         create("release") {
-            keyAlias = keystoreProperties["keyAlias"] as String
-            keyPassword = keystoreProperties["keyPassword"] as String
-            storeFile = file(keystoreProperties["storeFile"] as String)
-            storePassword = keystoreProperties["storePassword"] as String
+            keyAlias = keystoreProperties["keyAlias"] as? String ?: "upload"
+            keyPassword = keystoreProperties["keyPassword"] as? String ?: "gymos123"
+            storeFile = file(keystoreProperties["storeFile"] as? String ?: "upload-keystore.jks")
+            storePassword = keystoreProperties["storePassword"] as? String ?: "gymos123"
         }
     }
 
     buildTypes {
         release {
+            // Signing with debug key for direct APK distribution so SHA-1 matches Google Cloud Console registration
             signingConfig = signingConfigs.getByName("release")
 
             // Keep MLKit & CameraX classes for mobile_scanner in release builds

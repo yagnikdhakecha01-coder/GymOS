@@ -110,14 +110,38 @@ class _MemberActivityHeatmapWidgetState
   void _computeStats() {
     _totalActiveDays = _activityMap.values.where((v) => v > 0).length;
 
-    // Calculate current streak
+    // Prefer MemberAppViewModel streak from database RPC if available
+    try {
+      final vm = Provider.of<MemberAppViewModel>(context, listen: false);
+      if (vm.currentStreak > 0) {
+        _currentStreak = vm.currentStreak;
+        return;
+      }
+    } catch (_) {}
+
+    // Calculate current streak with Sunday & off-day preservation
     int streak = 0;
     var day = DateTime.now();
-    while (true) {
+    final todayKey =
+        '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
+
+    if ((_activityMap[todayKey] ?? 0) > 0) {
+      streak = 1;
+      day = day.subtract(const Duration(days: 1));
+    } else {
+      streak = 0;
+      day = day.subtract(const Duration(days: 1));
+    }
+
+    final now = DateTime.now();
+    while (day.isAfter(now.subtract(const Duration(days: 365)))) {
       final key =
           '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
       if ((_activityMap[key] ?? 0) > 0) {
         streak++;
+        day = day.subtract(const Duration(days: 1));
+      } else if (day.weekday == DateTime.sunday) {
+        // Skip Sundays without breaking streak
         day = day.subtract(const Duration(days: 1));
       } else {
         break;

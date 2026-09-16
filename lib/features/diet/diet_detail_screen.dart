@@ -7,6 +7,7 @@ import 'diet_viewmodel.dart';
 import '../../core/models/diet_plan.dart';
 import '../gym_settings/gym_settings_viewmodel.dart';
 import '../../core/widgets/save_success_screen.dart';
+import '../../core/services/supabase_service.dart';
 
 class DietDetailScreen extends StatefulWidget {
   final DietPlan? dietPlan;
@@ -78,7 +79,7 @@ class _DietDetailScreenState extends State<DietDetailScreen> {
       return;
     }
 
-    final id = widget.dietPlan?.id ?? 'd_${DateTime.now().millisecondsSinceEpoch}';
+    final id = widget.dietPlan?.id ?? SupabaseService.generateUuidV4();
     final newPlan = DietPlan(
       id: id,
       title: _titleController.text,

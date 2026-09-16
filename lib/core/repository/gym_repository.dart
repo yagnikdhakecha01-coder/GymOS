@@ -281,6 +281,8 @@ class GymRepository extends ChangeNotifier {
                 fetchAttendanceLogsFromSupabase();
               } else if (tableName == 'workout_plans') {
                 fetchWorkoutsFromSupabase();
+              } else if (tableName == 'diet_plans') {
+                fetchDietsFromSupabase();
               } else if (tableName == 'goals') {
                 fetchGoalsFromSupabase();
               } else if (tableName == 'custom_fields') {
@@ -342,6 +344,8 @@ class GymRepository extends ChangeNotifier {
       await fetchCustomFieldsFromSupabase();
       if (_hasNetworkConnectionError) return;
       await fetchWorkoutsFromSupabase();
+      if (_hasNetworkConnectionError) return;
+      await fetchDietsFromSupabase();
       if (_hasNetworkConnectionError) return;
       await fetchRecentActivitiesFromSupabase();
       if (_hasNetworkConnectionError) return;
@@ -2848,9 +2852,9 @@ class GymRepository extends ChangeNotifier {
               .eq('gym_id', gymId);
           _resetNetworkError();
           final responseStr = jsonEncode(response);
-          if (responseStr != _lastDietsRaw) {
+          if (responseStr != _lastDietsRaw || _diets.isEmpty) {
             _lastDietsRaw = responseStr;
-            _diets = response.map((e) => DietPlan.fromJson(e)).toList();
+            _diets = response.map((e) => DietPlan.fromJson(Map<String, dynamic>.from(e as Map))).toList();
             await _storage.setString(_dietsKey, responseStr);
             notifyListeners();
           }
@@ -2915,6 +2919,8 @@ class GymRepository extends ChangeNotifier {
         } else {
           _workouts.add(workout);
         }
+        _lastWorkoutsRaw = jsonEncode(_workouts.map((e) => e.toJson()).toList());
+        await _storage.setString(_workoutsKey, _lastWorkoutsRaw!);
         notifyListeners();
         return null; // success
       } catch (e) {
@@ -2935,6 +2941,8 @@ class GymRepository extends ChangeNotifier {
       try {
         await SupabaseService.client.from('workout_plans').delete().eq('id', id);
         _workouts.removeWhere((e) => e.id == id);
+        _lastWorkoutsRaw = jsonEncode(_workouts.map((e) => e.toJson()).toList());
+        await _storage.setString(_workoutsKey, _lastWorkoutsRaw!);
         notifyListeners();
       } catch (e) {
         print('Supabase deleteWorkout error: $e');
@@ -2948,26 +2956,97 @@ class GymRepository extends ChangeNotifier {
   void _loadDiets() {
     final raw = _storage.getString(_dietsKey);
     if (raw != null) {
-      final List decoded = jsonDecode(raw);
-      _diets = decoded.map((e) => DietPlan.fromJson(e)).toList();
+      try {
+        final List decoded = jsonDecode(raw);
+        _diets = decoded.map((e) => DietPlan.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+      } catch (e) {
+        print('Error loading diets from cache: $e');
+        _diets = [];
+      }
     } else {
       _diets = [];
     }
   }
 
-  Future<void> saveDiet(DietPlan diet) async {
-    final index = _diets.indexWhere((e) => e.id == diet.id);
-    if (index >= 0) {
-      _diets[index] = diet;
+  Future<String?> saveDiet(DietPlan diet) async {
+    final gymId = _storage.getGymInfo()?['id'];
+
+    if (SupabaseService.isInitialized && gymId != null) {
+      try {
+        final mealsJson = diet.meals.map((m) => m.toJson()).toList();
+        final data = <String, dynamic>{
+          'id': diet.id,
+          'gym_id': gymId,
+          'title': diet.title,
+          'goal': diet.goal,
+          'calories': diet.calories,
+          'meals': mealsJson,
+          'notes': diet.notes,
+          'status': diet.status,
+        };
+        print('saveDiet: Attempting upsert with id=${diet.id}, gym_id=$gymId');
+        await SupabaseService.client.from('diet_plans').upsert(data);
+        print('saveDiet: SUCCESS');
+
+        final index = _diets.indexWhere((e) => e.id == diet.id);
+        if (index >= 0) {
+          _diets[index] = diet;
+        } else {
+          _diets.add(diet);
+        }
+        _lastDietsRaw = jsonEncode(_diets.map((e) => e.toJson()).toList());
+        await _storage.setString(_dietsKey, _lastDietsRaw);
+        notifyListeners();
+        return null;
+      } catch (e) {
+        print('saveDiet: FAILED - $e');
+        // Still save locally so user doesn't lose data
+        final index = _diets.indexWhere((e) => e.id == diet.id);
+        if (index >= 0) {
+          _diets[index] = diet;
+        } else {
+          _diets.add(diet);
+        }
+        _lastDietsRaw = jsonEncode(_diets.map((e) => e.toJson()).toList());
+        await _storage.setString(_dietsKey, _lastDietsRaw);
+        notifyListeners();
+        return 'Database error: $e';
+      }
     } else {
-      _diets.add(diet);
+      final index = _diets.indexWhere((e) => e.id == diet.id);
+      if (index >= 0) {
+        _diets[index] = diet;
+      } else {
+        _diets.add(diet);
+      }
+      _lastDietsRaw = jsonEncode(_diets.map((e) => e.toJson()).toList());
+      await _storage.setString(_dietsKey, _lastDietsRaw);
+      notifyListeners();
+      return null;
     }
-    await _storage.setString(_dietsKey, jsonEncode(_diets.map((e) => e.toJson()).toList()));
   }
 
   Future<void> deleteDiet(String id) async {
-    _diets.removeWhere((e) => e.id == id);
-    await _storage.setString(_dietsKey, jsonEncode(_diets.map((e) => e.toJson()).toList()));
+    if (SupabaseService.isInitialized) {
+      try {
+        await SupabaseService.client.from('diet_plans').delete().eq('id', id);
+        _diets.removeWhere((e) => e.id == id);
+        _lastDietsRaw = jsonEncode(_diets.map((e) => e.toJson()).toList());
+        await _storage.setString(_dietsKey, _lastDietsRaw);
+        notifyListeners();
+      } catch (e) {
+        print('Supabase deleteDiet error: $e');
+        _diets.removeWhere((e) => e.id == id);
+        _lastDietsRaw = jsonEncode(_diets.map((e) => e.toJson()).toList());
+        await _storage.setString(_dietsKey, _lastDietsRaw);
+        notifyListeners();
+      }
+    } else {
+      _diets.removeWhere((e) => e.id == id);
+      _lastDietsRaw = jsonEncode(_diets.map((e) => e.toJson()).toList());
+      await _storage.setString(_dietsKey, _lastDietsRaw);
+      notifyListeners();
+    }
   }
 
   // --- Memberships ---

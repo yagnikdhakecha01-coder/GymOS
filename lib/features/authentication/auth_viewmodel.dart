@@ -613,63 +613,63 @@ class AuthViewModel extends ChangeNotifier {
         return true;
       }
 
-      // Pure Native In-App Google Sign-In for Android & iOS (No Chrome Browser Redirection)
-      final GoogleSignIn googleSignIn = GoogleSignIn(
-        clientId: '225633708172-75k5t5303ici4s40lat94ps647lbci5e.apps.googleusercontent.com',
-        serverClientId: '225633708172-7st3l0u84rl22ccnaphap3dfpooai0o6.apps.googleusercontent.com',
-        scopes: ['email', 'profile'],
-      );
-
-      // Reset previous Google session state to ensure account picker prompt pops up natively in-app
+      // Pure Native In-App Google Sign-In for Android & iOS
       try {
-        await googleSignIn.signOut();
-      } catch (_) {}
-
-      final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
-      if (googleUser == null) {
-        return false;
-      }
-
-      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
-      final String? idToken = googleAuth.idToken;
-      final String? accessToken = googleAuth.accessToken;
-
-      if (idToken == null) {
-        throw Exception('Google Sign-in failed: Could not obtain Google ID Token.');
-      }
-
-      // Authenticate directly with Supabase using native ID Token (Pure In-App Flow)
-      try {
-        await SupabaseService.client.auth.signInWithIdToken(
-          provider: OAuthProvider.google,
-          idToken: idToken,
+        final GoogleSignIn googleSignIn = GoogleSignIn(
+          clientId: (!kIsWeb && Platform.isIOS)
+              ? '225633708172-75k5t5303ici4s40lat94ps647lbci5e.apps.googleusercontent.com'
+              : null,
+          serverClientId: '225633708172-7st3l0u84rl22ccnaphap3dfpooai0o6.apps.googleusercontent.com',
+          scopes: ['email', 'profile'],
         );
-      } catch (tokenErr) {
-        print('signInWithIdToken with idToken only failed: $tokenErr. Retrying with accessToken...');
-        await SupabaseService.client.auth.signInWithIdToken(
-          provider: OAuthProvider.google,
-          idToken: idToken,
-          accessToken: accessToken,
-        );
+
+        // Reset previous Google session state to ensure account picker prompt pops up natively in-app
+        try {
+          await googleSignIn.signOut();
+        } catch (_) {}
+
+        final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
+        if (googleUser == null) {
+          return false;
+        }
+
+        final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+        final String? idToken = googleAuth.idToken;
+        final String? accessToken = googleAuth.accessToken;
+
+        if (idToken != null) {
+          try {
+            await SupabaseService.client.auth.signInWithIdToken(
+              provider: OAuthProvider.google,
+              idToken: idToken,
+            );
+          } catch (tokenErr) {
+            print('signInWithIdToken with idToken only failed: $tokenErr. Retrying with accessToken...');
+            await SupabaseService.client.auth.signInWithIdToken(
+              provider: OAuthProvider.google,
+              idToken: idToken,
+              accessToken: accessToken,
+            );
+          }
+
+          await loadCurrentProfile();
+          return SupabaseService.client.auth.currentSession != null || _authService.currentUser != null;
+        }
+      } catch (nativeErr) {
+        print('Native Google Sign-In error: $nativeErr');
+        final errStr = nativeErr.toString();
+        // User cancelled — silently return false
+        if (errStr.contains('sign_in_canceled') || errStr.contains('12501')) {
+          return false;
+        }
+
+        throw Exception('Google Sign-in failed: $errStr');
       }
 
-      await loadCurrentProfile();
-      return SupabaseService.client.auth.currentSession != null || _authService.currentUser != null;
+      return false;
     } on AuthException catch (ae) {
       print('signInWithGoogle AuthException: $ae');
       throw Exception('Google Sign-in failed (400): ${ae.message}');
-    } on PlatformException catch (pe) {
-      if (pe.code == 'sign_in_canceled' || pe.code == '12501') {
-        return false;
-      }
-      String msg = 'Google Sign-in failed.';
-      if (pe.code == 'network_error' || pe.code == '7') {
-        msg = 'Network connection error. Please check your internet connection.';
-      } else {
-        msg = 'Google error (${pe.code}): ${pe.message}';
-      }
-      print('signInWithGoogle native platform error: $pe');
-      throw Exception(msg);
     } catch (e) {
       print('signInWithGoogle native error: $e');
       rethrow;

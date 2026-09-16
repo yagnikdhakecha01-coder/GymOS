@@ -55,6 +55,9 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
   String? _currentPurchasedPlanId;
   bool _isTrialActive = true;
   bool _isTrialExpired = false;
+  bool _autoPayEnabled = true;
+  bool _cancelAtPeriodEnd = false;
+  bool _isCancellingAutoPay = false;
 
   Future<void> _loadTrialSettings() async {
     try {
@@ -117,6 +120,9 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
               if (rawPlan == 'pro') formattedPlanName = 'Pro Plan';
               if (rawPlan == 'business') formattedPlanName = 'Business Plan';
 
+              bool isAutoPay = subRes?['auto_pay'] == null ? true : (subRes!['auto_pay'] == true);
+              bool isCancelAtEnd = (subRes?['cancel_at_period_end'] ?? false) == true;
+
               String formatDate(DateTime? dt) {
                 if (dt == null) return '-';
                 final local = dt.toLocal();
@@ -134,6 +140,8 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
                 _trialDaysLeft = daysLeft;
                 _trialEndStr = formatDate(trialEnd);
                 _planEndStr = formatDate(planEnd);
+                _autoPayEnabled = isAutoPay && !isCancelAtEnd;
+                _cancelAtPeriodEnd = isCancelAtEnd || !isAutoPay;
               });
             }
           } catch (e) {
@@ -193,6 +201,156 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
 
   String get _trialFooterText {
     return 'All plans include 45 days free trial for new gyms. Cancel anytime.';
+  }
+
+  Future<void> _showCancelAutoPayDialog() async {
+    final authVm = Provider.of<AuthViewModel>(context, listen: false);
+    final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
+    final ownerId = authVm.currentUser?.id;
+    if (gymId == null) return;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            const Icon(Icons.warning_amber_rounded, color: Colors.amber, size: 28),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Cancel AutoPay?',
+                style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 18),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Are you sure you want to cancel your AutoPay subscription?',
+              style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 14, color: const Color(0xFF1E293B)),
+            ),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF2F2),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFFCA5A5)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.check_circle_outline_rounded, color: Colors.green, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Your gym plan remains ACTIVE until $_planEndStr.',
+                          style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: const Color(0xFF15803D)),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.block_rounded, color: Colors.red, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'AutoPay will be turned OFF immediately. Next month\'s payment will NOT be debited automatically.',
+                          style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF991B1B), fontWeight: FontWeight.w500),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Google Play Policy Compliant: You will not be charged again unless you manually renew your plan.',
+              style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF64748B), fontStyle: FontStyle.italic),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Keep AutoPay Active', style: GoogleFonts.inter(color: Colors.grey[700], fontWeight: FontWeight.w600)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red[600],
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: Text('Yes, Cancel AutoPay', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      setState(() => _isCancellingAutoPay = true);
+      try {
+        if (SupabaseService.isInitialized) {
+          try {
+            await SupabaseService.client.rpc('cancel_autopay_subscription', params: {
+              'p_gym_id': gymId,
+            });
+          } catch (e) {
+            await SupabaseService.client.from('subscriptions').update({
+              'auto_pay': false,
+              'cancel_at_period_end': true,
+              'auto_pay_cancelled_at': DateTime.now().toIso8601String(),
+              'updated_at': DateTime.now().toIso8601String(),
+            }).eq('gym_id', gymId);
+            
+            await SupabaseService.client.from('subscription_history').insert({
+              'gym_id': gymId,
+              'owner_id': ownerId,
+              'event': 'autopay_cancelled',
+              'details': 'User cancelled AutoPay subscription via app.',
+              'created_at': DateTime.now().toIso8601String(),
+            });
+          }
+
+          await authVm.fetchSubscriptionStatus();
+          await _loadTrialSettings();
+
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('AutoPay cancelled successfully! Next month\'s payment will NOT be debited.'),
+                backgroundColor: Colors.green,
+                duration: Duration(seconds: 4),
+              ),
+            );
+          }
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Could not cancel AutoPay: $e'),
+              backgroundColor: AppTheme.danger,
+            ),
+          );
+        }
+      } finally {
+        if (mounted) setState(() => _isCancellingAutoPay = false);
+      }
+    }
   }
 
   @override
@@ -772,62 +930,118 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
             Container(
               padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(
-                color: _isTrialExpired ? const Color(0xFFFFFBEB) : const Color(0xFFF5F3FF),
+                color: _isTrialExpired 
+                    ? const Color(0xFFFFFBEB) 
+                    : (_currentPurchasedPlanId != null && _cancelAtPeriodEnd
+                        ? const Color(0xFFFFF7ED)
+                        : const Color(0xFFF5F3FF)),
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                  color: _isTrialExpired ? const Color(0xFFFDE68A) : const Color(0xFFDDD6FE),
+                  color: _isTrialExpired 
+                      ? const Color(0xFFFDE68A) 
+                      : (_currentPurchasedPlanId != null && _cancelAtPeriodEnd
+                          ? const Color(0xFFFFEDD5)
+                          : const Color(0xFFDDD6FE)),
                   width: 1.2,
                 ),
               ),
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: (_isTrialExpired ? Colors.amber : const Color(0xFF6C4EFF)).withOpacity(0.12),
-                          blurRadius: 6,
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: (_isTrialExpired ? Colors.amber : const Color(0xFF6C4EFF)).withOpacity(0.12),
+                              blurRadius: 6,
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                    child: Icon(
-                      _currentPurchasedPlanId != null
-                          ? Icons.verified_rounded
-                          : (_isTrialExpired ? Icons.warning_amber_rounded : Icons.shield_outlined),
-                      color: _currentPurchasedPlanId != null
-                          ? const Color(0xFF6C4EFF)
-                          : (_isTrialExpired ? const Color(0xFFD97706) : const Color(0xFF6C4EFF)),
-                      size: 24,
-                    ),
+                        child: Icon(
+                          _currentPurchasedPlanId != null
+                              ? (_cancelAtPeriodEnd ? Icons.event_available_rounded : Icons.verified_rounded)
+                              : (_isTrialExpired ? Icons.warning_amber_rounded : Icons.shield_outlined),
+                          color: _currentPurchasedPlanId != null
+                              ? (_cancelAtPeriodEnd ? const Color(0xFFEA580C) : const Color(0xFF6C4EFF))
+                              : (_isTrialExpired ? const Color(0xFFD97706) : const Color(0xFF6C4EFF)),
+                          size: 24,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _trialTitleText,
+                              style: GoogleFonts.inter(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: _isTrialExpired 
+                                    ? const Color(0xFFB45309) 
+                                    : (_cancelAtPeriodEnd ? const Color(0xFFC2410C) : const Color(0xFF6C4EFF)),
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _currentPurchasedPlanId != null
+                                  ? (_cancelAtPeriodEnd
+                                      ? 'Valid till $_planEndStr • AutoPay Disabled (No next debit)'
+                                      : 'Valid till $_planEndStr • AutoPay Active (Cancel Anytime)')
+                                  : _trialSubtitleText,
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                color: _isTrialExpired 
+                                    ? const Color(0xFF92400E) 
+                                    : (_cancelAtPeriodEnd ? const Color(0xFF9A3412) : const Color(0xFF5B21B6)),
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                  if (_currentPurchasedPlanId != null) ...[
+                    const SizedBox(height: 14),
+                    const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                    const SizedBox(height: 12),
+                    Row(
                       children: [
-                        Text(
-                          _trialTitleText,
-                          style: GoogleFonts.inter(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                            color: _isTrialExpired ? const Color(0xFFB45309) : const Color(0xFF6C4EFF),
+                        Expanded(
+                          child: Text(
+                            _cancelAtPeriodEnd
+                                ? '✓ AutoPay is OFF. Money will NOT be deducted next month.'
+                                : '⚡ AutoPay Enabled. You can cancel anytime before renewal.',
+                            style: GoogleFonts.inter(
+                              fontSize: 11.5,
+                              color: _cancelAtPeriodEnd ? const Color(0xFFC2410C) : const Color(0xFF166534),
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          _trialSubtitleText,
-                          style: GoogleFonts.inter(
-                            fontSize: 12,
-                            color: _isTrialExpired ? const Color(0xFF92400E) : const Color(0xFF5B21B6),
-                            fontWeight: FontWeight.w500,
+                        if (_autoPayEnabled && !_cancelAtPeriodEnd)
+                          OutlinedButton.icon(
+                            onPressed: _isCancellingAutoPay ? null : _showCancelAutoPayDialog,
+                            icon: const Icon(Icons.cancel_outlined, size: 16, color: Colors.red),
+                            label: Text(
+                              _isCancellingAutoPay ? 'Cancelling...' : 'Cancel AutoPay',
+                              style: GoogleFonts.inter(fontSize: 11.5, fontWeight: FontWeight.bold, color: Colors.red[700]),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: Color(0xFFFCA5A5)),
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
                           ),
-                        ),
                       ],
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),

@@ -19,8 +19,22 @@ class WorkoutViewModel extends ChangeNotifier {
     super.dispose();
   }
 
-  void refresh() {
+  bool _isLoading = false;
+  bool get isLoading => _isLoading;
+
+  Future<void> fetchWorkouts() async {
+    _isLoading = true;
     notifyListeners();
+    try {
+      await _repository.fetchWorkoutsFromSupabase();
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  void refresh() {
+    fetchWorkouts();
   }
 
   String get searchQuery => _searchQuery;

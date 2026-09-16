@@ -152,10 +152,13 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
     final settingsVm = Provider.of<GymSettingsViewModel>(context);
     final goalsList = settingsVm.goals.map((e) => e.name).toList();
     if (!goalsList.contains(_selectedGoal)) {
-      if (goalsList.isNotEmpty) {
+      if (_selectedGoal.isNotEmpty) {
+        goalsList.insert(0, _selectedGoal);
+      } else if (goalsList.isNotEmpty) {
         _selectedGoal = goalsList.first;
       } else {
         goalsList.add('Fitness');
+        _selectedGoal = 'Fitness';
       }
     }
 
