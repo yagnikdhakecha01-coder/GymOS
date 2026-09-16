@@ -2,9 +2,11 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/theme/theme.dart';
 import '../../../core/services/supabase_service.dart';
+import '../member_app_viewmodel.dart';
 
 /// GitHub-style activity heatmap showing the member's gym attendance
 /// over the current year. Each cell = 1 day, shaded by attendance intensity.
