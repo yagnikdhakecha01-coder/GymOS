@@ -84,6 +84,7 @@ CREATE TABLE IF NOT EXISTS member_fitness_goals (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   gym_id          UUID NOT NULL REFERENCES gyms(id) ON DELETE CASCADE,
   member_id       TEXT NOT NULL UNIQUE,
+  goal_type       TEXT DEFAULT 'Weight Loss',
   goal_weight_kg  NUMERIC(5,2),
   goal_body_fat   NUMERIC(4,1),
   weekly_gym_days INT DEFAULT 5,
@@ -96,7 +97,19 @@ DROP POLICY IF EXISTS "fitness_goals_rw" ON member_fitness_goals;
 CREATE POLICY "fitness_goals_rw" ON member_fitness_goals
   FOR ALL USING (
     member_id IN (SELECT id FROM members WHERE user_id = auth.uid())
-    OR gym_id IN (SELECT id FROM gyms WHERE owner_id = auth.uid())
+    OR gym_id IN (
+      SELECT id FROM gyms WHERE owner_id = auth.uid()
+      UNION
+      SELECT gym_id FROM staff WHERE user_id = auth.uid()
+    )
+  )
+  WITH CHECK (
+    member_id IN (SELECT id FROM members WHERE user_id = auth.uid())
+    OR gym_id IN (
+      SELECT id FROM gyms WHERE owner_id = auth.uid()
+      UNION
+      SELECT gym_id FROM staff WHERE user_id = auth.uid()
+    )
   );
 
 -- 4. Guided Workout Sets Log (per-set tracking)
@@ -171,6 +184,7 @@ CREATE TABLE IF NOT EXISTS member_weekly_schedule (
   member_id       TEXT NOT NULL,
   day_of_week     INT NOT NULL CHECK (day_of_week BETWEEN 1 AND 7),  -- 1=Mon, 7=Sun
   muscle_group    TEXT,           -- e.g. 'Chest', 'Back', 'Legs'
+  exercises       JSONB DEFAULT '[]'::jsonb,
   is_rest_day     BOOLEAN DEFAULT false,
   notes           TEXT,
   updated_at      TIMESTAMPTZ DEFAULT now(),
@@ -182,6 +196,14 @@ ALTER TABLE member_weekly_schedule ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "weekly_schedule_rw" ON member_weekly_schedule;
 CREATE POLICY "weekly_schedule_rw" ON member_weekly_schedule
   FOR ALL USING (
+    member_id IN (SELECT id FROM members WHERE user_id = auth.uid())
+    OR gym_id IN (
+      SELECT id FROM gyms WHERE owner_id = auth.uid()
+      UNION
+      SELECT gym_id FROM staff WHERE user_id = auth.uid()
+    )
+  )
+  WITH CHECK (
     member_id IN (SELECT id FROM members WHERE user_id = auth.uid())
     OR gym_id IN (
       SELECT id FROM gyms WHERE owner_id = auth.uid()

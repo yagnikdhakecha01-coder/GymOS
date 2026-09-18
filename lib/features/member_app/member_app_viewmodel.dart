@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/services/supabase_service.dart';
+import '../../core/models/diet_plan.dart';
 
 class MemberAppViewModel extends ChangeNotifier {
   // ── Auth State ──
@@ -144,11 +145,13 @@ class MemberAppViewModel extends ChangeNotifier {
   String _assignedDietId = '';
   String _assignedWorkoutTitle = '';
   String _assignedDietTitle = '';
+  DietPlan? _assignedDietPlan;
 
   String get assignedWorkoutId => _assignedWorkoutId;
   String get assignedDietId => _assignedDietId;
   String get assignedWorkoutTitle => _assignedWorkoutTitle;
   String get assignedDietTitle => _assignedDietTitle;
+  DietPlan? get assignedDietPlan => _assignedDietPlan;
 
   String get memberName => _memberName;
   String get memberId => _memberId;
@@ -331,6 +334,14 @@ class MemberAppViewModel extends ChangeNotifier {
     _assignedWorkoutTitle = prefs.getString('member_cached_workout_title') ?? _assignedWorkoutTitle;
     _todayMuscleGroup = prefs.getString('member_cached_today_muscle') ?? _todayMuscleGroup;
     _assignedDietTitle = prefs.getString('member_cached_diet_title') ?? _assignedDietTitle;
+
+    final cachedDietPlanJson = prefs.getString('member_cached_diet_plan_json');
+    if (cachedDietPlanJson != null && cachedDietPlanJson.isNotEmpty) {
+      try {
+        _assignedDietPlan = DietPlan.fromJson(jsonDecode(cachedDietPlanJson));
+        _assignedDietTitle = _assignedDietPlan!.title;
+      } catch (_) {}
+    }
 
     final cachedDaysStr = prefs.getString('member_cached_attendance_days');
     if (cachedDaysStr != null) {
@@ -587,20 +598,6 @@ class MemberAppViewModel extends ChangeNotifier {
           _todayMuscleGroup = 'Rest Day';
         }
 
-        if (_assignedDietId.isNotEmpty) {
-          try {
-            final dData = await SupabaseService.client
-                .from('diet_plans')
-                .select('title')
-                .eq('id', _assignedDietId)
-                .maybeSingle();
-            _assignedDietTitle = dData?['title'] ?? '';
-            await prefs.setString('member_cached_diet_title', _assignedDietTitle);
-          } catch (_) {}
-        } else {
-          _assignedDietTitle = '';
-        }
-        
         final gymId = memberData['gym_id'];
         if (gymId != null) {
           final gymData = await SupabaseService.client
@@ -611,6 +608,44 @@ class MemberAppViewModel extends ChangeNotifier {
           if (gymData != null) {
             _gymName = gymData['name'] ?? _gymName;
           }
+        }
+
+        if (_assignedDietId.isNotEmpty) {
+          try {
+            final dData = await SupabaseService.client
+                .from('diet_plans')
+                .select()
+                .eq('id', _assignedDietId)
+                .maybeSingle();
+            if (dData != null) {
+              _assignedDietPlan = DietPlan.fromJson(Map<String, dynamic>.from(dData));
+              _assignedDietTitle = _assignedDietPlan!.title;
+              await prefs.setString('member_cached_diet_plan_json', jsonEncode(dData));
+              await prefs.setString('member_cached_diet_title', _assignedDietTitle);
+            }
+          } catch (_) {}
+        }
+
+        // Fallback: If member does not have assigned diet or not found, fetch gym's default diet plan
+        if (_assignedDietPlan == null && gymId != null) {
+          try {
+            final List gymDiets = await SupabaseService.client
+                .from('diet_plans')
+                .select()
+                .eq('gym_id', gymId)
+                .limit(1);
+            if (gymDiets.isNotEmpty) {
+              final firstDiet = Map<String, dynamic>.from(gymDiets.first as Map);
+              _assignedDietPlan = DietPlan.fromJson(firstDiet);
+              _assignedDietTitle = _assignedDietPlan!.title;
+              await prefs.setString('member_cached_diet_plan_json', jsonEncode(firstDiet));
+              await prefs.setString('member_cached_diet_title', _assignedDietTitle);
+            }
+          } catch (_) {}
+        }
+
+        if (_assignedDietPlan == null) {
+          _assignedDietTitle = '';
         }
 
         // Keep local storage synchronized for roles and gym ID so GymRepository works correctly
@@ -1445,6 +1480,8 @@ class MemberAppViewModel extends ChangeNotifier {
     await prefs.remove('member_cached_workout_title');
     await prefs.remove('member_cached_today_muscle');
     await prefs.remove('member_cached_diet_title');
+    await prefs.remove('member_cached_diet_plan_json');
+    _assignedDietPlan = null;
     await prefs.remove('member_cached_attendance_days');
     await prefs.remove('member_cached_days_left');
     await prefs.remove('member_cached_days_timestamp');

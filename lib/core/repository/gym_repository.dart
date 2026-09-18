@@ -939,7 +939,7 @@ class GymRepository extends ChangeNotifier {
             );
           } else if (action == 'update') {
             final id = payload['id'] as String;
-            final updateData = Map<String, dynamic>.from(payload)..remove('id')..remove('uuid');
+            final updateData = Map<String, dynamic>.from(payload)..remove('id')..remove('uuid')..remove('gym_id');
             await SupabaseService.client.from(table).update(updateData).eq('id', id);
           } else if (action == 'insert') {
             await SupabaseService.client.from(table).upsert(payload);
@@ -2181,15 +2181,17 @@ class GymRepository extends ChangeNotifier {
     notifyListeners();
 
     // 2. Queue Member save payload for sync
+    final bool isUpdate = index >= 0;
     final Map<String, dynamic> data = {
       'id': member.id,
       'gym_id': gymId,
       'name': member.name,
+      'email': member.email,
       'phone': member.phone,
       'status': member.status,
       'join_date': member.joinDate,
       'avatar': member.avatar,
-      'membership_plan_id': member.membershipPlanId,
+      'membership_plan_id': (member.membershipPlanId.isNotEmpty && member.membershipPlanId != 'null') ? member.membershipPlanId : null,
       'pt_member': member.ptMember,
       'pt_trainer': _isValidUUID(member.ptTrainer) ? member.ptTrainer : null,
       'assigned_workout_id': _isValidUUID(member.assignedWorkoutId) ? member.assignedWorkoutId : null,
@@ -2203,23 +2205,29 @@ class GymRepository extends ChangeNotifier {
       'extra_fields': member.extraFields,
     };
 
-    // Direct Supabase upsert when online to prevent FK errors in child tables (e.g. invitations)
+    // Direct Supabase update or insert when online
     bool isDirectlyInserted = false;
     if (SupabaseService.isInitialized) {
       try {
-        await SupabaseService.client.from('members').upsert(data);
+        if (isUpdate) {
+          final updatePayload = Map<String, dynamic>.from(data)..remove('id')..remove('gym_id');
+          await SupabaseService.client.from('members').update(updatePayload).eq('id', member.id);
+        } else {
+          await SupabaseService.client.from('members').insert(data);
+        }
         isDirectlyInserted = true;
+        _lastMembersRaw = ''; // Reset cache signature so next fetch updates cleanly
       } catch (e) {
-        print('saveMember direct Supabase upsert skipped/failed: $e. Fallback to queue.');
+        print('saveMember direct Supabase operation skipped/failed: $e. Fallback to queue.');
       }
     }
 
-    // Only queue if direct insert failed (prevents double-queueing)
+    // Only queue if direct insert/update failed (prevents double-queueing)
     if (!isDirectlyInserted) {
       _crudQueue.add({
         'uuid': _generateUuidV4(),
         'table': 'members',
-        'action': 'insert',
+        'action': isUpdate ? 'update' : 'insert',
         'payload': data,
         'created_at': DateTime.now().toIso8601String(),
         'retry_count': 0,
@@ -2676,23 +2684,30 @@ class GymRepository extends ChangeNotifier {
       'notes': staff.notes,
     };
 
-    // Direct Supabase upsert when online to prevent FK errors in child tables (e.g. invitations)
+    // Direct Supabase update or insert when online
+    final bool isUpdate = index >= 0;
     bool isDirectlyInserted = false;
     if (SupabaseService.isInitialized) {
       try {
-        await SupabaseService.client.from('staff').upsert(data);
+        if (isUpdate) {
+          final updatePayload = Map<String, dynamic>.from(data)..remove('id')..remove('gym_id');
+          await SupabaseService.client.from('staff').update(updatePayload).eq('id', staff.id);
+        } else {
+          await SupabaseService.client.from('staff').insert(data);
+        }
         isDirectlyInserted = true;
+        _lastStaffRaw = ''; // Reset cache signature so next fetch updates cleanly
       } catch (e) {
-        print('saveStaff direct Supabase upsert skipped/failed: $e. Fallback to queue.');
+        print('saveStaff direct Supabase operation skipped/failed: $e. Fallback to queue.');
       }
     }
 
-    // Only queue if direct insert failed (prevents double-queueing)
+    // Only queue if direct insert/update failed (prevents double-queueing)
     if (!isDirectlyInserted) {
       _crudQueue.add({
         'uuid': _generateUuidV4(),
         'table': 'staff',
-        'action': 'insert',
+        'action': isUpdate ? 'update' : 'insert',
         'payload': data,
         'created_at': DateTime.now().toIso8601String(),
         'retry_count': 0,
@@ -3781,7 +3796,7 @@ class GymRepository extends ChangeNotifier {
 
   List<Member> _mergeMembersList(List<Member> serverList) {
     final pendingIds = _crudQueue
-        .where((q) => q['table'] == 'members' && q['sync_status'] != 'failed' && (q['retry_count'] ?? 0) <= 5)
+        .where((q) => q['table'] == 'members' && (q['retry_count'] ?? 0) <= 5)
         .map((q) {
           final payload = q['payload'] as Map<String, dynamic>;
           return payload['id'] as String;
@@ -3802,7 +3817,7 @@ class GymRepository extends ChangeNotifier {
 
   List<Staff> _mergeStaffList(List<Staff> serverList) {
     final pendingIds = _crudQueue
-        .where((q) => q['table'] == 'staff' && q['sync_status'] != 'failed' && (q['retry_count'] ?? 0) <= 5)
+        .where((q) => q['table'] == 'staff' && (q['retry_count'] ?? 0) <= 5)
         .map((q) {
           final payload = q['payload'] as Map<String, dynamic>;
           return payload['id'] as String;

@@ -7,6 +7,7 @@ import '../../../core/theme/theme.dart';
 import '../member_app_viewmodel.dart';
 import 'member_guided_workout_screen.dart';
 import 'member_exercise_library_screen.dart';
+import 'member_workout_plan_screen.dart';
 
 class MemberTrainingScreen extends StatelessWidget {
   const MemberTrainingScreen({super.key});
@@ -137,7 +138,7 @@ class MemberTrainingScreen extends StatelessWidget {
                             width: double.infinity,
                             height: 50,
                             child: ElevatedButton.icon(
-                              icon: const Text('🏋️', style: TextStyle(fontSize: 18)),
+                              icon: const Icon(Icons.play_circle_filled_rounded, size: 20),
                               label: Text(
                                 vm.isTrainingCompleted ? 'Workout Done 🎉' : 'Start Guided Workout',
                                 style: GoogleFonts.inter(
@@ -224,20 +225,36 @@ class MemberTrainingScreen extends StatelessWidget {
                     children: [
                       Expanded(
                         child: _QuickActionCard(
-                          emoji: '📚',
-                          title: 'Exercise Library',
-                          subtitle: '40+ exercises',
+                          icon: Icons.menu_book_rounded,
+                          title: muscle.isNotEmpty && !muscle.contains('Rest') ? muscle : 'Exercises',
+                          subtitle: 'Today\'s focus',
                           color: AppTheme.info,
                           onTap: () => Navigator.push(context,
-                            MaterialPageRoute(builder: (_) => const MemberExerciseLibraryScreen())),
+                            MaterialPageRoute(builder: (_) => MemberExerciseLibraryScreen(
+                              initialMuscleGroup: muscle,
+                              memberId: vm.memberId,
+                            ))),
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: 10),
                       Expanded(
                         child: _QuickActionCard(
-                          emoji: '🏆',
+                          icon: Icons.calendar_month_rounded,
+                          title: 'My Plan',
+                          subtitle: '7-day routine',
+                          color: const Color(0xFF7C3AED),
+                          onTap: () => Navigator.push(context,
+                            MaterialPageRoute(builder: (_) => MemberWorkoutPlanScreen(
+                              memberId: vm.memberId,
+                            ))),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _QuickActionCard(
+                          icon: Icons.emoji_events_rounded,
                           title: 'My PRs',
-                          subtitle: 'Personal records',
+                          subtitle: 'Records',
                           color: const Color(0xFFF59E0B),
                           onTap: () => _showPRsSheet(context, vm),
                         ),
@@ -411,14 +428,14 @@ class MemberTrainingScreen extends StatelessWidget {
 
 // Quick Action Card widget
 class _QuickActionCard extends StatelessWidget {
-  final String emoji;
+  final IconData icon;
   final String title;
   final String subtitle;
   final Color color;
   final VoidCallback onTap;
 
   const _QuickActionCard({
-    required this.emoji,
+    required this.icon,
     required this.title,
     required this.subtitle,
     required this.color,
@@ -430,7 +447,7 @@ class _QuickActionCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(14),
@@ -439,12 +456,17 @@ class _QuickActionCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(emoji, style: const TextStyle(fontSize: 22)),
+            Icon(icon, color: color, size: 22),
             const SizedBox(height: 8),
             Text(title,
-              style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
+            const SizedBox(height: 2),
             Text(subtitle,
-              style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted)),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(fontSize: 10.5, color: AppTheme.textMuted)),
           ],
         ),
       ),

@@ -33,6 +33,9 @@ class DietPlan {
   final String title;
   final String goal; // Weight Loss, Weight Gain, Fitness, Muscle Gain, Maintenance
   final int calories;
+  final int protein;
+  final int carbs;
+  final int fat;
   final List<Meal> meals;
   final String notes;
   final String status; // Active, Inactive
@@ -42,6 +45,9 @@ class DietPlan {
     required this.title,
     required this.goal,
     required this.calories,
+    this.protein = 0,
+    this.carbs = 0,
+    this.fat = 0,
     required this.meals,
     required this.notes,
     this.status = 'Active',
@@ -77,11 +83,24 @@ class DietPlan {
       parsedCalories = int.tryParse(rawCalories.toString()) ?? 2000;
     }
 
+    int parseMacro(dynamic val) {
+      if (val is num) return val.toInt();
+      if (val != null) return int.tryParse(val.toString()) ?? 0;
+      return 0;
+    }
+
+    final parsedProtein = parseMacro(json['protein'] ?? json['protein_goal']);
+    final parsedCarbs = parseMacro(json['carbs'] ?? json['carbs_goal']);
+    final parsedFat = parseMacro(json['fat'] ?? json['fat_goal']);
+
     return DietPlan(
       id: json['id']?.toString() ?? '',
       title: json['title']?.toString() ?? '',
       goal: json['goal']?.toString() ?? 'Fitness',
       calories: parsedCalories,
+      protein: parsedProtein,
+      carbs: parsedCarbs,
+      fat: parsedFat,
       meals: mealsList,
       notes: (json['notes'] ?? json['description'])?.toString() ?? '',
       status: json['status']?.toString() ?? 'Active',
@@ -94,6 +113,9 @@ class DietPlan {
       'title': title,
       'goal': goal,
       'calories': calories,
+      'protein': protein,
+      'carbs': carbs,
+      'fat': fat,
       'meals': meals.map((m) => m.toJson()).toList(),
       'notes': notes,
       'status': status,
@@ -105,6 +127,9 @@ class DietPlan {
     String? title,
     String? goal,
     int? calories,
+    int? protein,
+    int? carbs,
+    int? fat,
     List<Meal>? meals,
     String? notes,
     String? status,
@@ -114,6 +139,9 @@ class DietPlan {
       title: title ?? this.title,
       goal: goal ?? this.goal,
       calories: calories ?? this.calories,
+      protein: protein ?? this.protein,
+      carbs: carbs ?? this.carbs,
+      fat: fat ?? this.fat,
       meals: meals ?? this.meals,
       notes: notes ?? this.notes,
       status: status ?? this.status,

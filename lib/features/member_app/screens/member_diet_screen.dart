@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../../core/theme/theme.dart';
 import '../member_app_viewmodel.dart';
+import 'member_diet_plan_detail_screen.dart';
 
 class MemberDietScreen extends StatelessWidget {
   const MemberDietScreen({super.key});
@@ -99,7 +100,14 @@ class MemberDietScreen extends StatelessWidget {
                           width: 180,
                           height: 42,
                           child: OutlinedButton(
-                            onPressed: () {},
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const MemberDietPlanDetailScreen(),
+                                ),
+                              );
+                            },
                             style: OutlinedButton.styleFrom(
                               foregroundColor: AppTheme.primary,
                               side: const BorderSide(color: AppTheme.primary, width: 1.5),

@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/theme/theme.dart';
 import '../../../core/services/supabase_service.dart';
+import 'member_workout_plan_screen.dart';
 
 // ─────────────────────────────────────────────────────────────
 // GymOS Exercise Library Screen
@@ -12,7 +13,16 @@ import '../../../core/services/supabase_service.dart';
 // ─────────────────────────────────────────────────────────────
 
 class MemberExerciseLibraryScreen extends StatefulWidget {
-  const MemberExerciseLibraryScreen({super.key});
+  final String? initialMuscleGroup;
+  final String? memberId;
+  final String? gymId;
+
+  const MemberExerciseLibraryScreen({
+    super.key,
+    this.initialMuscleGroup,
+    this.memberId,
+    this.gymId,
+  });
 
   @override
   State<MemberExerciseLibraryScreen> createState() =>
@@ -48,6 +58,15 @@ class _MemberExerciseLibraryScreenState
     'Neck',
   ];
 
+  List<String> get _currentBodyParts {
+    final list = List<String>.from(_bodyParts);
+    if (_selectedBodyPart != 'All' &&
+        !list.any((b) => b.toLowerCase() == _selectedBodyPart.toLowerCase())) {
+      list.insert(1, _selectedBodyPart);
+    }
+    return list;
+  }
+
   static const List<String> _equipments = [
     'Any equipment',
     'Body Weight',
@@ -67,6 +86,11 @@ class _MemberExerciseLibraryScreenState
   @override
   void initState() {
     super.initState();
+    if (widget.initialMuscleGroup != null &&
+        widget.initialMuscleGroup!.trim().isNotEmpty &&
+        !widget.initialMuscleGroup!.toLowerCase().contains('rest')) {
+      _selectedBodyPart = widget.initialMuscleGroup!.trim();
+    }
     _loadExercises();
   }
 
@@ -119,7 +143,7 @@ class _MemberExerciseLibraryScreenState
             .from('exercises')
             .select()
             .order('name');
-        if (res is List && res.isNotEmpty && mounted) {
+        if (res.isNotEmpty && mounted) {
           bool updated = false;
           for (final row in res) {
             final rowName =
@@ -164,8 +188,24 @@ class _MemberExerciseLibraryScreenState
         if (bp != 'all') {
           final itemBp = (e['bp'] as String? ?? '').toLowerCase();
           final itemTg = (e['tg'] as String? ?? '').toLowerCase();
-          if (itemBp != bp && !itemTg.contains(bp) && !bp.contains(itemBp)) {
-            return false;
+          
+          // Split compound e.g. "Chest & Back" or "Chest & Triceps" or "Legs"
+          final parts = bp
+              .split(RegExp(r'[&,/+]'))
+              .map((p) => p.trim())
+              .where((p) => p.isNotEmpty)
+              .toList();
+
+          if (parts.length > 1) {
+            final matchesAny = parts.any((p) {
+              return itemBp.contains(p) || p.contains(itemBp) ||
+                     itemTg.contains(p) || p.contains(itemTg);
+            });
+            if (!matchesAny) return false;
+          } else {
+            if (itemBp != bp && !itemTg.contains(bp) && !bp.contains(itemBp)) {
+              return false;
+            }
           }
         }
 
@@ -202,6 +242,19 @@ class _MemberExerciseLibraryScreenState
     }).join(' ');
   }
 
+  static String _getDayShort(int d) {
+    switch (d) {
+      case 1: return 'Mon';
+      case 2: return 'Tue';
+      case 3: return 'Wed';
+      case 4: return 'Thu';
+      case 5: return 'Fri';
+      case 6: return 'Sat';
+      case 7: return 'Sun';
+      default: return '';
+    }
+  }
+
   void _openExerciseDetail(Map<String, dynamic> exercise) {
     showModalBottomSheet(
       context: context,
@@ -211,8 +264,294 @@ class _MemberExerciseLibraryScreenState
         exercise: exercise,
         imgBase: _imgBase,
         gifBase: _gifBase,
+        onAddToPlan: () => _openAddToPlanSheet(exercise),
       ),
     );
+  }
+
+  void _openAddToPlanSheet(Map<String, dynamic> exercise) {
+    int selectedDay = DateTime.now().weekday; // 1..7
+    int targetSets = 3;
+    String targetReps = '10-12';
+    final exName = _capitalize(exercise['n'] as String? ?? '');
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => Container(
+          padding: EdgeInsets.fromLTRB(
+              24, 20, 24, MediaQuery.of(ctx).viewInsets.bottom + 24),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFCBD5E1),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Add to Workout Plan',
+                style: GoogleFonts.inter(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: AppTheme.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                exName,
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.primary,
+                ),
+              ),
+              const SizedBox(height: 18),
+              // Day selector
+              Text(
+                'SELECT DAY',
+                style: GoogleFonts.inter(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.textMuted),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (int d = 1; d <= 7; d++)
+                    ChoiceChip(
+                      label: Text(_getDayShort(d)),
+                      selected: selectedDay == d,
+                      selectedColor: AppTheme.primary,
+                      labelStyle: TextStyle(
+                        color: selectedDay == d
+                            ? Colors.white
+                            : AppTheme.textPrimary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      onSelected: (val) {
+                        if (val) setSheetState(() => selectedDay = d);
+                      },
+                    ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              // Sets and Reps
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('SETS',
+                            style: GoogleFonts.inter(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: AppTheme.textMuted)),
+                        const SizedBox(height: 6),
+                        DropdownButtonFormField<int>(
+                          value: targetSets,
+                          decoration: InputDecoration(
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 8),
+                            border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10)),
+                          ),
+                          items: [1, 2, 3, 4, 5, 6]
+                              .map((s) => DropdownMenuItem(
+                                  value: s, child: Text('$s sets')))
+                              .toList(),
+                          onChanged: (val) {
+                            if (val != null) {
+                              setSheetState(() => targetSets = val);
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('REPS',
+                            style: GoogleFonts.inter(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: AppTheme.textMuted)),
+                        const SizedBox(height: 6),
+                        DropdownButtonFormField<String>(
+                          value: targetReps,
+                          decoration: InputDecoration(
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 8),
+                            border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10)),
+                          ),
+                          items: [
+                            '6-8',
+                            '8-10',
+                            '10-12',
+                            '12-15',
+                            '15-20',
+                            'To Failure'
+                          ]
+                              .map((r) => DropdownMenuItem(
+                                  value: r, child: Text('$r reps')))
+                              .toList(),
+                          onChanged: (val) {
+                            if (val != null) {
+                              setSheetState(() => targetReps = val);
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+                onPressed: () async {
+                  await _saveExerciseToPlan(
+                    day: selectedDay,
+                    exercise: exercise,
+                    sets: targetSets,
+                    reps: targetReps,
+                  );
+                  if (ctx.mounted) Navigator.pop(ctx);
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                            'Added $exName to ${_getDayShort(selectedDay)} Plan! 💪'),
+                        backgroundColor: AppTheme.success,
+                        behavior: SnackBarBehavior.floating,
+                        action: SnackBarAction(
+                          label: 'View Plan',
+                          textColor: Colors.white,
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => MemberWorkoutPlanScreen(
+                                  memberId: widget.memberId ?? '',
+                                  gymId: widget.gymId ?? '',
+                                  initialDayOfWeek: selectedDay,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    );
+                  }
+                },
+                child: Text('Save to ${_getDayShort(selectedDay)} Plan',
+                    style: GoogleFonts.inter(
+                        fontSize: 15, fontWeight: FontWeight.w700)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _saveExerciseToPlan({
+    required int day,
+    required Map<String, dynamic> exercise,
+    required int sets,
+    required String reps,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    final memberId =
+        widget.memberId ?? prefs.getString('gymos_member_id') ?? '';
+    final gymId = widget.gymId ?? prefs.getString('gymos_gym_id') ?? '';
+    if (memberId.isEmpty) return;
+
+    final cacheKey = 'member_weekly_schedule_$memberId';
+    List<Map<String, dynamic>> schedule = [];
+    final cached = prefs.getString(cacheKey);
+    if (cached != null) {
+      try {
+        schedule = (jsonDecode(cached) as List)
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+      } catch (_) {}
+    }
+
+    int dayIdx = schedule.indexWhere((item) => item['day_of_week'] == day);
+    final exEntry = {
+      'id': exercise['id'] ??
+          DateTime.now().millisecondsSinceEpoch.toString(),
+      'name': _capitalize(exercise['n'] as String? ?? ''),
+      'target': _capitalize(exercise['tg'] as String? ?? exercise['bp'] ?? ''),
+      'body_part': _capitalize(exercise['bp'] as String? ?? ''),
+      'equipment': _capitalize(exercise['eq'] as String? ?? ''),
+      'img': exercise['img'] ?? '',
+      'gif': exercise['gif'] ?? '',
+      'target_sets': sets,
+      'target_reps': reps,
+    };
+
+    if (dayIdx >= 0) {
+      final List dayExercises =
+          List.from(schedule[dayIdx]['exercises'] ?? []);
+      dayExercises.add(exEntry);
+      schedule[dayIdx]['exercises'] = dayExercises;
+    } else {
+      schedule.add({
+        'day_of_week': day,
+        'muscle_group': exercise['bp'] ?? 'General',
+        'is_rest_day': false,
+        'exercises': [exEntry],
+      });
+      dayIdx = schedule.length - 1;
+    }
+
+    await prefs.setString(cacheKey, jsonEncode(schedule));
+
+    // Upsert to Supabase
+    if (SupabaseService.isInitialized && gymId.isNotEmpty) {
+      try {
+        final targetDay = schedule[dayIdx];
+        await SupabaseService.client.from('member_weekly_schedule').upsert({
+          'gym_id': gymId,
+          'member_id': memberId,
+          'day_of_week': day,
+          'muscle_group': targetDay['muscle_group'] ?? 'General',
+          'is_rest_day': targetDay['is_rest_day'] ?? false,
+          'exercises': targetDay['exercises'] ?? [],
+          'updated_at': DateTime.now().toIso8601String(),
+        }, onConflict: 'member_id, day_of_week');
+      } catch (e) {
+        debugPrint('Error syncing exercise to member_weekly_schedule: $e');
+      }
+    }
   }
 
   void _openCreateCustomExercise() {
@@ -401,6 +740,19 @@ class _MemberExerciseLibraryScreenState
           ),
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.calendar_month_rounded, color: AppTheme.primary),
+            tooltip: 'My Workout Plan',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => MemberWorkoutPlanScreen(
+                  memberId: widget.memberId ?? '',
+                  gymId: widget.gymId ?? '',
+                ),
+              ),
+            ),
+          ),
           Container(
             margin: const EdgeInsets.only(right: 16),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -525,10 +877,10 @@ class _MemberExerciseLibraryScreenState
                   child: ListView.builder(
                     scrollDirection: Axis.horizontal,
                     padding: const EdgeInsets.symmetric(horizontal: 16),
-                    itemCount: _bodyParts.length,
+                    itemCount: _currentBodyParts.length,
                     itemBuilder: (context, i) {
-                      final bp = _bodyParts[i];
-                      final isSelected = _selectedBodyPart == bp;
+                      final bp = _currentBodyParts[i];
+                      final isSelected = _selectedBodyPart.toLowerCase() == bp.toLowerCase();
                       return GestureDetector(
                         onTap: () {
                           setState(() => _selectedBodyPart = bp);
@@ -879,32 +1231,35 @@ class _MemberExerciseLibraryScreenState
                                       ],
                                     ),
                                   ),
-
+                                  const SizedBox(width: 12),
                                   // Right: + Plan Action Button
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 12, vertical: 7),
-                                    decoration: BoxDecoration(
-                                      color: AppTheme.primary
-                                          .withValues(alpha: 0.08),
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        const Icon(Icons.add_rounded,
-                                            size: 15,
-                                            color: AppTheme.primary),
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          'Plan',
-                                          style: GoogleFonts.inter(
-                                            fontSize: 12.5,
-                                            fontWeight: FontWeight.w700,
-                                            color: AppTheme.primary,
+                                  GestureDetector(
+                                    onTap: () => _openAddToPlanSheet(ex),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 12, vertical: 7),
+                                      decoration: BoxDecoration(
+                                        color: AppTheme.primary
+                                            .withValues(alpha: 0.08),
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(Icons.add_rounded,
+                                              size: 15,
+                                              color: AppTheme.primary),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            'Plan',
+                                            style: GoogleFonts.inter(
+                                              fontSize: 12.5,
+                                              fontWeight: FontWeight.w700,
+                                              color: AppTheme.primary,
+                                            ),
                                           ),
-                                        ),
-                                      ],
+                                        ],
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -930,11 +1285,13 @@ class _OpenGymExerciseDetailSheet extends StatefulWidget {
   final Map<String, dynamic> exercise;
   final String imgBase;
   final String gifBase;
+  final VoidCallback? onAddToPlan;
 
   const _OpenGymExerciseDetailSheet({
     required this.exercise,
     required this.imgBase,
     required this.gifBase,
+    this.onAddToPlan,
   });
 
   @override
@@ -944,15 +1301,6 @@ class _OpenGymExerciseDetailSheet extends StatefulWidget {
 
 class _OpenGymExerciseDetailSheetState
     extends State<_OpenGymExerciseDetailSheet> {
-  double _weightKg = 20.0;
-  int _reps = 5;
-
-  double get _estimated1RM {
-    // Epley formula: 1RM = w * (1 + r / 30)
-    if (_reps == 1) return _weightKg;
-    return _weightKg * (1.0 + (_reps / 30.0));
-  }
-
   static String _cap(String s) {
     if (s.isEmpty) return '';
     return s.split(' ').map((w) {
@@ -1032,52 +1380,8 @@ class _OpenGymExerciseDetailSheetState
                       child: Stack(
                         children: [
                           Positioned.fill(
-                            child: gifUrl.isNotEmpty
-                                ? Image.network(
-                                    gifUrl,
-                                    fit: BoxFit.contain,
-                                    loadingBuilder:
-                                        (context, child, progress) {
-                                      if (progress == null) return child;
-                                      return Center(
-                                        child: Column(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            const CircularProgressIndicator(
-                                              color: AppTheme.primary,
-                                            ),
-                                            const SizedBox(height: 8),
-                                            Text(
-                                              'Loading animation...',
-                                              style: GoogleFonts.inter(
-                                                fontSize: 12,
-                                                color: const Color(0xFF94A3B8),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      );
-                                    },
-                                    errorBuilder: (_, __, ___) {
-                                      // Fallback to static illustration if gif errors
-                                      if (imgUrl.isNotEmpty) {
-                                        return Image.network(imgUrl,
-                                            fit: BoxFit.contain);
-                                      }
-                                      return const Center(
-                                        child: Text('🏋️',
-                                            style: TextStyle(fontSize: 48)),
-                                      );
-                                    },
-                                  )
-                                : (imgUrl.isNotEmpty
-                                    ? Image.network(imgUrl, fit: BoxFit.contain)
-                                    : const Center(
-                                        child: Text('🏋️',
-                                            style: TextStyle(fontSize: 48)))),
+                            child: _buildExerciseMedia(gifUrl, imgUrl),
                           ),
-
-                          // Overlay badge: Animated demonstration
                           Positioned(
                             bottom: 12,
                             right: 12,
@@ -1155,210 +1459,10 @@ class _OpenGymExerciseDetailSheetState
                     ),
                     onPressed: () {
                       Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            'Added $name to your workout routine! 💪',
-                            style: GoogleFonts.inter(fontWeight: FontWeight.w600),
-                          ),
-                          backgroundColor: AppTheme.primary,
-                          behavior: SnackBarBehavior.floating,
-                        ),
-                      );
+                      if (widget.onAddToPlan != null) {
+                        widget.onAddToPlan!();
+                      }
                     },
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  // ── Estimated 1RM Calculator (Screenshot 3) ──
-                  Container(
-                    padding: const EdgeInsets.all(18),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF8FAFC),
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(
-                        color: const Color(0xFFE2E8F0),
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Estimated 1RM Calculator',
-                          style: GoogleFonts.inter(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            color: const Color(0xFF0F172A),
-                          ),
-                        ),
-                        const SizedBox(height: 14),
-
-                        // Steppers: Weight & Reps
-                        Row(
-                          children: [
-                            // Weight (kg)
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Weight (kg)',
-                                    style: GoogleFonts.inter(
-                                      fontSize: 11.5,
-                                      fontWeight: FontWeight.w600,
-                                      color: const Color(0xFF64748B),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 6, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white,
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(
-                                          color: const Color(0xFFCBD5E1)),
-                                    ),
-                                    child: Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        IconButton(
-                                          icon: const Icon(Icons.remove_rounded,
-                                              size: 18),
-                                          constraints: const BoxConstraints(),
-                                          padding: const EdgeInsets.all(6),
-                                          onPressed: () {
-                                            if (_weightKg > 2.5) {
-                                              setState(() => _weightKg -= 2.5);
-                                            }
-                                          },
-                                        ),
-                                        Text(
-                                          _weightKg % 1 == 0
-                                              ? _weightKg.toInt().toString()
-                                              : _weightKg.toStringAsFixed(1),
-                                          style: GoogleFonts.inter(
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w800,
-                                            color: const Color(0xFF0F172A),
-                                          ),
-                                        ),
-                                        IconButton(
-                                          icon: const Icon(Icons.add_rounded,
-                                              size: 18),
-                                          constraints: const BoxConstraints(),
-                                          padding: const EdgeInsets.all(6),
-                                          onPressed: () {
-                                            setState(() => _weightKg += 2.5);
-                                          },
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 14),
-
-                            // Reps
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Reps',
-                                    style: GoogleFonts.inter(
-                                      fontSize: 11.5,
-                                      fontWeight: FontWeight.w600,
-                                      color: const Color(0xFF64748B),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 6, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white,
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(
-                                          color: const Color(0xFFCBD5E1)),
-                                    ),
-                                    child: Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        IconButton(
-                                          icon: const Icon(Icons.remove_rounded,
-                                              size: 18),
-                                          constraints: const BoxConstraints(),
-                                          padding: const EdgeInsets.all(6),
-                                          onPressed: () {
-                                            if (_reps > 1) {
-                                              setState(() => _reps -= 1);
-                                            }
-                                          },
-                                        ),
-                                        Text(
-                                          '$_reps',
-                                          style: GoogleFonts.inter(
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w800,
-                                            color: const Color(0xFF0F172A),
-                                          ),
-                                        ),
-                                        IconButton(
-                                          icon: const Icon(Icons.add_rounded,
-                                              size: 18),
-                                          constraints: const BoxConstraints(),
-                                          padding: const EdgeInsets.all(6),
-                                          onPressed: () {
-                                            setState(() => _reps += 1);
-                                          },
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-
-                        const SizedBox(height: 14),
-
-                        // Result
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              'Estimate',
-                              style: GoogleFonts.inter(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: const Color(0xFF64748B),
-                              ),
-                            ),
-                            Text(
-                              '${_estimated1RM.toStringAsFixed(1)} kg',
-                              style: GoogleFonts.inter(
-                                fontSize: 20,
-                                fontWeight: FontWeight.w800,
-                                color: const Color(0xFF10B981),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Epley formula — a calculation from one set, not a tested max.',
-                          style: GoogleFonts.inter(
-                            fontSize: 11,
-                            color: const Color(0xFF94A3B8),
-                          ),
-                        ),
-                      ],
-                    ),
                   ),
 
                   const SizedBox(height: 24),
@@ -1439,6 +1543,62 @@ class _OpenGymExerciseDetailSheetState
           fontSize: 12,
           fontWeight: FontWeight.w600,
           color: textCol,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildExerciseMedia(String gifUrl, String imgUrl) {
+    if (gifUrl.isNotEmpty) {
+      return Image.network(
+        gifUrl,
+        fit: BoxFit.contain,
+        loadingBuilder: (context, child, progress) {
+          if (progress == null) return child;
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(color: AppTheme.primary),
+                const SizedBox(height: 8),
+                Text(
+                  'Loading animation...',
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    color: const Color(0xFF94A3B8),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+        errorBuilder: (_, __, ___) {
+          if (imgUrl.isNotEmpty) {
+            return Image.network(imgUrl, fit: BoxFit.contain);
+          }
+          return _buildFallbackIcon();
+        },
+      );
+    }
+    if (imgUrl.isNotEmpty) {
+      return Image.network(imgUrl, fit: BoxFit.contain);
+    }
+    return _buildFallbackIcon();
+  }
+
+  Widget _buildFallbackIcon() {
+    return Center(
+      child: Container(
+        width: 64,
+        height: 64,
+        decoration: BoxDecoration(
+          color: AppTheme.primary.withValues(alpha: 0.1),
+          shape: BoxShape.circle,
+        ),
+        child: const Icon(
+          Icons.fitness_center_rounded,
+          size: 32,
+          color: AppTheme.primary,
         ),
       ),
     );

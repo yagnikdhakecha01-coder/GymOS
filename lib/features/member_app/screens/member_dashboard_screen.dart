@@ -553,7 +553,7 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen>
                                               color: Colors.white.withValues(alpha: 0.2),
                                               borderRadius: BorderRadius.circular(10),
                                             ),
-                                            child: const Text('⚖️', style: TextStyle(fontSize: 20)),
+                                            child: const Icon(Icons.monitor_weight_rounded, color: Colors.white, size: 20),
                                           ),
                                           const Icon(Icons.arrow_forward_rounded, color: Colors.white70, size: 16),
                                         ],
@@ -580,7 +580,10 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen>
                               borderRadius: BorderRadius.circular(18),
                               child: InkWell(
                                 onTap: () => Navigator.push(context, MaterialPageRoute(
-                                  builder: (_) => const MemberExerciseLibraryScreen())),
+                                  builder: (_) => MemberExerciseLibraryScreen(
+                                    initialMuscleGroup: vm.todayMuscleGroup,
+                                    memberId: vm.memberId,
+                                  ))),
                                 borderRadius: BorderRadius.circular(18),
                                 child: Container(
                                   padding: const EdgeInsets.all(16),
@@ -611,7 +614,7 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen>
                                               color: Colors.white.withValues(alpha: 0.2),
                                               borderRadius: BorderRadius.circular(10),
                                             ),
-                                            child: const Text('📚', style: TextStyle(fontSize: 20)),
+                                            child: const Icon(Icons.menu_book_rounded, color: Colors.white, size: 20),
                                           ),
                                           const Icon(Icons.arrow_forward_rounded, color: Colors.white70, size: 16),
                                         ],
