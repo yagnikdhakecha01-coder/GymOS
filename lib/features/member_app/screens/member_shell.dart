@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../../core/theme/theme.dart';
-import '../../../core/navigation/app_router.dart';
 import '../../authentication/auth_viewmodel.dart';
 import '../../../core/services/unlink_guard.dart';
 import 'member_dashboard_screen.dart';
@@ -19,7 +18,7 @@ class MemberShell extends StatefulWidget {
   State<MemberShell> createState() => _MemberShellState();
 }
 
-class _MemberShellState extends State<MemberShell> {
+class _MemberShellState extends State<MemberShell> with WidgetsBindingObserver {
   int _currentIndex = 0;
   Timer? _syncTimer;
   bool _isRedirecting = false;
@@ -27,18 +26,28 @@ class _MemberShellState extends State<MemberShell> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkUnlinkedStatus();
     });
-    _syncTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+    // Relaxed 5-minute periodic sync instead of aggressive 3s polling
+    _syncTimer = Timer.periodic(const Duration(minutes: 5), (_) {
       _checkUnlinkedStatus();
     });
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _syncTimer?.cancel();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkUnlinkedStatus();
+    }
   }
 
   Future<void> _checkUnlinkedStatus() async {

@@ -118,9 +118,13 @@ SET search_path = public
 AS $$
 DECLARE
     v_linked BOOLEAN := FALSE;
-    v_status TEXT;
 BEGIN
-    -- Must have association
+    -- Owners are never unlinked
+    IF p_role = 'owner' THEN
+        RETURN TRUE;
+    END IF;
+
+    -- Must have active association
     IF NOT EXISTS (
         SELECT 1 FROM public.user_gym_associations
         WHERE user_id = p_user_id AND gym_id = p_gym_id AND role = p_role
@@ -129,26 +133,24 @@ BEGIN
     END IF;
 
     IF p_role = 'staff' THEN
-        SELECT status INTO v_status
-        FROM public.staff
-        WHERE user_id = p_user_id AND gym_id = p_gym_id
-        LIMIT 1;
-
-        v_linked := v_status IS NOT NULL AND v_status = 'Active';
+        SELECT EXISTS (
+            SELECT 1
+            FROM public.staff
+            WHERE user_id = p_user_id AND gym_id = p_gym_id
+        ) INTO v_linked;
     ELSE
-        SELECT status INTO v_status
-        FROM public.members
-        WHERE user_id = p_user_id AND gym_id = p_gym_id
-        LIMIT 1;
-
-        v_linked := v_status IS NOT NULL AND v_status = 'Active';
+        SELECT EXISTS (
+            SELECT 1
+            FROM public.members
+            WHERE user_id = p_user_id AND gym_id = p_gym_id
+        ) INTO v_linked;
     END IF;
 
     RETURN v_linked;
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.is_user_linked_to_gym(UUID, UUID, TEXT) TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.is_user_linked_to_gym(UUID, UUID, TEXT) TO authenticated, anon, service_role;
 
 -- 5. CLEANUP: Fix already-unlinked accounts (association bachi ho lekin staff link nahi)
 -- Pehle se unlink kiye gaye staff/members ke liye yeh chalao ek baar

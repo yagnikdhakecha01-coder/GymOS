@@ -98,7 +98,16 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    if (authVm.userAssociations.length > 1) {
+    final selectedRole = authVm.selectedRole ?? (widget.role == 'Gym Owner' ? 'owner' : widget.role == 'Gym Staff' ? 'staff' : 'member');
+
+    final matchingAssocs = authVm.userAssociations.where((a) {
+      if (selectedRole == 'owner') return a.role == UserRole.owner;
+      if (selectedRole == 'staff') return a.role == UserRole.staff;
+      if (selectedRole == 'member') return a.role == UserRole.member;
+      return true;
+    }).toList();
+
+    if (matchingAssocs.length > 1) {
       Navigator.pushAndRemoveUntil(
         context,
         AppRouter.scaleRoute(const GymRoleSelectorScreen()),
@@ -108,19 +117,22 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     Widget targetScreen;
-    bool shouldSync = false;
 
-    if (authVm.userAssociations.isEmpty) {
-      if (authVm.selectedRole == 'owner') {
+    if (matchingAssocs.isEmpty) {
+      if (selectedRole == 'owner') {
         targetScreen = const FirstTimeSetupScreen();
       } else {
         targetScreen = const MemberCodeScreen();
       }
     } else {
+      final assoc = matchingAssocs.first;
+      if (authVm.activeAssociation?.gymId != assoc.gymId || authVm.activeAssociation?.role != assoc.role) {
+        await authVm.selectAssociation(assoc);
+      }
       final profile = authVm.currentProfile;
 
       if (profile == null) {
-        if (authVm.selectedRole == 'owner') {
+        if (selectedRole == 'owner') {
           targetScreen = const FirstTimeSetupScreen();
         } else {
           targetScreen = const MemberCodeScreen();
@@ -143,7 +155,6 @@ class _LoginScreenState extends State<LoginScreen> {
           case UserRole.owner:
             if (profile.setupCompleted) {
               targetScreen = const MainNavigationHolder();
-              shouldSync = true;
             } else {
               targetScreen = const FirstTimeSetupScreen();
             }
@@ -155,11 +166,9 @@ class _LoginScreenState extends State<LoginScreen> {
             } else {
               targetScreen = const StaffShell();
             }
-            shouldSync = true;
             break;
           case UserRole.member:
             targetScreen = const MemberShell();
-            shouldSync = true;
             break;
         }
       }

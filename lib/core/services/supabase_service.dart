@@ -87,11 +87,32 @@ class SupabaseService {
       await Supabase.initialize(
         url: urlStr,
         anonKey: anonKeyStr,
+        authOptions: const FlutterAuthClientOptions(
+          autoRefreshToken: true,
+        ),
       );
       _client = Supabase.instance.client;
-      print('Supabase initialized successfully.');
+      print('Supabase initialized successfully with autoRefreshToken enabled.');
     } catch (e) {
       print('Supabase initialization warning (running in offline/mock mode): $e');
+    }
+  }
+
+  /// Safely ensures the active session is refreshed if expired or close to expiry,
+  /// without throwing exceptions on network errors.
+  static Future<Session?> ensureValidSession() async {
+    if (!isInitialized || _client == null) return null;
+    try {
+      final session = _client!.auth.currentSession;
+      if (session == null) return null;
+      if (session.isExpired) {
+        final res = await _client!.auth.refreshSession();
+        return res.session;
+      }
+      return session;
+    } catch (e) {
+      // Offline or network error: return current cached session without clearing
+      return _client?.auth.currentSession;
     }
   }
 

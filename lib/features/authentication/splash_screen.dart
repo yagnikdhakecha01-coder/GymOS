@@ -42,47 +42,62 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     _scaleAnim = Tween<double>(begin: 0.8, end: 1.0).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutBack));
     _controller.forward();
 
-    if (SupabaseService.isInitialized && !SupabaseService.hasError && SupabaseService.client.auth.currentSession != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          _verifyAndRoute(context);
-        }
-      });
-    } else {
-      Future.delayed(const Duration(seconds: 2), () {
-        if (mounted) {
-          if (!SupabaseService.isInitialized || SupabaseService.hasError) {
-            Navigator.pushReplacement(
-              context,
-              AppRouter.scaleRoute(const ConfigurationErrorScreen()),
-            );
-          } else {
-            Navigator.pushReplacement(
-              context,
-              AppRouter.scaleRoute(const RoleSelectionScreen()),
-            );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final authVm = Provider.of<AuthViewModel>(context, listen: false);
+      final hasActiveSession = SupabaseService.isInitialized &&
+          !SupabaseService.hasError &&
+          SupabaseService.client.auth.currentSession != null;
+      final hasStoredLogin = authVm.storage.isLoggedIn();
+
+      if (hasActiveSession || hasStoredLogin) {
+        _verifyAndRoute(context);
+      } else {
+        Future.delayed(const Duration(seconds: 2), () {
+          if (mounted) {
+            if (!SupabaseService.isInitialized || SupabaseService.hasError) {
+              Navigator.pushReplacement(
+                context,
+                AppRouter.scaleRoute(const ConfigurationErrorScreen()),
+              );
+            } else {
+              Navigator.pushReplacement(
+                context,
+                AppRouter.scaleRoute(const RoleSelectionScreen()),
+              );
+            }
           }
-        }
-      });
-    }
+        });
+      }
+    });
   }
 
   Future<void> _verifyAndRoute(BuildContext context) async {
     try {
       final authVm = Provider.of<AuthViewModel>(context, listen: false);
-      await authVm.loadCurrentProfile();
+      
+      // Silently ensure valid session (refreshes in background if expired)
+      await SupabaseService.ensureValidSession();
 
-      // Already-unlinked staff/member: force logout and go to login immediately
-      if (authVm.currentProfile?.role == UserRole.staff ||
-          authVm.currentProfile?.role == UserRole.member) {
-        final unlinked = await authVm.forceLogoutIfUnlinked();
-        if (unlinked && mounted) {
-          Navigator.pushReplacement(
-            context,
-            AppRouter.scaleRoute(const RoleSelectionScreen()),
-          );
-          return;
-        }
+      try {
+        await authVm.loadCurrentProfile();
+      } catch (e) {
+        debugPrint('loadCurrentProfile network warning: $e');
+      }
+
+      // Only check unlinked for staff/member, NEVER owner
+      final currentRole = authVm.currentProfile?.role;
+      if (currentRole == UserRole.staff || currentRole == UserRole.member) {
+        try {
+          final unlinked = await authVm.forceLogoutIfUnlinked();
+          if (unlinked && mounted) {
+            Navigator.pushReplacement(
+              context,
+              AppRouter.scaleRoute(const RoleSelectionScreen()),
+            );
+            return;
+          }
+        } catch (_) {}
       }
 
       Widget nextScreen;
@@ -90,29 +105,39 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
       if (authVm.userAssociations.length > 1 && authVm.activeAssociation == null) {
         nextScreen = const GymRoleSelectorScreen();
       } else if (authVm.userAssociations.isEmpty) {
-        final role = authVm.selectedRole ?? '';
+        final role = authVm.selectedRole ?? authVm.storage.getUserRole() ?? '';
         if (role == 'owner') {
-          nextScreen = const FirstTimeSetupScreen();
+          final savedGym = authVm.storage.getGymInfo();
+          if (savedGym != null) {
+            nextScreen = const MainNavigationHolder();
+          } else {
+            nextScreen = const FirstTimeSetupScreen();
+          }
+        } else if (role == 'staff') {
+          nextScreen = const StaffShell();
+        } else if (role == 'member') {
+          nextScreen = const MemberShell();
         } else {
-          nextScreen = const MemberCodeScreen();
+          nextScreen = const RoleSelectionScreen();
         }
       } else {
         final profile = authVm.currentProfile;
         Widget targetScreen;
-        bool shouldSync = false;
         if (profile == null) {
-          final role = authVm.selectedRole ?? '';
+          final role = authVm.selectedRole ?? authVm.storage.getUserRole() ?? '';
           if (role == 'owner') {
-            targetScreen = const FirstTimeSetupScreen();
+            final savedGym = authVm.storage.getGymInfo();
+            targetScreen = savedGym != null ? const MainNavigationHolder() : const FirstTimeSetupScreen();
+          } else if (role == 'staff') {
+            targetScreen = const StaffShell();
           } else {
-            targetScreen = const MemberCodeScreen();
+            targetScreen = const MemberShell();
           }
         } else {
           switch (profile.role) {
             case UserRole.owner:
-              if (profile.setupCompleted) {
+              if (profile.setupCompleted || authVm.storage.getGymInfo() != null) {
                 targetScreen = const MainNavigationHolder();
-                shouldSync = true;
               } else {
                 targetScreen = const FirstTimeSetupScreen();
               }
@@ -124,11 +149,9 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
               } else {
                 targetScreen = const StaffShell();
               }
-              shouldSync = true;
               break;
             case UserRole.member:
               targetScreen = const MemberShell();
-              shouldSync = true;
               break;
           }
         }
@@ -152,7 +175,22 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
         }
       }
     } catch (e) {
+      debugPrint('SplashScreen _verifyAndRoute error fallback: $e');
       if (mounted) {
+        final authVm = Provider.of<AuthViewModel>(context, listen: false);
+        if (authVm.isLoggedIn || authVm.storage.isLoggedIn()) {
+          final roleStr = (authVm.selectedRole ?? authVm.storage.getUserRole() ?? '').toLowerCase();
+          if (roleStr == 'owner') {
+            Navigator.pushReplacement(context, AppRouter.scaleRoute(const MainNavigationHolder()));
+            return;
+          } else if (roleStr == 'staff') {
+            Navigator.pushReplacement(context, AppRouter.scaleRoute(const StaffShell()));
+            return;
+          } else if (roleStr == 'member') {
+            Navigator.pushReplacement(context, AppRouter.scaleRoute(const MemberShell()));
+            return;
+          }
+        }
         Navigator.pushReplacement(context, AppRouter.scaleRoute(const RoleSelectionScreen()));
       }
     }

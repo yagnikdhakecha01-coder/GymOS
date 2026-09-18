@@ -131,7 +131,7 @@ class Staff {
       email: json['email'] as String? ?? '',
       phone: json['phone'] as String? ?? '',
       role: json['role'] as String? ?? 'Trainer',
-      department: json['department'] as String? ?? 'Training',
+      department: (json['department'] as String?)?.trim() ?? '',
       status: json['status'] as String? ?? 'Active',
       joinDate: (json['join_date'] ?? json['joinDate']) as String? ?? '',
       shift: rawShift,

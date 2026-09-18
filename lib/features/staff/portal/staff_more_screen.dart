@@ -139,16 +139,33 @@ class StaffMoreScreen extends StatelessWidget {
     final authVm = Provider.of<AuthViewModel>(context, listen: false);
     final staffVm = Provider.of<StaffViewModel>(context);
 
-    // Get the logged-in staff profile
+    // Get the logged-in staff profile accurately
     final profileUserId = authVm.currentProfile?.id ?? authVm.currentUser?.id;
-    final matchingStaff = staffVm.allStaff.where((s) => s.userId == profileUserId).toList();
-    final staff = matchingStaff.isNotEmpty ? matchingStaff.first : (staffVm.allStaff.isNotEmpty ? staffVm.allStaff.first : Staff(
-      id: '',
+    final userEmail = (authVm.currentUser?.email ?? authVm.currentProfile?.email ?? '').toLowerCase().trim();
+
+    Staff? resolvedStaff = authVm.staffRecord;
+    if (resolvedStaff == null && profileUserId != null) {
+      try {
+        resolvedStaff = staffVm.allStaff.firstWhere(
+          (s) => (s.userId != null && s.userId == profileUserId) || s.id == profileUserId,
+        );
+      } catch (_) {}
+    }
+    if (resolvedStaff == null && userEmail.isNotEmpty) {
+      try {
+        resolvedStaff = staffVm.allStaff.firstWhere(
+          (s) => s.email.toLowerCase().trim() == userEmail,
+        );
+      } catch (_) {}
+    }
+
+    final staff = resolvedStaff ?? Staff(
+      id: profileUserId ?? '',
       name: authVm.currentProfile?.fullName ?? 'Staff',
-      email: authVm.currentProfile?.email ?? '',
+      email: authVm.currentProfile?.email ?? authVm.currentUser?.email ?? '',
       phone: '',
-      role: 'Trainer',
-      department: 'Training',
+      role: 'Staff',
+      department: '',
       status: 'Active',
       joinDate: '',
       shift: '',
@@ -159,7 +176,7 @@ class StaffMoreScreen extends StatelessWidget {
       salary: 0.0,
       salaryDue: 0.0,
       avatar: authVm.currentProfile?.photoUrl ?? '',
-    ));
+    );
 
     return Scaffold(
       backgroundColor: AppTheme.background,

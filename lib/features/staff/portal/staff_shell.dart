@@ -18,7 +18,7 @@ class StaffShell extends StatefulWidget {
   State<StaffShell> createState() => _StaffShellState();
 }
 
-class _StaffShellState extends State<StaffShell> {
+class _StaffShellState extends State<StaffShell> with WidgetsBindingObserver {
   int _currentIndex = 0;
   Timer? _syncTimer;
   bool _isRedirecting = false;
@@ -34,18 +34,28 @@ class _StaffShellState extends State<StaffShell> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkUnlinkedStatus();
     });
-    _syncTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+    // Relaxed 5-minute periodic sync instead of aggressive 3s polling
+    _syncTimer = Timer.periodic(const Duration(minutes: 5), (_) {
       _checkUnlinkedStatus();
     });
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _syncTimer?.cancel();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkUnlinkedStatus();
+    }
   }
 
   Future<void> _checkUnlinkedStatus() async {

@@ -33,6 +33,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     try {
       final authVm = Provider.of<AuthViewModel>(context, listen: false);
       final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
+      final role = (authVm.selectedRole ?? authVm.storage.getUserRole() ?? '').toLowerCase();
+      final bool isOwner = role == 'owner' || role == 'superadmin' || role == 'admin';
+      final bool isStaff = role == 'staff' || role == 'receptionist' || role == 'trainer';
+      final staffId = authVm.staffRecord?.id;
+      final authUid = authVm.currentUser?.id;
+
       if (gymId != null) {
         final res = await SupabaseService.client
             .from('notifications')
@@ -40,9 +46,30 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             .eq('gym_id', gymId)
             .order('created_at', ascending: false);
         
+        final List<Map<String, dynamic>> rawList = List<Map<String, dynamic>>.from(res);
+        final filtered = rawList.where((n) {
+          final targetRole = (n['target_role']?.toString() ?? '').toLowerCase();
+          final notifUserId = n['user_id']?.toString();
+
+          if (isOwner) {
+            // Owner sees owner alerts, all, both, or legacy untargeted alerts
+            return targetRole == 'owner' || targetRole == 'all' || targetRole == 'both' || targetRole.isEmpty;
+          } else if (isStaff) {
+            // Staff never sees owner private alerts
+            if (targetRole == 'owner') return false;
+            final bool isRoleMatch = targetRole == 'staff' || targetRole == 'all' || targetRole == 'both';
+            if (!isRoleMatch) return false;
+            if (notifUserId != null && notifUserId.isNotEmpty) {
+              return notifUserId == staffId || notifUserId == authUid;
+            }
+            return true;
+          }
+          return targetRole == 'all';
+        }).toList();
+
         if (mounted) {
           setState(() {
-            _notifications = List<Map<String, dynamic>>.from(res);
+            _notifications = filtered;
             _isLoading = false;
           });
         }
@@ -75,12 +102,20 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   Future<void> _markAllRead() async {
     final authVm = Provider.of<AuthViewModel>(context, listen: false);
-    final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
     authVm.clearUnreadNotifications();
-    if (gymId != null && SupabaseService.isInitialized) {
-      try {
-        await SupabaseService.client.from('notifications').update({'is_read': true}).eq('gym_id', gymId);
-      } catch (_) {}
+    if (SupabaseService.isInitialized && _notifications.isNotEmpty) {
+      final unreadIds = _notifications
+          .where((n) => n['is_read'] != true && n['id'] != null)
+          .map((n) => n['id'].toString())
+          .toList();
+      if (unreadIds.isNotEmpty) {
+        try {
+          await SupabaseService.client
+              .from('notifications')
+              .update({'is_read': true})
+              .filter('id', 'in', unreadIds);
+        } catch (_) {}
+      }
     }
     if (mounted) {
       setState(() {

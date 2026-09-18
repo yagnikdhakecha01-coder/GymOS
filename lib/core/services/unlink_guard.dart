@@ -15,6 +15,10 @@ class UnlinkGuard {
   ) async {
     if (_isHandling) return true;
 
+    // Gym Owners can never be unlinked
+    final role = (authVm.selectedRole ?? authVm.storage.getUserRole() ?? '').toLowerCase();
+    if (role == 'owner') return false;
+
     final wasUnlinked = await authVm.forceLogoutIfUnlinked();
     if (!wasUnlinked) return false;
 

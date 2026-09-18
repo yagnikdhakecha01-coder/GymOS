@@ -238,9 +238,12 @@ class GymRepository extends ChangeNotifier {
       _authStateSubscription = SupabaseService.client.auth.onAuthStateChange.listen((data) {
         final event = data.event;
         final session = data.session;
-        if (event == AuthChangeEvent.signedOut || session == null) {
+        if (event == AuthChangeEvent.signedOut) {
           clearAllData();
-        } else if (event == AuthChangeEvent.signedIn || event == AuthChangeEvent.tokenRefreshed) {
+        } else if ((event == AuthChangeEvent.signedIn ||
+                    event == AuthChangeEvent.tokenRefreshed ||
+                    event == AuthChangeEvent.initialSession) &&
+                   session != null) {
           reloadForActiveGym();
         }
       });

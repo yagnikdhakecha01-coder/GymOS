@@ -22,11 +22,11 @@ class MemberAppViewModel extends ChangeNotifier {
   String _memberAvatar = 'assets/images/member/avatar_default.png';
   int _notificationCount = 0;
 
-  // Body Stats & Fitness Goals
-  String _weight = '76 kg';
-  String _height = '178 cm';
-  String _bodyFat = '14.5%';
-  String _fitnessGoal = 'Lean Muscle Gain';
+  // Body Stats & Fitness Goals (remain blank until entered)
+  String _weight = '';
+  String _height = '';
+  String _bodyFat = '';
+  String _fitnessGoal = '';
 
   // ── Streak Data ──
   int _currentStreak = 0;
@@ -123,9 +123,12 @@ class MemberAppViewModel extends ChangeNotifier {
       _authStateSubscription = SupabaseService.client.auth.onAuthStateChange.listen((data) {
         final event = data.event;
         final session = data.session;
-        if (event == AuthChangeEvent.signedOut || session == null) {
+        if (event == AuthChangeEvent.signedOut) {
           clearAllDataInMemory();
-        } else if (event == AuthChangeEvent.signedIn) {
+        } else if ((event == AuthChangeEvent.signedIn ||
+                    event == AuthChangeEvent.tokenRefreshed ||
+                    event == AuthChangeEvent.initialSession) &&
+                   session != null) {
           loadMemberDataFromSupabase();
         }
       });
@@ -935,20 +938,31 @@ class MemberAppViewModel extends ChangeNotifier {
         }
 
         final extra = memberData['extra_fields'] as Map<String, dynamic>? ?? {};
-        if (extra['weight'] != null) {
-          final w = extra['weight'].toString();
+        if (extra['weight'] != null && extra['weight'].toString().trim().isNotEmpty) {
+          final w = extra['weight'].toString().trim();
           _weight = w.endsWith('kg') ? w : '$w kg';
+        } else {
+          _weight = '';
         }
-        if (extra['height'] != null) {
-          final h = extra['height'].toString();
+        if (extra['height'] != null && extra['height'].toString().trim().isNotEmpty) {
+          final h = extra['height'].toString().trim();
           _height = h.endsWith('cm') ? h : '$h cm';
+        } else {
+          _height = '';
         }
-        if (extra['body_fat'] != null || extra['bodyFat'] != null) {
-          final bf = (extra['body_fat'] ?? extra['bodyFat']).toString();
+        if ((extra['body_fat'] != null && extra['body_fat'].toString().trim().isNotEmpty) ||
+            (extra['bodyFat'] != null && extra['bodyFat'].toString().trim().isNotEmpty)) {
+          final bf = (extra['body_fat'] ?? extra['bodyFat']).toString().trim();
           _bodyFat = bf.endsWith('%') ? bf : '$bf%';
+        } else {
+          _bodyFat = '';
         }
-        if (extra['fitness_goal'] != null || extra['fitnessGoal'] != null) {
-          _fitnessGoal = (extra['fitness_goal'] ?? extra['fitnessGoal']).toString();
+        if (extra['fitness_goal'] != null && extra['fitness_goal'].toString().trim().isNotEmpty) {
+          _fitnessGoal = extra['fitness_goal'].toString().trim();
+        } else if (extra['fitnessGoal'] != null && extra['fitnessGoal'].toString().trim().isNotEmpty) {
+          _fitnessGoal = extra['fitnessGoal'].toString().trim();
+        } else {
+          _fitnessGoal = '';
         }
 
         // Fetch latest weight and body fat from member_body_logs table
@@ -961,10 +975,10 @@ class MemberAppViewModel extends ChangeNotifier {
               .limit(1)
               .maybeSingle();
           if (latestBodyLog != null) {
-            if (latestBodyLog['weight_kg'] != null) {
+            if (latestBodyLog['weight_kg'] != null && latestBodyLog['weight_kg'].toString().trim().isNotEmpty) {
               _weight = '${latestBodyLog['weight_kg']} kg';
             }
-            if (latestBodyLog['body_fat_pct'] != null) {
+            if (latestBodyLog['body_fat_pct'] != null && latestBodyLog['body_fat_pct'].toString().trim().isNotEmpty) {
               _bodyFat = '${latestBodyLog['body_fat_pct']}%';
             }
           }

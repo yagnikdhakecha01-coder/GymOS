@@ -73,25 +73,6 @@ class AnnouncementsService {
           await prefs.setString(cacheKey, jsonEncode(announcements.map((e) => e.toJson()).toList()));
           return announcements;
         }
-
-        // Fallback to notifications table
-        final List notifRes = (gymId != null && gymId.isNotEmpty)
-            ? await SupabaseService.client
-                .from('notifications')
-                .select()
-                .eq('gym_id', gymId)
-                .order('created_at', ascending: false)
-            : await SupabaseService.client
-                .from('notifications')
-                .select()
-                .order('created_at', ascending: false);
-
-        if (notifRes.isNotEmpty) {
-          announcements = notifRes.map((e) => Announcement.fromJson(e)).toList();
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setString(cacheKey, jsonEncode(announcements.map((e) => e.toJson()).toList()));
-          return announcements;
-        }
       } catch (e) {
         print('AnnouncementsService fetch error: $e');
       }

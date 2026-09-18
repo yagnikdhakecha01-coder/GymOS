@@ -36,11 +36,14 @@ class AuthViewModel extends ChangeNotifier {
   bool _isOffline = false;
 
   AuthViewModel(this._storage, this._gymRepository) {
+    final bool hasLocalLogin = _storage.isLoggedIn();
+    bool hasSupabaseSession = false;
     try {
-      _isLoggedIn = SupabaseService.client.auth.currentSession != null;
-    } catch (_) {
-      _isLoggedIn = _storage.isLoggedIn();
-    }
+      if (SupabaseService.isInitialized) {
+        hasSupabaseSession = SupabaseService.client.auth.currentSession != null;
+      }
+    } catch (_) {}
+    _isLoggedIn = hasLocalLogin || hasSupabaseSession;
     _selectedRole = _storage.getUserRole();
     _gymInfo = _storage.getGymInfo();
   }
@@ -78,15 +81,54 @@ class AuthViewModel extends ChangeNotifier {
     _unreadNotificationsCount = 0;
     notifyListeners();
 
-    // Mark notifications as read in Supabase
+    // Mark notifications as read in Supabase for current role
     final gymId = activeAssociation?.gymId ?? gymInfo?['id'];
     if (gymId != null && SupabaseService.isInitialized) {
+      final role = (_selectedRole ?? _storage.getUserRole() ?? '').toLowerCase();
+      final bool isOwner = role == 'owner' || role == 'superadmin' || role == 'admin';
+      final bool isStaff = role == 'staff' || role == 'receptionist' || role == 'trainer';
+      final staffId = _staffRecord?.id;
+      final authUid = currentUser?.id;
+      final memberId = _storage.getString('member_id');
+
       SupabaseService.client
           .from('notifications')
-          .update({'is_read': true})
+          .select('id, target_role, user_id')
           .eq('gym_id', gymId)
           .eq('is_read', false)
-          .then((_) {})
+          .then((res) {
+            final matchingIds = (res as List).where((n) {
+              final targetRole = (n['target_role']?.toString() ?? '').toLowerCase();
+              final notifUserId = n['user_id']?.toString();
+              if (isOwner) {
+                return targetRole == 'owner' || targetRole == 'all' || targetRole == 'both' || targetRole.isEmpty;
+              } else if (isStaff) {
+                if (targetRole == 'owner') return false;
+                final isRoleMatch = targetRole == 'staff' || targetRole == 'all' || targetRole == 'both';
+                if (!isRoleMatch) return false;
+                if (notifUserId != null && notifUserId.isNotEmpty) {
+                  return notifUserId == staffId || notifUserId == authUid;
+                }
+                return true;
+              } else {
+                if (targetRole == 'owner' || targetRole == 'staff') return false;
+                final isRoleMatch = targetRole == 'member' || targetRole == 'all' || targetRole == 'both';
+                if (!isRoleMatch) return false;
+                if (notifUserId != null && notifUserId.isNotEmpty) {
+                  return notifUserId == memberId || notifUserId == authUid;
+                }
+                return true;
+              }
+            }).map((n) => n['id'].toString()).toList();
+
+            if (matchingIds.isNotEmpty) {
+              SupabaseService.client
+                  .from('notifications')
+                  .update({'is_read': true})
+                  .filter('id', 'in', matchingIds)
+                  .then((_) {});
+            }
+          })
           .catchError((e) {
             print('Error updating notifications in Supabase: $e');
           });
@@ -155,79 +197,37 @@ class AuthViewModel extends ChangeNotifier {
 
         _staffRecord = null;
 
-        if (_userAssociations.isEmpty) {
-          _selectedRole = _storage.getUserRole();
+        UserRole? desiredRole;
+        if (_selectedRole == 'owner') desiredRole = UserRole.owner;
+        if (_selectedRole == 'staff') desiredRole = UserRole.staff;
+        if (_selectedRole == 'member') desiredRole = UserRole.member;
+
+        final matchingAssocs = desiredRole != null
+            ? _userAssociations.where((a) => a.role == desiredRole).toList()
+            : _userAssociations;
+
+        if (matchingAssocs.isEmpty) {
           _activeAssociation = null;
           _gymInfo = null;
           await _storage.remove(LocalStorageService.keyUserGymInfo);
-        } else if (_userAssociations.length == 1) {
-          final assoc = _userAssociations.first;
-          _activeAssociation = assoc;
-          _selectedRole = assoc.role.name;
-          _currentProfile = profile.copyWith(
-            role: assoc.role,
-            gymId: assoc.gymId,
-            setupCompleted: assoc.setupCompleted,
-          );
-          await _storage.setUserRole(_selectedRole!);
-
-          if (_currentProfile?.role == UserRole.staff) {
-            try {
-              final res = await SupabaseService.client
-                  .from('staff')
-                  .select()
-                  .eq('user_id', profile.id)
-                  .eq('gym_id', assoc.gymId)
-                  .maybeSingle();
-              if (res != null) {
-                _staffRecord = Staff.fromJson(res);
-              }
-            } catch (e) {
-              print('Error loading staff record in login: $e');
-            }
+          if (desiredRole != null) {
+            _currentProfile = profile.copyWith(
+              role: desiredRole,
+              gymId: '',
+              setupCompleted: false,
+            );
+            await _storage.setUserRole(_selectedRole!);
+          } else {
+            _selectedRole = _storage.getUserRole();
           }
-
-          Map<String, dynamic> info = {
-            'id': assoc.gymId,
-            'name': assoc.gymName ?? 'GYMOS',
-            'gym_code': assoc.gymCode ?? 'MOCK123',
-            'owner': profile.email,
-            'status': 'active',
-            'is_locked': false,
-          };
-          try {
-            final gymData = await SupabaseService.client
-                .from('gyms')
-                .select()
-                .eq('id', assoc.gymId)
-                .maybeSingle();
-            if (gymData != null) {
-              info = {
-                'id': gymData['id'],
-                'name': gymData['name'],
-                'logo': gymData['logo_url'] ?? '',
-                'logo_url': gymData['logo_url'] ?? '',
-                'gym_code': gymData['gym_code'],
-                'owner': profile.email,
-                'email': gymData['email'] ?? profile.email,
-                'phone': gymData['phone_number'] ?? '',
-                'address': gymData['address'] ?? '',
-                'city': gymData['city'] ?? '',
-                'state': gymData['state'] ?? '',
-                'country': gymData['country'] ?? '',
-                'pin_code': gymData['pin_code'] ?? '',
-                'gym_type': gymData['gym_type'] ?? '',
-                'status': gymData['status'] ?? 'active',
-                'is_locked': gymData['is_locked'] ?? false,
-              };
-            }
-          } catch (_) {}
-          _gymInfo = info;
-          await _storage.setGymInfo(info);
+        } else if (matchingAssocs.length == 1) {
+          final assoc = matchingAssocs.first;
+          await selectAssociation(assoc);
         } else {
           // Multiple associations exist: the UI must direct to selector.
-          _selectedRole = null;
           _activeAssociation = null;
+          _gymInfo = null;
+          await _storage.remove(LocalStorageService.keyUserGymInfo);
         }
       }
       await fetchSubscriptionStatus();
@@ -489,26 +489,21 @@ class AuthViewModel extends ChangeNotifier {
   }
 
   /// Returns logout dialog title/message if account was unlinked or deactivated.
-  /// Returns null when access is still valid.
+  /// Returns null when access is still valid or if offline/error.
   Future<Map<String, String>?> getUnlinkBlockReason() async {
     if (!isLoggedIn || !SupabaseService.isInitialized) return null;
+
+    final role = selectedRole ?? currentProfile?.role.name ?? _storage.getUserRole() ?? '';
+    // Gym owners can NEVER be unlinked by an owner
+    if (role == 'owner' || currentProfile?.role == UserRole.owner) {
+      return null;
+    }
 
     final user = currentUser;
     if (user == null) return null;
 
-    await loadCurrentProfile();
-
     final gymId = activeAssociation?.gymId ?? gymInfo?['id'];
-    final role = selectedRole ?? currentProfile?.role.name ?? '';
-
-    if (_userAssociations.isEmpty) {
-      return {
-        'title': 'Account Unlinked',
-        'message': 'Gym Owner unlinked your account.',
-      };
-    }
-
-    if (gymId == null || gymId.isEmpty) return null;
+    if (gymId == null || gymId.toString().isEmpty) return null;
 
     try {
       final isLinked = await SupabaseService.client.rpc(
@@ -520,6 +515,7 @@ class AuthViewModel extends ChangeNotifier {
         },
       );
 
+      // Only logout if server explicitly confirms the account was unlinked (false)
       if (isLinked == false) {
         return {
           'title': 'Account Unlinked',
@@ -527,66 +523,9 @@ class AuthViewModel extends ChangeNotifier {
         };
       }
     } catch (e) {
-      // Fallback when RPC not deployed yet
-      print('is_user_linked_to_gym RPC unavailable, using direct check: $e');
-
-      if (role == 'staff') {
-        final staffData = await SupabaseService.client
-            .from('staff')
-            .select('status')
-            .eq('user_id', user.id)
-            .eq('gym_id', gymId)
-            .maybeSingle();
-
-        if (staffData == null) {
-          return {
-            'title': 'Account Unlinked',
-            'message': 'Gym Owner unlinked your account.',
-          };
-        }
-
-        final status = staffData['status']?.toString() ?? '';
-        if (status == 'Inactive') {
-          return {
-            'title': 'Account Inactive',
-            'message': 'Your account has been deactivated by the gym owner.',
-          };
-        }
-        if (status != 'Active') {
-          return {
-            'title': 'Account Unlinked',
-            'message': 'Your account is no longer linked to this gym.',
-          };
-        }
-      } else if (role == 'member') {
-        final memberData = await SupabaseService.client
-            .from('members')
-            .select('status')
-            .eq('user_id', user.id)
-            .eq('gym_id', gymId)
-            .maybeSingle();
-
-        if (memberData == null) {
-          return {
-            'title': 'Account Unlinked',
-            'message': 'Gym Owner unlinked your account.',
-          };
-        }
-
-        final status = memberData['status']?.toString() ?? '';
-        if (status == 'Inactive') {
-          return {
-            'title': 'Account Inactive',
-            'message': 'Your account has been deactivated by the gym owner.',
-          };
-        }
-        if (status != 'Active') {
-          return {
-            'title': 'Account Unlinked',
-            'message': 'Your account is no longer linked to this gym.',
-          };
-        }
-      }
+      // Network failure, timeout, or server unreachable:
+      // MUST NOT logout! Allow user to remain logged in offline.
+      print('Unlink check skipped due to network/RPC error: $e');
     }
 
     return null;
@@ -809,8 +748,6 @@ class AuthViewModel extends ChangeNotifier {
         final allAssociations = await _authService.getUserGymAssociations(uid);
         if (allAssociations != null) {
           _userAssociations = allAssociations;
-        } else {
-          _userAssociations = [];
         }
       }
 
@@ -941,15 +878,47 @@ class AuthViewModel extends ChangeNotifier {
           await _storage.setGymInfo(info);
         }
 
-        // Fetch unread notifications count from Supabase
+        // Fetch unread notifications count from Supabase for current role
         try {
           if (SupabaseService.isInitialized) {
             final res = await SupabaseService.client
                 .from('notifications')
-                .select('id')
+                .select('id, target_role, user_id')
                 .eq('gym_id', assoc.gymId)
                 .eq('is_read', false);
-            _unreadNotificationsCount = (res as List).length;
+            
+            final role = (_selectedRole ?? _storage.getUserRole() ?? '').toLowerCase();
+            final bool isOwner = role == 'owner' || role == 'superadmin' || role == 'admin';
+            final bool isStaff = role == 'staff' || role == 'receptionist' || role == 'trainer';
+            final staffId = _staffRecord?.id;
+            final authUid = currentUser?.id;
+            final memberId = _storage.getString('member_id');
+
+            final matching = (res as List).where((n) {
+              final targetRole = (n['target_role']?.toString() ?? '').toLowerCase();
+              final notifUserId = n['user_id']?.toString();
+              if (isOwner) {
+                return targetRole == 'owner' || targetRole == 'all' || targetRole == 'both' || targetRole.isEmpty;
+              } else if (isStaff) {
+                if (targetRole == 'owner') return false;
+                final isRoleMatch = targetRole == 'staff' || targetRole == 'all' || targetRole == 'both';
+                if (!isRoleMatch) return false;
+                if (notifUserId != null && notifUserId.isNotEmpty) {
+                  return notifUserId == staffId || notifUserId == authUid;
+                }
+                return true;
+              } else {
+                if (targetRole == 'owner' || targetRole == 'staff') return false;
+                final isRoleMatch = targetRole == 'member' || targetRole == 'all' || targetRole == 'both';
+                if (!isRoleMatch) return false;
+                if (notifUserId != null && notifUserId.isNotEmpty) {
+                  return notifUserId == memberId || notifUserId == authUid;
+                }
+                return true;
+              }
+            }).toList();
+
+            _unreadNotificationsCount = matching.length;
           }
         } catch (e) {
           print('Error fetching unread notifications count: $e');

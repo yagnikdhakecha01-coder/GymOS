@@ -84,7 +84,8 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
           _currentState == AttendanceState.scanningCheckOut ||
           _currentState == AttendanceState.checkInSuccess ||
           _currentState == AttendanceState.checkOutSuccess ||
-          _currentState == AttendanceState.scanFailure) {
+          _currentState == AttendanceState.scanFailure ||
+          _currentState == AttendanceState.history) {
         return;
       }
       _checkCurrentStatus();
@@ -162,7 +163,8 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
         _currentState == AttendanceState.scanningCheckOut ||
         _currentState == AttendanceState.checkInSuccess ||
         _currentState == AttendanceState.checkOutSuccess ||
-        _currentState == AttendanceState.scanFailure) {
+        _currentState == AttendanceState.scanFailure ||
+        _currentState == AttendanceState.history) {
       return;
     }
     _isCheckingStatus = true;
@@ -282,8 +284,44 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
     }
   }
 
+  void _returnFromHistory() {
+    setState(() {
+      final bool wasCheckedIn = _todayDetails?['can_check_out'] == true;
+      final bool isDone = _todayDetails?['is_attendance_completed'] == true;
+      if (wasCheckedIn) {
+        _currentState = AttendanceState.checkedIn;
+      } else if (isDone) {
+        _currentState = AttendanceState.todaySummary;
+      } else {
+        _currentState = AttendanceState.notCheckedIn;
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    return PopScope(
+      canPop: _currentState != AttendanceState.history &&
+          _currentState != AttendanceState.scanningCheckIn &&
+          _currentState != AttendanceState.scanningCheckOut,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) {
+          if (_currentState == AttendanceState.history) {
+            _returnFromHistory();
+          } else if (_currentState == AttendanceState.scanningCheckIn) {
+            setState(() => _currentState = AttendanceState.notCheckedIn);
+            _checkCurrentStatus();
+          } else if (_currentState == AttendanceState.scanningCheckOut) {
+            setState(() => _currentState = AttendanceState.checkedIn);
+            _checkCurrentStatus();
+          }
+        }
+      },
+      child: _buildCurrentStateScreen(),
+    );
+  }
+
+  Widget _buildCurrentStateScreen() {
     switch (_currentState) {
       case AttendanceState.notCheckedIn:
         return _buildNotCheckedInScreen();
@@ -1492,7 +1530,7 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
         backgroundColor: Colors.white,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: AppTheme.textPrimary),
-          onPressed: () => setState(() => _currentState = AttendanceState.notCheckedIn),
+          onPressed: _returnFromHistory,
         ),
         title: Text(
           'Attendance History',

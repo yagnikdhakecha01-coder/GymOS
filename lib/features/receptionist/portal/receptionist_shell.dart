@@ -20,7 +20,7 @@ class ReceptionistShell extends StatefulWidget {
   State<ReceptionistShell> createState() => _ReceptionistShellState();
 }
 
-class _ReceptionistShellState extends State<ReceptionistShell> {
+class _ReceptionistShellState extends State<ReceptionistShell> with WidgetsBindingObserver {
   int _currentIndex = 0;
   Timer? _syncTimer;
   bool _isRedirecting = false;
@@ -28,18 +28,28 @@ class _ReceptionistShellState extends State<ReceptionistShell> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkUnlinkedStatus();
     });
-    _syncTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+    // Relaxed 5-minute periodic sync instead of aggressive 3s polling
+    _syncTimer = Timer.periodic(const Duration(minutes: 5), (_) {
       _checkUnlinkedStatus();
     });
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _syncTimer?.cancel();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkUnlinkedStatus();
+    }
   }
 
   Future<void> _checkUnlinkedStatus() async {

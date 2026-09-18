@@ -211,11 +211,11 @@ class MemberProfileScreen extends StatelessWidget {
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceAround,
                               children: [
-                                _statSummaryItem('Weight', vm.weight.isNotEmpty ? vm.weight : '-- kg'),
+                                _statSummaryItem('Weight', vm.weight.isNotEmpty ? vm.weight : '—'),
                                 Container(width: 1, height: 24, color: const Color(0xFFDDD6FE)),
-                                _statSummaryItem('Height', vm.height.isNotEmpty ? vm.height : '-- cm'),
+                                _statSummaryItem('Height', vm.height.isNotEmpty ? vm.height : '—'),
                                 Container(width: 1, height: 24, color: const Color(0xFFDDD6FE)),
-                                _statSummaryItem('Body Fat', vm.bodyFat.isNotEmpty ? vm.bodyFat : '-- %'),
+                                _statSummaryItem('Body Fat', vm.bodyFat.isNotEmpty ? vm.bodyFat : '—'),
                               ],
                             ),
                           ),
@@ -252,7 +252,7 @@ class MemberProfileScreen extends StatelessWidget {
                           _showBodyStatsDialog(context, vm);
                         }),
                         _divider(),
-                        _buildMenuItem(Icons.track_changes_rounded, 'Fitness Goal: ${vm.fitnessGoal}', null),
+                        _buildMenuItem(Icons.track_changes_rounded, 'Fitness Goal: ${vm.fitnessGoal.isNotEmpty ? vm.fitnessGoal : 'Not Set'}', () => _showFitnessGoalDialog(context, vm)),
                         _divider(),
                         _buildMenuItem(Icons.credit_card_rounded, 'My Membership', () {
                           Navigator.push(

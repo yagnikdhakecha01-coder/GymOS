@@ -6,7 +6,6 @@ import '../../../core/theme/theme.dart';
 import '../../../core/widgets/custom_card.dart';
 import '../../../core/services/announcements_service.dart';
 import '../../more/notifications_screen.dart';
-import '../../../../core/navigation/app_router.dart';
 import '../../authentication/auth_viewmodel.dart';
 import '../../dashboard/gym_switcher_bottom_sheet.dart';
 import '../../../core/repository/gym_repository.dart';
@@ -221,18 +220,34 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
           });
         }
 
-        // Fetch notifications count
+        // Fetch notifications count for staff only
         int notifCount = 0;
         final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
         if (gymId != null) {
           try {
             final notifRes = await SupabaseService.client
                 .from('notifications')
-                .select('id')
+                .select('id, target_role, user_id')
                 .eq('gym_id', gymId)
                 .eq('is_read', false)
                 .timeout(const Duration(seconds: 3));
-            notifCount = (notifRes as List).length;
+            
+            final staffId = staff.id;
+            final authUid = authVm.currentUser?.id;
+
+            final matching = (notifRes as List).where((n) {
+              final targetRole = (n['target_role']?.toString() ?? '').toLowerCase();
+              if (targetRole == 'owner') return false;
+              final isRoleMatch = targetRole == 'staff' || targetRole == 'all' || targetRole == 'both';
+              if (!isRoleMatch) return false;
+              final notifUserId = n['user_id']?.toString();
+              if (notifUserId != null && notifUserId.isNotEmpty) {
+                return notifUserId == staffId || notifUserId == authUid;
+              }
+              return true;
+            }).toList();
+
+            notifCount = matching.length;
           } catch (e) {
             print('Timeout or error fetching notifications: $e');
           }
