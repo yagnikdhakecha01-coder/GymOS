@@ -187,7 +187,7 @@ Welcome to $effectiveGymName! 💪''';
   Future<void> _shareViaSystem(BuildContext context) async {
     final message = buildMessage();
     try {
-      await SharePlus.instance.share(
+      await Share.share(
         message,
         subject: 'GymOS Invitation - ${gymName ?? "Gym"}',
       );
