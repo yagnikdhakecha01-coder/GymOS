@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/theme/theme.dart';
 import '../../../core/services/supabase_service.dart';
 import '../member_app_viewmodel.dart';
@@ -62,34 +61,93 @@ class _MemberActivityHeatmapWidgetState
     }
 
     // Fetch from Supabase
-    if (!SupabaseService.isInitialized || widget.memberId.isEmpty || widget.gymId.isEmpty) {
+    if (!SupabaseService.isInitialized) {
+      setState(() => _isLoading = false);
+      return;
+    }
+
+    final user = SupabaseService.client.auth.currentUser;
+    final userId = user?.id ?? '';
+    final memberId = widget.memberId;
+
+    if (memberId.isEmpty && userId.isEmpty) {
       setState(() => _isLoading = false);
       return;
     }
 
     try {
-      final year = DateTime.now().year;
-      final result = await SupabaseService.client
-          .rpc('get_member_activity_heatmap', params: {
-        'p_member_id': widget.memberId,
-        'p_gym_id': widget.gymId,
-        'p_year': year,
-      });
-
       final Map<String, int> activityMap = {};
       final Set<String> workoutDates = {};
 
-      for (final row in (result as List)) {
-        final dateStr = (row['activity_date'] as String).substring(0, 10);
-        activityMap[dateStr] = (row['attendance_count'] as num).toInt();
-        if (row['workout_completed'] == true) {
-          workoutDates.add(dateStr);
-        }
+      // 1. Try RPC if gymId & memberId available
+      if (widget.gymId.isNotEmpty && memberId.isNotEmpty) {
+        try {
+          final year = DateTime.now().year;
+          final result = await SupabaseService.client
+              .rpc('get_member_activity_heatmap', params: {
+            'p_member_id': memberId,
+            'p_gym_id': widget.gymId,
+            'p_year': year,
+          });
+
+          for (final row in (result as List)) {
+            final dateStr = (row['activity_date'] as String).substring(0, 10);
+            activityMap[dateStr] = (row['attendance_count'] as num).toInt();
+            if (row['workout_completed'] == true) {
+              workoutDates.add(dateStr);
+            }
+          }
+        } catch (_) {}
       }
 
+      // 2. Direct attendance_logs check to guarantee all member logs are captured
+      try {
+        var query = SupabaseService.client
+            .from('attendance_logs')
+            .select('check_in, status, shift_status');
+        if (memberId.isNotEmpty && userId.isNotEmpty) {
+          query = query.or('member_id.eq.$memberId,user_id.eq.$userId');
+        } else if (memberId.isNotEmpty) {
+          query = query.eq('member_id', memberId);
+        } else {
+          query = query.eq('user_id', userId);
+        }
+
+        final logs = await query.order('check_in', ascending: false);
+        for (final row in (logs as List)) {
+          final checkInStr = row['check_in']?.toString();
+          final status = row['status']?.toString() ?? 'Present';
+          if (checkInStr != null && status != 'Absent' && status != 'Leave' && status != 'On Leave') {
+            final dateStr = checkInStr.substring(0, 10);
+            activityMap[dateStr] = (activityMap[dateStr] ?? 0) + 1;
+            if (row['shift_status'] == 'Workout Completed') {
+              workoutDates.add(dateStr);
+            }
+          }
+        }
+      } catch (_) {}
+
+      // 3. Check member_workout_logs for workouts
+      try {
+        var wQuery = SupabaseService.client
+            .from('member_workout_logs')
+            .select('date, status');
+        if (memberId.isNotEmpty) {
+          wQuery = wQuery.eq('member_id', memberId);
+        }
+        final wLogs = await wQuery;
+        for (final row in (wLogs as List)) {
+          final d = row['date']?.toString();
+          if (d != null && d.length >= 10) {
+            workoutDates.add(d.substring(0, 10));
+          }
+        }
+      } catch (_) {}
+
       // Cache for offline
+      final cacheKey = memberId.isNotEmpty ? memberId : userId;
       await prefs.setString(
-        'member_heatmap_${widget.memberId}',
+        'member_heatmap_$cacheKey',
         jsonEncode({
           'activity': activityMap,
           'workouts': workoutDates.toList(),
@@ -298,11 +356,18 @@ class _MemberActivityHeatmapWidgetState
               return SizedBox(
                 width: 14,
                 child: isFirstWeekOfMonth
-                    ? Text(
-                        _monthLabels[date.month - 1],
-                        style: GoogleFonts.inter(
-                          fontSize: 8,
-                          color: AppTheme.textMuted,
+                    ? OverflowBox(
+                        alignment: Alignment.centerLeft,
+                        minWidth: 0,
+                        maxWidth: 36,
+                        child: Text(
+                          _monthLabels[date.month - 1],
+                          softWrap: false,
+                          style: GoogleFonts.inter(
+                            fontSize: 8.5,
+                            fontWeight: FontWeight.w600,
+                            color: AppTheme.textMuted,
+                          ),
                         ),
                       )
                     : const SizedBox(),

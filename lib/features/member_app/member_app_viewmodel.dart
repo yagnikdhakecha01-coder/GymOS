@@ -44,6 +44,8 @@ class MemberAppViewModel extends ChangeNotifier {
 
   // ── Today's Training ──
   String _todayMuscleGroup = 'Chest Day'; // Chest, Back, Leg, Shoulder, Arm, Rest, Cardio
+  List<String> _todaySplits = ['Chest Day'];
+  String _gymId = '';
   bool _isTrainingCompleted = false;
 
   // Training History List
@@ -155,6 +157,7 @@ class MemberAppViewModel extends ChangeNotifier {
 
   String get memberName => _memberName;
   String get memberId => _memberId;
+  String get gymId => _gymId;
   String get gymName => _gymName;
   String get memberAvatar => _memberAvatar;
   int get notificationCount => _notificationCount;
@@ -187,14 +190,16 @@ class MemberAppViewModel extends ChangeNotifier {
     return total;
   }
 
-   String get todayMuscleGroup => _todayMuscleGroup;
+  String get todayMuscleGroup => _todayMuscleGroup;
+  List<String> get todaySplits => _todaySplits;
   String get todayWorkoutImage {
-    final group = _todayMuscleGroup.toLowerCase();
+    final firstSplit = _todaySplits.isNotEmpty ? _todaySplits.first : _todayMuscleGroup;
+    final group = firstSplit.toLowerCase();
     if (group.contains('chest')) return 'assets/images/member/chest_day.png';
     if (group.contains('leg')) return 'assets/images/member/leg_day.png';
     if (group.contains('shoulder')) return 'assets/images/member/shoulder_day.png';
     if (group.contains('back')) return 'assets/images/member/back_day.png';
-    if (group.contains('arm') || group.contains('tricep') || group.contains('trisep')) return 'assets/images/member/arm_day.png';
+    if (group.contains('arm') || group.contains('tricep') || group.contains('bicep') || group.contains('trisep')) return 'assets/images/member/arm_day.png';
     if (group.contains('cardio') || group.contains('aerobic') || group.contains('arobix') || group.contains('steam')) return 'assets/images/member/cardio_day.png';
     return 'assets/images/member/rest_day.png';
   }
@@ -331,8 +336,13 @@ class MemberAppViewModel extends ChangeNotifier {
     }
 
     // Load cached workout plan, diet plan & attendance history for instant UI rendering
+    _gymId = prefs.getString('member_cached_gym_id') ?? _gymId;
     _assignedWorkoutTitle = prefs.getString('member_cached_workout_title') ?? _assignedWorkoutTitle;
     _todayMuscleGroup = prefs.getString('member_cached_today_muscle') ?? _todayMuscleGroup;
+    final cachedSplits = prefs.getStringList('member_cached_today_splits');
+    if (cachedSplits != null && cachedSplits.isNotEmpty) {
+      _todaySplits = cachedSplits;
+    }
     _assignedDietTitle = prefs.getString('member_cached_diet_title') ?? _assignedDietTitle;
 
     final cachedDietPlanJson = prefs.getString('member_cached_diet_plan_json');
@@ -577,29 +587,43 @@ class MemberAppViewModel extends ChangeNotifier {
                 todayList = rawSchedule[todayName];
               }
               if (todayList is List && todayList.isNotEmpty) {
-                final firstVal = todayList.first;
-                if (firstVal is Map) {
-                  _todayMuscleGroup = firstVal['title']?.toString() ?? 'Rest Day';
-                } else {
-                  _todayMuscleGroup = firstVal?.toString() ?? 'Rest Day';
+                final List<String> splits = [];
+                for (final item in todayList) {
+                  String splitTitle = '';
+                  if (item is Map) {
+                    splitTitle = item['title']?.toString() ?? '';
+                  } else if (item is String) {
+                    splitTitle = item;
+                  }
+                  if (splitTitle.trim().isNotEmpty) {
+                    splits.add(splitTitle.trim());
+                  }
                 }
+                _todaySplits = splits.isNotEmpty ? splits : ['Rest Day'];
+                _todayMuscleGroup = _todaySplits.join(' + ');
               } else {
+                _todaySplits = ['Rest Day'];
                 _todayMuscleGroup = 'Rest Day';
               }
               await prefs.setString('member_cached_workout_title', _assignedWorkoutTitle);
               await prefs.setString('member_cached_today_muscle', _todayMuscleGroup);
+              await prefs.setStringList('member_cached_today_splits', _todaySplits);
             } else {
               _assignedWorkoutTitle = '';
+              _todaySplits = ['Rest Day'];
               _todayMuscleGroup = 'Rest Day';
             }
           } catch (_) {}
         } else {
           _assignedWorkoutTitle = '';
+          _todaySplits = ['Rest Day'];
           _todayMuscleGroup = 'Rest Day';
         }
 
         final gymId = memberData['gym_id'];
         if (gymId != null) {
+          _gymId = gymId.toString();
+          await prefs.setString('member_cached_gym_id', _gymId);
           final gymData = await SupabaseService.client
               .from('gyms')
               .select('name')

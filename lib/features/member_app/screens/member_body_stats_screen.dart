@@ -53,6 +53,9 @@ class _MemberBodyStatsScreenState extends State<MemberBodyStatsScreen>
   final _armsCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
 
+  bool _showMeasurements = false;
+  bool _showNotes = false;
+
   @override
   void initState() {
     super.initState();
@@ -243,6 +246,8 @@ class _MemberBodyStatsScreenState extends State<MemberBodyStatsScreen>
     if (log['notes'] != null) {
       _notesCtrl.text = log['notes'].toString();
     }
+    _showMeasurements = (log['chest_cm'] != null || log['waist_cm'] != null || log['arms_cm'] != null);
+    _showNotes = (log['notes'] != null && log['notes'].toString().trim().isNotEmpty);
   }
 
   Map<String, dynamic>? get _todayLog {
@@ -417,6 +422,7 @@ class _MemberBodyStatsScreenState extends State<MemberBodyStatsScreen>
   Widget _buildTopGoalCard(double latestWeight) {
     if (!_hasSetGoal || _goalWeight <= 0) {
       return Container(
+        width: double.infinity,
         margin: const EdgeInsets.only(bottom: 16),
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
@@ -435,19 +441,23 @@ class _MemberBodyStatsScreenState extends State<MemberBodyStatsScreen>
           ],
         ),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Container(
-              padding: const EdgeInsets.all(10),
+              width: 44,
+              height: 44,
               decoration: BoxDecoration(
                 color: Colors.white.withValues(alpha: 0.2),
                 shape: BoxShape.circle,
               ),
-              child: const Text('🎯', style: TextStyle(fontSize: 24)),
+              alignment: Alignment.center,
+              child: const Text('🎯', style: TextStyle(fontSize: 22)),
             ),
-            const SizedBox(width: 14),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
                     'Set Your Fitness Goal',
@@ -457,23 +467,25 @@ class _MemberBodyStatsScreenState extends State<MemberBodyStatsScreen>
                       color: Colors.white,
                     ),
                   ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 3),
                   Text(
                     'Set target weight & goal to unlock daily logging',
                     style: GoogleFonts.inter(
                       fontSize: 11.5,
                       color: Colors.white.withValues(alpha: 0.85),
+                      height: 1.25,
                     ),
                   ),
                 ],
               ),
             ),
+            const SizedBox(width: 10),
             ElevatedButton(
               onPressed: () => _showSetGoalDialog(isFirstTime: true),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.white,
                 foregroundColor: AppTheme.primary,
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 elevation: 0,
               ),
@@ -521,6 +533,7 @@ class _MemberBodyStatsScreenState extends State<MemberBodyStatsScreen>
     }
 
     return Container(
+      width: double.infinity,
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -710,7 +723,7 @@ class _MemberBodyStatsScreenState extends State<MemberBodyStatsScreen>
       physics: const BouncingScrollPhysics(),
       padding: const EdgeInsets.all(16),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // ── Prominent Goal Card at Top ──
           _buildTopGoalCard(latestWeight),
@@ -952,7 +965,7 @@ class _MemberBodyStatsScreenState extends State<MemberBodyStatsScreen>
       physics: const BouncingScrollPhysics(),
       padding: const EdgeInsets.all(16),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // ── Prominent Goal Card at Top ──
           _buildTopGoalCard(latestWeight),
@@ -1208,9 +1221,9 @@ class _MemberBodyStatsScreenState extends State<MemberBodyStatsScreen>
               ),
             ),
 
-            const SizedBox(height: 18),
+            const SizedBox(height: 16),
 
-            // Form sections
+            // Form sections: Weight & Body Composition (Prominently visible)
             _inputSection(
               title: 'Weight & Body Composition',
               children: [
@@ -1227,32 +1240,50 @@ class _MemberBodyStatsScreenState extends State<MemberBodyStatsScreen>
               ],
             ),
 
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
 
-            _inputSection(
+            // Collapsible Body Measurements (cm)
+            _accordionSection(
               title: 'Body Measurements (cm)',
+              subtitle: _showMeasurements
+                  ? 'Chest, Waist, Arms'
+                  : (_chestCtrl.text.isNotEmpty || _waistCtrl.text.isNotEmpty || _armsCtrl.text.isNotEmpty)
+                      ? 'Values entered • Tap to edit'
+                      : 'Optional • Tap to enter',
+              icon: '📏',
+              isExpanded: _showMeasurements,
+              onToggle: () => setState(() => _showMeasurements = !_showMeasurements),
               children: [
                 _formField(
                     controller: _chestCtrl,
-                    label: 'Chest',
+                    label: 'Chest (cm)',
                     icon: '🫁'),
                 const SizedBox(height: 12),
                 _formField(
                     controller: _waistCtrl,
-                    label: 'Waist',
+                    label: 'Waist (cm)',
                     icon: '🎯'),
                 const SizedBox(height: 12),
                 _formField(
                     controller: _armsCtrl,
-                    label: 'Arms (bicep)',
+                    label: 'Arms / Bicep (cm)',
                     icon: '💪'),
               ],
             ),
 
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
 
-            _inputSection(
-              title: 'Notes (optional)',
+            // Collapsible Notes (Optional)
+            _accordionSection(
+              title: 'Daily Notes (Optional)',
+              subtitle: _showNotes
+                  ? null
+                  : _notesCtrl.text.isNotEmpty
+                      ? 'Note entered • Tap to view/edit'
+                      : 'Tap to add how you feel today',
+              icon: '📝',
+              isExpanded: _showNotes,
+              onToggle: () => setState(() => _showNotes = !_showNotes),
               children: [
                 TextField(
                   controller: _notesCtrl,
@@ -1268,7 +1299,7 @@ class _MemberBodyStatsScreenState extends State<MemberBodyStatsScreen>
               ],
             ),
 
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
 
             ElevatedButton(
               onPressed: _isSaving ? null : _saveLog,
@@ -1444,6 +1475,7 @@ class _MemberBodyStatsScreenState extends State<MemberBodyStatsScreen>
     required List<Widget> children,
   }) {
     return Container(
+      width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -1464,6 +1496,96 @@ class _MemberBodyStatsScreenState extends State<MemberBodyStatsScreen>
           ),
           const SizedBox(height: 12),
           ...children,
+        ],
+      ),
+    );
+  }
+
+  Widget _accordionSection({
+    required String title,
+    required String icon,
+    required bool isExpanded,
+    required VoidCallback onToggle,
+    required List<Widget> children,
+    String? subtitle,
+  }) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isExpanded ? AppTheme.primary.withValues(alpha: 0.3) : AppTheme.border,
+        ),
+        boxShadow: AppTheme.cardShadow,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          InkWell(
+            onTap: onToggle,
+            borderRadius: BorderRadius.circular(16),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+              child: Row(
+                children: [
+                  Text(icon, style: const TextStyle(fontSize: 18)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: AppTheme.textPrimary,
+                          ),
+                        ),
+                        if (subtitle != null) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            subtitle,
+                            style: GoogleFonts.inter(
+                              fontSize: 11,
+                              color: AppTheme.textMuted,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: isExpanded
+                          ? AppTheme.primary.withValues(alpha: 0.1)
+                          : const Color(0xFFF1F5F9),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      isExpanded
+                          ? Icons.keyboard_arrow_up_rounded
+                          : Icons.keyboard_arrow_down_rounded,
+                      color: isExpanded ? AppTheme.primary : AppTheme.textSecondary,
+                      size: 20,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (isExpanded) ...[
+            const Divider(height: 1, color: AppTheme.border),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: children,
+              ),
+            ),
+          ],
         ],
       ),
     );

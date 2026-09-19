@@ -17,7 +17,8 @@ class MemberTrainingScreen extends StatelessWidget {
     return Consumer<MemberAppViewModel>(
       builder: (context, vm, _) {
         final muscle = vm.todayMuscleGroup;
-        final String illustrationAsset = 'assets/images/member/${muscle.toLowerCase().replaceAll(' ', '_')}.png';
+        final firstSplit = vm.todaySplits.isNotEmpty ? vm.todaySplits.first : muscle;
+        final String illustrationAsset = 'assets/images/member/${firstSplit.toLowerCase().replaceAll(' ', '_')}.png';
 
         return Scaffold(
           backgroundColor: AppTheme.background,
@@ -85,16 +86,41 @@ class MemberTrainingScreen extends StatelessWidget {
                         ),
                         const SizedBox(height: 20),
 
-                        // Title
-                        Text(
-                          muscle,
-                          style: GoogleFonts.inter(
-                            fontSize: 24,
-                            fontWeight: FontWeight.w800,
-                            color: AppTheme.textPrimary,
+                        // Title / Splits
+                        if (vm.todaySplits.length <= 1)
+                          Text(
+                            muscle,
+                            style: GoogleFonts.inter(
+                              fontSize: 24,
+                              fontWeight: FontWeight.w800,
+                              color: AppTheme.textPrimary,
+                            ),
+                          )
+                        else
+                          Wrap(
+                            alignment: WrapAlignment.center,
+                            spacing: 8,
+                            runSpacing: 6,
+                            children: vm.todaySplits.map((split) {
+                              return Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.primaryLight.withValues(alpha: 0.5),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(color: AppTheme.primary.withValues(alpha: 0.25)),
+                                ),
+                                child: Text(
+                                  split,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppTheme.primary,
+                                  ),
+                                ),
+                              );
+                            }).toList(),
                           ),
-                        ),
-                        const SizedBox(height: 6),
+                        const SizedBox(height: 8),
 
                         // Status Badge
                         Container(
@@ -165,10 +191,16 @@ class MemberTrainingScreen extends StatelessWidget {
                                   try {
                                     final all = (jsonDecode(exercisesCache) as List)
                                         .map((e) => Map<String, dynamic>.from(e as Map)).toList();
+                                    final splits = vm.todaySplits;
                                     todayExercises = all
-                                        .where((e) => (e['muscle_group'] as String? ?? '')
-                                            .toLowerCase() == muscle.toLowerCase())
-                                        .take(5)
+                                        .where((e) {
+                                          final exGroup = (e['muscle_group'] as String? ?? '').toLowerCase();
+                                          return splits.any((s) {
+                                            final sLower = s.toLowerCase();
+                                            return sLower.contains(exGroup) || exGroup.contains(sLower.replaceAll(' day', ''));
+                                          });
+                                        })
+                                        .take(10)
                                         .toList();
                                   } catch (_) {}
                                 }

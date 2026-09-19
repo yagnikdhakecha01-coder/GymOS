@@ -378,16 +378,63 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen>
                                           ],
                                         ),
                                         const SizedBox(height: 10),
-                                        // Title: Day + Muscle Group
-                                        Text(
-                                          vm.todayMuscleGroup,
-                                          style: GoogleFonts.inter(
-                                            fontSize: 22,
-                                            fontWeight: FontWeight.w800,
-                                            color: const Color(0xFF111827),
-                                            letterSpacing: -0.5,
+                                        // Title: Day + Muscle Group (Handles single or multiple splits cleanly)
+                                        if (vm.todaySplits.length <= 1)
+                                          Text(
+                                            vm.todayMuscleGroup,
+                                            style: GoogleFonts.inter(
+                                              fontSize: 22,
+                                              fontWeight: FontWeight.w800,
+                                              color: const Color(0xFF111827),
+                                              letterSpacing: -0.5,
+                                            ),
+                                          )
+                                        else
+                                          Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              for (int s = 0; s < vm.todaySplits.length; s++) ...[
+                                                if (s > 0) const SizedBox(height: 4),
+                                                Row(
+                                                  mainAxisSize: MainAxisSize.min,
+                                                  children: [
+                                                    if (s > 0)
+                                                      Padding(
+                                                        padding: const EdgeInsets.only(right: 6),
+                                                        child: Container(
+                                                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                                          decoration: BoxDecoration(
+                                                            color: AppTheme.primaryLight.withValues(alpha: 0.6),
+                                                            borderRadius: BorderRadius.circular(4),
+                                                          ),
+                                                          child: Text(
+                                                            '+',
+                                                            style: GoogleFonts.inter(
+                                                              fontSize: 11,
+                                                              fontWeight: FontWeight.w800,
+                                                              color: AppTheme.primary,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    Flexible(
+                                                      child: Text(
+                                                        vm.todaySplits[s],
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow.ellipsis,
+                                                        style: GoogleFonts.inter(
+                                                          fontSize: s == 0 ? 17 : 14,
+                                                          fontWeight: s == 0 ? FontWeight.w800 : FontWeight.w700,
+                                                          color: s == 0 ? const Color(0xFF111827) : const Color(0xFF4B5563),
+                                                          letterSpacing: -0.3,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ],
+                                            ],
                                           ),
-                                        ),
                                         const SizedBox(height: 8),
                                         // Status Badge
                                         Container(
@@ -413,20 +460,18 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen>
                                     ),
                                   ),
                                   const SizedBox(width: 12),
-                                  // Right Section (Illustration)
+                                  // Right Section (Illustration - first split's image)
                                   Expanded(
                                     flex: 3,
                                     child: Center(
                                       child: FittedBox(
                                         fit: BoxFit.contain,
                                         child: SizedBox(
-                                          width: vm.todayMuscleGroup.toLowerCase().contains('chest') ? 140 : 100,
-                                          height: 140,
+                                          width: 110,
+                                          height: 120,
                                           child: Image.asset(
                                             vm.todayWorkoutImage,
-                                            fit: vm.todayMuscleGroup.toLowerCase().contains('chest')
-                                                ? BoxFit.cover
-                                                : BoxFit.contain,
+                                            fit: BoxFit.contain,
                                             errorBuilder: (_, __, ___) => const Icon(Icons.fitness_center_rounded, size: 50, color: AppTheme.primary),
                                           ),
                                         ),

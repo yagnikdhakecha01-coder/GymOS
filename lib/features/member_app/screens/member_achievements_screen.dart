@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -247,9 +246,7 @@ class _MemberAchievementsScreenState extends State<MemberAchievementsScreen> wit
   }
 
   String _getGymId(MemberAppViewModel vm) {
-    // Try to get gymId from SharedPreferences synchronously (it's cached)
-    // If not available, use empty string — heatmap will handle gracefully
-    return '';
+    return vm.gymId;
   }
 
   Widget _buildPremiumLevelCard(MemberAppViewModel vm) {
