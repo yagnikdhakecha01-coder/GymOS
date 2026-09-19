@@ -2,15 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme/theme.dart';
+import '../../core/widgets/invitation_share_sheet.dart';
 
 class MemberAddSuccessScreen extends StatelessWidget {
   final String memberName;
   final String invitationCode;
+  final String? phone;
 
   const MemberAddSuccessScreen({
     super.key,
     required this.memberName,
     required this.invitationCode,
+    this.phone,
   });
 
   @override
@@ -94,29 +97,58 @@ class MemberAddSuccessScreen extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    ElevatedButton.icon(
-                      onPressed: () {
-                        Clipboard.setData(ClipboardData(text: invitationCode));
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Invitation code copied to clipboard!'),
-                            backgroundColor: AppTheme.success,
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        ElevatedButton.icon(
+                          onPressed: () {
+                            Clipboard.setData(ClipboardData(text: invitationCode));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Invitation code copied to clipboard!'),
+                                backgroundColor: AppTheme.success,
+                              ),
+                            );
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.white,
+                            foregroundColor: AppTheme.textPrimary,
+                            elevation: 0,
+                            side: const BorderSide(color: AppTheme.border),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                           ),
-                        );
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: AppTheme.textPrimary,
-                        elevation: 0,
-                        side: const BorderSide(color: AppTheme.border),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                      ),
-                      icon: const Icon(Icons.copy_all_rounded, size: 18),
-                      label: Text(
-                        'Copy Code',
-                        style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold),
-                      ),
+                          icon: const Icon(Icons.copy_all_rounded, size: 16),
+                          label: Text(
+                            'Copy',
+                            style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        ElevatedButton.icon(
+                          onPressed: () {
+                            InvitationShareSheet.show(
+                              context: context,
+                              invitationCode: invitationCode,
+                              phone: phone ?? '',
+                              recipientName: memberName,
+                              isStaff: false,
+                            );
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF25D366),
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          ),
+                          icon: const Icon(Icons.share_rounded, size: 16),
+                          label: Text(
+                            'Share Invitation',
+                            style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),

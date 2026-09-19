@@ -554,6 +554,7 @@ class _AddStaffScreenState extends State<AddStaffScreen> {
           staffName: newStaff.name,
           role: newStaff.role,
           invitationCode: code,
+          phone: newStaff.phone,
           onDone: () {
             Navigator.pop(context);
             Navigator.pop(context);

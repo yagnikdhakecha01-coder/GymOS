@@ -26,6 +26,7 @@ import '../receptionist/receptionist_viewmodel.dart';
 import '../../core/models/association_model.dart';
 import '../../core/models/user_profile.dart';
 import '../../core/services/supabase_service.dart';
+import '../../core/widgets/invitation_share_sheet.dart';
 class MemberProfileScreen extends StatefulWidget {
   final Member member;
   const MemberProfileScreen({super.key, required this.member});
@@ -376,57 +377,12 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
   }
 
   void _shareInvitationCode(String code, String phone) {
-    showModalBottomSheet(
+    InvitationShareSheet.show(
       context: context,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (context) {
-        return Container(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text('Share Invitation', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 16)),
-              const SizedBox(height: 20),
-              ListTile(
-                leading: const Icon(Icons.chat_bubble_outline_rounded, color: Colors.green),
-                title: Text('Share via WhatsApp', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
-                onTap: () async {
-                  Navigator.pop(context);
-                  final message = '''🏋️ Gym Invitation
-
-Hello,
-
-You have been invited to join our gym.
-
-Invitation Code:
-$code
-
-Registered Mobile:
-$phone
-
-Download GymOS and enter this invitation code during registration.
-
-Thank you.''';
-                  
-                  final cleanedPhone = phone.replaceAll(RegExp(r'[^0-9+]'), '');
-                  final whatsappUrl = Uri.parse("https://wa.me/$cleanedPhone?text=${Uri.encodeComponent(message)}");
-                  
-                  if (await canLaunchUrl(whatsappUrl)) {
-                    await launchUrl(whatsappUrl, mode: LaunchMode.externalApplication);
-                  } else {
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Could not open WhatsApp. Please make sure it is installed.'), backgroundColor: AppTheme.danger),
-                      );
-                    }
-                  }
-                },
-              ),
-            ],
-          ),
-        );
-      },
+      invitationCode: code,
+      phone: phone,
+      recipientName: widget.member.name,
+      isStaff: false,
     );
   }
 

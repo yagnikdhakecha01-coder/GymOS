@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme/theme.dart';
+import '../../core/widgets/invitation_share_sheet.dart';
 
 class StaffSuccessDialog extends StatelessWidget {
   final String staffName;
   final String role;
   final String invitationCode;
+  final String? phone;
   final VoidCallback onDone;
 
   const StaffSuccessDialog({
@@ -14,6 +16,7 @@ class StaffSuccessDialog extends StatelessWidget {
     required this.staffName,
     required this.role,
     required this.invitationCode,
+    this.phone,
     required this.onDone,
   });
 
@@ -22,6 +25,7 @@ class StaffSuccessDialog extends StatelessWidget {
     required String staffName,
     required String role,
     required String invitationCode,
+    String? phone,
     required VoidCallback onDone,
   }) {
     showDialog(
@@ -35,6 +39,7 @@ class StaffSuccessDialog extends StatelessWidget {
             staffName: staffName,
             role: role,
             invitationCode: invitationCode,
+            phone: phone,
             onDone: onDone,
           ),
         ),
@@ -64,25 +69,13 @@ class StaffSuccessDialog extends StatelessWidget {
   }
 
   void _shareCode(BuildContext context) {
-    final message = 'Welcome to GymOS, $staffName!\n'
-        'You have been added as a $role.\n'
-        'Please download the GymOS app and use this Invitation Code to register:\n\n'
-        'Invitation Code: $invitationCode\n\n'
-        'Download now and get started!';
-    
-    // Fallback: Copy message to clipboard and instruct user
-    Clipboard.setData(ClipboardData(text: message));
-    
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Share text copied to clipboard! Paste it in WhatsApp or SMS.',
-          style: GoogleFonts.inter(fontWeight: FontWeight.w500),
-        ),
-        backgroundColor: AppTheme.primary,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
+    InvitationShareSheet.show(
+      context: context,
+      invitationCode: invitationCode,
+      phone: phone ?? '',
+      recipientName: staffName,
+      isStaff: true,
+      role: role,
     );
   }
 

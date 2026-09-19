@@ -1787,6 +1787,7 @@ class _AddMemberWizardScreenState extends State<AddMemberWizardScreen> {
             builder: (_) => MemberAddSuccessScreen(
               memberName: newMember.name,
               invitationCode: invitationCode,
+              phone: newMember.phone,
             ),
           ),
         );

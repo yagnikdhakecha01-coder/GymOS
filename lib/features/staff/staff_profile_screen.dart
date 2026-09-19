@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../core/theme/theme.dart';
@@ -13,6 +12,7 @@ import '../authentication/auth_viewmodel.dart';
 import '../../core/widgets/success_dialog.dart';
 import '../../core/widgets/app_cached_avatar.dart';
 import '../../core/services/supabase_service.dart';
+import '../../core/widgets/invitation_share_sheet.dart';
 
 class StaffProfileScreen extends StatefulWidget {
   final Staff staff;
@@ -148,68 +148,13 @@ class _StaffProfileScreenState extends State<StaffProfileScreen> {
   }
 
   void _shareInvitationCode(String code, String phone) {
-    showModalBottomSheet(
+    InvitationShareSheet.show(
       context: context,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (context) {
-        return Container(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text('Share Invitation', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 16)),
-              const SizedBox(height: 20),
-              ListTile(
-                leading: const Icon(Icons.chat_bubble_outline_rounded, color: Colors.green),
-                title: Text('Share via WhatsApp', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
-                onTap: () async {
-                  Navigator.pop(context);
-                  final message = '''🏋️ Staff Invitation
-
-Hello,
-
-You have been invited to join our gym as staff.
-
-Invitation Code:
-$code
-
-Registered Mobile:
-$phone
-
-Download GymOS and enter this invitation code during registration.
-
-Thank you.''';
-                  
-                  final cleanedPhone = phone.replaceAll(RegExp(r'[^0-9+]'), '');
-                  final whatsappUrl = Uri.parse("https://wa.me/$cleanedPhone?text=${Uri.encodeComponent(message)}");
-                  
-                  if (await canLaunchUrl(whatsappUrl)) {
-                    await launchUrl(whatsappUrl, mode: LaunchMode.externalApplication);
-                  } else {
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Could not open WhatsApp. Please make sure it is installed.'), backgroundColor: AppTheme.danger),
-                      );
-                    }
-                  }
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.copy_outlined, color: AppTheme.primary),
-                title: Text('Copy Code Only', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
-                onTap: () {
-                  Clipboard.setData(ClipboardData(text: code));
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Invitation Code copied!'), backgroundColor: AppTheme.success),
-                  );
-                },
-              ),
-            ],
-          ),
-        );
-      },
+      invitationCode: code,
+      phone: phone,
+      recipientName: widget.staff.name,
+      isStaff: true,
+      role: widget.staff.role,
     );
   }
 

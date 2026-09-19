@@ -303,6 +303,7 @@ class _AddOldMemberScreenState extends State<AddOldMemberScreen> {
             builder: (_) => MemberAddSuccessScreen(
               memberName: newMember.name,
               invitationCode: invitationCode,
+              phone: newMember.phone,
             ),
           ),
         );
