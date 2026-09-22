@@ -28,6 +28,7 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
 
   double _totalRevenue = 0.0;
   double _totalExpense = 0.0;
+  double _totalPending = 0.0;
   List<Map<String, dynamic>> _transactions = [];
   List<Map<String, dynamic>> _members = [];
   List<Map<String, dynamic>> _staff = [];
@@ -114,10 +115,26 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
         }
       }
 
+      // Fetch pending balances of members
+      double pendingSum = 0.0;
+      try {
+        final membersRes = await client
+            .from('members')
+            .select('pending_amount')
+            .eq('gym_id', widget.gym['id'])
+            .neq('is_deleted', true);
+        for (var m in (membersRes as List)) {
+          pendingSum += double.tryParse(m['pending_amount']?.toString() ?? '0') ?? 0.0;
+        }
+      } catch (err) {
+        debugPrint('Error fetching pending dues: $err');
+      }
+
       if (mounted) {
         setState(() {
           _totalRevenue = rev;
           _totalExpense = exp;
+          _totalPending = pendingSum;
           _transactions = txList;
           _loadingFinance = false;
         });
@@ -954,7 +971,7 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
                     ),
                     Expanded(
                       child: DefaultTabController(
-                        length: 2,
+                        length: 3,
                         child: Column(
                           children: [
                             TabBar(
@@ -962,7 +979,8 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
                               unselectedLabelColor: AdminTheme.secondaryTextColor(context),
                               indicatorColor: Colors.indigo,
                               tabs: const [
-                                Tab(icon: Icon(Icons.badge_rounded, size: 18), text: 'Staff Info & Salary'),
+                                Tab(icon: Icon(Icons.badge_rounded, size: 18), text: 'Staff Profile'),
+                                Tab(icon: Icon(Icons.payments_rounded, size: 18), text: 'Salary & Payments History'),
                                 Tab(icon: Icon(Icons.event_available_rounded, size: 18), text: 'Staff Attendance Manager'),
                               ],
                             ),
@@ -974,6 +992,15 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
                                     onSaved: () {
                                       setStaffModalState(() {});
                                       _loadStaffData();
+                                    },
+                                  ),
+                                  _StaffSalaryManager(
+                                    gymId: widget.gym['id'],
+                                    staff: s,
+                                    onUpdated: () {
+                                      setStaffModalState(() {});
+                                      _loadStaffData();
+                                      _loadFinanceData();
                                     },
                                   ),
                                   _UserAttendanceManager(
@@ -1813,18 +1840,50 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
             ],
           ),
           const SizedBox(height: 16),
-          // Stats Row
-          Row(
-            children: [
-              Expanded(child: _statCard('Revenue (${months[_selectedMonth - 1]})', fmt.format(_totalRevenue), Icons.arrow_upward_rounded, AdminTheme.success)),
-              const SizedBox(width: 16),
-              Expanded(child: _statCard('Expense (${months[_selectedMonth - 1]})', fmt.format(_totalExpense), Icons.arrow_downward_rounded, Colors.red)),
-              const SizedBox(width: 16),
-              Expanded(child: _statCard('Net Profit', fmt.format(_totalRevenue - _totalExpense), Icons.account_balance_wallet_rounded, AdminTheme.primary)),
-            ],
+          // Stats Row: Revenue, Expense, Net Profit, Pending Dues
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final cards = [
+                _statCard('Revenue (${months[_selectedMonth - 1]})', fmt.format(_totalRevenue), Icons.arrow_upward_rounded, AdminTheme.success),
+                _statCard('Expense (${months[_selectedMonth - 1]})', fmt.format(_totalExpense), Icons.arrow_downward_rounded, Colors.red),
+                _statCard('Net Profit', fmt.format(_totalRevenue - _totalExpense), Icons.account_balance_wallet_rounded, AdminTheme.primary),
+                _statCard('Total Pending Due', fmt.format(_totalPending), Icons.pending_actions_rounded, Colors.orange),
+              ];
+              if (constraints.maxWidth < 900) {
+                return Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: cards.map((c) => SizedBox(width: (constraints.maxWidth - 12) / 2, child: c)).toList(),
+                );
+              }
+              return Row(
+                children: [
+                  for (int i = 0; i < cards.length; i++) ...[
+                    if (i > 0) const SizedBox(width: 12),
+                    Expanded(child: cards[i]),
+                  ],
+                ],
+              );
+            },
           ),
           const SizedBox(height: 32),
-          Text('Ledger Transactions (${_transactions.length})', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: AdminTheme.textColor(context))),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Ledger Transactions (${_transactions.length})', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: AdminTheme.textColor(context))),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AdminTheme.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                icon: const Icon(Icons.add_card_rounded, size: 16),
+                label: Text('Record Transaction', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold)),
+                onPressed: _showRecordTransactionDialog,
+              ),
+            ],
+          ),
           const SizedBox(height: 16),
           Container(
             decoration: BoxDecoration(
@@ -1843,18 +1902,392 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
                       final tx = _transactions[index];
                       final isRev = tx['type'] == 'Revenue';
                       final amt = double.tryParse(tx['amount'].toString()) ?? 0.0;
+                      final txDateStr = tx['transaction_date']?.toString();
+                      final txDate = txDateStr != null ? DateTime.tryParse(txDateStr) : null;
+                      final dateFormatted = txDate != null ? DateFormat('dd MMM yyyy').format(txDate) : '';
+
                       return ListTile(
                         leading: CircleAvatar(
                           backgroundColor: isRev ? AdminTheme.success.withValues(alpha: 0.1) : Colors.red.withValues(alpha: 0.1),
                           child: Icon(isRev ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded, color: isRev ? AdminTheme.success : Colors.red, size: 18),
                         ),
-                        title: Text(tx['category'] ?? 'Other', style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 14)),
+                        title: Row(
+                          children: [
+                            Text(tx['category'] ?? 'Other', style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 14)),
+                            if (tx['payment_method'] != null && tx['payment_method'].toString().isNotEmpty) ...[
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(color: AdminTheme.borderColor(context), borderRadius: BorderRadius.circular(4)),
+                                child: Text(tx['payment_method'], style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w600)),
+                              ),
+                            ],
+                            if (dateFormatted.isNotEmpty) ...[
+                              const SizedBox(width: 8),
+                              Text('• $dateFormatted', style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.mutedTextColor(context))),
+                            ],
+                          ],
+                        ),
                         subtitle: Text(tx['notes'] ?? "", style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.mutedTextColor(context))),
-                        trailing: Text('${isRev ? "+" : "-"}${fmt.format(amt)}', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 14, color: isRev ? AdminTheme.success : Colors.red)),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text('${isRev ? "+" : "-"}${fmt.format(amt)}', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 14, color: isRev ? AdminTheme.success : Colors.red)),
+                            const SizedBox(width: 8),
+                            IconButton(
+                              icon: const Icon(Icons.edit_outlined, size: 18),
+                              tooltip: 'Edit Transaction',
+                              onPressed: () => _showEditTransactionDialog(tx),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Colors.red),
+                              tooltip: 'Delete Transaction',
+                              onPressed: () => _deleteTransaction(tx),
+                            ),
+                          ],
+                        ),
                       );
                     },
                   ),
           )
+        ],
+      ),
+    );
+  }
+
+  // --- RECORD NEW TRANSACTION DIALOG ---
+  void _showRecordTransactionDialog() {
+    final amountCtrl = TextEditingController();
+    final notesCtrl = TextEditingController();
+    String type = 'Revenue';
+    String category = 'Membership';
+    String method = 'Cash';
+    DateTime txDate = DateTime.now();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            backgroundColor: AdminTheme.cardColor(context),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: Row(
+              children: [
+                CircleAvatar(backgroundColor: AdminTheme.primary.withValues(alpha: 0.1), child: const Icon(Icons.add_card_rounded, color: AdminTheme.primary)),
+                const SizedBox(width: 12),
+                Text('Record Transaction', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 16)),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ChoiceChip(
+                          label: const Text('Revenue'),
+                          selected: type == 'Revenue',
+                          selectedColor: AdminTheme.success.withValues(alpha: 0.2),
+                          onSelected: (val) {
+                            if (val) setDialogState(() { type = 'Revenue'; category = 'Membership'; });
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ChoiceChip(
+                          label: const Text('Expense'),
+                          selected: type == 'Expense',
+                          selectedColor: Colors.red.withValues(alpha: 0.2),
+                          onSelected: (val) {
+                            if (val) setDialogState(() { type = 'Expense'; category = 'Salary'; });
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: amountCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: 'Amount (₹)', prefixIcon: Icon(Icons.currency_rupee_rounded)),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: category,
+                    decoration: const InputDecoration(labelText: 'Category', prefixIcon: Icon(Icons.category_rounded)),
+                    items: (type == 'Revenue'
+                            ? ['Membership', 'Personal Training', 'Supplements', 'Merchandise', 'Registration Fee', 'Other Revenue']
+                            : ['Salary', 'Rent', 'Electricity', 'Equipment Maintenance', 'Water', 'Marketing', 'Other Expense'])
+                        .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                        .toList(),
+                    onChanged: (val) => setDialogState(() => category = val ?? category),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: method,
+                    decoration: const InputDecoration(labelText: 'Payment Method', prefixIcon: Icon(Icons.payment_rounded)),
+                    items: ['Cash', 'UPI', 'Bank Transfer', 'Cheque', 'Card', 'Other']
+                        .map((m) => DropdownMenuItem(value: m, child: Text(m)))
+                        .toList(),
+                    onChanged: (val) => setDialogState(() => method = val ?? method),
+                  ),
+                  const SizedBox(height: 12),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.calendar_today_rounded, size: 20),
+                    title: Text('Date: ${DateFormat('dd MMM yyyy').format(txDate)}', style: GoogleFonts.inter(fontSize: 13)),
+                    trailing: TextButton(
+                      child: const Text('Change'),
+                      onPressed: () async {
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: txDate,
+                          firstDate: DateTime(2020),
+                          lastDate: DateTime(2030),
+                        );
+                        if (picked != null) setDialogState(() => txDate = picked);
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: notesCtrl,
+                    decoration: const InputDecoration(labelText: 'Notes / Description', prefixIcon: Icon(Icons.notes_rounded)),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: AdminTheme.primary, foregroundColor: Colors.white),
+                onPressed: () async {
+                  final amt = double.tryParse(amountCtrl.text.trim()) ?? 0.0;
+                  if (amt <= 0) return;
+                  Navigator.pop(ctx);
+                  try {
+                    await AdminSupabaseService.client.from('finance_transactions').insert({
+                      'gym_id': widget.gym['id'],
+                      'type': type,
+                      'category': category,
+                      'amount': amt,
+                      'payment_method': method,
+                      'transaction_date': txDate.toIso8601String(),
+                      'expense_date': type == 'Expense' ? DateFormat('yyyy-MM-dd').format(txDate) : null,
+                      'revenue_date': type == 'Revenue' ? DateFormat('yyyy-MM-dd').format(txDate) : null,
+                      'notes': notesCtrl.text.trim(),
+                      'created_by_info': 'Super Admin',
+                    });
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('✅ $type of ₹$amt recorded!'), backgroundColor: AdminTheme.success),
+                      );
+                      _loadFinanceData();
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Error recording transaction: $e'), backgroundColor: AdminTheme.danger),
+                      );
+                    }
+                  }
+                },
+                child: const Text('Save Transaction'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  // --- EDIT TRANSACTION DIALOG ---
+  void _showEditTransactionDialog(Map<String, dynamic> tx) {
+    final amountCtrl = TextEditingController(text: (tx['amount'] ?? '').toString());
+    final notesCtrl = TextEditingController(text: (tx['notes'] ?? '').toString());
+    String type = tx['type']?.toString() ?? 'Expense';
+    String category = tx['category']?.toString() ?? 'Salary';
+    String method = tx['payment_method']?.toString() ?? 'Cash';
+    DateTime txDate = DateTime.tryParse(tx['transaction_date']?.toString() ?? '') ?? DateTime.now();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final catList = (type == 'Revenue'
+              ? ['Membership', 'Personal Training', 'Supplements', 'Merchandise', 'Registration Fee', 'Other Revenue']
+              : ['Salary', 'Rent', 'Electricity', 'Equipment Maintenance', 'Water', 'Marketing', 'Other Expense']);
+          if (!catList.contains(category)) {
+            catList.add(category);
+          }
+
+          final methodList = ['Cash', 'UPI', 'Bank Transfer', 'Cheque', 'Card', 'Other'];
+          if (!methodList.contains(method)) {
+            methodList.add(method);
+          }
+
+          return AlertDialog(
+            backgroundColor: AdminTheme.cardColor(context),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: Row(
+              children: [
+                CircleAvatar(backgroundColor: Colors.blue.withValues(alpha: 0.1), child: const Icon(Icons.edit_note_rounded, color: Colors.blue)),
+                const SizedBox(width: 12),
+                Text('Edit Transaction Entry', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 16)),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ChoiceChip(
+                          label: const Text('Revenue'),
+                          selected: type == 'Revenue',
+                          selectedColor: AdminTheme.success.withValues(alpha: 0.2),
+                          onSelected: (val) {
+                            if (val) setDialogState(() { type = 'Revenue'; category = 'Membership'; });
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ChoiceChip(
+                          label: const Text('Expense'),
+                          selected: type == 'Expense',
+                          selectedColor: Colors.red.withValues(alpha: 0.2),
+                          onSelected: (val) {
+                            if (val) setDialogState(() { type = 'Expense'; category = 'Salary'; });
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: amountCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: 'Amount (₹)', prefixIcon: Icon(Icons.currency_rupee_rounded)),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: category,
+                    decoration: const InputDecoration(labelText: 'Category', prefixIcon: Icon(Icons.category_rounded)),
+                    items: catList.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+                    onChanged: (val) => setDialogState(() => category = val ?? category),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: method,
+                    decoration: const InputDecoration(labelText: 'Payment Method', prefixIcon: Icon(Icons.payment_rounded)),
+                    items: methodList.map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
+                    onChanged: (val) => setDialogState(() => method = val ?? method),
+                  ),
+                  const SizedBox(height: 12),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.calendar_today_rounded, size: 20),
+                    title: Text('Date: ${DateFormat('dd MMM yyyy').format(txDate)}', style: GoogleFonts.inter(fontSize: 13)),
+                    trailing: TextButton(
+                      child: const Text('Change'),
+                      onPressed: () async {
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: txDate,
+                          firstDate: DateTime(2020),
+                          lastDate: DateTime(2030),
+                        );
+                        if (picked != null) setDialogState(() => txDate = picked);
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: notesCtrl,
+                    decoration: const InputDecoration(labelText: 'Notes / Description', prefixIcon: Icon(Icons.notes_rounded)),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: AdminTheme.primary, foregroundColor: Colors.white),
+                onPressed: () async {
+                  final amt = double.tryParse(amountCtrl.text.trim()) ?? 0.0;
+                  if (amt <= 0) return;
+                  Navigator.pop(ctx);
+                  try {
+                    await AdminSupabaseService.client.from('finance_transactions').update({
+                      'type': type,
+                      'category': category,
+                      'amount': amt,
+                      'payment_method': method,
+                      'transaction_date': txDate.toIso8601String(),
+                      'expense_date': type == 'Expense' ? DateFormat('yyyy-MM-dd').format(txDate) : null,
+                      'revenue_date': type == 'Revenue' ? DateFormat('yyyy-MM-dd').format(txDate) : null,
+                      'notes': notesCtrl.text.trim(),
+                    }).eq('id', tx['id']);
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('✅ Transaction updated successfully!'), backgroundColor: AdminTheme.success),
+                      );
+                      _loadFinanceData();
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Error updating transaction: $e'), backgroundColor: AdminTheme.danger),
+                      );
+                    }
+                  }
+                },
+                child: const Text('Update'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  // --- DELETE TRANSACTION ---
+  void _deleteTransaction(Map<String, dynamic> tx) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AdminTheme.cardColor(context),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Delete Transaction?'),
+        content: Text('Are you sure you want to delete this ${tx['type']} entry of ₹${tx['amount']} (${tx['category']})? This action cannot be undone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              try {
+                await AdminSupabaseService.client.from('finance_transactions').delete().eq('id', tx['id']);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('✅ Transaction deleted'), backgroundColor: Colors.red),
+                  );
+                  _loadFinanceData();
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Error deleting transaction: $e'), backgroundColor: AdminTheme.danger),
+                  );
+                }
+              }
+            },
+            child: const Text('Delete'),
+          ),
         ],
       ),
     );
@@ -2083,17 +2516,27 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
                                 ],
                               ),
                             ),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Text(currencyFormat.format(salary), style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 14, color: AdminTheme.textColor(context))),
-                                Text('/ month', style: GoogleFonts.inter(fontSize: 10, color: AdminTheme.mutedTextColor(context))),
-                              ],
+                            Builder(
+                              builder: (context) {
+                                final due = double.tryParse(s['salary_due']?.toString() ?? '0') ?? 0.0;
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Text(currencyFormat.format(salary), style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 14, color: AdminTheme.textColor(context))),
+                                    Text('/ month', style: GoogleFonts.inter(fontSize: 10, color: AdminTheme.mutedTextColor(context))),
+                                    if (due > 0)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 2),
+                                        child: Text('Due: ${currencyFormat.format(due)}', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.red)),
+                                      ),
+                                  ],
+                                );
+                              },
                             ),
                             const SizedBox(width: 12),
                             IconButton(
                               icon: const Icon(Icons.settings_rounded, color: Colors.indigo, size: 20),
-                              tooltip: 'Manage Staff & Attendance',
+                              tooltip: 'Manage Staff, Salary & Attendance',
                               onPressed: () => _showStaffDetailsDialog(s),
                             ),
                           ],
@@ -3807,3 +4250,619 @@ class _StaffInfoEditorState extends State<_StaffInfoEditor> {
     );
   }
 }
+
+// ============================================================================
+// STAFF SALARY & PAYMENTS MANAGER (FULL ADMIN CONTROL)
+// ============================================================================
+class _StaffSalaryManager extends StatefulWidget {
+  final String gymId;
+  final Map<String, dynamic> staff;
+  final VoidCallback onUpdated;
+
+  const _StaffSalaryManager({
+    required this.gymId,
+    required this.staff,
+    required this.onUpdated,
+  });
+
+  @override
+  State<_StaffSalaryManager> createState() => _StaffSalaryManagerState();
+}
+
+class _StaffSalaryManagerState extends State<_StaffSalaryManager> {
+  bool _loading = true;
+  List<Map<String, dynamic>> _salaryHistory = [];
+  double _totalPaid = 0.0;
+  late double _baseSalary;
+  late double _salaryDue;
+
+  @override
+  void initState() {
+    super.initState();
+    _baseSalary = double.tryParse(widget.staff['salary']?.toString() ?? '0') ?? 0.0;
+    _salaryDue = double.tryParse(widget.staff['salary_due']?.toString() ?? '0') ?? 0.0;
+    _loadSalaryHistory();
+  }
+
+  Future<void> _loadSalaryHistory() async {
+    setState(() => _loading = true);
+    if (!AdminSupabaseService.isInitialized) {
+      setState(() => _loading = false);
+      return;
+    }
+
+    try {
+      final client = AdminSupabaseService.client;
+      final staffName = (widget.staff['full_name'] ?? widget.staff['name'] ?? '').toString().trim().toLowerCase();
+      final staffId = widget.staff['id']?.toString() ?? '';
+
+      // Query finance_transactions with Category Salary
+      final txRes = await client
+          .from('finance_transactions')
+          .select()
+          .eq('gym_id', widget.gymId)
+          .eq('category', 'Salary')
+          .order('transaction_date', ascending: false);
+
+      final List<Map<String, dynamic>> matched = [];
+      double paidSum = 0.0;
+
+      for (var row in (txRes as List)) {
+        final map = Map<String, dynamic>.from(row);
+        final notes = (map['notes'] ?? '').toString().toLowerCase();
+        final refId = (map['reference_id'] ?? '').toString();
+
+        final matches = (staffName.isNotEmpty && notes.contains(staffName)) ||
+            (staffId.isNotEmpty && (refId == staffId || notes.contains(staffId)));
+
+        if (matches) {
+          matched.add(map);
+          paidSum += double.tryParse(map['amount']?.toString() ?? '0') ?? 0.0;
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _salaryHistory = matched;
+          _totalPaid = paidSum;
+          _baseSalary = double.tryParse(widget.staff['salary']?.toString() ?? '0') ?? 0.0;
+          _salaryDue = double.tryParse(widget.staff['salary_due']?.toString() ?? '0') ?? 0.0;
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading staff salary history: $e');
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  void _showRecordPaymentDialog() {
+    final amountCtrl = TextEditingController(text: _salaryDue > 0 ? _salaryDue.toStringAsFixed(0) : _baseSalary.toStringAsFixed(0));
+    final notesCtrl = TextEditingController(text: 'Salary Payment - ${widget.staff['full_name'] ?? 'Staff'}');
+    String paymentType = 'Salary Payment';
+    String paymentMethod = 'Cash';
+    DateTime paymentDate = DateTime.now();
+    bool deductFromDue = true;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            backgroundColor: AdminTheme.cardColor(context),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: Row(
+              children: [
+                CircleAvatar(backgroundColor: Colors.green.withValues(alpha: 0.1), child: const Icon(Icons.add_card_rounded, color: Colors.green)),
+                const SizedBox(width: 12),
+                Expanded(child: Text('Record Salary Payment (${widget.staff['full_name'] ?? 'Staff'})', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 16))),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: amountCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: 'Amount (₹)', prefixIcon: Icon(Icons.currency_rupee_rounded)),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: paymentType,
+                    decoration: const InputDecoration(labelText: 'Payment Type', prefixIcon: Icon(Icons.category_rounded)),
+                    items: ['Salary Payment', 'Salary Advance', 'Bonus', 'Incentive', 'Overtime']
+                        .map((t) => DropdownMenuItem(value: t, child: Text(t)))
+                        .toList(),
+                    onChanged: (val) => setDialogState(() => paymentType = val ?? paymentType),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: paymentMethod,
+                    decoration: const InputDecoration(labelText: 'Payment Method', prefixIcon: Icon(Icons.payment_rounded)),
+                    items: ['Cash', 'UPI', 'Bank Transfer', 'Cheque', 'Other']
+                        .map((m) => DropdownMenuItem(value: m, child: Text(m)))
+                        .toList(),
+                    onChanged: (val) => setDialogState(() => paymentMethod = val ?? paymentMethod),
+                  ),
+                  const SizedBox(height: 12),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.calendar_today_rounded, size: 20),
+                    title: Text('Date: ${DateFormat('dd MMM yyyy').format(paymentDate)}', style: GoogleFonts.inter(fontSize: 13)),
+                    trailing: TextButton(
+                      child: const Text('Change'),
+                      onPressed: () async {
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: paymentDate,
+                          firstDate: DateTime(2020),
+                          lastDate: DateTime(2030),
+                        );
+                        if (picked != null) setDialogState(() => paymentDate = picked);
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: notesCtrl,
+                    decoration: const InputDecoration(labelText: 'Notes / Remarks', prefixIcon: Icon(Icons.notes_rounded)),
+                  ),
+                  const SizedBox(height: 12),
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text('Deduct from Salary Due balance', style: GoogleFonts.inter(fontSize: 13)),
+                    value: deductFromDue,
+                    onChanged: (val) => setDialogState(() => deductFromDue = val ?? true),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
+                onPressed: () async {
+                  final amt = double.tryParse(amountCtrl.text.trim()) ?? 0.0;
+                  if (amt <= 0) return;
+                  Navigator.pop(ctx);
+                  try {
+                    final staffName = widget.staff['full_name'] ?? 'Staff';
+                    await AdminSupabaseService.client.from('finance_transactions').insert({
+                      'gym_id': widget.gymId,
+                      'type': 'Expense',
+                      'category': 'Salary',
+                      'amount': amt,
+                      'payment_method': paymentMethod,
+                      'transaction_date': paymentDate.toIso8601String(),
+                      'expense_date': DateFormat('yyyy-MM-dd').format(paymentDate),
+                      'entry_date': DateFormat('yyyy-MM-dd').format(DateTime.now()),
+                      'reference_id': widget.staff['id'],
+                      'notes': '$paymentType - $staffName: ${notesCtrl.text.trim()}',
+                      'created_by_info': 'Super Admin',
+                    });
+
+                    if (deductFromDue) {
+                      final newDue = max(0.0, _salaryDue - amt);
+                      await AdminSupabaseService.client.from('staff').update({'salary_due': newDue}).eq('id', widget.staff['id']);
+                      widget.staff['salary_due'] = newDue;
+                      setState(() => _salaryDue = newDue);
+                    }
+
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('✅ ₹$amt recorded as $paymentType!'), backgroundColor: AdminTheme.success),
+                      );
+                      _loadSalaryHistory();
+                      widget.onUpdated();
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Error recording salary: $e'), backgroundColor: AdminTheme.danger),
+                      );
+                    }
+                  }
+                },
+                child: const Text('Record Payment'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  void _showEditPaymentDialog(Map<String, dynamic> tx) {
+    final oldAmt = double.tryParse(tx['amount']?.toString() ?? '0') ?? 0.0;
+    final amountCtrl = TextEditingController(text: oldAmt.toString());
+    final notesCtrl = TextEditingController(text: (tx['notes'] ?? '').toString());
+    String paymentMethod = tx['payment_method']?.toString() ?? 'Cash';
+    DateTime paymentDate = DateTime.tryParse(tx['transaction_date']?.toString() ?? '') ?? DateTime.now();
+    bool adjustDueDifference = true;
+
+    final methodList = ['Cash', 'UPI', 'Bank Transfer', 'Cheque', 'Other'];
+    if (!methodList.contains(paymentMethod)) {
+      methodList.add(paymentMethod);
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            backgroundColor: AdminTheme.cardColor(context),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: Row(
+              children: [
+                CircleAvatar(backgroundColor: Colors.blue.withValues(alpha: 0.1), child: const Icon(Icons.edit_note_rounded, color: Colors.blue)),
+                const SizedBox(width: 12),
+                Text('Edit Salary Entry', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 16)),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: amountCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: 'Amount Paid (₹)', prefixIcon: Icon(Icons.currency_rupee_rounded)),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: paymentMethod,
+                    decoration: const InputDecoration(labelText: 'Payment Method', prefixIcon: Icon(Icons.payment_rounded)),
+                    items: methodList.map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
+                    onChanged: (val) => setDialogState(() => paymentMethod = val ?? paymentMethod),
+                  ),
+                  const SizedBox(height: 12),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.calendar_today_rounded, size: 20),
+                    title: Text('Date: ${DateFormat('dd MMM yyyy').format(paymentDate)}', style: GoogleFonts.inter(fontSize: 13)),
+                    trailing: TextButton(
+                      child: const Text('Change'),
+                      onPressed: () async {
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: paymentDate,
+                          firstDate: DateTime(2020),
+                          lastDate: DateTime(2030),
+                        );
+                        if (picked != null) setDialogState(() => paymentDate = picked);
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: notesCtrl,
+                    decoration: const InputDecoration(labelText: 'Notes / Remarks', prefixIcon: Icon(Icons.notes_rounded)),
+                  ),
+                  const SizedBox(height: 12),
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text('Auto-adjust difference in Salary Due', style: GoogleFonts.inter(fontSize: 13)),
+                    value: adjustDueDifference,
+                    onChanged: (val) => setDialogState(() => adjustDueDifference = val ?? true),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: AdminTheme.primary, foregroundColor: Colors.white),
+                onPressed: () async {
+                  final newAmt = double.tryParse(amountCtrl.text.trim()) ?? 0.0;
+                  if (newAmt <= 0) return;
+                  Navigator.pop(ctx);
+                  try {
+                    await AdminSupabaseService.client.from('finance_transactions').update({
+                      'amount': newAmt,
+                      'payment_method': paymentMethod,
+                      'transaction_date': paymentDate.toIso8601String(),
+                      'expense_date': DateFormat('yyyy-MM-dd').format(paymentDate),
+                      'notes': notesCtrl.text.trim(),
+                    }).eq('id', tx['id']);
+
+                    if (adjustDueDifference) {
+                      final delta = newAmt - oldAmt; // if paid more, due reduces
+                      final newDue = max(0.0, _salaryDue - delta);
+                      await AdminSupabaseService.client.from('staff').update({'salary_due': newDue}).eq('id', widget.staff['id']);
+                      widget.staff['salary_due'] = newDue;
+                      setState(() => _salaryDue = newDue);
+                    }
+
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('✅ Salary entry updated!'), backgroundColor: AdminTheme.success),
+                      );
+                      _loadSalaryHistory();
+                      widget.onUpdated();
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Error updating entry: $e'), backgroundColor: AdminTheme.danger),
+                      );
+                    }
+                  }
+                },
+                child: const Text('Save Changes'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  void _deletePayment(Map<String, dynamic> tx) {
+    final amt = double.tryParse(tx['amount']?.toString() ?? '0') ?? 0.0;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AdminTheme.cardColor(context),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Delete Salary Payment?'),
+        content: Text('Are you sure you want to delete this salary payment entry of ₹$amt? This will reverse the expense and restore ₹$amt back to Salary Due.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              try {
+                await AdminSupabaseService.client.from('finance_transactions').delete().eq('id', tx['id']);
+                final newDue = _salaryDue + amt;
+                await AdminSupabaseService.client.from('staff').update({'salary_due': newDue}).eq('id', widget.staff['id']);
+                widget.staff['salary_due'] = newDue;
+                setState(() => _salaryDue = newDue);
+
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('✅ Salary entry deleted. Restored ₹$amt to due.'), backgroundColor: Colors.red),
+                  );
+                  _loadSalaryHistory();
+                  widget.onUpdated();
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Error deleting entry: $e'), backgroundColor: AdminTheme.danger),
+                  );
+                }
+              }
+            },
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showEditBaseAndDueDialog() {
+    final baseCtrl = TextEditingController(text: _baseSalary.toStringAsFixed(0));
+    final dueCtrl = TextEditingController(text: _salaryDue.toStringAsFixed(0));
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AdminTheme.cardColor(context),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Adjust Salary & Due Settings'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(controller: baseCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Base Salary (₹ / month)', prefixIcon: Icon(Icons.currency_rupee_rounded))),
+            const SizedBox(height: 12),
+            TextField(controller: dueCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Salary Due (₹)', prefixIcon: Icon(Icons.pending_actions_rounded))),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AdminTheme.primary, foregroundColor: Colors.white),
+            onPressed: () async {
+              final newBase = double.tryParse(baseCtrl.text.trim()) ?? _baseSalary;
+              final newDue = double.tryParse(dueCtrl.text.trim()) ?? _salaryDue;
+              Navigator.pop(ctx);
+              try {
+                await AdminSupabaseService.client.from('staff').update({
+                  'salary': newBase,
+                  'salary_due': newDue,
+                }).eq('id', widget.staff['id']);
+                widget.staff['salary'] = newBase;
+                widget.staff['salary_due'] = newDue;
+                setState(() {
+                  _baseSalary = newBase;
+                  _salaryDue = newDue;
+                });
+                widget.onUpdated();
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('✅ Base salary and due balance updated!'), backgroundColor: AdminTheme.success),
+                  );
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Error updating: $e'), backgroundColor: AdminTheme.danger),
+                  );
+                }
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final currency = NumberFormat.currency(locale: 'en_IN', symbol: '₹');
+
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Salary Summary Cards
+          Row(
+            children: [
+              Expanded(
+                child: _summaryCard('Monthly Base Salary', currency.format(_baseSalary), Icons.account_balance_wallet_rounded, Colors.indigo, onEdit: _showEditBaseAndDueDialog),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _summaryCard('Salary Due Balance', currency.format(_salaryDue), Icons.pending_actions_rounded, _salaryDue > 0 ? Colors.red : Colors.grey, onEdit: _showEditBaseAndDueDialog),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _summaryCard('Total Paid History', currency.format(_totalPaid), Icons.check_circle_rounded, AdminTheme.success),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Salary Payment Entries (${_salaryHistory.length})', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: AdminTheme.textColor(context))),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10)),
+                icon: const Icon(Icons.add_rounded, size: 18),
+                label: Text('Record Salary Payment / Advance', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold)),
+                onPressed: _showRecordPaymentDialog,
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Container(
+            decoration: BoxDecoration(
+              color: AdminTheme.surfaceColor(context),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AdminTheme.borderColor(context)),
+            ),
+            child: _salaryHistory.isEmpty
+                ? Padding(
+                    padding: const EdgeInsets.all(32),
+                    child: Center(
+                      child: Column(
+                        children: [
+                          Icon(Icons.receipt_long_rounded, size: 48, color: AdminTheme.mutedTextColor(context)),
+                          const SizedBox(height: 12),
+                          Text('No salary payments recorded yet for ${widget.staff['full_name'] ?? 'this staff member'}.',
+                              style: GoogleFonts.inter(color: AdminTheme.secondaryTextColor(context))),
+                          const SizedBox(height: 8),
+                          Text('Click "+ Record Salary Payment / Advance" above to log a payment.',
+                              style: GoogleFonts.inter(fontSize: 12, color: AdminTheme.mutedTextColor(context))),
+                        ],
+                      ),
+                    ),
+                  )
+                : ListView.separated(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: _salaryHistory.length,
+                    separatorBuilder: (context, index) => const Divider(height: 1),
+                    itemBuilder: (context, index) {
+                      final tx = _salaryHistory[index];
+                      final amt = double.tryParse(tx['amount']?.toString() ?? '0') ?? 0.0;
+                      final txDateStr = tx['transaction_date']?.toString();
+                      final txDate = txDateStr != null ? DateTime.tryParse(txDateStr) : null;
+                      final dateFormatted = txDate != null ? DateFormat('dd MMM yyyy, hh:mm a').format(txDate) : 'Unknown date';
+                      final notes = tx['notes'] ?? '';
+                      final method = tx['payment_method'] ?? 'Cash';
+                      final isAdvance = notes.toString().toLowerCase().contains('advance');
+
+                      return ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: isAdvance ? Colors.orange.withValues(alpha: 0.1) : Colors.green.withValues(alpha: 0.1),
+                          child: Icon(isAdvance ? Icons.timelapse_rounded : Icons.check_circle_rounded,
+                              color: isAdvance ? Colors.orange : Colors.green, size: 20),
+                        ),
+                        title: Row(
+                          children: [
+                            Text(isAdvance ? 'Salary Advance' : 'Salary Payment', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 14)),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(color: AdminTheme.borderColor(context), borderRadius: BorderRadius.circular(4)),
+                              child: Text(method, style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w600)),
+                            ),
+                          ],
+                        ),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Date: $dateFormatted', style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.mutedTextColor(context))),
+                            if (notes.isNotEmpty)
+                              Text('Notes: $notes', style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.secondaryTextColor(context))),
+                          ],
+                        ),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(currency.format(amt), style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.green)),
+                            const SizedBox(width: 8),
+                            IconButton(
+                              icon: const Icon(Icons.edit_outlined, size: 18),
+                              tooltip: 'Edit / Update this payment entry',
+                              onPressed: () => _showEditPaymentDialog(tx),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Colors.red),
+                              tooltip: 'Delete entry & restore salary due',
+                              onPressed: () => _deletePayment(tx),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _summaryCard(String title, String value, IconData icon, Color color, {VoidCallback? onEdit}) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AdminTheme.surfaceColor(context),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AdminTheme.borderColor(context)),
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        children: [
+          CircleAvatar(backgroundColor: color.withValues(alpha: 0.1), child: Icon(icon, color: color, size: 20)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.secondaryTextColor(context))),
+                const SizedBox(height: 4),
+                Text(value, style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: AdminTheme.textColor(context))),
+              ],
+            ),
+          ),
+          if (onEdit != null)
+            IconButton(
+              icon: const Icon(Icons.edit_rounded, size: 16),
+              tooltip: 'Edit',
+              onPressed: onEdit,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
