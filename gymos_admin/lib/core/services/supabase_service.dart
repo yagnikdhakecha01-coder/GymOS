@@ -50,9 +50,36 @@ class AdminSupabaseService {
     if (urlStr.isEmpty || anonKeyStr.isEmpty) return;
 
     try {
-      await Supabase.initialize(url: urlStr, anonKey: anonKeyStr);
+      await Supabase.initialize(
+        url: urlStr,
+        anonKey: anonKeyStr,
+        authOptions: const FlutterAuthClientOptions(
+          autoRefreshToken: true,
+        ),
+      );
       _client = Supabase.instance.client;
     } catch (_) {}
+  }
+
+  /// Ensures the active session is refreshed if expired or close to expiry (< 5 minutes)
+  static Future<Session?> ensureValidSession() async {
+    if (_client == null) return null;
+    try {
+      final session = _client!.auth.currentSession;
+      if (session == null) return null;
+
+      final nowSec = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final expiresAt = session.expiresAt ?? 0;
+
+      // If token is expired or expires in under 300 seconds (5 minutes)
+      if (session.isExpired || (expiresAt > 0 && expiresAt - nowSec < 300)) {
+        final res = await _client!.auth.refreshSession();
+        return res.session ?? _client!.auth.currentSession;
+      }
+      return session;
+    } catch (e) {
+      return _client?.auth.currentSession;
+    }
   }
 
   static String generateUuid() {

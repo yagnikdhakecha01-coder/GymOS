@@ -1,9 +1,14 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/auth_service.dart';
 import '../services/google_drive_service.dart';
+import '../services/supabase_service.dart';
 
 class AuthProvider extends ChangeNotifier {
   final AdminAuthService _authService = AdminAuthService();
+  StreamSubscription<AuthState>? _authSubscription;
+  Timer? _heartbeatTimer;
 
   bool _isLoading = false;
   bool _isAuthenticated = false;
@@ -16,7 +21,54 @@ class AuthProvider extends ChangeNotifier {
   String? get userId => _authService.currentUser?.id;
 
   AuthProvider() {
+    _initAuthListener();
     checkSession();
+    _startHeartbeat();
+  }
+
+  void _initAuthListener() {
+    try {
+      if (AdminSupabaseService.isInitialized) {
+        _authSubscription = AdminSupabaseService.client.auth.onAuthStateChange.listen((data) async {
+          final AuthChangeEvent event = data.event;
+          final Session? session = data.session;
+          if (event == AuthChangeEvent.signedIn || event == AuthChangeEvent.tokenRefreshed) {
+            if (session != null && !_isAuthenticated) {
+              await checkSession();
+            }
+          } else if (event == AuthChangeEvent.signedOut) {
+            _isAuthenticated = false;
+            notifyListeners();
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint('Error setting up auth state listener: $e');
+    }
+  }
+
+  void _startHeartbeat() {
+    _heartbeatTimer?.cancel();
+    // Check and refresh token every 15 minutes to prevent session expiration (Supabase JWT expires in 60m)
+    _heartbeatTimer = Timer.periodic(const Duration(minutes: 15), (_) async {
+      if (_isAuthenticated) {
+        try {
+          final session = await AdminSupabaseService.ensureValidSession();
+          if (session == null && _authService.currentSession == null) {
+            await checkSession();
+          }
+        } catch (e) {
+          debugPrint('Heartbeat session refresh error: $e');
+        }
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _authSubscription?.cancel();
+    _heartbeatTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _syncGoogleTokensIfAvailable() async {
@@ -53,9 +105,12 @@ class AuthProvider extends ChangeNotifier {
           _isLoading = false;
           notifyListeners();
         }
+      } else {
+        _isAuthenticated = false;
+        notifyListeners();
       }
     } catch (e) {
-      print('Error in AuthProvider.checkSession: $e');
+      debugPrint('Error in AuthProvider.checkSession: $e');
       _isAuthenticated = false;
       _isLoading = false;
       notifyListeners();
@@ -74,6 +129,7 @@ class AuthProvider extends ChangeNotifier {
         notifyListeners();
         return false;
       }
+      _startHeartbeat();
       return true;
     } catch (e) {
       _error = e.toString().replaceAll('AuthException: ', '');
@@ -109,6 +165,7 @@ class AuthProvider extends ChangeNotifier {
       await _authService.logLoginEvent();
       _isAuthenticated = true;
       _isLoading = false;
+      _startHeartbeat();
       notifyListeners();
       return true;
     } catch (e) {
@@ -120,6 +177,7 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> logout() async {
+    _heartbeatTimer?.cancel();
     await _authService.signOut();
     _isAuthenticated = false;
     notifyListeners();

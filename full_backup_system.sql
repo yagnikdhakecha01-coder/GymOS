@@ -84,6 +84,10 @@ DECLARE
     v_count INT;
     v_tables_exported INT := 0;
 BEGIN
+    -- Allow execution if running as internal postgres system user (e.g. pg_cron) OR authenticated super admin
+    IF current_user != 'postgres' AND (auth.uid() IS NULL OR NOT is_super_admin(auth.uid())) THEN
+        RAISE EXCEPTION 'Unauthorized: Super Admin access required';
+    END IF;
     FOR v_table_name IN
         SELECT t.table_name
         FROM information_schema.tables t

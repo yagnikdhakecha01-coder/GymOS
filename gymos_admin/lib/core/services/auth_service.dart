@@ -79,6 +79,7 @@ class AdminAuthService {
 
   /// Verify the logged-in user is a super admin
   Future<bool> verifySuperAdmin() async {
+    await AdminSupabaseService.ensureValidSession();
     if (_client == null || currentUser == null) return false;
     try {
       final result = await _client!
