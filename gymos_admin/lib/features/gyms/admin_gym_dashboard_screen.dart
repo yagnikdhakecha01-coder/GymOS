@@ -121,8 +121,7 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
         final membersRes = await client
             .from('members')
             .select('pending_amount')
-            .eq('gym_id', widget.gym['id'])
-            .neq('is_deleted', true);
+            .eq('gym_id', widget.gym['id']);
         for (var m in (membersRes as List)) {
           pendingSum += double.tryParse(m['pending_amount']?.toString() ?? '0') ?? 0.0;
         }
@@ -1906,6 +1905,21 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
                       final txDate = txDateStr != null ? DateTime.tryParse(txDateStr) : null;
                       final dateFormatted = txDate != null ? DateFormat('dd MMM yyyy').format(txDate) : '';
 
+                      // Check for linked member or staff
+                      String linkedName = '';
+                      if (tx['reference_id'] != null && tx['reference_id'].toString().isNotEmpty) {
+                        final refId = tx['reference_id'].toString();
+                        final memberMatch = _members.firstWhere((m) => m['id'] == refId, orElse: () => {});
+                        if (memberMatch.isNotEmpty && memberMatch['full_name'] != null) {
+                          linkedName = memberMatch['full_name'];
+                        } else {
+                          final staffMatch = _staff.firstWhere((s) => s['id'] == refId, orElse: () => {});
+                          if (staffMatch.isNotEmpty && staffMatch['full_name'] != null) {
+                            linkedName = staffMatch['full_name'];
+                          }
+                        }
+                      }
+
                       return ListTile(
                         leading: CircleAvatar(
                           backgroundColor: isRev ? AdminTheme.success.withValues(alpha: 0.1) : Colors.red.withValues(alpha: 0.1),
@@ -1914,6 +1928,25 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
                         title: Row(
                           children: [
                             Text(tx['category'] ?? 'Other', style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 14)),
+                            if (linkedName.isNotEmpty) ...[
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: AdminTheme.primary.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: AdminTheme.primary.withValues(alpha: 0.3)),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(tx['category'] == 'Salary' ? Icons.badge_outlined : Icons.person_outline, size: 11, color: AdminTheme.primary),
+                                    const SizedBox(width: 4),
+                                    Text(linkedName, style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.bold, color: AdminTheme.primary)),
+                                  ],
+                                ),
+                              ),
+                            ],
                             if (tx['payment_method'] != null && tx['payment_method'].toString().isNotEmpty) ...[
                               const SizedBox(width: 8),
                               Container(
@@ -1962,6 +1995,8 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
     String type = 'Revenue';
     String category = 'Membership';
     String method = 'Cash';
+    String? selectedMemberId;
+    String? selectedStaffId;
     DateTime txDate = DateTime.now();
 
     showDialog(
@@ -2022,8 +2057,44 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
                             : ['Salary', 'Rent', 'Electricity', 'Equipment Maintenance', 'Water', 'Marketing', 'Other Expense'])
                         .map((c) => DropdownMenuItem(value: c, child: Text(c)))
                         .toList(),
-                    onChanged: (val) => setDialogState(() => category = val ?? category),
+                    onChanged: (val) => setDialogState(() {
+                      category = val ?? category;
+                      selectedMemberId = null;
+                      selectedStaffId = null;
+                    }),
                   ),
+                  if (category == 'Membership' && _members.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String?>(
+                      value: selectedMemberId,
+                      decoration: const InputDecoration(labelText: 'Link to Member (Optional)', prefixIcon: Icon(Icons.person_outline)),
+                      isExpanded: true,
+                      items: [
+                        const DropdownMenuItem<String?>(value: null, child: Text('-- No Member Linked --')),
+                        ..._members.map((m) => DropdownMenuItem<String?>(
+                              value: m['id']?.toString(),
+                              child: Text('${m['full_name']} (Due: ₹${m['pending_amount']})', overflow: TextOverflow.ellipsis),
+                            )),
+                      ],
+                      onChanged: (val) => setDialogState(() => selectedMemberId = val),
+                    ),
+                  ],
+                  if (category == 'Salary' && _staff.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String?>(
+                      value: selectedStaffId,
+                      decoration: const InputDecoration(labelText: 'Link to Staff (Optional)', prefixIcon: Icon(Icons.badge_outlined)),
+                      isExpanded: true,
+                      items: [
+                        const DropdownMenuItem<String?>(value: null, child: Text('-- No Staff Linked --')),
+                        ..._staff.map((s) => DropdownMenuItem<String?>(
+                              value: s['id']?.toString(),
+                              child: Text('${s['full_name']} (Salary Due: ₹${s['salary_due']})', overflow: TextOverflow.ellipsis),
+                            )),
+                      ],
+                      onChanged: (val) => setDialogState(() => selectedStaffId = val),
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
                     value: method,
@@ -2068,12 +2139,14 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
                   if (amt <= 0) return;
                   Navigator.pop(ctx);
                   try {
+                    final refId = (category == 'Membership' ? selectedMemberId : (category == 'Salary' ? selectedStaffId : null));
                     await AdminSupabaseService.client.from('finance_transactions').insert({
                       'gym_id': widget.gym['id'],
                       'type': type,
                       'category': category,
                       'amount': amt,
                       'payment_method': method,
+                      'reference_id': refId,
                       'transaction_date': txDate.toIso8601String(),
                       'expense_date': type == 'Expense' ? DateFormat('yyyy-MM-dd').format(txDate) : null,
                       'revenue_date': type == 'Revenue' ? DateFormat('yyyy-MM-dd').format(txDate) : null,
@@ -2084,7 +2157,11 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(content: Text('✅ $type of ₹$amt recorded!'), backgroundColor: AdminTheme.success),
                       );
-                      _loadFinanceData();
+                      await Future.wait([
+                        _loadFinanceData(),
+                        _loadMembersData(),
+                        _loadStaffData(),
+                      ]);
                     }
                   } catch (e) {
                     if (mounted) {
@@ -2110,6 +2187,7 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
     String type = tx['type']?.toString() ?? 'Expense';
     String category = tx['category']?.toString() ?? 'Salary';
     String method = tx['payment_method']?.toString() ?? 'Cash';
+    String? selectedRefId = tx['reference_id']?.toString();
     DateTime txDate = DateTime.tryParse(tx['transaction_date']?.toString() ?? '') ?? DateTime.now();
 
     showDialog(
@@ -2180,6 +2258,38 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
                     items: catList.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
                     onChanged: (val) => setDialogState(() => category = val ?? category),
                   ),
+                  if (category == 'Membership' && _members.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String?>(
+                      value: _members.any((m) => m['id'] == selectedRefId) ? selectedRefId : null,
+                      decoration: const InputDecoration(labelText: 'Linked Member', prefixIcon: Icon(Icons.person_outline)),
+                      isExpanded: true,
+                      items: [
+                        const DropdownMenuItem<String?>(value: null, child: Text('-- No Member Linked --')),
+                        ..._members.map((m) => DropdownMenuItem<String?>(
+                              value: m['id']?.toString(),
+                              child: Text('${m['full_name']} (Due: ₹${m['pending_amount']})', overflow: TextOverflow.ellipsis),
+                            )),
+                      ],
+                      onChanged: (val) => setDialogState(() => selectedRefId = val),
+                    ),
+                  ],
+                  if (category == 'Salary' && _staff.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String?>(
+                      value: _staff.any((s) => s['id'] == selectedRefId) ? selectedRefId : null,
+                      decoration: const InputDecoration(labelText: 'Linked Staff', prefixIcon: Icon(Icons.badge_outlined)),
+                      isExpanded: true,
+                      items: [
+                        const DropdownMenuItem<String?>(value: null, child: Text('-- No Staff Linked --')),
+                        ..._staff.map((s) => DropdownMenuItem<String?>(
+                              value: s['id']?.toString(),
+                              child: Text('${s['full_name']} (Salary Due: ₹${s['salary_due']})', overflow: TextOverflow.ellipsis),
+                            )),
+                      ],
+                      onChanged: (val) => setDialogState(() => selectedRefId = val),
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
                     value: method,
@@ -2227,6 +2337,7 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
                       'category': category,
                       'amount': amt,
                       'payment_method': method,
+                      'reference_id': (category == 'Membership' || category == 'Salary') ? selectedRefId : tx['reference_id'],
                       'transaction_date': txDate.toIso8601String(),
                       'expense_date': type == 'Expense' ? DateFormat('yyyy-MM-dd').format(txDate) : null,
                       'revenue_date': type == 'Revenue' ? DateFormat('yyyy-MM-dd').format(txDate) : null,
@@ -2234,9 +2345,13 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
                     }).eq('id', tx['id']);
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('✅ Transaction updated successfully!'), backgroundColor: AdminTheme.success),
+                        const SnackBar(content: Text('✅ Transaction updated & balances synchronized!'), backgroundColor: AdminTheme.success),
                       );
-                      _loadFinanceData();
+                      await Future.wait([
+                        _loadFinanceData(),
+                        _loadMembersData(),
+                        _loadStaffData(),
+                      ]);
                     }
                   } catch (e) {
                     if (mounted) {
@@ -2263,7 +2378,7 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
         backgroundColor: AdminTheme.cardColor(context),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Delete Transaction?'),
-        content: Text('Are you sure you want to delete this ${tx['type']} entry of ₹${tx['amount']} (${tx['category']})? This action cannot be undone.'),
+        content: Text('Are you sure you want to delete this ${tx['type']} entry of ₹${tx['amount']} (${tx['category']})? This will automatically recalculate member balances & dues. This action cannot be undone.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           ElevatedButton(
@@ -2274,9 +2389,13 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
                 await AdminSupabaseService.client.from('finance_transactions').delete().eq('id', tx['id']);
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('✅ Transaction deleted'), backgroundColor: Colors.red),
+                    const SnackBar(content: Text('✅ Transaction deleted & balances synchronized!'), backgroundColor: Colors.red),
                   );
-                  _loadFinanceData();
+                  await Future.wait([
+                    _loadFinanceData(),
+                    _loadMembersData(),
+                    _loadStaffData(),
+                  ]);
                 }
               } catch (e) {
                 if (mounted) {
