@@ -15,6 +15,7 @@ import '../diet/diet_viewmodel.dart';
 import '../gym_settings/gym_settings_viewmodel.dart';
 import '../authentication/auth_viewmodel.dart';
 import '../../core/services/supabase_service.dart';
+import '../../core/services/image_security_service.dart';
 import '../../core/models/member.dart';
 import '../../core/models/membership_plan.dart';
 import '../../core/widgets/success_dialog.dart';
@@ -104,24 +105,16 @@ class _AddMemberWizardScreenState extends State<AddMemberWizardScreen> {
 
       final authVm = Provider.of<AuthViewModel>(context, listen: false);
       final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'] ?? 'default_gym';
-      final fileName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final path = '$gymId/members/$fileName';
 
       setState(() {
         _photoUploadProgress = 0.7;
       });
 
-      await SupabaseService.client.storage
-          .from('avatars')
-          .uploadBinary(path, bytes);
-
-      setState(() {
-        _photoUploadProgress = 0.9;
-      });
-
-      final publicUrl = SupabaseService.client.storage
-          .from('avatars')
-          .getPublicUrl(path);
+      final publicUrl = await ImageSecurityService.uploadSecureImage(
+        bucket: 'avatars',
+        directoryPath: '$gymId/members',
+        bytes: bytes,
+      );
 
       setState(() {
         _avatarUrl = publicUrl;
@@ -215,7 +208,7 @@ class _AddMemberWizardScreenState extends State<AddMemberWizardScreen> {
   double get finalPayable {
     final fees = double.tryParse(_feesController.text) ?? 0.0;
     final discount = double.tryParse(_discountController.text) ?? 0.0;
-    double val = fees - discount;
+    double val = (fees - discount).clamp(0.0, double.infinity);
     if (_adjustTrialPayment && widget.trialPaymentAmount != null) {
       val = (val - widget.trialPaymentAmount!).clamp(0.0, double.infinity);
     }

@@ -1,6 +1,13 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.8";
 
+const SECURITY_HEADERS = {
+  "X-Content-Type-Options": "nosniff",
+  "X-Frame-Options": "DENY",
+  "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+  "Content-Type": "application/json",
+};
+
 async function verifyWebhookSignature(
   body: string,
   signature: string,
@@ -32,30 +39,35 @@ serve(async (req) => {
     return new Response("ok", {
       headers: {
         "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Headers": "content-type",
+        "Access-Control-Allow-Headers": "content-type, x-razorpay-signature",
+        ...SECURITY_HEADERS,
       },
     });
   }
+
+  const correlationId = crypto.randomUUID();
 
   try {
     const signature = req.headers.get("x-razorpay-signature") || "";
     const webhookSecret = Deno.env.get("RAZORPAY_WEBHOOK_SECRET") || "";
 
-    if (!signature) {
-      return new Response(JSON.stringify({ error: "Missing x-razorpay-signature header" }), {
+    if (!signature || !webhookSecret) {
+      console.warn(`[${correlationId}] Webhook rejected: Missing signature or server webhook secret`);
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 400,
-        headers: { "Content-Type": "application/json" },
+        headers: SECURITY_HEADERS,
       });
     }
 
     const rawBody = await req.text();
 
-    // Verify webhook signature
+    // Verify webhook signature cryptographically
     const isValid = await verifyWebhookSignature(rawBody, signature, webhookSecret);
     if (!isValid) {
-      return new Response(JSON.stringify({ error: "Invalid webhook signature" }), {
+      console.warn(`[${correlationId}] Invalid webhook signature received`);
+      return new Response(JSON.stringify({ error: "Invalid signature" }), {
         status: 401,
-        headers: { "Content-Type": "application/json" },
+        headers: SECURITY_HEADERS,
       });
     }
 
@@ -71,18 +83,34 @@ serve(async (req) => {
       const paymentEntity = event.payload.payment ? event.payload.payment.entity : (event.payload.order ? event.payload.order.entity : {});
       const notes = paymentEntity.notes || {};
       let gym_id = notes.gym_id;
-      let plan_id = notes.plan_id || 'pro';
+      const plan_id = notes.plan_id || 'pro';
       let owner_id = notes.owner_id;
 
-      // Fallback: If gym_id or owner_id not in notes, find gym by email or phone
+      // Fallback: If gym_id not in notes, securely lookup gym with sanitized inputs
       if (!gym_id) {
-        const email = paymentEntity.email;
-        const contact = paymentEntity.contact;
-        if (email || contact) {
+        const rawEmail = paymentEntity.email;
+        const rawContact = paymentEntity.contact;
+        const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+        const phoneRegex = /^\+?[0-9]{7,15}$/;
+
+        const safeEmail = rawEmail && emailRegex.test(rawEmail) ? rawEmail : null;
+        const safeContact = rawContact && phoneRegex.test(rawContact) ? rawContact : null;
+
+        if (safeEmail) {
           const { data: gym } = await supabase
             .from("gyms")
             .select("id, owner_id")
-            .or(`email.eq.${email},phone_number.eq.${contact}`)
+            .eq("email", safeEmail)
+            .maybeSingle();
+          if (gym) {
+            gym_id = gym.id;
+            owner_id = owner_id || gym.owner_id;
+          }
+        } else if (safeContact) {
+          const { data: gym } = await supabase
+            .from("gyms")
+            .select("id, owner_id")
+            .eq("phone_number", safeContact)
             .maybeSingle();
           if (gym) {
             gym_id = gym.id;
@@ -92,12 +120,25 @@ serve(async (req) => {
       }
 
       if (gym_id) {
-        // Fetch Plan details
+        // Fetch Plan details to enforce strict server-side price check
         const { data: plan } = await supabase
           .from("subscription_plans")
           .select("*")
           .eq("id", plan_id)
           .maybeSingle();
+
+        // Strict Server-Side Amount Verification (Prevent Price Tampering)
+        if (plan) {
+          const expectedAmountInPaise = Math.round(Number(plan.price) * 100);
+          const paidAmountInPaise = Number(paymentEntity.amount);
+          if (paidAmountInPaise < expectedAmountInPaise) {
+            console.error(`[${correlationId}] SECURITY ALERT: Amount mismatch! Paid: ${paidAmountInPaise}, Expected: ${expectedAmountInPaise} for plan: ${plan_id}`);
+            return new Response(JSON.stringify({ error: "Amount tampering detected" }), {
+              status: 400,
+              headers: SECURITY_HEADERS,
+            });
+          }
+        }
 
         const price = plan ? Number(plan.price) : Number(paymentEntity.amount) / 100;
 
@@ -194,12 +235,13 @@ serve(async (req) => {
 
     return new Response(JSON.stringify({ received: true }), {
       status: 200,
-      headers: { "Content-Type": "application/json" },
+      headers: SECURITY_HEADERS,
     });
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
+    console.error(`[${correlationId}] Unhandled webhook exception:`, error);
+    return new Response(JSON.stringify({ error: "Internal processing error", correlation_id: correlationId }), {
       status: 500,
-      headers: { "Content-Type": "application/json" },
+      headers: SECURITY_HEADERS,
     });
   }
 });

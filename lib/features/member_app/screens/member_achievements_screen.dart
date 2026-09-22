@@ -484,7 +484,7 @@ class _MemberAchievementsScreenState extends State<MemberAchievementsScreen> wit
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Streak Streak',
+                    'Current Streak',
                     style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: AppTheme.textMuted),
                   ),
                   const SizedBox(height: 8),
@@ -595,7 +595,7 @@ class _MemberAchievementsScreenState extends State<MemberAchievementsScreen> wit
                     height: 44,
                     decoration: BoxDecoration(
                       color: unlocked 
-                          ? (badge['color'] as Color).withOpacity(0.12)
+                          ? ((badge['color'] is Color ? badge['color'] as Color : AppTheme.primary)).withOpacity(0.12)
                           : const Color(0xFFF1F5F9),
                       shape: BoxShape.circle,
                     ),
@@ -636,7 +636,8 @@ class _MemberAchievementsScreenState extends State<MemberAchievementsScreen> wit
               const SizedBox(height: 4),
 
               // Description
-              Expanded(
+              SizedBox(
+                height: 28,
                 child: Text(
                   badge['description']?.toString() ?? '',
                   maxLines: 2,

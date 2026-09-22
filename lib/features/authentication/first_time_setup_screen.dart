@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:image_picker/image_picker.dart';
 import '../../core/services/supabase_service.dart';
+import '../../core/services/image_security_service.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -201,9 +202,6 @@ class _FirstTimeSetupScreenState extends State<FirstTimeSetupScreen> with Single
         }
       });
 
-      final String fileName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final String path = 'onboarding/${isLogo ? 'logos' : 'owners'}/$fileName';
-
       setState(() {
         if (isLogo) {
           _logoUploadProgress = 0.7;
@@ -212,21 +210,11 @@ class _FirstTimeSetupScreenState extends State<FirstTimeSetupScreen> with Single
         }
       });
 
-      await SupabaseService.client.storage
-          .from('avatars')
-          .uploadBinary(path, bytes);
-
-      setState(() {
-        if (isLogo) {
-          _logoUploadProgress = 0.9;
-        } else {
-          _photoUploadProgress = 0.9;
-        }
-      });
-
-      final publicUrl = SupabaseService.client.storage
-          .from('avatars')
-          .getPublicUrl(path);
+      final publicUrl = await ImageSecurityService.uploadSecureImage(
+        bucket: 'avatars',
+        directoryPath: 'onboarding/${isLogo ? 'logos' : 'owners'}',
+        bytes: bytes,
+      );
 
       setState(() {
         if (isLogo) {

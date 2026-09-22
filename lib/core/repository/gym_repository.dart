@@ -22,6 +22,7 @@ import '../models/attendance_correction.dart';
 import '../models/trial_member.dart';
 import '../models/manual_attendance_entry.dart';
 import '../models/attendance_audit_log.dart';
+import '../models/gym_rules_model.dart';
 
 import '../services/notification_service.dart';
 
@@ -556,6 +557,22 @@ class GymRepository extends ChangeNotifier {
     return count;
   }
 
+  Future<void> clearFailedQueueOperations() async {
+    _crudQueue.removeWhere((item) => item['sync_status'] == 'failed' || item['error_message'] != null);
+    _attendanceQueue.removeWhere((item) => item['sync_status'] == 'failed' || item['error_message'] != null);
+    _manualAttendanceQueue.removeWhere((item) => item.syncStatus == 'failed' || item.errorMessage != null);
+    await _saveQueuesToStorage();
+    notifyListeners();
+  }
+
+  Future<void> removeQueueItem(String id) async {
+    _crudQueue.removeWhere((item) => item['uuid'] == id);
+    _attendanceQueue.removeWhere((item) => item['attendance_uuid'] == id);
+    _manualAttendanceQueue.removeWhere((item) => item.operationUuid == id);
+    await _saveQueuesToStorage();
+    notifyListeners();
+  }
+
   void _loadQueuesFromStorage() {
     final rawAtt = _storage.getString(LocalStorageService.keyAttendanceQueue);
     if (rawAtt != null && rawAtt.isNotEmpty) {
@@ -568,6 +585,26 @@ class GymRepository extends ChangeNotifier {
     if (rawCrud != null && rawCrud.isNotEmpty) {
       try {
         _crudQueue = List<Map<String, dynamic>>.from(jsonDecode(rawCrud));
+        // Auto-heal / clean entries that had 22P02 UUID syntax failure or invalid non-UUID keys
+        _crudQueue.removeWhere((item) {
+          final err = item['error_message']?.toString() ?? '';
+          if (err.contains('22P02') || err.contains('invalid input syntax for type uuid')) {
+            print('Auto-Heal on load: Purging permanently failed UUID-syntax queue entry ${item['uuid']}');
+            return true;
+          }
+          if (item['table'] == 'attendance_logs') {
+            final payload = item['payload'] as Map<String, dynamic>?;
+            if (payload != null) {
+              final id = payload['id']?.toString();
+              if (item['action'] == 'update' && (id == null || !_isValidUUID(id))) {
+                print('Auto-Heal on load: Purging invalid attendance_logs update entry ${item['uuid']} due to non-UUID id: $id');
+                return true;
+              }
+            }
+          }
+          return false;
+        });
+
         // Reset retry count for failed/stuck items so they get retried now that we have fixed the database column
         for (var item in _crudQueue) {
           if (item['sync_status'] == 'failed' || (item['retry_count'] ?? 0) > 5) {
@@ -768,16 +805,19 @@ class GymRepository extends ChangeNotifier {
           final checkOutIso = item['check_out'] as String?;
           final status = item['status'] as String;
           final userType = item['user_type'] as String;
+          final validShiftId = _isValidUUID(shiftId) ? shiftId : null;
+          final shiftStatus = item['shift_status'] as String? ?? (!_isValidUUID(shiftId) ? shiftId : null);
 
           final data = {
             'id': attendanceUuid,
             'gym_id': gymId,
-            'user_id': userId,
+            'user_id': _isValidUUID(userId) ? userId : null,
             'role': userType,
             'user_type': userType,
-            'member_id': memberId,
-            'staff_id': staffId,
-            'shift_id': shiftId,
+            'member_id': _isValidUUID(memberId) ? memberId : null,
+            'staff_id': _isValidUUID(staffId) ? staffId : null,
+            if (validShiftId != null) 'shift_id': validShiftId,
+            if (shiftStatus != null && shiftStatus.isNotEmpty) 'shift_status': shiftStatus,
             'date': date,
             'check_in': checkInIso,
             'check_out': checkOutIso,
@@ -824,6 +864,13 @@ class GymRepository extends ChangeNotifier {
           } catch (_) {}
 
           // Remove duplicate conflict item from queue so it's resolved cleanly
+          _attendanceQueue.removeWhere((q) => q['attendance_uuid'] == attendanceUuid);
+          await _saveQueuesToStorage();
+          continue;
+        }
+
+        if (errStr.contains('22P02') || errStr.contains('invalid input syntax for type uuid')) {
+          print('Attendance Sync Auto-Heal: 22P02 Invalid UUID encountered ($attendanceUuid). Removing bad entry.');
           _attendanceQueue.removeWhere((q) => q['attendance_uuid'] == attendanceUuid);
           await _saveQueuesToStorage();
           continue;
@@ -899,14 +946,44 @@ class GymRepository extends ChangeNotifier {
           payload['category'] = _sanitizeCategory(rawCategory);
         }
 
-        // Auto-heal corrupt attendance updates missing check_in
+        // Auto-heal corrupt attendance updates missing check_in or invalid UUIDs
         if (table == 'attendance_logs') {
+          // If action is update, verify id is a valid UUID
+          if (action == 'update') {
+            final logId = payload['id']?.toString();
+            if (logId == null || !_isValidUUID(logId)) {
+              print('Auto-Heal: Removing corrupt attendance_logs queue entry $uuid due to invalid/missing id ($logId).');
+              _crudQueue.removeWhere((q) => q['uuid'] == uuid);
+              await _saveQueuesToStorage();
+              continue;
+            }
+          }
+
           final checkIn = payload['check_in'];
           if (checkIn == null || checkIn.toString().isEmpty) {
             print('Auto-Heal: Removing corrupt attendance_logs queue entry $uuid due to missing check_in.');
             _crudQueue.removeWhere((q) => q['uuid'] == uuid);
             await _saveQueuesToStorage();
             continue;
+          }
+
+          // Auto-heal non-UUID strings passed to UUID columns
+          if (payload.containsKey('shift_id')) {
+            final shiftIdVal = payload['shift_id']?.toString();
+            if (shiftIdVal != null && !_isValidUUID(shiftIdVal)) {
+              if (payload['shift_status'] == null || payload['shift_status'].toString().isEmpty) {
+                payload['shift_status'] = shiftIdVal;
+              }
+              payload.remove('shift_id');
+            }
+          }
+          for (final uuidCol in ['user_id', 'member_id', 'staff_id', 'display_id', 'created_by']) {
+            if (payload.containsKey(uuidCol)) {
+              final val = payload[uuidCol]?.toString();
+              if (val != null && !_isValidUUID(val)) {
+                payload.remove(uuidCol);
+              }
+            }
           }
         }
 
@@ -958,6 +1035,13 @@ class GymRepository extends ChangeNotifier {
         final uuid = item['uuid']?.toString() ?? '';
         if (errStr.contains('23505') || errStr.contains('uniq_attendance_user_date_shift') || errStr.contains('duplicate key')) {
           print('CRUD Sync Auto-Heal: Duplicate constraint 23505 encountered ($uuid). Removing conflict from queue.');
+          _crudQueue.removeWhere((q) => q['uuid'] == uuid);
+          await _saveQueuesToStorage();
+          continue;
+        }
+
+        if (errStr.contains('22P02') || errStr.contains('invalid input syntax for type uuid')) {
+          print('CRUD Sync Auto-Heal: 22P02 Invalid UUID encountered ($uuid). Removing corrupt entry from queue.');
           _crudQueue.removeWhere((q) => q['uuid'] == uuid);
           await _saveQueuesToStorage();
           continue;
@@ -1108,7 +1192,9 @@ class GymRepository extends ChangeNotifier {
           'staff_id': staffId,
           'user_id': existingRecord.userId,
           'attendance_type': 'Check Out',
-          'shift_id': existingRecord.shiftStatus,
+          'shift_id': _isValidUUID(existingRecord.shiftStatus) ? existingRecord.shiftStatus : null,
+          if (existingRecord.shiftStatus != null && existingRecord.shiftStatus!.isNotEmpty)
+            'shift_status': existingRecord.shiftStatus,
           'date': date,
           'check_in': DateTime.now().toIso8601String(),
           'check_out': checkOutTimeIso,
@@ -1495,7 +1581,7 @@ class GymRepository extends ChangeNotifier {
           // Sync audit log for this entry
           await _syncAuditLogForEntry(entry);
         } else {
-          print('Emergency Sync: Duplicate present record already exists on server for ${entry.userName} on ${entry.date}. Skipping insert.');
+          print('Emergency Sync: Duplicate present record already exists on server for [REDACTED] on ${entry.date}. Skipping insert.');
         }
 
         // Success — remove from queue
@@ -1687,18 +1773,23 @@ class GymRepository extends ChangeNotifier {
       }
     }
 
+    final rawShift = newShift ?? existing?.shiftStatus;
+    final validShiftId = _isValidUUID(rawShift) ? rawShift : null;
+    final shiftStatusVal = !_isValidUUID(rawShift) ? rawShift : (existing?.shiftStatus);
+
     final updatePayload = <String, dynamic>{
       'id': logId,
       'gym_id': gymId,
-      'user_id': (existing?.userId != null && existing!.userId.isNotEmpty) ? existing.userId : null,
+      'user_id': (existing?.userId != null && _isValidUUID(existing!.userId)) ? existing.userId : null,
       'role': existing?.userType ?? targetUserType,
       'user_type': existing?.userType ?? targetUserType,
-      'member_id': (existing?.userType ?? targetUserType) == 'Member' ? (existing?.userId ?? targetUserId) : null,
-      'staff_id': (existing?.userType ?? targetUserType) == 'Staff' ? (existing?.staffId ?? existing?.userId ?? targetUserId) : null,
+      'member_id': (existing?.userType ?? targetUserType) == 'Member' && _isValidUUID(existing?.userId ?? targetUserId) ? (existing?.userId ?? targetUserId) : null,
+      'staff_id': (existing?.userType ?? targetUserType) == 'Staff' && _isValidUUID(existing?.staffId ?? existing?.userId ?? targetUserId) ? (existing?.staffId ?? existing?.userId ?? targetUserId) : null,
       'date': existing?.date ?? date,
       'status': newStatus ?? existing?.status ?? 'Present',
       'method': existing?.method ?? 'Manual',
-      'shift_id': newShift ?? existing?.shiftStatus,
+      if (validShiftId != null) 'shift_id': validShiftId,
+      if (shiftStatusVal != null && shiftStatusVal.isNotEmpty) 'shift_status': shiftStatusVal,
       'check_in': formatToIso(newCheckIn ?? existing?.checkInTime) ?? DateTime.now().toUtc().toIso8601String(),
       'check_out': formatToIso(newCheckOut ?? existing?.checkOutTime),
     };
@@ -5305,4 +5396,115 @@ class GymRepository extends ChangeNotifier {
       return null;
     }
   }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // GYM RULES & MEMBER AGREEMENTS (PHASE 09)
+  // ══════════════════════════════════════════════════════════════════════════
+
+  Future<Map<String, dynamic>?> fetchGymRules(String gymId) async {
+    if (!SupabaseService.isInitialized) return null;
+    try {
+      final data = await SupabaseService.client
+          .from('gym_rules')
+          .select()
+          .eq('gym_id', gymId)
+          .maybeSingle();
+      return data;
+    } catch (e) {
+      print('fetchGymRules error: $e');
+      return null;
+    }
+  }
+
+  Future<bool> saveGymRules(String gymId, Map<String, dynamic> rulesData, {int version = 1}) async {
+    if (!SupabaseService.isInitialized) return false;
+    try {
+      final user = SupabaseService.client.auth.currentUser;
+      final payload = {
+        'gym_id': gymId,
+        'rules_data': rulesData,
+        'version': version,
+        'updated_at': DateTime.now().toIso8601String(),
+        'updated_by': user?.id,
+      };
+
+      await SupabaseService.client
+          .from('gym_rules')
+          .upsert(payload, onConflict: 'gym_id');
+
+      notifyListeners();
+      return true;
+    } catch (e) {
+      print('saveGymRules error: $e');
+      return false;
+    }
+  }
+
+  Future<List<MemberAgreementRecord>> fetchGymAgreements(String gymId) async {
+    if (!SupabaseService.isInitialized) return [];
+    try {
+      final data = await SupabaseService.client
+          .from('member_rule_agreements')
+          .select()
+          .eq('gym_id', gymId)
+          .order('agreed_at', ascending: false);
+
+      if (data == null) return [];
+      return (data as List).map((row) => MemberAgreementRecord.fromMap(Map<String, dynamic>.from(row))).toList();
+    } catch (e) {
+      print('fetchGymAgreements error: $e');
+      return [];
+    }
+  }
+
+  Future<MemberAgreementRecord?> fetchMemberAgreement(String gymId, String memberId) async {
+    if (!SupabaseService.isInitialized) return null;
+    try {
+      final data = await SupabaseService.client
+          .from('member_rule_agreements')
+          .select()
+          .eq('gym_id', gymId)
+          .eq('member_id', memberId)
+          .order('agreed_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
+
+      if (data == null) return null;
+      return MemberAgreementRecord.fromMap(Map<String, dynamic>.from(data));
+    } catch (e) {
+      print('fetchMemberAgreement error: $e');
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> fetchGymCustomRules(String gymId) async {
+    if (!SupabaseService.isInitialized) return null;
+    try {
+      final data = await SupabaseService.client
+          .from('gym_rules')
+          .select('rules_data, version, updated_at')
+          .eq('gym_id', gymId)
+          .maybeSingle();
+      if (data == null) return null;
+      return Map<String, dynamic>.from(data);
+    } catch (e) {
+      print('fetchGymCustomRules error: $e');
+      return null;
+    }
+  }
+
+  Future<bool> saveGymCustomRules(String gymId, Map<String, dynamic> rulesData) async {
+    if (!SupabaseService.isInitialized) return false;
+    try {
+      await SupabaseService.client.rpc('save_gym_custom_rules', params: {
+        'p_gym_id': gymId,
+        'p_rules_data': rulesData,
+      });
+      return true;
+    } catch (e) {
+      print('saveGymCustomRules error: $e');
+      return false;
+    }
+  }
 }
+

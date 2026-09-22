@@ -27,12 +27,8 @@ void main() async {
     }
   }
 
-  print('URL: $url');
-  if (anonKey.length > 10) {
-    print('Anon Key: ${anonKey.substring(0, 10)}...');
-  } else {
-    print('Anon Key: $anonKey');
-  }
+  print('URL configured: ${url.isNotEmpty ? "✓ (Set)" : "✗ (Missing)"}');
+  print('Anon Key configured: ${anonKey.isNotEmpty ? "✓ (Set)" : "✗ (Missing)"}');
 
   if (url.isEmpty || anonKey.isEmpty) {
     print('Error: URL or Anon Key is empty in .env');

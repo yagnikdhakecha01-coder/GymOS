@@ -19,12 +19,12 @@ import '../staff/staff_screen.dart';
 import '../finance/finance_screen.dart';
 import '../more/more_screen.dart';
 import 'gym_role_selector_screen.dart';
-import '../member_app/member_app_viewmodel.dart';
 import '../member_app/screens/member_code_screen.dart';
-import 'data_sync_screen.dart';
 import 'role_selection_screen.dart';
 import '../../core/widgets/app_branding_header.dart';
 import '../../core/services/supabase_service.dart';
+
+import '../../core/services/rate_limiter_service.dart';
 
 class LoginScreen extends StatefulWidget {
   final String role;
@@ -50,6 +50,22 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _handleLogin() async {
     if (_passwordController.text.isEmpty) return;
+
+    // Production Rate Limiter: Max 5 attempts per minute
+    final lockoutDuration = RateLimiterService().checkLoginRateLimit();
+    if (lockoutDuration != null) {
+      final secs = lockoutDuration.inSeconds.clamp(1, 60);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.redAccent,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          content: Text('Too many login attempts. Please wait $secs seconds before trying again.'),
+        ),
+      );
+      return;
+    }
+
     setState(() => _isLoading = true);
 
     try {
@@ -57,11 +73,14 @@ class _LoginScreenState extends State<LoginScreen> {
       await _applySelectedRole(authVm);
       await authVm.login(_emailController.text, _passwordController.text);
 
+      RateLimiterService().resetLoginAttempts();
+
       if (mounted) {
         setState(() => _isLoading = false);
         await _navigateToRoleDashboard(authVm);
       }
     } catch (e) {
+      RateLimiterService().recordFailedLogin();
       if (mounted) {
         setState(() => _isLoading = false);
         String errorMsg = e.toString().replaceAll('AuthException:', '').replaceAll('Exception:', '').trim();
@@ -74,6 +93,61 @@ class _LoginScreenState extends State<LoginScreen> {
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             content: Text(errorMsg),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _handleForgotPassword() async {
+    final lockout = RateLimiterService().checkPasswordResetRateLimit();
+    if (lockout != null) {
+      final mins = lockout.inMinutes.clamp(1, 60);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.redAccent,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          content: Text('Password reset limit reached (3 per hour). Please try again in $mins minutes.'),
+        ),
+      );
+      return;
+    }
+
+    final email = _emailController.text.trim();
+    if (email.isEmpty || !email.contains('@')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.orange,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          content: const Text('Please enter a valid email address first.'),
+        ),
+      );
+      return;
+    }
+
+    try {
+      RateLimiterService().recordPasswordResetAttempt();
+      await SupabaseService.client.auth.resetPasswordForEmail(email);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            content: Text('Password reset link sent to $email'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Colors.redAccent,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            content: Text('Failed to send reset email: $e'),
           ),
         );
       }
@@ -348,7 +422,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
-                    onPressed: () {},
+                    onPressed: _handleForgotPassword,
                     child: Text('Forgot Password?', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.primary)),
                   ),
                 ),

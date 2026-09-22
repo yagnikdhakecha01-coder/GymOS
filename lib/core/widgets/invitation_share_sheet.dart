@@ -27,7 +27,7 @@ class InvitationShareSheet extends StatelessWidget {
     this.role,
   });
 
-  /// Displays the invitation share bottom sheet
+  /// Directly opens the native system share dialog with installed apps (WhatsApp, SMS, etc.)
   static Future<void> show({
     required BuildContext context,
     required String invitationCode,
@@ -37,7 +37,7 @@ class InvitationShareSheet extends StatelessWidget {
     String? ownerName,
     bool isStaff = false,
     String? role,
-  }) {
+  }) async {
     // Resolve gymName and ownerName from AuthViewModel if not explicitly provided
     String resolvedGymName = gymName ?? '';
     String resolvedOwnerName = ownerName ?? '';
@@ -57,20 +57,27 @@ class InvitationShareSheet extends StatelessWidget {
       if (resolvedOwnerName.isEmpty) resolvedOwnerName = 'Gym Owner';
     }
 
-    return showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => InvitationShareSheet(
-        invitationCode: invitationCode,
-        phone: phone,
-        recipientName: recipientName,
-        gymName: resolvedGymName,
-        ownerName: resolvedOwnerName,
-        isStaff: isStaff,
-        role: role,
-      ),
+    final message = buildInvitationMessage(
+      invitationCode: invitationCode,
+      phone: phone,
+      recipientName: recipientName,
+      gymName: resolvedGymName,
+      ownerName: resolvedOwnerName,
+      isStaff: isStaff,
+      role: role,
     );
+
+    try {
+      final box = context.findRenderObject() as RenderBox?;
+      final origin = (box != null && box.hasSize) ? box.localToGlobal(Offset.zero) & box.size : null;
+      await Share.share(
+        message,
+        subject: 'GymOS Invitation - $resolvedGymName',
+        sharePositionOrigin: origin,
+      );
+    } catch (e) {
+      debugPrint('Direct share error: $e');
+    }
   }
 
   /// Cleans phone number and formats for WhatsApp (adds 91 for Indian 10-digit numbers)
@@ -83,11 +90,19 @@ class InvitationShareSheet extends StatelessWidget {
   }
 
   /// Builds the formatted invitation message
-  String buildMessage() {
-    final effectiveGymName = (gymName != null && gymName!.isNotEmpty) ? gymName! : 'Our Gym';
-    final effectiveOwnerName = (ownerName != null && ownerName!.isNotEmpty) ? ownerName! : 'Gym Owner';
-    final greeting = (recipientName != null && recipientName!.trim().isNotEmpty)
-        ? 'Hello ${recipientName!.trim()},'
+  static String buildInvitationMessage({
+    required String invitationCode,
+    required String phone,
+    String? recipientName,
+    String? gymName,
+    String? ownerName,
+    bool isStaff = false,
+    String? role,
+  }) {
+    final effectiveGymName = (gymName != null && gymName.isNotEmpty) ? gymName : 'Our Gym';
+    final effectiveOwnerName = (ownerName != null && ownerName.isNotEmpty) ? ownerName : 'Gym Owner';
+    final greeting = (recipientName != null && recipientName.trim().isNotEmpty)
+        ? 'Hello ${recipientName.trim()},'
         : 'Hello,';
 
     final roleLine = isStaff
@@ -111,6 +126,19 @@ $phone
 3. Enter code: `$invitationCode`
 ━━━━━━━━━━━━━━━━━━━━
 Welcome to $effectiveGymName! 💪''';
+  }
+
+  /// Builds the formatted invitation message from instance fields
+  String buildMessage() {
+    return buildInvitationMessage(
+      invitationCode: invitationCode,
+      phone: phone,
+      recipientName: recipientName,
+      gymName: gymName,
+      ownerName: ownerName,
+      isStaff: isStaff,
+      role: role,
+    );
   }
 
   /// Launches WhatsApp directly with the chat open and prefilled message
@@ -239,230 +267,255 @@ Welcome to $effectiveGymName! 💪''';
     final effectiveGym = (gymName != null && gymName!.isNotEmpty) ? gymName! : 'Gym';
 
     return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.88,
+      ),
       decoration: const BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
-      padding: EdgeInsets.only(
-        left: 20,
-        right: 20,
-        top: 12,
-        bottom: MediaQuery.of(context).padding.bottom + 20,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Drag handle
-          Center(
-            child: Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey.shade300,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
+      child: SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
+          padding: EdgeInsets.only(
+            left: 20,
+            right: 20,
+            top: 12,
+            bottom: MediaQuery.of(context).padding.bottom + 20,
           ),
-          const SizedBox(height: 16),
-
-          // Header
-          Row(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF25D366).withValues(alpha: 0.12),
-                  shape: BoxShape.circle,
+              // Drag handle
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
-                child: const Icon(Icons.share_rounded, color: Color(0xFF25D366), size: 22),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+              const SizedBox(height: 16),
+
+              // Header
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF25D366).withValues(alpha: 0.12),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.share_rounded, color: Color(0xFF25D366), size: 22),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Share Invitation Code',
+                          style: GoogleFonts.inter(
+                            fontSize: 17,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.textPrimary,
+                          ),
+                        ),
+                        Text(
+                          effectiveGym,
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            color: AppTheme.textSecondary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close_rounded, color: AppTheme.textMuted),
+                    splashRadius: 20,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              // Code Display Card
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                decoration: BoxDecoration(
+                  color: AppTheme.surfaceGray,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppTheme.border),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    Text(
-                      'Share Invitation Code',
-                      style: GoogleFonts.inter(
-                        fontSize: 17,
-                        fontWeight: FontWeight.bold,
-                        color: AppTheme.textPrimary,
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'INVITATION CODE',
+                            style: GoogleFonts.inter(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.textMuted,
+                              letterSpacing: 1.1,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          SelectableText(
+                            invitationCode,
+                            style: GoogleFonts.firaCode(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.primary,
+                              letterSpacing: 1.5,
+                            ),
+                          ),
+                          if (phone.isNotEmpty) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              'Mobile: $phone',
+                              style: GoogleFonts.inter(
+                                fontSize: 11,
+                                color: AppTheme.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                     ),
-                    Text(
-                      effectiveGym,
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        color: AppTheme.textSecondary,
-                        fontWeight: FontWeight.w500,
+                    const SizedBox(width: 12),
+                    Material(
+                      color: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        side: const BorderSide(color: AppTheme.border),
+                      ),
+                      child: InkWell(
+                        onTap: () => _copyCodeOnly(context),
+                        borderRadius: BorderRadius.circular(10),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.copy_rounded, size: 14, color: AppTheme.textPrimary),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Copy',
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppTheme.textPrimary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
                   ],
                 ),
               ),
-              IconButton(
-                onPressed: () => Navigator.pop(context),
-                icon: const Icon(Icons.close_rounded, color: AppTheme.textMuted),
-                splashRadius: 20,
+              const SizedBox(height: 20),
+
+              // Section Title
+              Text(
+                'CHOOSE SHARING APP',
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: AppTheme.textMuted,
+                  letterSpacing: 1.0,
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // Action 1: WhatsApp
+              _buildShareTile(
+                context: context,
+                title: 'Share via WhatsApp',
+                subtitle: 'Opens direct chat with $phone',
+                icon: Icons.chat_bubble_rounded,
+                iconColor: const Color(0xFF25D366),
+                backgroundColor: const Color(0xFF25D366).withValues(alpha: 0.08),
+                onTap: () {
+                  Navigator.pop(context);
+                  _launchWhatsApp(context, isBusiness: false);
+                },
+              ),
+              const SizedBox(height: 10),
+
+              // Action 2: WhatsApp Business
+              _buildShareTile(
+                context: context,
+                title: 'Share via WhatsApp Business',
+                subtitle: 'Send using your Business account',
+                icon: Icons.business_center_rounded,
+                iconColor: const Color(0xFF075E54),
+                backgroundColor: const Color(0xFF075E54).withValues(alpha: 0.08),
+                onTap: () {
+                  Navigator.pop(context);
+                  _launchWhatsApp(context, isBusiness: true);
+                },
+              ),
+              const SizedBox(height: 10),
+
+              // Action 3: SMS / Messages
+              _buildShareTile(
+                context: context,
+                title: 'Share via SMS / Messenger',
+                subtitle: 'Send regular text message',
+                icon: Icons.sms_rounded,
+                iconColor: const Color(0xFF0288D1),
+                backgroundColor: const Color(0xFF0288D1).withValues(alpha: 0.08),
+                onTap: () {
+                  Navigator.pop(context);
+                  _launchSms(context);
+                },
+              ),
+              const SizedBox(height: 10),
+
+              // Action 4: More Apps / Native Share
+              _buildShareTile(
+                context: context,
+                title: 'Share via Other Apps',
+                subtitle: 'Telegram, Instagram, Gmail, etc.',
+                icon: Icons.share_rounded,
+                iconColor: AppTheme.primary,
+                backgroundColor: AppTheme.primary.withValues(alpha: 0.08),
+                onTap: () {
+                  Navigator.pop(context);
+                  _shareViaSystem(context);
+                },
+              ),
+              const SizedBox(height: 10),
+
+              // Action 5: Copy Full Message
+              _buildShareTile(
+                context: context,
+                title: 'Copy Full Invitation Text',
+                subtitle: 'Includes instructions, gym name & code',
+                icon: Icons.content_copy_rounded,
+                iconColor: AppTheme.textPrimary,
+                backgroundColor: AppTheme.surfaceGray,
+                onTap: () {
+                  Navigator.pop(context);
+                  _copyFullText(context);
+                },
               ),
             ],
           ),
-          const SizedBox(height: 16),
-
-          // Code Display Card
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            decoration: BoxDecoration(
-              color: AppTheme.surfaceGray,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppTheme.border),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'INVITATION CODE',
-                        style: GoogleFonts.inter(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          color: AppTheme.textMuted,
-                          letterSpacing: 1.1,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      SelectableText(
-                        invitationCode,
-                        style: GoogleFonts.firaCode(
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                          color: AppTheme.primary,
-                          letterSpacing: 1.5,
-                        ),
-                      ),
-                      if (phone.isNotEmpty) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          'Mobile: $phone',
-                          style: GoogleFonts.inter(
-                            fontSize: 11,
-                            color: AppTheme.textSecondary,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                ElevatedButton.icon(
-                  onPressed: () => _copyCodeOnly(context),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    foregroundColor: AppTheme.textPrimary,
-                    elevation: 0,
-                    side: const BorderSide(color: AppTheme.border),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  ),
-                  icon: const Icon(Icons.copy_rounded, size: 14),
-                  label: Text(
-                    'Copy',
-                    style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
-
-          // Section Title
-          Text(
-            'CHOOSE SHARING APP',
-            style: GoogleFonts.inter(
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
-              color: AppTheme.textMuted,
-              letterSpacing: 1.0,
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          // Action 1: WhatsApp
-          _buildShareTile(
-            context: context,
-            title: 'Share via WhatsApp',
-            subtitle: 'Opens direct chat with $phone',
-            icon: Icons.chat_bubble_rounded,
-            iconColor: const Color(0xFF25D366),
-            backgroundColor: const Color(0xFF25D366).withValues(alpha: 0.08),
-            onTap: () {
-              Navigator.pop(context);
-              _launchWhatsApp(context, isBusiness: false);
-            },
-          ),
-          const SizedBox(height: 10),
-
-          // Action 2: WhatsApp Business
-          _buildShareTile(
-            context: context,
-            title: 'Share via WhatsApp Business',
-            subtitle: 'Send using your Business account',
-            icon: Icons.business_center_rounded,
-            iconColor: const Color(0xFF075E54),
-            backgroundColor: const Color(0xFF075E54).withValues(alpha: 0.08),
-            onTap: () {
-              Navigator.pop(context);
-              _launchWhatsApp(context, isBusiness: true);
-            },
-          ),
-          const SizedBox(height: 10),
-
-          // Action 3: SMS / Messages
-          _buildShareTile(
-            context: context,
-            title: 'Share via SMS / Messenger',
-            subtitle: 'Send regular text message',
-            icon: Icons.sms_rounded,
-            iconColor: const Color(0xFF0288D1),
-            backgroundColor: const Color(0xFF0288D1).withValues(alpha: 0.08),
-            onTap: () {
-              Navigator.pop(context);
-              _launchSms(context);
-            },
-          ),
-          const SizedBox(height: 10),
-
-          // Action 4: More Apps / Native Share
-          _buildShareTile(
-            context: context,
-            title: 'Share via Other Apps',
-            subtitle: 'Telegram, Instagram, Gmail, etc.',
-            icon: Icons.share_rounded,
-            iconColor: AppTheme.primary,
-            backgroundColor: AppTheme.primary.withValues(alpha: 0.08),
-            onTap: () {
-              Navigator.pop(context);
-              _shareViaSystem(context);
-            },
-          ),
-          const SizedBox(height: 10),
-
-          // Action 5: Copy Full Message
-          _buildShareTile(
-            context: context,
-            title: 'Copy Full Invitation Text',
-            subtitle: 'Includes instructions, gym name & code',
-            icon: Icons.content_copy_rounded,
-            iconColor: AppTheme.textPrimary,
-            backgroundColor: AppTheme.surfaceGray,
-            onTap: () {
-              Navigator.pop(context);
-              _copyFullText(context);
-            },
-          ),
-        ],
+        ),
       ),
     );
   }

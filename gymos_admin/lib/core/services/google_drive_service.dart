@@ -24,6 +24,8 @@ class DriveUploadResult {
 /// Google Drive integration for automated backup uploads.
 /// Supports both Access Token and Refresh Token (Permanent Auto-Renewal).
 class GoogleDriveService {
+  static const String defaultClientId = '225633708172-7st3l0u84rl22ccnaphap3dfpooai0o6.apps.googleusercontent.com';
+
   static String? _accessToken;
   static String? _refreshToken;
   static String? _clientId;
@@ -35,6 +37,8 @@ class GoogleDriveService {
   static String? get folderId => _folderId;
   static String? get currentAccessToken => _accessToken;
   static String? get currentRefreshToken => _refreshToken;
+  static String? get currentClientId => _clientId ?? defaultClientId;
+  static String? get currentClientSecret => _clientSecret;
 
   /// Helper to clean folder ID from raw string or full URL
   static String? _cleanFolderId(String? raw) {
@@ -58,10 +62,13 @@ class GoogleDriveService {
 
       if (result != null && result['value'] != null) {
         final config = result['value'] as Map<String, dynamic>;
-        _accessToken = config['access_token'] as String?;
-        _refreshToken = config['refresh_token'] as String?;
-        _clientId = config['client_id'] as String?;
-        _clientSecret = config['client_secret'] as String?;
+        _accessToken = (config['access_token'] as String?)?.trim();
+        _refreshToken = (config['refresh_token'] as String?)?.trim();
+        final savedClientId = (config['client_id'] as String?)?.trim();
+        _clientId = (savedClientId != null && savedClientId.isNotEmpty)
+            ? savedClientId
+            : defaultClientId;
+        _clientSecret = (config['client_secret'] as String?)?.trim();
         _folderId = _cleanFolderId(config['folder_id'] as String?);
         _isConnected = (_accessToken != null && _accessToken!.isNotEmpty) ||
             (_refreshToken != null && _refreshToken!.isNotEmpty);
@@ -72,6 +79,8 @@ class GoogleDriveService {
   }
 
   /// Save Drive credentials to platform_settings (Permanent Storage)
+  /// Crucial: Preserves existing refreshToken, clientSecret, clientId, and folderId
+  /// so that session syncs or token refreshes NEVER wipe out permanent credentials!
   static Future<void> saveCredentials({
     required String accessToken,
     String? refreshToken,
@@ -79,23 +88,42 @@ class GoogleDriveService {
     String? clientSecret,
     String? folderId,
   }) async {
-    _accessToken = accessToken;
-    _refreshToken = refreshToken;
-    _clientId = clientId;
-    _clientSecret = clientSecret;
-    _folderId = _cleanFolderId(folderId);
-    _isConnected = accessToken.isNotEmpty || (refreshToken != null && refreshToken.isNotEmpty);
+    // If memory cache is empty, load existing settings first to prevent accidental wipes
+    if (_refreshToken == null && _clientSecret == null) {
+      await loadCredentials();
+    }
+
+    final effectiveRefreshToken = (refreshToken != null && refreshToken.trim().isNotEmpty)
+        ? refreshToken.trim()
+        : _refreshToken;
+    final effectiveClientId = (clientId != null && clientId.trim().isNotEmpty)
+        ? clientId.trim()
+        : (_clientId != null && _clientId!.isNotEmpty ? _clientId! : defaultClientId);
+    final effectiveClientSecret = (clientSecret != null && clientSecret.trim().isNotEmpty)
+        ? clientSecret.trim()
+        : _clientSecret;
+    final effectiveFolderId = (folderId != null && folderId.trim().isNotEmpty)
+        ? _cleanFolderId(folderId)
+        : _folderId;
+    final effectiveAccessToken = accessToken.trim().isNotEmpty ? accessToken.trim() : (_accessToken ?? '');
+
+    _accessToken = effectiveAccessToken;
+    _refreshToken = effectiveRefreshToken;
+    _clientId = effectiveClientId;
+    _clientSecret = effectiveClientSecret;
+    _folderId = effectiveFolderId;
+    _isConnected = effectiveAccessToken.isNotEmpty || (effectiveRefreshToken != null && effectiveRefreshToken.isNotEmpty);
 
     try {
       if (!AdminSupabaseService.isInitialized) return;
       await AdminSupabaseService.client.from('platform_settings').upsert({
         'key': 'google_drive_config',
         'value': {
-          'access_token': accessToken,
-          'refresh_token': refreshToken ?? '',
-          'client_id': clientId ?? '',
-          'client_secret': clientSecret ?? '',
-          'folder_id': _folderId ?? '',
+          'access_token': effectiveAccessToken,
+          'refresh_token': effectiveRefreshToken ?? '',
+          'client_id': effectiveClientId,
+          'client_secret': effectiveClientSecret ?? '',
+          'folder_id': effectiveFolderId ?? '',
           'connected_at': DateTime.now().toIso8601String(),
         },
         'updated_at': DateTime.now().toIso8601String(),
@@ -137,24 +165,29 @@ class GoogleDriveService {
       if (renewed) return _accessToken;
     }
 
-    return _accessToken;
+    return null;
   }
 
   /// Auto-refresh token from Google OAuth endpoint
   static Future<bool> _refreshAccessToken() async {
-    if (_refreshToken == null || _refreshToken!.isEmpty) return false;
+    if (_refreshToken == null || _refreshToken!.isEmpty) {
+      debugPrint('No refresh token available to renew access token.');
+      return false;
+    }
 
     try {
+      final effectiveClientId = (_clientId != null && _clientId!.isNotEmpty)
+          ? _clientId!
+          : defaultClientId;
+
       final body = {
         'grant_type': 'refresh_token',
         'refresh_token': _refreshToken!,
+        'client_id': effectiveClientId,
       };
 
-      if (_clientId != null && _clientId!.isNotEmpty) {
-        body['client_id'] = _clientId!;
-      }
-      if (_clientSecret != null && _clientSecret!.isNotEmpty) {
-        body['client_secret'] = _clientSecret!;
+      if (_clientSecret != null && _clientSecret!.trim().isNotEmpty) {
+        body['client_secret'] = _clientSecret!.trim();
       }
 
       final response = await http.post(
@@ -166,19 +199,25 @@ class GoogleDriveService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final newAccessToken = data['access_token'] as String?;
+        final newRefreshToken = (data['refresh_token'] as String?) ?? _refreshToken;
+
         if (newAccessToken != null && newAccessToken.isNotEmpty) {
           _accessToken = newAccessToken;
+          _refreshToken = newRefreshToken;
           if (AdminSupabaseService.isInitialized) {
             await saveCredentials(
               accessToken: newAccessToken,
-              refreshToken: _refreshToken,
-              clientId: _clientId,
+              refreshToken: newRefreshToken,
+              clientId: effectiveClientId,
               clientSecret: _clientSecret,
               folderId: _folderId,
             );
           }
+          debugPrint('✅ Google Drive Access Token successfully auto-renewed!');
           return true;
         }
+      } else {
+        debugPrint('Failed to refresh token (${response.statusCode}): ${response.body}');
       }
     } catch (e) {
       debugPrint('Error auto-refreshing Drive token: $e');
@@ -308,13 +347,22 @@ class GoogleDriveService {
       return logs;
     }
 
-    logs.add('[${nowStr()}] 🔑 Checking Access Token...');
+    logs.add('[${nowStr()}] 🔑 Credentials Status:');
+    logs.add('[${nowStr()}]    • Access Token: ${_accessToken != null && _accessToken!.isNotEmpty ? "Present [REDACTED]" : "None"}');
+    logs.add('[${nowStr()}]    • Refresh Token: ${_refreshToken != null && _refreshToken!.isNotEmpty ? "Configured (Permanent Renewal Available)" : "Missing (Tokens will expire in 1h)"}');
+    logs.add('[${nowStr()}]    • Client Secret: ${_clientSecret != null && _clientSecret!.isNotEmpty ? "Configured (Ready for lifetime auto-renewal)" : "Missing (Google Web OAuth requires Client Secret to refresh)"}');
+
+    logs.add('[${nowStr()}] 🔄 Validating / Renewing Token...');
     final token = await getValidAccessToken();
     if (token == null || token.isEmpty) {
-      logs.add('[${nowStr()}] ❌ FAILED: Unable to obtain valid Access Token. Refresh token exchange failed.');
+      if (_clientSecret == null || _clientSecret!.isEmpty) {
+        logs.add('[${nowStr()}] ❌ FAILED: Unable to renew access token. Client Secret is missing! Please enter your OAuth Client Secret (GOCSPX-...) in settings below to enable lifetime auto-renewal.');
+      } else {
+        logs.add('[${nowStr()}] ❌ FAILED: Unable to obtain valid Access Token. Refresh token exchange failed. Check if refresh token is valid.');
+      }
       return logs;
     }
-    logs.add('[${nowStr()}] ✅ Token obtained (${token.substring(0, 10)}...)');
+    logs.add('[${nowStr()}] ✅ Valid Access Token active [REDACTED]');
 
     // Step 2: Test User Info API
     logs.add('[${nowStr()}] 👤 Testing User Profile API...');

@@ -143,12 +143,12 @@ RETURNS JSONB AS $$
 DECLARE
     v_config JSONB;
     v_enabled BOOLEAN;
-    v_interval_days INT;
+    v_interval_hours INT;
     v_auto_drive BOOLEAN;
-    v_last_run TIMESTAMPTZ;
     v_backup_res JSONB;
     v_backup_id UUID;
     v_total_auto INT;
+    v_next_run TIMESTAMPTZ;
 BEGIN
     -- Read config
     SELECT value INTO v_config
@@ -160,7 +160,7 @@ BEGIN
     END IF;
 
     v_enabled := COALESCE((v_config->>'enabled')::BOOLEAN, false);
-    v_interval_days := COALESCE((v_config->>'interval_days')::INT, 1);
+    v_interval_hours := COALESCE((v_config->>'interval_hours')::INT, 12);
     v_auto_drive := COALESCE((v_config->>'auto_drive_upload')::BOOLEAN, true);
     v_total_auto := COALESCE((v_config->>'total_auto_backups')::INT, 0);
 
@@ -171,18 +171,22 @@ BEGIN
     -- Take full database backup snapshot
     v_backup_res := public.save_daily_backup();
     v_backup_id := (v_backup_res->>'backup_id')::UUID;
+    v_next_run := now() + (v_interval_hours || ' hours')::interval;
 
     -- Update platform_settings
     UPDATE public.platform_settings
     SET value = jsonb_set(
         jsonb_set(
             jsonb_set(
-                v_config,
-                '{last_run_at}', to_jsonb(now()::text)
+                jsonb_set(
+                    v_config,
+                    '{last_run_at}', to_jsonb(now()::text)
+                ),
+                '{next_run_at}', to_jsonb(v_next_run::text)
             ),
-            '{next_run_at}', to_jsonb((now() + (v_interval_days || ' days')::interval)::text)
+            '{total_auto_backups}', to_jsonb(v_total_auto + 1)
         ),
-        '{total_auto_backups}', to_jsonb(v_total_auto + 1)
+        '{last_status}', to_jsonb('Active (Every 12h: 12PM & 12AM IST)'::text)
     ),
     updated_at = now()
     WHERE key = 'auto_backup_config';
@@ -195,10 +199,10 @@ BEGIN
             'Automated System Scheduler',
             'Automated Database Backup Executed',
             'database',
-            format('Scheduled auto-backup completed successfully (Interval: %s days, Records: %s)', v_interval_days, v_backup_res->>'total_records'),
+            format('Scheduled 12-hour auto-backup completed successfully (Interval: %s hours, Records: %s)', v_interval_hours, v_backup_res->>'total_records'),
             jsonb_build_object(
                 'backup_id', v_backup_id,
-                'interval_days', v_interval_days,
+                'interval_hours', v_interval_hours,
                 'auto_drive_upload', v_auto_drive,
                 'backup_result', v_backup_res
             ),
@@ -210,9 +214,9 @@ BEGIN
 
     RETURN jsonb_build_object(
         'success', true,
-        'message', 'Automated backup completed successfully',
+        'message', 'Automated 12-hour backup completed successfully',
         'backup_id', v_backup_id,
-        'next_run_at', (now() + (v_interval_days || ' days')::interval)
+        'next_run_at', v_next_run
     );
 EXCEPTION WHEN OTHERS THEN
     -- Log error in audit_logs
@@ -223,7 +227,7 @@ EXCEPTION WHEN OTHERS THEN
             'Automated System Scheduler',
             'Auto-Backup Failed',
             'database',
-            'Scheduled backup failed: ' || SQLERRM,
+            'Scheduled 12-hour backup failed: ' || SQLERRM,
             jsonb_build_object('error', SQLERRM),
             now()
         );

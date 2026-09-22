@@ -1,13 +1,39 @@
+import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+Map<String, String> _loadEnv() {
+  final envFile = File('.env');
+  if (!envFile.existsSync()) return {};
+  final env = <String, String>{};
+  for (var line in envFile.readAsLinesSync()) {
+    line = line.trim();
+    if (line.isEmpty || line.startsWith('#')) continue;
+    final idx = line.indexOf('=');
+    if (idx != -1) {
+      final k = line.substring(0, idx).trim();
+      var v = line.substring(idx + 1).trim();
+      if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
+        v = v.substring(1, v.length - 1);
+      }
+      env[k] = v;
+    }
+  }
+  return env;
+}
+
 void main() {
-  final client = SupabaseClient(
-    'https://gilxxyvwqucwwwqaxosx.supabase.co',
-    'sb_publishable_EId-4nC0kB8MG9omaGCTIA_EuAoJ3WP',
-  );
+  final env = _loadEnv();
+  final url = env['SUPABASE_URL'] ?? Platform.environment['SUPABASE_URL'] ?? '';
+  final anonKey = env['SUPABASE_ANON_KEY'] ?? Platform.environment['SUPABASE_ANON_KEY'] ?? '';
 
   test('debug attendance', () async {
+    if (url.isEmpty || anonKey.isEmpty) {
+      print('Skipping debug test: SUPABASE_URL or SUPABASE_ANON_KEY not set.');
+      return;
+    }
+    final client = SupabaseClient(url, anonKey);
+
     print('================== DEBUG STAFF ATTENDANCE ==================');
 
     print('1. Querying members table for role Staff or Keval...');

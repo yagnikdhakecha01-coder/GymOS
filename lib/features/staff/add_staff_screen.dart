@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:image_picker/image_picker.dart';
 import '../../core/services/supabase_service.dart';
+import '../../core/services/image_security_service.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -171,24 +172,16 @@ class _AddStaffScreenState extends State<AddStaffScreen> {
 
       final authVm = Provider.of<AuthViewModel>(context, listen: false);
       final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'] ?? 'default_gym';
-      final fileName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final path = '$gymId/staff/$fileName';
 
       setState(() {
         _photoUploadProgress = 0.7;
       });
 
-      await SupabaseService.client.storage
-          .from('avatars')
-          .uploadBinary(path, bytes);
-
-      setState(() {
-        _photoUploadProgress = 0.9;
-      });
-
-      final publicUrl = SupabaseService.client.storage
-          .from('avatars')
-          .getPublicUrl(path);
+      final publicUrl = await ImageSecurityService.uploadSecureImage(
+        bucket: 'avatars',
+        directoryPath: '$gymId/staff',
+        bytes: bytes,
+      );
 
       setState(() {
         _profilePhotoUrl = publicUrl;

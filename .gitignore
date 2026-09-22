@@ -46,6 +46,12 @@ app.*.map.json
 
 # Secrets and environment variables
 .env
+.env.*
+!.env.example
+android/key.properties
+key.properties
+*.jks
+*.keystore
 
 # Binary APKs and temporary scratch scripts
 *.apk

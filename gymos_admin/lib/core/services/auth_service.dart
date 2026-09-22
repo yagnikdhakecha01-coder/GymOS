@@ -53,13 +53,19 @@ class AdminAuthService {
     return response.user;
   }
 
-  Future<bool> signInWithGoogle() async {
+  Future<bool> signInWithGoogle({bool requestDriveScopes = true}) async {
     if (_client == null) return false;
     final String? webRedirect = kIsWeb ? '${Uri.base.origin}/' : null;
     return await _client!.auth.signInWithOAuth(
       OAuthProvider.google,
       redirectTo: webRedirect,
-      queryParams: {'prompt': 'select_account'},
+      scopes: requestDriveScopes
+          ? 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email'
+          : null,
+      queryParams: {
+        'access_type': 'offline',
+        'prompt': 'consent select_account',
+      },
     );
   }
 
@@ -82,9 +88,9 @@ class AdminAuthService {
           .eq('role', 'super_admin')
           .maybeSingle();
       return result != null;
-    } catch (_) {
-      // If admin_users table doesn't exist yet, allow login for setup
-      return true;
+    } catch (e) {
+      // Fail closed in production for security
+      return false;
     }
   }
 

@@ -10,6 +10,7 @@ import 'member_notifications_screen.dart';
 import '../../more/help_support_screen.dart';
 import '../../more/settings_screen.dart';
 import '../../dashboard/gym_switcher_bottom_sheet.dart';
+import '../widgets/member_rules_agreement_dialog.dart';
 
 class MemberProfileScreen extends StatelessWidget {
   const MemberProfileScreen({super.key});
@@ -261,6 +262,20 @@ class MemberProfileScreen extends StatelessWidget {
                           );
                         }),
                         _divider(),
+                        _buildMenuItemWithBadge(
+                          Icons.gavel_rounded,
+                          'Gym Rules & Agreement',
+                          badgeText: vm.hasAgreedRules ? 'Agreed' : 'Pending',
+                          badgeColor: vm.hasAgreedRules ? const Color(0xFF10B981) : const Color(0xFFF59E0B),
+                          onTap: () {
+                            MemberRulesAgreementDialog.show(
+                              context,
+                              isViewOnly: vm.hasAgreedRules,
+                              existingAgreement: vm.agreementRecord,
+                            );
+                          },
+                        ),
+                        _divider(),
                         _buildMenuItem(Icons.swap_horiz_rounded, 'Switch Profile', () {
                           GymSwitcherBottomSheet.show(context);
                         }),
@@ -475,6 +490,79 @@ class MemberProfileScreen extends StatelessWidget {
                   ),
                 ),
               ),
+              if (onTap != null)
+                Icon(
+                  Icons.chevron_right_rounded,
+                  color: color != null ? color.withValues(alpha: 0.5) : AppTheme.textMuted,
+                  size: 20,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMenuItemWithBadge(
+    IconData icon,
+    String title, {
+    required String badgeText,
+    required Color badgeColor,
+    VoidCallback? onTap,
+    Color? color,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            children: [
+              Icon(icon, color: color ?? AppTheme.textPrimary, size: 22),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Text(
+                  title,
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: color ?? AppTheme.textPrimary,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: badgeColor.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: badgeColor.withOpacity(0.3)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color: badgeColor,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      badgeText,
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: badgeColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
               if (onTap != null)
                 Icon(
                   Icons.chevron_right_rounded,

@@ -104,6 +104,35 @@ class _QueueStatusScreenState extends State<QueueStatusScreen> {
           style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
         ),
         centerTitle: true,
+        actions: [
+          if (failedCount > 0)
+            Padding(
+              padding: const EdgeInsets.only(right: 8.0),
+              child: TextButton.icon(
+                style: TextButton.styleFrom(
+                  foregroundColor: AppTheme.danger,
+                  backgroundColor: AppTheme.danger.withOpacity(0.08),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                icon: const Icon(Icons.cleaning_services_rounded, size: 16),
+                label: Text(
+                  'Clear Failed',
+                  style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold),
+                ),
+                onPressed: () async {
+                  await repo.clearFailedQueueOperations();
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Cleared all failed operations.'),
+                        backgroundColor: Colors.black87,
+                      ),
+                    );
+                  }
+                },
+              ),
+            ),
+        ],
       ),
       body: Column(
         children: [
@@ -289,6 +318,24 @@ class _QueueStatusScreenState extends State<QueueStatusScreen> {
             ],
           ),
         ),
+        trailing: isFailed
+            ? IconButton(
+                icon: const Icon(Icons.delete_outline_rounded, color: AppTheme.danger, size: 20),
+                tooltip: 'Dismiss Operation',
+                onPressed: () async {
+                  final repo = Provider.of<GymRepository>(context, listen: false);
+                  await repo.removeQueueItem(item['id']);
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Operation removed from queue.'),
+                        backgroundColor: Colors.black87,
+                      ),
+                    );
+                  }
+                },
+              )
+            : null,
         children: [
           Divider(color: AppTheme.border, height: 1),
           Container(

@@ -381,143 +381,6 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
     // Handle external wallet
   }
 
-  Future<void> _updateDatabaseDirectly(
-    String planId,
-    String gymId,
-    String ownerId, {
-    String? paymentId,
-    String? orderId,
-  }) async {
-    double price = 699.0;
-    if (planId == 'pro') price = 999.0;
-    if (planId == 'business') price = 1999.0;
-
-    try {
-      final planRes = await SupabaseService.client
-          .from('subscription_plans')
-          .select('price')
-          .eq('id', planId)
-          .maybeSingle();
-      if (planRes != null && planRes['price'] != null) {
-        price = (planRes['price'] as num).toDouble();
-      }
-    } catch (e) {
-      debugPrint('Failed to fetch plan price from DB, using default price $price: $e');
-    }
-
-    // 1. Calculate new end date (extend existing trial / active subscription end date if still valid)
-    DateTime newEndDate = DateTime.now().add(const Duration(days: 30));
-    try {
-      final currentSub = await SupabaseService.client
-          .from('subscriptions')
-          .select('end_date, trial_end, status')
-          .eq('gym_id', gymId)
-          .maybeSingle();
-
-      if (currentSub != null) {
-        DateTime? existingEnd;
-        if (currentSub['end_date'] != null) {
-          existingEnd = DateTime.tryParse(currentSub['end_date'].toString());
-        }
-        if (currentSub['trial_end'] != null) {
-          final trialEnd = DateTime.tryParse(currentSub['trial_end'].toString());
-          if (trialEnd != null && (existingEnd == null || trialEnd.isAfter(existingEnd))) {
-            existingEnd = trialEnd;
-          }
-        }
-        if (existingEnd != null && existingEnd.isAfter(DateTime.now())) {
-          newEndDate = existingEnd.add(const Duration(days: 30));
-        }
-      }
-    } catch (e) {
-      debugPrint('Could not fetch existing subscription dates for extension: $e');
-    }
-
-    // 2. Activate Subscription & Enable AutoPay in DB
-    final subRes = await SupabaseService.client
-        .from('subscriptions')
-        .upsert(
-          {
-            'gym_id': gymId,
-            'owner_id': ownerId,
-            'plan_id': planId,
-            'status': 'active',
-            'auto_pay': true,
-            'next_billing_date': newEndDate.toIso8601String(),
-            'start_date': DateTime.now().toIso8601String(),
-            'end_date': newEndDate.toIso8601String(),
-            if (orderId != null && orderId.isNotEmpty) 'razorpay_subscription_id': orderId,
-            'updated_at': DateTime.now().toIso8601String(),
-          },
-          onConflict: 'gym_id',
-        )
-        .select('id')
-        .single();
-
-    final String subId = subRes['id'] as String;
-
-    try {
-      await SupabaseService.client.from('gyms').update({
-        'plan': planId,
-        'status': 'active',
-        'expiry_date': newEndDate.toIso8601String(),
-      }).eq('id', gymId);
-    } catch (e) {
-      debugPrint('Warning: Could not update gyms table: $e');
-    }
-
-    // 3. Create Invoice (Safe block)
-    String? invoiceId;
-    try {
-      final invoiceNumber = 'INV-${DateTime.now().millisecondsSinceEpoch}';
-      final invoiceRes = await SupabaseService.client
-          .from('invoices')
-          .insert({
-            'gym_id': gymId,
-            'subscription_id': subId,
-            'invoice_number': invoiceNumber,
-            'amount': price,
-            'status': 'paid',
-            'billing_date': DateTime.now().toIso8601String(),
-            'due_date': DateTime.now().toIso8601String(),
-          })
-          .select('id')
-          .maybeSingle();
-
-      invoiceId = invoiceRes != null ? invoiceRes['id'] as String : null;
-    } catch (e) {
-      debugPrint('Warning: Could not insert invoice due to RLS policy ($e). Subscription activated successfully.');
-    }
-
-    // 4. Create Payment Record (Safe block)
-    try {
-      await SupabaseService.client.from('payments').insert({
-        'gym_id': gymId,
-        'subscription_id': subId,
-        if (invoiceId != null) 'invoice_id': invoiceId,
-        'amount': price,
-        'status': 'Success',
-        'payment_method': 'Razorpay Gateway',
-        if (paymentId != null) 'razorpay_payment_id': paymentId,
-      });
-    } catch (e) {
-      debugPrint('Warning: Could not insert payment record due to RLS policy ($e). Subscription activated successfully.');
-    }
-
-    // 5. Create Subscription History Record (Safe block)
-    try {
-      await SupabaseService.client.from('subscription_history').insert({
-        'gym_id': gymId,
-        'new_plan_id': planId,
-        'action': 'upgrade',
-        'changed_by': ownerId,
-        'notes': 'Upgraded to ${planId.toUpperCase()} plan via Razorpay checkout (Fallback).',
-      });
-    } catch (e) {
-      debugPrint('Warning: Could not insert subscription history due to RLS policy ($e). Subscription activated successfully.');
-    }
-  }
-
   Future<void> _verifyPayment(String orderId, String paymentId, String signature) async {
     showDialog(
       context: context,
@@ -545,18 +408,11 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
       }
       
       if (!SupabaseService.isInitialized) {
-        await Future.delayed(const Duration(milliseconds: 1500));
-        if (Navigator.canPop(context)) Navigator.pop(context); // Close loading dialog
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Payment Verified (Mock Mode)'), backgroundColor: Colors.green),
-        );
-        
-        Navigator.pop(context); // Exit subscription screen
-        return;
+        throw Exception('Database connection is offline. Cannot verify payment.');
       }
       
       bool verified = false;
+      String? errorMessage;
       try {
         final response = await SupabaseService.client.functions.invoke(
           'verify-payment',
@@ -572,95 +428,20 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
         final data = response.data;
         if (data != null && data['success'] == true) {
           verified = true;
+        } else {
+          errorMessage = data?['error']?.toString() ?? 'Payment verification failed.';
         }
       } catch (fnErr) {
-        debugPrint('Edge function verify-payment unavailable or failed ($fnErr). Performing direct database activation...');
+        debugPrint('Edge function verify-payment failed: $fnErr');
+        errorMessage = 'Payment verification service error. Please contact support.';
       }
 
-      // Direct Activation Fallback if Edge function returned 404 or failed
-      if (!verified && paymentId.isNotEmpty) {
-        final now = DateTime.now();
-        final endDate = now.add(const Duration(days: 30));
-        final startDateStr = now.toIso8601String();
-        final endDateStr = endDate.toIso8601String();
-
-        final planId = _selectedPlanId ?? 'pro';
-        double price = 699.0;
-        if (planId == 'pro') price = 999.0;
-        if (planId == 'business') price = 1999.0;
-
-        // 1. Update/Upsert Subscriptions table
-        dynamic subId;
-        try {
-          final subRes = await SupabaseService.client.from('subscriptions').upsert({
-            'gym_id': gymId,
-            'owner_id': ownerId,
-            'plan_id': planId,
-            'status': 'active',
-            'start_date': startDateStr,
-            'end_date': endDateStr,
-            'trial_end': startDateStr,
-            'razorpay_subscription_id': paymentId,
-            'auto_pay': true,
-            'updated_at': startDateStr,
-          }, onConflict: 'gym_id').select('id').maybeSingle();
-          subId = subRes?['id'];
-        } catch (subErr) {
-          debugPrint('Direct subscription upsert error: $subErr');
-        }
-
-        // 2. Update Gyms table
-        try {
-          await SupabaseService.client.from('gyms').update({
-            'plan': planId,
-            'status': 'active',
-            'expiry_date': endDateStr,
-            'is_locked': false,
-          }).eq('id', gymId);
-        } catch (gymErr) {
-          debugPrint('Direct gym table update error: $gymErr');
-        }
-
-        // 3. Record Invoice & Payment
-        try {
-          final invoiceNumber = 'INV-${DateTime.now().millisecondsSinceEpoch}';
-          final invRes = await SupabaseService.client.from('invoices').insert({
-            'gym_id': gymId,
-            'subscription_id': subId,
-            'invoice_number': invoiceNumber,
-            'amount': price,
-            'status': 'paid',
-            'billing_date': startDateStr,
-            'due_date': startDateStr,
-          }).select('id').maybeSingle();
-
-          await SupabaseService.client.from('payments').insert({
-            'gym_id': gymId,
-            'subscription_id': subId,
-            'invoice_id': invRes?['id'],
-            'amount': price,
-            'status': 'Success',
-            'payment_method': 'Razorpay Gateway',
-            'razorpay_payment_id': paymentId,
-            'created_at': startDateStr,
-          });
-
-          await SupabaseService.client.from('subscription_history').insert({
-            'gym_id': gymId,
-            'new_plan_id': planId,
-            'action': 'upgrade',
-            'changed_by': ownerId,
-            'notes': 'Upgraded to ${planId.toUpperCase()} plan via verified Razorpay checkout ($paymentId).',
-          });
-        } catch (recErr) {
-          debugPrint('Recording invoice/payment history error: $recErr');
-        }
-
-        verified = true;
-      }
-      
       if (Navigator.canPop(context)) {
         Navigator.pop(context); // Close loading dialog
+      }
+
+      if (!verified) {
+        throw Exception(errorMessage ?? 'Payment verification was rejected by the server.');
       }
       
       if (verified) {
@@ -786,85 +567,54 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
     
     try {
       if (!SupabaseService.isInitialized) {
-        await Future.delayed(const Duration(milliseconds: 1500));
-        if (Navigator.canPop(context)) Navigator.pop(context); // Close loading dialog
-        
-        _verifyPayment('mock_order_123', 'mock_pay_123', 'mock_sig_123');
-        return;
+        if (Navigator.canPop(context)) Navigator.pop(context);
+        throw Exception('Service is offline. Cannot initiate secure checkout.');
       }
       
       final razorpayPlanId = AppConfig.getRazorpayPlanId(planId);
-      Map<String, dynamic> options;
-
-      try {
-        final response = await SupabaseService.client.functions.invoke(
-          'create-subscription',
-          body: {
-            'gym_id': gymId,
-            'plan_id': planId,
-            'razorpay_plan_id': razorpayPlanId,
-            'owner_id': ownerId,
-          },
-        );
-        
-        final data = response.data;
-        if (data == null || data['success'] != true) {
-          throw Exception(data?['error'] ?? 'Order creation failed');
-        }
-        
-        final orderId = data['order_id'] as String;
-        final keyId = data['key_id'] as String;
-        final amount = data['amount'] as num;
-        
-        _pendingOrderId = orderId;
-        
-        options = {
-          'key': keyId,
-          if (amount > 0) 'amount': amount,
-          'name': 'Gym OS',
-          'description': 'Subscription (${planId.toUpperCase()} Plan)',
-          if (orderId.isNotEmpty) 'order_id': orderId,
-          'timeout': 300,
-          'prefill': {
-            'contact': ownerPhone.isNotEmpty ? ownerPhone : '9999999999',
-            'email': ownerEmail,
-          },
-          'notes': {
-            'gym_id': gymId,
-            'plan_id': planId,
-            'razorpay_plan_id': razorpayPlanId,
-            'auto_pay': 'true',
-            'owner_id': ownerId,
-          },
-          'theme': {
-            'color': '#6C4EFF',
-          }
-        };
-      } catch (e) {
-        debugPrint("Edge function 'create-subscription' failed or missing ($e). Falling back to direct Razorpay Checkout.");
-        final int amountInPaise = (price * 100).toInt();
-        options = {
-          'key': AppConfig.razorpayKeyId,
-          'amount': amountInPaise,
-          'name': 'Gym OS',
-          'description': 'Subscription (${planId.toUpperCase()} Plan)',
-          'timeout': 300,
-          'prefill': {
-            'contact': ownerPhone.isNotEmpty ? ownerPhone : '9999999999',
-            'email': ownerEmail,
-          },
-          'notes': {
-            'gym_id': gymId,
-            'plan_id': planId,
-            'razorpay_plan_id': razorpayPlanId,
-            'auto_pay': 'true',
-            'owner_id': ownerId,
-          },
-          'theme': {
-            'color': '#6C4EFF',
-          }
-        };
+      final response = await SupabaseService.client.functions.invoke(
+        'create-subscription',
+        body: {
+          'gym_id': gymId,
+          'plan_id': planId,
+          'razorpay_plan_id': razorpayPlanId,
+          'owner_id': ownerId,
+        },
+      );
+      
+      final data = response.data;
+      if (data == null || data['success'] != true) {
+        throw Exception(data?['error'] ?? 'Order creation failed');
       }
+      
+      final orderId = data['order_id'] as String;
+      final keyId = data['key_id'] as String;
+      final amount = data['amount'] as num;
+      
+      _pendingOrderId = orderId;
+      
+      final options = {
+        'key': keyId,
+        'amount': amount,
+        'name': 'Gym OS',
+        'description': 'Subscription (${planId.toUpperCase()} Plan)',
+        'order_id': orderId,
+        'timeout': 300,
+        'prefill': {
+          'contact': ownerPhone.isNotEmpty ? ownerPhone : '9999999999',
+          'email': ownerEmail,
+        },
+        'notes': {
+          'gym_id': gymId,
+          'plan_id': planId,
+          'razorpay_plan_id': razorpayPlanId,
+          'auto_pay': 'true',
+          'owner_id': ownerId,
+        },
+        'theme': {
+          'color': '#6C4EFF',
+        }
+      };
 
       if (Navigator.canPop(context)) {
         Navigator.pop(context); // Close loading dialog
@@ -1011,35 +761,97 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
                     const SizedBox(height: 14),
                     const Divider(height: 1, color: Color(0xFFE2E8F0)),
                     const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            _cancelAtPeriodEnd
-                                ? '✓ AutoPay is OFF. Money will NOT be deducted next month.'
-                                : '⚡ AutoPay Enabled. You can cancel anytime before renewal.',
-                            style: GoogleFonts.inter(
-                              fontSize: 11.5,
-                              color: _cancelAtPeriodEnd ? const Color(0xFFC2410C) : const Color(0xFF166534),
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: _cancelAtPeriodEnd
+                            ? const Color(0xFFFFF7ED)
+                            : const Color(0xFFF0FDF4),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: _cancelAtPeriodEnd
+                              ? const Color(0xFFFFEDD5)
+                              : const Color(0xFFDCFCE7),
                         ),
-                        if (_autoPayEnabled && !_cancelAtPeriodEnd)
-                          OutlinedButton.icon(
-                            onPressed: _isCancellingAutoPay ? null : _showCancelAutoPayDialog,
-                            icon: const Icon(Icons.cancel_outlined, size: 16, color: Colors.red),
-                            label: Text(
-                              _isCancellingAutoPay ? 'Cancelling...' : 'Cancel AutoPay',
-                              style: GoogleFonts.inter(fontSize: 11.5, fontWeight: FontWeight.bold, color: Colors.red[700]),
-                            ),
-                            style: OutlinedButton.styleFrom(
-                              side: const BorderSide(color: Color(0xFFFCA5A5)),
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            _cancelAtPeriodEnd ? Icons.info_outline_rounded : Icons.bolt_rounded,
+                            size: 18,
+                            color: _cancelAtPeriodEnd ? const Color(0xFFC2410C) : const Color(0xFF16A34A),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  _cancelAtPeriodEnd ? 'AutoPay is OFF' : '⚡ AutoPay Active',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: _cancelAtPeriodEnd ? const Color(0xFFC2410C) : const Color(0xFF166534),
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  _cancelAtPeriodEnd
+                                      ? 'Money will not be deducted next month.'
+                                      : 'You can cancel anytime before renewal.',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 11,
+                                    color: _cancelAtPeriodEnd ? const Color(0xFF9A3412) : const Color(0xFF15803D),
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                      ],
+                          if (_autoPayEnabled && !_cancelAtPeriodEnd) ...[
+                            const SizedBox(width: 8),
+                            Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                onTap: _isCancellingAutoPay ? null : _showCancelAutoPayDialog,
+                                borderRadius: BorderRadius.circular(8),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: const Color(0xFFFCA5A5)),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (_isCancellingAutoPay)
+                                        const SizedBox(
+                                          width: 12,
+                                          height: 12,
+                                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.red),
+                                        )
+                                      else ...[
+                                        const Icon(Icons.cancel_outlined, size: 14, color: Colors.red),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          'Cancel',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 11.5,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.red[700],
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
                     ),
                   ],
                 ],

@@ -10,11 +10,13 @@ import '../member_app_viewmodel.dart';
 import 'member_training_screen.dart';
 import 'member_diet_screen.dart';
 import 'member_body_stats_screen.dart';
-import 'member_exercise_library_screen.dart';
 import 'member_scan_qr_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'member_notifications_screen.dart';
 import '../../dashboard/gym_switcher_bottom_sheet.dart';
+import '../widgets/workout_category_selector_sheet.dart';
+import '../widgets/member_rules_agreement_dialog.dart';
+import '../../../core/widgets/skeleton_shimmer.dart';
 
 class MemberDashboardScreen extends StatefulWidget {
   const MemberDashboardScreen({super.key});
@@ -78,9 +80,19 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen>
 
     return Consumer<MemberAppViewModel>(
       builder: (context, vm, _) {
+        if (vm.isLoadingMemberData && vm.memberName.isEmpty) {
+          return const Scaffold(
+            backgroundColor: AppTheme.background,
+            body: SafeArea(
+              child: DashboardSkeletonLoader(),
+            ),
+          );
+        }
+
         return Scaffold(
           backgroundColor: AppTheme.background,
           body: SafeArea(
+
             child: SingleChildScrollView(
               physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
               child: Column(
@@ -213,7 +225,88 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen>
                       ],
                     ),
                   )),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 16),
+
+                  // ═══════ PENDING RULES AGREEMENT BANNER (For existing/old members) ═══════
+                  if (!vm.hasAgreedRules) ...[
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: InkWell(
+                        onTap: () => MemberRulesAgreementDialog.show(context),
+                        borderRadius: BorderRadius.circular(16),
+                        child: Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFFFEF2F2), Color(0xFFFFF1F2)],
+                            ),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: const Color(0xFFFECDD3), width: 1.5),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFFEF4444).withValues(alpha: 0.1),
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFEF4444).withValues(alpha: 0.12),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.shield_outlined, color: Color(0xFFDC2626), size: 24),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      '${vm.gymName.isNotEmpty && vm.gymName != 'GYMOS' ? vm.gymName : 'Gym'} Rules Agreement Pending',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w700,
+                                        color: const Color(0xFF991B1B),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'Please review and sign your gym rules to continue.',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 11,
+                                        color: const Color(0xFFB91C1C),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFDC2626),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  'Review',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
 
                   // ═══════ STREAK CARD (Image 4 - purple gradient) ═══════
                   _animated(1, Padding(
@@ -624,11 +717,12 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen>
                               color: Colors.transparent,
                               borderRadius: BorderRadius.circular(18),
                               child: InkWell(
-                                onTap: () => Navigator.push(context, MaterialPageRoute(
-                                  builder: (_) => MemberExerciseLibraryScreen(
-                                    initialMuscleGroup: vm.todayMuscleGroup,
-                                    memberId: vm.memberId,
-                                  ))),
+                                onTap: () => WorkoutCategoryHelper.openCategoryFlow(
+                                  context,
+                                  splits: vm.todaySplits,
+                                  muscleGroup: vm.todayMuscleGroup,
+                                  memberId: vm.memberId,
+                                ),
                                 borderRadius: BorderRadius.circular(18),
                                 child: Container(
                                   padding: const EdgeInsets.all(16),

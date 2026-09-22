@@ -23,6 +23,8 @@ import 'features/gym_settings/gym_settings_viewmodel.dart';
 import 'core/services/notification_service.dart';
 import 'core/services/alerts_notification_engine.dart';
 import 'core/services/version_check_service.dart';
+import 'core/config/supabase_config.dart';
+import 'core/widgets/configuration_error_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -33,6 +35,14 @@ void main() async {
   } catch (e, stack) {
     debugPrint('Supabase initialization error: $e');
     debugPrint(stack.toString());
+  }
+
+  // Refuse to start if critical environment variables are missing
+  if (!SupabaseConfig.isValid || !SupabaseService.isInitialized) {
+    runApp(const ConfigurationErrorScreen(
+      missingDetails: 'Missing SUPABASE_URL or SUPABASE_ANON_KEY.\nProvide them via --dart-define or .env file before launching.',
+    ));
+    return;
   }
 
   // Initialize Notification Service safely

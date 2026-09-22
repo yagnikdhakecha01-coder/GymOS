@@ -26,9 +26,18 @@ import 'features/audit_logs/audit_logs_screen.dart';
 import 'features/settings/settings_screen.dart';
 import 'features/profile/admin_profile_screen.dart';
 
+import 'core/config/supabase_config.dart';
+import 'core/widgets/configuration_error_screen.dart';
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await AdminSupabaseService.initialize();
+
+  // Fail-fast if critical environment variables are missing
+  if (!AdminSupabaseConfig.isValid || !AdminSupabaseService.isInitialized) {
+    runApp(const AdminConfigurationErrorScreen());
+    return;
+  }
 
   runApp(
     MultiProvider(

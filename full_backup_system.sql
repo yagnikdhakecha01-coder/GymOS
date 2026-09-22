@@ -69,127 +69,54 @@ GRANT ALL ON TABLE public.database_backups TO anon, authenticated, service_role;
 
 
 -- =============================================
--- 2. FULL DATABASE EXPORT — exports ALL tables
+-- 2. FULL DATABASE EXPORT — dynamic universal export for ALL tables
 -- =============================================
 DROP FUNCTION IF EXISTS public.full_database_export();
 
 CREATE OR REPLACE FUNCTION public.full_database_export()
 RETURNS JSONB AS $$
 DECLARE
-    v_result JSONB;
-    v_gyms JSONB := '[]'::jsonb;
-    v_profiles JSONB := '[]'::jsonb;
-    v_members JSONB := '[]'::jsonb;
-    v_staff JSONB := '[]'::jsonb;
-    v_subscriptions JSONB := '[]'::jsonb;
-    v_transactions JSONB := '[]'::jsonb;
-    v_finance_transactions JSONB := '[]'::jsonb;
-    v_attendance_logs JSONB := '[]'::jsonb;
-    v_member_memberships JSONB := '[]'::jsonb;
-    v_salary_drafts JSONB := '[]'::jsonb;
-    v_salary_advance_ledger JSONB := '[]'::jsonb;
-    v_leave_requests JSONB := '[]'::jsonb;
-    v_workout_plans JSONB := '[]'::jsonb;
-    v_diet_plans JSONB := '[]'::jsonb;
-    v_goals JSONB := '[]'::jsonb;
-    v_custom_fields JSONB := '[]'::jsonb;
-    v_attendance_settings JSONB := '[]'::jsonb;
-    v_activity_logs JSONB := '[]'::jsonb;
-    v_notifications JSONB := '[]'::jsonb;
-    v_support_tickets JSONB := '[]'::jsonb;
-    v_platform_settings JSONB := '[]'::jsonb;
-    v_total INT := 0;
-    v_counts JSONB;
+    v_result JSONB := '{}'::jsonb;
+    v_table_name TEXT;
+    v_table_data JSONB;
+    v_total_records INT := 0;
+    v_counts JSONB := '{}'::jsonb;
+    v_count INT;
+    v_tables_exported INT := 0;
 BEGIN
-    -- Export each table as JSON array (each safely caught)
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_gyms FROM public.gyms t; EXCEPTION WHEN OTHERS THEN v_gyms := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_profiles FROM public.profiles t; EXCEPTION WHEN OTHERS THEN v_profiles := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_members FROM public.members t; EXCEPTION WHEN OTHERS THEN v_members := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_staff FROM public.staff t; EXCEPTION WHEN OTHERS THEN v_staff := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_subscriptions FROM public.subscriptions t; EXCEPTION WHEN OTHERS THEN v_subscriptions := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_transactions FROM public.transactions t; EXCEPTION WHEN OTHERS THEN v_transactions := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_finance_transactions FROM public.finance_transactions t; EXCEPTION WHEN OTHERS THEN v_finance_transactions := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_attendance_logs FROM public.attendance_logs t; EXCEPTION WHEN OTHERS THEN v_attendance_logs := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_member_memberships FROM public.member_memberships t; EXCEPTION WHEN OTHERS THEN v_member_memberships := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_salary_drafts FROM public.salary_drafts t; EXCEPTION WHEN OTHERS THEN v_salary_drafts := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_salary_advance_ledger FROM public.salary_advance_ledger t; EXCEPTION WHEN OTHERS THEN v_salary_advance_ledger := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_leave_requests FROM public.leave_requests t; EXCEPTION WHEN OTHERS THEN v_leave_requests := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_workout_plans FROM public.workout_plans t; EXCEPTION WHEN OTHERS THEN v_workout_plans := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_diet_plans FROM public.diet_plans t; EXCEPTION WHEN OTHERS THEN v_diet_plans := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_goals FROM public.goals t; EXCEPTION WHEN OTHERS THEN v_goals := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_custom_fields FROM public.custom_fields t; EXCEPTION WHEN OTHERS THEN v_custom_fields := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_attendance_settings FROM public.attendance_settings t; EXCEPTION WHEN OTHERS THEN v_attendance_settings := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_activity_logs FROM public.activity_logs t; EXCEPTION WHEN OTHERS THEN v_activity_logs := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_notifications FROM public.notifications t; EXCEPTION WHEN OTHERS THEN v_notifications := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_support_tickets FROM public.support_tickets t; EXCEPTION WHEN OTHERS THEN v_support_tickets := '[]'::jsonb; END;
-    BEGIN SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_platform_settings FROM public.platform_settings t; EXCEPTION WHEN OTHERS THEN v_platform_settings := '[]'::jsonb; END;
+    FOR v_table_name IN
+        SELECT t.table_name
+        FROM information_schema.tables t
+        WHERE t.table_schema = 'public'
+          AND t.table_type = 'BASE TABLE'
+          AND t.table_name NOT IN ('database_backups')
+        ORDER BY t.table_name
+    LOOP
+        BEGIN
+            EXECUTE format('SELECT COALESCE(jsonb_agg(to_jsonb(t)), ''[]''::jsonb), count(*) FROM public.%I t', v_table_name)
+            INTO v_table_data, v_count;
 
-    -- Count totals
-    v_counts := jsonb_build_object(
-        'gyms', jsonb_array_length(v_gyms),
-        'profiles', jsonb_array_length(v_profiles),
-        'members', jsonb_array_length(v_members),
-        'staff', jsonb_array_length(v_staff),
-        'subscriptions', jsonb_array_length(v_subscriptions),
-        'transactions', jsonb_array_length(v_transactions),
-        'finance_transactions', jsonb_array_length(v_finance_transactions),
-        'attendance_logs', jsonb_array_length(v_attendance_logs),
-        'member_memberships', jsonb_array_length(v_member_memberships),
-        'salary_drafts', jsonb_array_length(v_salary_drafts),
-        'salary_advance_ledger', jsonb_array_length(v_salary_advance_ledger),
-        'leave_requests', jsonb_array_length(v_leave_requests),
-        'workout_plans', jsonb_array_length(v_workout_plans),
-        'diet_plans', jsonb_array_length(v_diet_plans),
-        'goals', jsonb_array_length(v_goals),
-        'custom_fields', jsonb_array_length(v_custom_fields),
-        'attendance_settings', jsonb_array_length(v_attendance_settings),
-        'activity_logs', jsonb_array_length(v_activity_logs),
-        'notifications', jsonb_array_length(v_notifications),
-        'support_tickets', jsonb_array_length(v_support_tickets),
-        'platform_settings', jsonb_array_length(v_platform_settings)
-    );
+            v_counts := jsonb_set(v_counts, ARRAY[v_table_name], to_jsonb(v_count));
+            v_result := jsonb_set(v_result, ARRAY[v_table_name], v_table_data);
+            v_total_records := v_total_records + v_count;
+            v_tables_exported := v_tables_exported + 1;
+        EXCEPTION WHEN OTHERS THEN
+            v_counts := jsonb_set(v_counts, ARRAY[v_table_name], to_jsonb(0));
+            v_result := jsonb_set(v_result, ARRAY[v_table_name], '[]'::jsonb);
+        END;
+    END LOOP;
 
-    v_total := jsonb_array_length(v_gyms) + jsonb_array_length(v_profiles) + jsonb_array_length(v_members) +
-               jsonb_array_length(v_staff) + jsonb_array_length(v_subscriptions) + jsonb_array_length(v_transactions) +
-               jsonb_array_length(v_finance_transactions) + jsonb_array_length(v_attendance_logs) +
-               jsonb_array_length(v_member_memberships) + jsonb_array_length(v_salary_drafts) +
-               jsonb_array_length(v_salary_advance_ledger) + jsonb_array_length(v_leave_requests) +
-               jsonb_array_length(v_workout_plans) + jsonb_array_length(v_diet_plans) +
-               jsonb_array_length(v_goals) + jsonb_array_length(v_custom_fields) +
-               jsonb_array_length(v_attendance_settings) + jsonb_array_length(v_activity_logs) +
-               jsonb_array_length(v_notifications) + jsonb_array_length(v_support_tickets) +
-               jsonb_array_length(v_platform_settings);
-
-    -- Build final export payload
-    v_result := jsonb_build_object(
-        '_meta', jsonb_build_object(
+    v_result := jsonb_set(
+        v_result,
+        '{_meta}',
+        jsonb_build_object(
             'exported_at', now()::TEXT,
-            'version', '2.0',
-            'system', 'GymOS Enterprise Backup',
-            'total_records', v_total,
+            'version', '3.0',
+            'system', 'GymOS Enterprise Universal Backup',
+            'total_tables', v_tables_exported,
+            'total_records', v_total_records,
             'table_counts', v_counts
-        ),
-        'gyms', v_gyms,
-        'profiles', v_profiles,
-        'members', v_members,
-        'staff', v_staff,
-        'subscriptions', v_subscriptions,
-        'transactions', v_transactions,
-        'finance_transactions', v_finance_transactions,
-        'attendance_logs', v_attendance_logs,
-        'member_memberships', v_member_memberships,
-        'salary_drafts', v_salary_drafts,
-        'salary_advance_ledger', v_salary_advance_ledger,
-        'leave_requests', v_leave_requests,
-        'workout_plans', v_workout_plans,
-        'diet_plans', v_diet_plans,
-        'goals', v_goals,
-        'custom_fields', v_custom_fields,
-        'attendance_settings', v_attendance_settings,
-        'activity_logs', v_activity_logs,
-        'notifications', v_notifications,
-        'support_tickets', v_support_tickets,
-        'platform_settings', v_platform_settings
+        )
     );
 
     RETURN v_result;
@@ -211,140 +138,123 @@ DECLARE
     v_tables_restored INT := 0;
     v_records_inserted INT := 0;
     v_errors TEXT[] := ARRAY[]::TEXT[];
-    v_row JSONB;
+    v_table_name TEXT;
+    v_table_count INT;
+    v_handled_tables TEXT[] := ARRAY[
+        'gyms', 'profiles', 'user_gym_associations', 'subscriptions', 'platform_plans', 'subscription_plans',
+        'staff', 'staff_roles', 'staff_shift_assignments',
+        'members', 'member_memberships', 'membership_plans', 'packages',
+        'gym_shifts', 'gym_shift_settings',
+        'invoices', 'expenses', 'payments', 'finance_transactions', 'transactions',
+        'salaries', 'salary_drafts', 'salary_payments', 'salary_advance_ledger', 'salary_adjustments', 
+        'salary_payment_commissions', 'commission_ledger', 'leave_requests',
+        'diet_plans', 'workout_plans', 'exercises',
+        'attendance', 'attendance_logs', 'attendance_qr_tokens', 'attendance_settings', 'attendance_displays',
+        'member_body_logs', 'member_achievements', 'member_badge_status', 'member_fitness_goals', 
+        'member_workout_logs', 'member_workout_sets', 'xp_history',
+        'pt_assignments', 'pt_sessions'
+    ];
 BEGIN
     v_meta := p_backup->'_meta';
     
     -- Validate backup format
     IF v_meta IS NULL THEN
-        RETURN jsonb_build_object('success', false, 'message', 'Invalid backup format: Missing _meta header. Make sure this is a GymOS Enterprise Backup v2.0 file.');
+        RETURN jsonb_build_object('success', false, 'message', 'Invalid backup format: Missing _meta header. Make sure this is a GymOS Enterprise Universal Backup file.');
     END IF;
 
-    -- 1. GYMS (parent of everything)
-    IF p_backup->'gyms' IS NOT NULL AND jsonb_array_length(p_backup->'gyms') > 0 THEN
-        BEGIN
-            INSERT INTO public.gyms 
-            SELECT * FROM jsonb_populate_recordset(null::public.gyms, p_backup->'gyms')
-            ON CONFLICT (id) DO NOTHING;
-            
-            v_tables_restored := v_tables_restored + 1;
-            v_records_inserted := v_records_inserted + jsonb_array_length(p_backup->'gyms');
-        EXCEPTION WHEN OTHERS THEN
-            v_errors := array_append(v_errors, 'gyms: ' || SQLERRM);
-        END;
-    END IF;
+    -- Iterate through priority order tables first
+    FOREACH v_table_name IN ARRAY v_handled_tables LOOP
+        IF p_backup->v_table_name IS NOT NULL AND jsonb_array_length(p_backup->v_table_name) > 0 THEN
+            BEGIN
+                IF v_table_name = 'member_memberships' THEN
+                    INSERT INTO public.member_memberships (
+                        id, gym_id, member_id, plan_id, start_date, end_date, total_amount, paid_amount, payment_status, created_by_info, created_at, updated_at
+                    )
+                    SELECT 
+                        (elem->>'id')::UUID,
+                        (elem->>'gym_id')::UUID,
+                        (elem->>'member_id')::UUID,
+                        elem->>'plan_id',
+                        (elem->>'start_date')::TIMESTAMPTZ,
+                        (elem->>'end_date')::TIMESTAMPTZ,
+                        (elem->>'total_amount')::NUMERIC,
+                        (elem->>'paid_amount')::NUMERIC,
+                        elem->>'payment_status',
+                        elem->'created_by_info',
+                        (elem->>'created_at')::TIMESTAMPTZ,
+                        (elem->>'updated_at')::TIMESTAMPTZ
+                    FROM jsonb_array_elements(p_backup->'member_memberships') AS elem
+                    ON CONFLICT (id) DO NOTHING;
+                ELSIF v_table_name = 'salary_drafts' THEN
+                    INSERT INTO public.salary_drafts (
+                        id, gym_id, staff_id, salary_month, base_salary, commission_amount, advance_deduction, other_additions, other_deductions, net_salary, status, paid_transaction_id, created_at
+                    )
+                    SELECT
+                        (elem->>'id')::UUID,
+                        (elem->>'gym_id')::UUID,
+                        (elem->>'staff_id')::UUID,
+                        elem->>'salary_month',
+                        (elem->>'base_salary')::NUMERIC,
+                        (elem->>'commission_amount')::NUMERIC,
+                        (elem->>'advance_deduction')::NUMERIC,
+                        (elem->>'other_additions')::NUMERIC,
+                        (elem->>'other_deductions')::NUMERIC,
+                        (elem->>'net_salary')::NUMERIC,
+                        (elem->>'status')::public.draft_status,
+                        (elem->>'paid_transaction_id')::UUID,
+                        (elem->>'created_at')::TIMESTAMPTZ
+                    FROM jsonb_array_elements(p_backup->'salary_drafts') AS elem
+                    ON CONFLICT (id) DO NOTHING;
+                ELSE
+                    EXECUTE format('INSERT INTO public.%I SELECT * FROM jsonb_populate_recordset(null::public.%I, $1) ON CONFLICT DO NOTHING', v_table_name, v_table_name)
+                    USING p_backup->v_table_name;
+                END IF;
 
-    -- 2. PROFILES
-    IF p_backup->'profiles' IS NOT NULL AND jsonb_array_length(p_backup->'profiles') > 0 THEN
-        BEGIN
-            INSERT INTO public.profiles 
-            SELECT * FROM jsonb_populate_recordset(null::public.profiles, p_backup->'profiles')
-            ON CONFLICT (id) DO NOTHING;
-            
-            v_tables_restored := v_tables_restored + 1;
-            v_records_inserted := v_records_inserted + jsonb_array_length(p_backup->'profiles');
-        EXCEPTION WHEN OTHERS THEN
-            v_errors := array_append(v_errors, 'profiles: ' || SQLERRM);
-        END;
-    END IF;
+                v_table_count := jsonb_array_length(p_backup->v_table_name);
+                v_tables_restored := v_tables_restored + 1;
+                v_records_inserted := v_records_inserted + v_table_count;
+            EXCEPTION WHEN OTHERS THEN
+                v_errors := array_append(v_errors, v_table_name || ': ' || SQLERRM);
+            END;
+        END IF;
+    END LOOP;
 
-    -- 3. USER_GYM_ASSOCIATIONS
-    IF p_backup->'user_gym_associations' IS NOT NULL AND jsonb_array_length(p_backup->'user_gym_associations') > 0 THEN
-        BEGIN
-            INSERT INTO public.user_gym_associations 
-            SELECT * FROM jsonb_populate_recordset(null::public.user_gym_associations, p_backup->'user_gym_associations')
-            ON CONFLICT DO NOTHING;
-            
-            v_tables_restored := v_tables_restored + 1;
-            v_records_inserted := v_records_inserted + jsonb_array_length(p_backup->'user_gym_associations');
-        EXCEPTION WHEN OTHERS THEN
-            v_errors := array_append(v_errors, 'user_gym_associations: ' || SQLERRM);
-        END;
-    END IF;
-
-    -- 4. SUBSCRIPTIONS
-    IF p_backup->'subscriptions' IS NOT NULL AND jsonb_array_length(p_backup->'subscriptions') > 0 THEN
-        BEGIN
-            INSERT INTO public.subscriptions 
-            SELECT * FROM jsonb_populate_recordset(null::public.subscriptions, p_backup->'subscriptions')
-            ON CONFLICT (id) DO NOTHING;
-            
-            v_tables_restored := v_tables_restored + 1;
-            v_records_inserted := v_records_inserted + jsonb_array_length(p_backup->'subscriptions');
-        EXCEPTION WHEN OTHERS THEN
-            v_errors := array_append(v_errors, 'subscriptions: ' || SQLERRM);
-        END;
-    END IF;
-
-    -- 5. MEMBERS
-    IF p_backup->'members' IS NOT NULL AND jsonb_array_length(p_backup->'members') > 0 THEN
-        BEGIN
-            INSERT INTO public.members 
-            SELECT * FROM jsonb_populate_recordset(null::public.members, p_backup->'members')
-            ON CONFLICT (id) DO NOTHING;
-            
-            v_tables_restored := v_tables_restored + 1;
-            v_records_inserted := v_records_inserted + jsonb_array_length(p_backup->'members');
-        EXCEPTION WHEN OTHERS THEN
-            v_errors := array_append(v_errors, 'members: ' || SQLERRM);
-        END;
-    END IF;
-
-    -- 6. STAFF
-    IF p_backup->'staff' IS NOT NULL AND jsonb_array_length(p_backup->'staff') > 0 THEN
-        BEGIN
-            INSERT INTO public.staff 
-            SELECT * FROM jsonb_populate_recordset(null::public.staff, p_backup->'staff')
-            ON CONFLICT (id) DO NOTHING;
-            
-            v_tables_restored := v_tables_restored + 1;
-            v_records_inserted := v_records_inserted + jsonb_array_length(p_backup->'staff');
-        EXCEPTION WHEN OTHERS THEN
-            v_errors := array_append(v_errors, 'staff: ' || SQLERRM);
-        END;
-    END IF;
-
-    -- 7. MEMBER_MEMBERSHIPS
-    IF p_backup->'member_memberships' IS NOT NULL AND jsonb_array_length(p_backup->'member_memberships') > 0 THEN
-        BEGIN
-            INSERT INTO public.member_memberships 
-            SELECT * FROM jsonb_populate_recordset(null::public.member_memberships, p_backup->'member_memberships')
-            ON CONFLICT (id) DO NOTHING;
-            
-            v_tables_restored := v_tables_restored + 1;
-            v_records_inserted := v_records_inserted + jsonb_array_length(p_backup->'member_memberships');
-        EXCEPTION WHEN OTHERS THEN
-            v_errors := array_append(v_errors, 'member_memberships: ' || SQLERRM);
-        END;
-    END IF;
-
-    -- 7-21. ALL REMAINING CHILD TABLES (including user_gym_associations for login restore)
-    DECLARE
-        v_table_name TEXT;
-        v_table_names TEXT[] := ARRAY[
-            'user_gym_associations',
-            'transactions', 'finance_transactions', 'attendance_logs',
-            'salary_drafts', 'salary_advance_ledger', 'leave_requests',
-            'workout_plans', 'diet_plans', 'goals', 'custom_fields',
-            'attendance_settings', 'activity_logs', 'notifications',
-            'support_tickets', 'platform_settings'
-        ];
-    BEGIN
-        FOREACH v_table_name IN ARRAY v_table_names LOOP
+    -- Now iterate through ALL remaining tables in the backup dynamically
+    FOR v_table_name IN SELECT jsonb_object_keys(p_backup) LOOP
+        -- Skip metadata, internal backups table, or already handled tables
+        IF v_table_name NOT IN ('_meta', 'database_backups') AND NOT (v_table_name = ANY(v_handled_tables)) THEN
             IF p_backup->v_table_name IS NOT NULL AND jsonb_array_length(p_backup->v_table_name) > 0 THEN
-                BEGIN
-                    EXECUTE format(
-                        'INSERT INTO public.%I SELECT * FROM jsonb_populate_recordset(null::public.%I, $1) ON CONFLICT DO NOTHING',
-                        v_table_name, v_table_name
-                    ) USING p_backup->v_table_name;
-                    
-                    v_tables_restored := v_tables_restored + 1;
-                    v_records_inserted := v_records_inserted + jsonb_array_length(p_backup->v_table_name);
-                EXCEPTION WHEN OTHERS THEN
-                    v_errors := array_append(v_errors, v_table_name || ': ' || SQLERRM);
-                END;
+                -- Check if table exists in public schema
+                IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = v_table_name) THEN
+                    BEGIN
+                        EXECUTE format('INSERT INTO public.%I SELECT * FROM jsonb_populate_recordset(null::public.%I, $1) ON CONFLICT DO NOTHING', v_table_name, v_table_name)
+                        USING p_backup->v_table_name;
+
+                        v_table_count := jsonb_array_length(p_backup->v_table_name);
+                        v_tables_restored := v_tables_restored + 1;
+                        v_records_inserted := v_records_inserted + v_table_count;
+                    EXCEPTION WHEN OTHERS THEN
+                        v_errors := array_append(v_errors, v_table_name || ': ' || SQLERRM);
+                    END;
+                END IF;
             END IF;
-        END LOOP;
+        END IF;
+    END LOOP;
+
+    -- Log restore in audit_logs
+    BEGIN
+        INSERT INTO public.audit_logs (
+            admin_email, action, category, details, metadata, created_at
+        ) VALUES (
+            'Super Admin',
+            'Database Restored from Backup',
+            'database',
+            format('Full database restored: %s tables processed, %s records restored.', v_tables_restored, v_records_inserted),
+            jsonb_build_object('tables_restored', v_tables_restored, 'records_inserted', v_records_inserted, 'warnings', to_jsonb(v_errors)),
+            now()
+        );
+    EXCEPTION WHEN OTHERS THEN
+        NULL;
     END;
 
     RETURN jsonb_build_object(
@@ -353,8 +263,8 @@ BEGIN
         'records_inserted', v_records_inserted,
         'errors', to_jsonb(v_errors),
         'message', CASE WHEN array_length(v_errors, 1) IS NULL 
-            THEN 'Full database restored successfully with 0 errors!' 
-            ELSE 'Database restored with ' || array_length(v_errors, 1) || ' warnings (non-critical)' END
+            THEN format('Full database restored successfully! %s tables and %s records verified with 0 errors.', v_tables_restored, v_records_inserted)
+            ELSE format('Database restored (%s tables, %s records) with %s non-critical notices.', v_tables_restored, v_records_inserted, array_length(v_errors, 1)) END
     );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;

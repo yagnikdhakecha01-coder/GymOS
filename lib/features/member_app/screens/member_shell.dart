@@ -10,6 +10,9 @@ import 'member_attendance_screen.dart';
 import 'member_scan_qr_screen.dart';
 import 'member_achievements_screen.dart';
 import 'member_profile_screen.dart';
+import '../member_app_viewmodel.dart';
+import '../widgets/member_rules_agreement_dialog.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class MemberShell extends StatefulWidget {
   const MemberShell({super.key});
@@ -22,6 +25,7 @@ class _MemberShellState extends State<MemberShell> with WidgetsBindingObserver {
   int _currentIndex = 0;
   Timer? _syncTimer;
   bool _isRedirecting = false;
+  bool _isAgreementModalShowing = false;
 
   @override
   void initState() {
@@ -29,6 +33,7 @@ class _MemberShellState extends State<MemberShell> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkUnlinkedStatus();
+      _checkRulesAgreement();
     });
     // Relaxed 5-minute periodic sync instead of aggressive 3s polling
     _syncTimer = Timer.periodic(const Duration(minutes: 5), (_) {
@@ -47,8 +52,54 @@ class _MemberShellState extends State<MemberShell> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _checkUnlinkedStatus();
+      final memberVm = Provider.of<MemberAppViewModel>(context, listen: false);
+      if (!memberVm.hasAgreedRules) {
+        _checkRulesAgreement();
+      }
     }
   }
+
+  Future<void> _checkRulesAgreement() async {
+    if (!mounted || _isRedirecting || _isAgreementModalShowing) return;
+    final memberVm = Provider.of<MemberAppViewModel>(context, listen: false);
+
+    // If ALREADY agreed in memory, NEVER open modal!
+    if (memberVm.hasAgreedRules) return;
+
+    // Check persistent cache directly first before doing network calls
+    final prefs = await SharedPreferences.getInstance();
+    final memberId = memberVm.memberId.isNotEmpty ? memberVm.memberId : (prefs.getString('member_cached_id') ?? '');
+    final gymId = memberVm.gymId.isNotEmpty ? memberVm.gymId : (prefs.getString('member_cached_gym_id') ?? '');
+
+    final isAgreedLocally = (gymId.isNotEmpty && memberId.isNotEmpty && (prefs.getBool('gymos_rule_agreed_${gymId}_$memberId') == true)) ||
+        (memberId.isNotEmpty && (prefs.getBool('gymos_rule_agreed_member_$memberId') == true)) ||
+        (prefs.getBool('gymos_rule_agreed_global') == true);
+
+    if (isAgreedLocally) {
+      await memberVm.checkRulesAgreementStatus();
+      return;
+    }
+
+    // Only if not agreed locally, load member data and check Supabase
+    if (memberVm.memberId.isEmpty || memberVm.gymId.isEmpty) {
+      await memberVm.loadMemberDataFromSupabase();
+    }
+    final agreed = await memberVm.checkRulesAgreementStatus();
+
+    if (!mounted) return;
+    if (agreed || memberVm.hasAgreedRules) return;
+
+    // For all members (new and old existing members): if not agreed, enforce modal agreement
+    if (!memberVm.hasAgreedRules && !_isAgreementModalShowing) {
+      _isAgreementModalShowing = true;
+      final didAgree = await MemberRulesAgreementDialog.show(context);
+      _isAgreementModalShowing = false;
+      if (didAgree == true || memberVm.hasAgreedRules) {
+        return;
+      }
+    }
+  }
+
 
   Future<void> _checkUnlinkedStatus() async {
     if (!mounted || _isRedirecting) return;
@@ -70,6 +121,11 @@ class _MemberShellState extends State<MemberShell> with WidgetsBindingObserver {
   };
 
   void _onTabTapped(int index) {
+    final memberVm = Provider.of<MemberAppViewModel>(context, listen: false);
+    if (!memberVm.hasAgreedRules) {
+      _checkRulesAgreement();
+      return;
+    }
     if (_currentIndex == index) {
       _navigatorKeys[index]?.currentState?.popUntil((route) => route.isFirst);
     } else {

@@ -12,6 +12,7 @@ import '../membership/membership_plans_screen.dart';
 import '../attendance/owner_settings_screen.dart';
 import 'online_database_screen.dart';
 import 'custom_branding_screen.dart';
+import 'gym_rules_settings_screen.dart';
 
 class GymSettingsMenuScreen extends StatelessWidget {
   const GymSettingsMenuScreen({super.key});
@@ -197,7 +198,18 @@ class GymSettingsMenuScreen extends StatelessWidget {
                     ),
                     const Divider(height: 1),
 
-                    // 10. Online Database Status
+                    // 10. Gym Rules & Member Agreements
+                    _buildMenuTile(
+                      context,
+                      icon: Icons.gavel_rounded,
+                      color: const Color(0xFF6366F1),
+                      title: 'Gym Rules & Member Agreements',
+                      subtitle: 'Official gym rules & audit history of agreed members',
+                      targetScreen: const GymRulesSettingsScreen(),
+                    ),
+                    const Divider(height: 1),
+
+                    // 11. Online Database Status
                     _buildMenuTile(
                       context,
                       icon: Icons.cloud_sync_rounded,

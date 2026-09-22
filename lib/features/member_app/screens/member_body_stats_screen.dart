@@ -147,7 +147,6 @@ class _MemberBodyStatsScreenState extends State<MemberBodyStatsScreen>
           _logs = list;
           if (list.isNotEmpty) {
             _latestLog = list.first;
-            _prefillControllers(_latestLog!);
           }
           _isLoading = false;
         });
@@ -217,7 +216,6 @@ class _MemberBodyStatsScreenState extends State<MemberBodyStatsScreen>
           _logs = logs;
           if (logs.isNotEmpty) {
             _latestLog = logs.first;
-            _prefillControllers(_latestLog!);
           }
           _isLoading = false;
         });
@@ -310,6 +308,12 @@ class _MemberBodyStatsScreenState extends State<MemberBodyStatsScreen>
     _logs.insert(0, logEntry);
     _latestLog = logEntry;
     _isEditingTodayLog = false;
+    _weightCtrl.clear();
+    _bodyFatCtrl.clear();
+    _chestCtrl.clear();
+    _waistCtrl.clear();
+    _armsCtrl.clear();
+    _notesCtrl.clear();
 
     await prefs.setString(
         'member_body_logs_${widget.memberId}', jsonEncode(_logs));
@@ -485,6 +489,8 @@ class _MemberBodyStatsScreenState extends State<MemberBodyStatsScreen>
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.white,
                 foregroundColor: AppTheme.primary,
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 elevation: 0,
@@ -664,7 +670,7 @@ class _MemberBodyStatsScreenState extends State<MemberBodyStatsScreen>
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_rounded,
               size: 20, color: AppTheme.textPrimary),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () => Navigator.maybePop(context),
         ),
         title: Text(
           'Body Stats',
@@ -1167,7 +1173,15 @@ class _MemberBodyStatsScreenState extends State<MemberBodyStatsScreen>
                     ),
                     GestureDetector(
                       onTap: () {
-                        setState(() => _isEditingTodayLog = false);
+                        setState(() {
+                          _isEditingTodayLog = false;
+                          _weightCtrl.clear();
+                          _bodyFatCtrl.clear();
+                          _chestCtrl.clear();
+                          _waistCtrl.clear();
+                          _armsCtrl.clear();
+                          _notesCtrl.clear();
+                        });
                       },
                       child: Text(
                         'Cancel',
@@ -1231,7 +1245,10 @@ class _MemberBodyStatsScreenState extends State<MemberBodyStatsScreen>
                     controller: _weightCtrl,
                     label: 'Weight (kg)',
                     icon: '⚖️',
-                    required: true),
+                    required: true,
+                    hintText: (_latestLog?['weight_kg'] != null)
+                        ? 'Previous: ${_latestLog!['weight_kg']} kg'
+                        : 'e.g. 70.0'),
                 const SizedBox(height: 12),
                 _formField(
                     controller: _bodyFatCtrl,
@@ -1596,6 +1613,7 @@ class _MemberBodyStatsScreenState extends State<MemberBodyStatsScreen>
     required String label,
     required String icon,
     bool required = false,
+    String? hintText,
   }) {
     return TextField(
       controller: controller,
@@ -1605,6 +1623,9 @@ class _MemberBodyStatsScreenState extends State<MemberBodyStatsScreen>
           fontSize: 14, color: AppTheme.textPrimary),
       decoration: InputDecoration(
         labelText: '$icon  $label${required ? ' *' : ''}',
+        hintText: hintText,
+        hintStyle: GoogleFonts.inter(
+            fontSize: 13, color: AppTheme.textMuted.withValues(alpha: 0.6)),
         labelStyle:
             GoogleFonts.inter(fontSize: 14, color: AppTheme.textSecondary),
         floatingLabelStyle:
@@ -1641,56 +1662,62 @@ class _MemberBodyStatsScreenState extends State<MemberBodyStatsScreen>
               color: Colors.white,
               borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: AppTheme.border,
-                      borderRadius: BorderRadius.circular(2),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: AppTheme.border,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 18),
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: AppTheme.primaryLight.withValues(alpha: 0.4),
-                        borderRadius: BorderRadius.circular(10),
+                  const SizedBox(height: 18),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppTheme.primaryLight.withValues(alpha: 0.4),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Text('🎯', style: TextStyle(fontSize: 22)),
                       ),
-                      child: const Text('🎯', style: TextStyle(fontSize: 22)),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            isFirstTime ? 'Set Your Fitness Goal' : 'Update Fitness Goal',
-                            style: GoogleFonts.inter(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w800,
-                              color: AppTheme.textPrimary,
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              isFirstTime ? 'Set Your Fitness Goal' : 'Update Fitness Goal',
+                              style: GoogleFonts.inter(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w800,
+                                color: AppTheme.textPrimary,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            isFirstTime
-                                ? 'Set your goal to unlock daily body tracking'
-                                : 'Adjust your target weight and plan',
-                            style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textMuted),
-                          ),
-                        ],
+                            const SizedBox(height: 2),
+                            Text(
+                              isFirstTime
+                                  ? 'Set your goal to unlock daily body tracking'
+                                  : 'Adjust your target weight and plan',
+                              style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textMuted),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
-                ),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded, size: 22, color: AppTheme.textMuted),
+                        tooltip: 'Close',
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
+                    ],
+                  ),
                 const SizedBox(height: 18),
 
                 // Goal Type Chips
@@ -1895,7 +1922,8 @@ class _MemberBodyStatsScreenState extends State<MemberBodyStatsScreen>
                 ),
               ],
             ),
-          );
+          ),
+        );
         },
       ),
     );

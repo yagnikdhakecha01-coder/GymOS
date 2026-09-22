@@ -8,6 +8,7 @@ import '../member_app_viewmodel.dart';
 import 'member_guided_workout_screen.dart';
 import 'member_exercise_library_screen.dart';
 import 'member_workout_plan_screen.dart';
+import '../widgets/workout_category_selector_sheet.dart';
 
 class MemberTrainingScreen extends StatelessWidget {
   const MemberTrainingScreen({super.key});
@@ -261,11 +262,12 @@ class MemberTrainingScreen extends StatelessWidget {
                           title: muscle.isNotEmpty && !muscle.contains('Rest') ? muscle : 'Exercises',
                           subtitle: 'Today\'s focus',
                           color: AppTheme.info,
-                          onTap: () => Navigator.push(context,
-                            MaterialPageRoute(builder: (_) => MemberExerciseLibraryScreen(
-                              initialMuscleGroup: muscle,
-                              memberId: vm.memberId,
-                            ))),
+                          onTap: () => WorkoutCategoryHelper.openCategoryFlow(
+                            context,
+                            splits: vm.todaySplits,
+                            muscleGroup: muscle,
+                            memberId: vm.memberId,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 10),

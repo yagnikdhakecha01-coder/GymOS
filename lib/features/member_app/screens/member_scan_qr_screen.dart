@@ -26,6 +26,12 @@ class _MemberScanQRScreenState extends State<MemberScanQRScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        final vm = Provider.of<MemberAppViewModel>(context, listen: false);
+        vm.validateTodayAttendanceDate();
+      }
+    });
     _scanLineController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
@@ -63,6 +69,9 @@ class _MemberScanQRScreenState extends State<MemberScanQRScreen>
   Widget build(BuildContext context) {
     final vm = Provider.of<MemberAppViewModel>(context);
     
+    // Automatically validate that checked-in state is still valid for today's date
+    vm.validateTodayAttendanceDate();
+
     // If already checked in today, show attendance summary instead of scanner
     if (vm.checkedInToday) {
       return _buildAlreadyCheckedInScreen(vm);
@@ -299,6 +308,16 @@ class _MemberScanQRScreenState extends State<MemberScanQRScreen>
         scrolledUnderElevation: 0,
         automaticallyImplyLeading: false,
         title: Text('Attendance', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded, color: AppTheme.primary),
+            tooltip: 'Check Today Attendance',
+            onPressed: () async {
+              vm.validateTodayAttendanceDate();
+              await vm.loadMemberDataFromSupabase();
+            },
+          ),
+        ],
       ),
       body: SafeArea(
         child: Padding(

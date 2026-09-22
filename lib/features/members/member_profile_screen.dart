@@ -26,7 +26,11 @@ import '../receptionist/receptionist_viewmodel.dart';
 import '../../core/models/association_model.dart';
 import '../../core/models/user_profile.dart';
 import '../../core/services/supabase_service.dart';
+import '../../core/services/image_security_service.dart';
 import '../../core/widgets/invitation_share_sheet.dart';
+import '../../core/models/gym_rules_model.dart';
+import '../../core/repository/gym_repository.dart';
+import '../member_app/widgets/member_rules_agreement_dialog.dart';
 class MemberProfileScreen extends StatefulWidget {
   final Member member;
   const MemberProfileScreen({super.key, required this.member});
@@ -41,6 +45,9 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
   // Invitation tracking
   Map<String, dynamic>? _invitation;
   bool _loadingInvitation = false;
+
+  // Gym Rules Agreement tracking (Phase 09)
+  MemberAgreementRecord? _memberAgreement;
 
   double _activeCommissionPercentage = 0.0;
   bool _loadingPt = false;
@@ -66,16 +73,12 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
 
       final authVm = Provider.of<AuthViewModel>(context, listen: false);
       final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'] ?? 'default_gym';
-      final fileName = 'member_${member.id}_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final path = '$gymId/members/$fileName';
 
-      await SupabaseService.client.storage
-          .from('avatars')
-          .uploadBinary(path, bytes);
-
-      final publicUrl = SupabaseService.client.storage
-          .from('avatars')
-          .getPublicUrl(path);
+      final publicUrl = await ImageSecurityService.uploadSecureImage(
+        bucket: 'avatars',
+        directoryPath: '$gymId/members',
+        bytes: bytes,
+      );
 
       final updated = member.copyWith(avatar: publicUrl);
       final membersVm = Provider.of<MembersViewModel>(context, listen: false);
@@ -396,9 +399,24 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
     super.initState();
     _loadInvitation();
     _loadPtAssignment();
+    _loadAgreement();
     _ownerNotesController.text = widget.member.notes.isNotEmpty ? widget.member.notes : 'Prefers morning sessions.\nFocus on weight loss goal.';
     _trainerNotesController.text = 'Suggesting low carb diet and moderate cardio intensity.';
     _privateNotesController.text = 'VIP Client. Needs premium attention.';
+  }
+
+  Future<void> _loadAgreement() async {
+    final authVm = Provider.of<AuthViewModel>(context, listen: false);
+    final repo = Provider.of<GymRepository>(context, listen: false);
+    final gymId = authVm.activeAssociation?.gymId ?? (authVm.gymInfo?['id']?.toString() ?? '');
+    if (gymId.isEmpty) return;
+
+    final rec = await repo.fetchMemberAgreement(gymId, widget.member.id);
+    if (mounted) {
+      setState(() {
+        _memberAgreement = rec;
+      });
+    }
   }
 
   @override
@@ -1965,6 +1983,10 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
             ],
           ),
         ),
+        const SizedBox(height: 16),
+
+        // Gym Rules Agreement Status Card (Phase 09)
+        _buildRulesAgreementCard(),
         const SizedBox(height: 24),
 
         // 3. Quick Actions
@@ -2332,6 +2354,125 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
                 ),
         ),
       ],
+    );
+  }
+
+  Widget _buildRulesAgreementCard() {
+    final hasAgreed = _memberAgreement != null && _memberAgreement!.agreed;
+    final dateStr = hasAgreed
+        ? DateFormat('dd MMM yyyy, hh:mm a').format(_memberAgreement!.agreedAt)
+        : null;
+    final langEnum = hasAgreed ? RuleLanguage.fromCode(_memberAgreement!.language) : null;
+
+    return CustomCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: hasAgreed ? const Color(0xFFECFDF5) : const Color(0xFFFFFBEB),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      hasAgreed ? Icons.verified_user_rounded : Icons.gavel_rounded,
+                      color: hasAgreed ? const Color(0xFF10B981) : const Color(0xFFF59E0B),
+                      size: 22,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Gym Rules & Legal Agreement',
+                        style: GoogleFonts.inter(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                          color: AppTheme.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        hasAgreed
+                            ? 'Agreed on $dateStr (v${_memberAgreement!.rulesVersion})'
+                            : 'Member has not accepted gym rules yet',
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          color: hasAgreed ? const Color(0xFF047857) : const Color(0xFFB45309),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: hasAgreed ? const Color(0xFFECFDF5) : const Color(0xFFFFFBEB),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                    color: hasAgreed ? const Color(0xFFA7F3D0) : const Color(0xFFFDE68A),
+                  ),
+                ),
+                child: Text(
+                  hasAgreed ? '✅ Agreed' : '⚠️ Pending',
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: hasAgreed ? const Color(0xFF047857) : const Color(0xFFB45309),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (hasAgreed) ...[
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      'Language: ',
+                      style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary),
+                    ),
+                    Text(
+                      '${langEnum?.flag} ${langEnum?.label}',
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.primary,
+                      ),
+                    ),
+                  ],
+                ),
+                TextButton.icon(
+                  onPressed: () {
+                    MemberRulesAgreementDialog.show(
+                      context,
+                      isViewOnly: true,
+                      existingAgreement: _memberAgreement,
+                    );
+                  },
+                  icon: const Icon(Icons.description_outlined, size: 16),
+                  label: Text('View Agreement', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700)),
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    foregroundColor: AppTheme.primary,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
     );
   }
 

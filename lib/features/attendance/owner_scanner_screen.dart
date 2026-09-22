@@ -85,7 +85,6 @@ class _OwnerQRScannerScreenState extends State<OwnerQRScannerScreen>
 
     // Check if it's a display verification token (64-char hex string)
     final isVerificationToken = RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(trimmedCode);
-    print('[SCANNER DEBUG] Is 64-char hex token? $isVerificationToken');
 
     if (isVerificationToken) {
       setState(() {
@@ -94,9 +93,7 @@ class _OwnerQRScannerScreenState extends State<OwnerQRScannerScreen>
       });
 
       try {
-        print('[SCANNER DEBUG] Calling verifyDisplay RPC...');
         await vm.verifyDisplay(trimmedCode);
-        print('[SCANNER DEBUG] verifyDisplay SUCCESS');
         
         if (mounted) {
           setState(() {
@@ -110,7 +107,7 @@ class _OwnerQRScannerScreenState extends State<OwnerQRScannerScreen>
           }
         }
       } catch (e) {
-        print('[SCANNER DEBUG] verifyDisplay FAILED: $e');
+        debugPrint('[Scanner] verifyDisplay error: $e');
         if (mounted) {
           setState(() {
             _verificationState = 'error';
@@ -124,20 +121,16 @@ class _OwnerQRScannerScreenState extends State<OwnerQRScannerScreen>
     // Show instant feedback that scan happened (only for non-verification codes)
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Scanned: ${trimmedCode.substring(0, trimmedCode.length > 20 ? 20 : trimmedCode.length)}... (${trimmedCode.length} chars)'),
+        const SnackBar(
+          content: Text('Processing attendance code...'),
           backgroundColor: Colors.blue,
-          duration: const Duration(seconds: 2),
+          duration: Duration(seconds: 2),
         ),
       );
     }
 
-    // Not a verification token - try attendance marking
-    print('[SCANNER DEBUG] Not a verification token, trying attendance...');
-
     // WiFi verification (Only for attendance marking)
     if (!vm.isGymWiFiConnected) {
-      print('[SCANNER DEBUG] WiFi not connected, showing error');
       setState(() {
         _isScanCompleted = false;
       });

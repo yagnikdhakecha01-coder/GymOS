@@ -112,16 +112,22 @@ class _MemberExerciseLibraryScreenState
           .map((e) => Map<String, dynamic>.from(e as Map))
           .toList();
 
-      // 2. Load any custom exercises created by user/gym
+      // 2. Load any custom exercises created by user/gym with an animated guide
       final customStr = prefs.getString('gymos_custom_exercises');
       if (customStr != null) {
         try {
           final List customList = jsonDecode(customStr);
           for (final c in customList.reversed) {
-            exercises.insert(0, Map<String, dynamic>.from(c as Map));
+            final map = Map<String, dynamic>.from(c as Map);
+            if ((map['gif'] as String? ?? '').trim().isNotEmpty) {
+              exercises.insert(0, map);
+            }
           }
         } catch (_) {}
       }
+
+      // Filter out any exercise without an Animated Guide
+      exercises.removeWhere((e) => (e['gif'] as String? ?? '').trim().isEmpty);
 
       if (mounted) {
         setState(() {
@@ -149,7 +155,11 @@ class _MemberExerciseLibraryScreenState
             final rowName =
                 (row['name'] as String? ?? '').trim().toLowerCase();
             if (rowName.isEmpty) continue;
-            // Do not prepend if exercise already exists in openGym dataset
+            final rowGif = (row['gif_url'] ?? row['gif'] ?? '').toString().trim();
+            // Skip exercises that don't have an animated guide
+            if (rowGif.isEmpty) continue;
+
+            // Do not prepend if exercise already exists in dataset
             final exists = _allExercises.any((e) =>
                 (e['n'] as String? ?? '').trim().toLowerCase() == rowName);
             if (!exists) {
@@ -163,8 +173,8 @@ class _MemberExerciseLibraryScreenState
                 'st': [row['description'] ?? '', row['tips'] ?? '']
                     .where((s) => (s as String).isNotEmpty)
                     .toList(),
-                'img': '',
-                'gif': '',
+                'img': (row['img_url'] ?? row['img'] ?? '').toString().trim(),
+                'gif': rowGif,
               });
               updated = true;
             }
@@ -184,6 +194,10 @@ class _MemberExerciseLibraryScreenState
 
     setState(() {
       _filtered = _allExercises.where((e) {
+        // Enforce Animated Guide presence
+        final gif = (e['gif'] as String? ?? '').trim();
+        if (gif.isEmpty) return false;
+
         // Body part filter
         if (bp != 'all') {
           final itemBp = (e['bp'] as String? ?? '').toLowerCase();

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'supabase_service.dart';
 import '../models/user_profile.dart';
@@ -6,7 +7,7 @@ import '../models/association_model.dart';
 class AuthService {
   bool get isSupabaseActive {
     try {
-      return SupabaseService.client != null;
+      return SupabaseService.isInitialized;
     } catch (_) {
       return false;
     }
@@ -14,24 +15,6 @@ class AuthService {
 
   SupabaseClient? get _client => isSupabaseActive ? SupabaseService.client : null;
 
-  User getMockUser(String email) {
-    return User(
-      id: 'mock_user_123',
-      appMetadata: {},
-      userMetadata: {},
-      aud: 'authenticated',
-      createdAt: DateTime.now().toIso8601String(),
-      email: email,
-    );
-  }
-
-  Session getMockSession(String email) {
-    return Session(
-      accessToken: 'mock_access_token',
-      tokenType: 'bearer',
-      user: getMockUser(email),
-    );
-  }
 
   /// Sign up with email + password
   Future<User?> signUp({required String email, required String password}) async {
@@ -308,119 +291,42 @@ class AuthService {
     }
 
     try {
-      // 1. Fetch the invitation details
-      final invite = await _client!
-          .from('invitations')
-          .select()
-          .eq('invitation_code', code.trim())
-          .maybeSingle();
+      final res = await _client!.rpc(
+        'redeem_gym_invitation',
+        params: {
+          'p_code': code.trim(),
+          'p_mobile': mobileNumber.trim(),
+        },
+      );
 
-      if (invite == null) {
-        return {'success': false, 'error': 'Invalid invitation code.'};
+      final Map<String, dynamic> data = res is Map<String, dynamic>
+          ? res
+          : Map<String, dynamic>.from(res as Map);
+
+      if (data['success'] != true) {
+        return {'success': false, 'error': data['error'] ?? 'Failed to verify invitation.'};
       }
 
-      if (invite['status'] != 'Pending' || invite['code_used'] == true) {
-        return {'success': false, 'error': 'This invitation code is no longer active.'};
-      }
-
-      final DateTime expiresAt = DateTime.parse(invite['expires_at'] as String);
-      if (DateTime.now().isAfter(expiresAt)) {
-        await _client!
-            .from('invitations')
-            .update({'status': 'Expired'})
-            .eq('id', invite['id']);
-        return {'success': false, 'error': 'This invitation code has expired.'};
-      }
-
-      // 2. Mobile number matching
-      final String inviteMobile = invite['registered_mobile'] as String;
-      if (inviteMobile.trim() != mobileNumber.trim()) {
-        return {'success': false, 'error': 'Wrong Mobile Number.'};
-      }
-
-      final String gymId = invite['gym_id'] as String;
-      final String role = invite['member_id'] != null ? 'member' : 'staff';
-      
-      // Get full name from Member or Staff table
-      String fullName = '';
-      if (invite['member_id'] != null) {
-        final memberData = await _client!
-            .from('members')
-            .select('name')
-            .eq('id', invite['member_id'])
-            .maybeSingle();
-        if (memberData != null) {
-          fullName = memberData['name'] ?? '';
-        }
-      } else if (invite['staff_id'] != null) {
-        final staffData = await _client!
-            .from('staff')
-            .select('name')
-            .eq('id', invite['staff_id'])
-            .maybeSingle();
-        if (staffData != null) {
-          fullName = staffData['name'] ?? '';
-        }
-      }
-
-      // 3. Upsert user profile details
+      // Upsert user profile details
       await _client!
           .from('profiles')
           .upsert({
             'id': userId,
             'email': email,
-            'full_name': fullName,
+            if ((data['full_name'] ?? '').toString().isNotEmpty)
+              'full_name': data['full_name'],
             'phone_number': mobileNumber,
           });
 
-      // 4. Create User Gym Association
-      await _client!
-          .from('user_gym_associations')
-          .insert({
-            'user_id': userId,
-            'gym_id': gymId,
-            'role': role,
-            'setup_completed': true,
-          });
-
-      // 5. Update Members or Staff record to link the user_id and set status to Active
-      if (invite['member_id'] != null) {
-        await _client!
-            .from('members')
-            .update({
-              'user_id': userId,
-              'status': 'Active',
-            })
-            .eq('id', invite['member_id']);
-      } else if (invite['staff_id'] != null) {
-        await _client!
-            .from('staff')
-            .update({
-              'user_id': userId,
-              'status': 'Active',
-            })
-            .eq('id', invite['staff_id']);
-      }
-
-      // 6. Mark invitation as used
-      await _client!
-          .from('invitations')
-          .update({
-            'code_used': true,
-            'status': 'Used',
-            'activated_at': DateTime.now().toIso8601String(),
-          })
-          .eq('id', invite['id']);
-
       return {
         'success': true,
-        'gymId': gymId,
-        'role': role,
-        'fullName': fullName,
+        'gymId': data['gym_id'],
+        'role': data['role'],
+        'fullName': data['full_name'] ?? '',
       };
     } catch (e) {
-      print('verifyInvitation error: $e');
-      return {'success': false, 'error': e.toString()};
+      debugPrint('verifyInvitation error: $e');
+      return {'success': false, 'error': 'Unable to verify invitation. Please try again.'};
     }
   }
 }

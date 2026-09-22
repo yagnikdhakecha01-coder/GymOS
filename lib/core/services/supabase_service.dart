@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/supabase_config.dart';
@@ -71,15 +72,15 @@ class SupabaseService {
           SupabaseConfig.setDynamicConfig(fileUrl, fileKey);
           urlStr = SupabaseConfig.url;
           anonKeyStr = SupabaseConfig.anonKey;
-          print('Supabase loaded credentials from runtime .env asset.');
+          debugPrint('Supabase loaded credentials from runtime .env asset.');
         }
       } catch (e) {
-        print('Supabase: Could not load .env asset: $e');
+        debugPrint('Supabase: Could not load .env asset: $e');
       }
     }
 
     if (urlStr.isEmpty || anonKeyStr.isEmpty) {
-      print('Supabase: Keys not set. Running in offline/mock mode.');
+      debugPrint('Supabase: Keys not set. Running in offline/mock mode.');
       return;
     }
 
@@ -92,9 +93,9 @@ class SupabaseService {
         ),
       );
       _client = Supabase.instance.client;
-      print('Supabase initialized successfully with autoRefreshToken enabled.');
+      debugPrint('Supabase initialized successfully with autoRefreshToken enabled.');
     } catch (e) {
-      print('Supabase initialization warning (running in offline/mock mode): $e');
+      debugPrint('Supabase initialization warning (running in offline/mock mode): $e');
     }
   }
 

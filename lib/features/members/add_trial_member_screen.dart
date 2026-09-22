@@ -7,7 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/theme/theme.dart';
-import '../../core/services/supabase_service.dart';
+import '../../core/services/image_security_service.dart';
 import '../../core/models/trial_member.dart';
 import 'trial_members_viewmodel.dart';
 import '../authentication/auth_viewmodel.dart';
@@ -124,24 +124,16 @@ class _AddTrialMemberScreenState extends State<AddTrialMemberScreen> {
 
       final authVm = Provider.of<AuthViewModel>(context, listen: false);
       final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'] ?? 'default_gym';
-      final fileName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final path = '$gymId/trials/$fileName';
 
       setState(() {
         _photoUploadProgress = 0.7;
       });
 
-      await SupabaseService.client.storage
-          .from('avatars')
-          .uploadBinary(path, bytes);
-
-      setState(() {
-        _photoUploadProgress = 0.9;
-      });
-
-      final publicUrl = SupabaseService.client.storage
-          .from('avatars')
-          .getPublicUrl(path);
+      final publicUrl = await ImageSecurityService.uploadSecureImage(
+        bucket: 'avatars',
+        directoryPath: '$gymId/trials',
+        bytes: bytes,
+      );
 
       setState(() {
         _avatarUrl = publicUrl;
@@ -346,8 +338,15 @@ class _AddTrialMemberScreenState extends State<AddTrialMemberScreen> {
 
     final fee = double.tryParse(_feeController.text) ?? 0.0;
     final discount = double.tryParse(_discountController.text) ?? 0.0;
-    final finalAmount = fee - discount;
+    final finalAmount = (fee - discount).clamp(0.0, double.infinity);
     final received = double.tryParse(_receivedController.text) ?? 0.0;
+
+    if (fee < 0 || discount < 0 || received < 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Fees, discounts and received amounts cannot be negative.'), backgroundColor: AppTheme.danger),
+      );
+      return;
+    }
 
     if (_selectedTrialType == 'Paid') {
       if (received > finalAmount) {

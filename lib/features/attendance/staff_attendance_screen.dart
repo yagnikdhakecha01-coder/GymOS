@@ -176,8 +176,7 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
       if (profileUserId != null && gymId != null) {
         await repo.fetchTodayAttendanceDetails(profileUserId, gymId).timeout(const Duration(seconds: 3));
         final details = repo.todayAttendanceDetails;
-        print('[StaffAttendance] RPC returned details: $details');
-        print('[StaffAttendance] assigned_shift = ${details?['assigned_shift']}');
+        debugPrint('[StaffAttendance] Attendance details loaded: ${details != null ? "Success" : "Null"}');
         if (details != null && mounted) {
           if (_currentState == AttendanceState.scanningCheckIn ||
               _currentState == AttendanceState.scanningCheckOut ||

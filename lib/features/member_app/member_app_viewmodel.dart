@@ -1,12 +1,14 @@
 import 'dart:math';
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/services/supabase_service.dart';
 import '../../core/models/diet_plan.dart';
+import '../../core/models/gym_rules_model.dart';
 
 class MemberAppViewModel extends ChangeNotifier {
   // ── Auth State ──
@@ -16,10 +18,25 @@ class MemberAppViewModel extends ChangeNotifier {
   RealtimeChannel? _memberSubscription;
   StreamSubscription<AuthState>? _authStateSubscription;
 
+  // ── Gym Rules & Agreement (Phase 09) ──
+  bool _hasAgreedRules = false;
+  bool _isCheckingAgreement = false;
+  bool _isSubmittingAgreement = false;
+  MemberAgreementRecord? _agreementRecord;
+
+  bool get hasAgreedRules => _hasAgreedRules;
+  bool get isCheckingAgreement => _isCheckingAgreement;
+  bool get isSubmittingAgreement => _isSubmittingAgreement;
+  MemberAgreementRecord? get agreementRecord => _agreementRecord;
+  bool get isLoadingMemberData => _isLoadingMemberData;
+
   // ── Member Profile ──
-  String _memberName = 'Jigar Patel';
-  String _memberId = 'M10042';
-  String _gymName = 'GYMOS';
+  String _memberName = '';
+  String _memberId = '';
+  String _gymName = '';
+  String _gymLogoUrl = '';
+  List<dynamic>? _customRulesData;
+  int _currentRulesVersion = 1;
   String _memberAvatar = 'assets/images/member/avatar_default.png';
   int _notificationCount = 0;
 
@@ -115,6 +132,7 @@ class MemberAppViewModel extends ChangeNotifier {
   // ── Check-in ──
   String _checkInTime = '';
   String _checkInDate = '';
+  String _checkInDateIso = '';
   bool _checkedInToday = false;
   bool _isCheckingIn = false;
 
@@ -159,6 +177,9 @@ class MemberAppViewModel extends ChangeNotifier {
   String get memberId => _memberId;
   String get gymId => _gymId;
   String get gymName => _gymName;
+  String get gymLogoUrl => _gymLogoUrl;
+  List<dynamic>? get customRulesData => _customRulesData;
+  int get currentRulesVersion => _currentRulesVersion;
   String get memberAvatar => _memberAvatar;
   int get notificationCount => _notificationCount;
 
@@ -321,24 +342,105 @@ class MemberAppViewModel extends ChangeNotifier {
     }
   }
 
+  // ── Helper to verify if a date string represents today ──
+  bool _isDateFromToday(String? dateStr, String? isoStr) {
+    final now = DateTime.now();
+    final todayIso = DateFormat('yyyy-MM-dd').format(now);
+    if (isoStr != null && isoStr.trim() == todayIso) return true;
+    if (dateStr == null || dateStr.trim().isEmpty) return false;
+
+    final trimmed = dateStr.trim();
+    if (trimmed.startsWith(todayIso)) return true;
+
+    for (final fmt in ['yyyy-MM-dd', 'dd MMM yyyy', 'dd-MM-yyyy', 'd MMM yyyy', 'yyyy/MM/dd']) {
+      try {
+        final parsed = DateFormat(fmt).parse(trimmed);
+        if (parsed.year == now.year && parsed.month == now.month && parsed.day == now.day) {
+          return true;
+        }
+      } catch (_) {}
+    }
+    return false;
+  }
+
+  /// Verifies if _checkedInToday is actually from today. If date changed across midnight, resets state.
+  void validateTodayAttendanceDate() {
+    if (!_checkedInToday) return;
+    if (!_isDateFromToday(_checkInDate, _checkInDateIso)) {
+      _checkedInToday = false;
+      _checkInTime = '';
+      _checkInDate = '';
+      _checkInDateIso = '';
+      SharedPreferences.getInstance().then((prefs) {
+        prefs.setBool('member_checked_in_today', false);
+        prefs.remove('member_check_in_time');
+        prefs.remove('member_check_in_date');
+        prefs.remove('member_check_in_date_iso');
+      });
+      notifyListeners();
+    }
+  }
+
   // ── Persistence ──
   Future<void> _loadPersistedState() async {
     final prefs = await SharedPreferences.getInstance();
     _isMemberCodeVerified = prefs.getBool('member_code_verified') ?? false;
     _isLoggedIn = prefs.getBool('member_logged_in') ?? false;
-    _checkedInToday = prefs.getBool('member_checked_in_today') ?? false;
-    if (_checkedInToday) {
-      _checkInTime = prefs.getString('member_check_in_time') ?? '';
-      _checkInDate = prefs.getString('member_check_in_date') ?? '';
+    
+    final savedCheckedIn = prefs.getBool('member_checked_in_today') ?? false;
+    final savedTime = prefs.getString('member_check_in_time') ?? '';
+    final savedDate = prefs.getString('member_check_in_date') ?? '';
+    final savedIso = prefs.getString('member_check_in_date_iso') ?? '';
+
+    if (savedCheckedIn && _isDateFromToday(savedDate, savedIso)) {
+      _checkedInToday = true;
+      _checkInTime = savedTime;
+      _checkInDate = savedDate;
+      _checkInDateIso = savedIso;
     } else {
+      _checkedInToday = false;
       _checkInTime = '';
       _checkInDate = '';
+      _checkInDateIso = '';
+      await prefs.setBool('member_checked_in_today', false);
+      await prefs.remove('member_check_in_time');
+      await prefs.remove('member_check_in_date');
+      await prefs.remove('member_check_in_date_iso');
     }
 
     // Load cached workout plan, diet plan & attendance history for instant UI rendering
+    _memberId = prefs.getString('member_cached_id') ?? _memberId;
+    _memberName = prefs.getString('member_cached_name') ?? _memberName;
+    _gymName = prefs.getString('member_cached_gym_name') ?? _gymName;
+    _gymLogoUrl = prefs.getString('member_cached_gym_logo') ?? _gymLogoUrl;
     _gymId = prefs.getString('member_cached_gym_id') ?? _gymId;
+
+    // Instantly restore cached rules agreement state on startup
+    bool localAgreed = false;
+    if (_gymId.isNotEmpty && _memberId.isNotEmpty) {
+      localAgreed = prefs.getBool('gymos_rule_agreed_${_gymId}_$_memberId') ?? false;
+    }
+    if (!localAgreed && _memberId.isNotEmpty) {
+      localAgreed = prefs.getBool('gymos_rule_agreed_member_$_memberId') ?? false;
+    }
+    if (!localAgreed) {
+      localAgreed = prefs.getBool('gymos_rule_agreed_global') ?? false;
+    }
+    if (localAgreed) {
+      _hasAgreedRules = true;
+    }
+    final cachedRecordStr = prefs.getString('gymos_rule_agreed_${_gymId}_${_memberId}_record') ??
+        prefs.getString('gymos_rule_agreed_record_global');
+
+    if (cachedRecordStr != null) {
+      try {
+        _agreementRecord = MemberAgreementRecord.fromMap(jsonDecode(cachedRecordStr));
+      } catch (_) {}
+    }
+
     _assignedWorkoutTitle = prefs.getString('member_cached_workout_title') ?? _assignedWorkoutTitle;
     _todayMuscleGroup = prefs.getString('member_cached_today_muscle') ?? _todayMuscleGroup;
+
     final cachedSplits = prefs.getStringList('member_cached_today_splits');
     if (cachedSplits != null && cachedSplits.isNotEmpty) {
       _todaySplits = cachedSplits;
@@ -527,19 +629,29 @@ class MemberAppViewModel extends ChangeNotifier {
     });
   }
 
+  bool _isLoadingMemberData = false;
+  Completer<void>? _loadingMemberDataCompleter;
+
   Future<void> loadMemberDataFromSupabase() async {
+    if (_loadingMemberDataCompleter != null) {
+      return _loadingMemberDataCompleter!.future;
+    }
+    _loadingMemberDataCompleter = Completer<void>();
+    _isLoadingMemberData = true;
+    notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     try {
       if (!SupabaseService.isInitialized) return;
       final user = SupabaseService.client.auth.currentUser;
       if (user == null) return;
 
+
       final gymInfoStr = prefs.getString('gymos_gym_info');
-      String? gymId;
+      String? cachedGymId;
       if (gymInfoStr != null) {
         try {
           final gymInfo = jsonDecode(gymInfoStr) as Map<String, dynamic>;
-          gymId = gymInfo['id'];
+          cachedGymId = gymInfo['id'];
         } catch (_) {}
       }
 
@@ -548,8 +660,8 @@ class MemberAppViewModel extends ChangeNotifier {
           .select()
           .eq('user_id', user.id);
       
-      if (gymId != null) {
-        query = query.eq('gym_id', gymId);
+      if (cachedGymId != null) {
+        query = query.eq('gym_id', cachedGymId);
       }
 
       final memberData = await query.maybeSingle();
@@ -557,6 +669,10 @@ class MemberAppViewModel extends ChangeNotifier {
       if (memberData != null) {
         _memberName = memberData['name'] ?? _memberName;
         _memberId = memberData['id'] ?? _memberId;
+        _gymId = memberData['gym_id']?.toString() ?? cachedGymId ?? _gymId;
+        await prefs.setString('member_cached_id', _memberId);
+        await prefs.setString('member_cached_name', _memberName);
+        await prefs.setString('member_cached_gym_id', _gymId);
         _memberAvatar = (memberData['avatar'] != null && memberData['avatar'].toString().isNotEmpty) 
             ? memberData['avatar'] 
             : _memberAvatar;
@@ -620,18 +736,46 @@ class MemberAppViewModel extends ChangeNotifier {
           _todayMuscleGroup = 'Rest Day';
         }
 
-        final gymId = memberData['gym_id'];
-        if (gymId != null) {
-          _gymId = gymId.toString();
+        final memberGymId = memberData['gym_id'];
+        if (memberGymId != null) {
+          _gymId = memberGymId.toString();
           await prefs.setString('member_cached_gym_id', _gymId);
-          final gymData = await SupabaseService.client
-              .from('gyms')
-              .select('name')
-              .eq('id', gymId)
-              .maybeSingle();
-          if (gymData != null) {
-            _gymName = gymData['name'] ?? _gymName;
-          }
+          try {
+            final gymData = await SupabaseService.client
+                .from('gyms')
+                .select('name, logo_url')
+                .eq('id', memberGymId)
+                .maybeSingle();
+            if (gymData != null) {
+              if (gymData['name'] != null && gymData['name'].toString().isNotEmpty) {
+                _gymName = gymData['name'].toString();
+                await prefs.setString('member_cached_gym_name', _gymName);
+              }
+              if (gymData['logo_url'] != null && gymData['logo_url'].toString().isNotEmpty) {
+                _gymLogoUrl = gymData['logo_url'].toString();
+                await prefs.setString('member_cached_gym_logo', _gymLogoUrl);
+              }
+            }
+          } catch (_) {}
+
+          // Also check for owner's customized rules in gym_rules
+          try {
+            final rulesData = await SupabaseService.client
+                .from('gym_rules')
+                .select('version, rules_data, is_active')
+                .eq('gym_id', memberGymId)
+                .maybeSingle();
+            if (rulesData != null && rulesData['is_active'] == true) {
+              _currentRulesVersion = rulesData['version'] is int ? rulesData['version'] : 1;
+              if (rulesData['rules_data'] is List) {
+                _customRulesData = rulesData['rules_data'] as List<dynamic>;
+              } else if (rulesData['rules_data'] is String) {
+                try {
+                  _customRulesData = jsonDecode(rulesData['rules_data']);
+                } catch (_) {}
+              }
+            }
+          } catch (_) {}
         }
 
         if (_assignedDietId.isNotEmpty) {
@@ -757,13 +901,11 @@ class MemberAppViewModel extends ChangeNotifier {
         }
 
         // Fetch real payment history from database (strictly deduplicated)
-        _paymentHistory.clear();
+        final Map<String, Map<String, dynamic>> dedupedPaymentsMap = {};
         final Set<String> processedMembershipIds = {};
-        final Set<String> seenPaymentKeys = {};
 
         List<dynamic>? membershipsList;
         try {
-          // 1. Fetch memberships to extract direct paid amounts (safe, since we know member_memberships works)
           membershipsList = await SupabaseService.client
               .from('member_memberships')
               .select('id, start_date, total_amount, paid_amount, payment_status, membership_plans(title)')
@@ -773,7 +915,7 @@ class MemberAppViewModel extends ChangeNotifier {
           print('Error loading member_memberships for payments: $e');
         }
 
-        // 2. Fetch official revenue finance transactions for this member
+        // 1. Fetch official revenue finance transactions for this member
         try {
           final financeData = await SupabaseService.client
               .from('finance_transactions')
@@ -791,19 +933,20 @@ class MemberAppViewModel extends ChangeNotifier {
               final formattedDate = DateFormat('dd MMM yyyy').format(pDate);
               final amtNum = (amtVal is num) ? amtVal.toDouble() : double.tryParse(amtVal.toString()) ?? 0.0;
               final amtStr = '₹${amtNum.toStringAsFixed(0)}';
-              final dedupKey = '${pDate.year}-${pDate.month}-${pDate.day}_${amtNum.toStringAsFixed(0)}';
+              final txId = tx['id']?.toString() ?? '';
+              final shortCode = txId.replaceAll('-', '').substring(0, 4).toUpperCase();
+              final invoiceNum = 'INV-${pDate.year}-$shortCode';
+              final uniqueKey = '${pDate.year}-${pDate.month}-${pDate.day}_${amtNum.toStringAsFixed(0)}_$shortCode';
 
-              if (!seenPaymentKeys.contains(dedupKey) && !seenPaymentKeys.contains(tx['id'].toString())) {
-                seenPaymentKeys.add(dedupKey);
-                seenPaymentKeys.add(tx['id'].toString());
-                final invoiceNum = 'INV-${pDate.year}-${tx['id'].toString().replaceAll('-', '').substring(0, 4).toUpperCase()}';
-                _paymentHistory.add({
+              if (!dedupedPaymentsMap.containsKey(uniqueKey) && !dedupedPaymentsMap.containsKey(invoiceNum)) {
+                dedupedPaymentsMap[invoiceNum] = {
                   'invoice': invoiceNum,
                   'date': formattedDate,
                   'amount': amtStr,
                   'status': 'Paid',
                   'raw_date': pDate,
-                });
+                  'tx_id': txId,
+                };
               }
             }
           }
@@ -811,18 +954,19 @@ class MemberAppViewModel extends ChangeNotifier {
           print('Error loading finance transactions for payments: $e');
         }
 
-        try {
-          // 3. Fetch explicit membership payments
-          final paymentsData = await SupabaseService.client
-              .from('membership_payments')
-              .select('id, amount, payment_date, member_membership_id')
-              .order('payment_date', ascending: false);
+        // 2. Fetch explicit membership payments
+        if (membershipsList != null && membershipsList.isNotEmpty) {
+          final membershipIds = membershipsList.map((m) => m['id'].toString()).toList();
+          try {
+            final paymentsData = await SupabaseService.client
+                .from('membership_payments')
+                .select('id, amount, payment_date, member_membership_id')
+                .inFilter('member_membership_id', membershipIds)
+                .order('payment_date', ascending: false);
 
-          if (paymentsData != null && paymentsData.isNotEmpty) {
-            for (var pay in paymentsData) {
-              final mId = pay['member_membership_id']?.toString() ?? '';
-              final belongsToUser = membershipsList?.any((m) => m['id'].toString() == mId) ?? false;
-              if (belongsToUser) {
+            if (paymentsData != null && paymentsData.isNotEmpty) {
+              for (var pay in paymentsData) {
+                final mId = pay['member_membership_id']?.toString() ?? '';
                 processedMembershipIds.add(mId);
                 final amtVal = pay['amount'];
                 if (amtVal == null || (amtVal is num && amtVal <= 0)) continue;
@@ -830,29 +974,32 @@ class MemberAppViewModel extends ChangeNotifier {
                 final formattedDate = DateFormat('dd MMM yyyy').format(pDate);
                 final amtNum = (amtVal is num) ? amtVal.toDouble() : double.tryParse(amtVal.toString()) ?? 0.0;
                 final amtStr = '₹${amtNum.toStringAsFixed(0)}';
-                final dedupKey = '${pDate.year}-${pDate.month}-${pDate.day}_${amtNum.toStringAsFixed(0)}';
+                final payId = pay['id']?.toString() ?? '';
+                final shortCode = payId.replaceAll('-', '').substring(0, 4).toUpperCase();
+                final invoiceNum = 'INV-${pDate.year}-$shortCode';
 
-                if (!seenPaymentKeys.contains(dedupKey) && !seenPaymentKeys.contains(pay['id'].toString())) {
-                  seenPaymentKeys.add(dedupKey);
-                  seenPaymentKeys.add(pay['id'].toString());
-                  final invoiceNum = 'INV-${pDate.year}-${pay['id'].toString().replaceAll('-', '').substring(0, 4).toUpperCase()}';
-                  _paymentHistory.add({
+                // Skip if already captured from finance_transactions
+                bool alreadyInFinance = dedupedPaymentsMap.values.any((item) =>
+                    item['amount'] == amtStr && item['date'] == formattedDate);
+
+                if (!alreadyInFinance && !dedupedPaymentsMap.containsKey(invoiceNum)) {
+                  dedupedPaymentsMap[invoiceNum] = {
                     'invoice': invoiceNum,
                     'date': formattedDate,
                     'amount': amtStr,
                     'status': 'Paid',
                     'raw_date': pDate,
-                  });
+                    'tx_id': payId,
+                  };
                 }
               }
             }
+          } catch (e) {
+            print('Error loading membership_payments: $e');
           }
-        } catch (e) {
-          print('Error loading membership_payments: $e');
         }
 
-        // 4. Fallback: for memberships that don't have explicit payments in membership_payments,
-        // but have paid_amount > 0 in member_memberships, synthesize a payment history entry!
+        // 3. Fallback for memberships that have paid_amount > 0 but no explicit payment records
         if (membershipsList != null) {
           for (var mship in membershipsList) {
             final mId = mship['id'].toString();
@@ -862,31 +1009,37 @@ class MemberAppViewModel extends ChangeNotifier {
               final pDate = DateTime.tryParse(mship['start_date'] ?? '') ?? DateTime.now();
               final formattedDate = DateFormat('dd MMM yyyy').format(pDate);
               final amtStr = '₹${paidAmount.toStringAsFixed(0)}';
-              final dedupKey = '${pDate.year}-${pDate.month}-${pDate.day}_${paidAmount.toStringAsFixed(0)}';
+              final shortCode = mId.replaceAll('-', '').substring(0, 4).toUpperCase();
+              final invoiceNum = 'INV-${pDate.year}-$shortCode';
 
-              if (!seenPaymentKeys.contains(dedupKey) && !seenPaymentKeys.contains(mId)) {
-                seenPaymentKeys.add(dedupKey);
-                seenPaymentKeys.add(mId);
-                final invoiceNum = 'INV-${pDate.year}-${mId.replaceAll('-', '').substring(0, 4).toUpperCase()}';
+              // Skip if already captured from finance_transactions or membership_payments
+              bool alreadyCaptured = dedupedPaymentsMap.values.any((item) =>
+                  item['amount'] == amtStr && item['date'] == formattedDate);
+
+              if (!alreadyCaptured && !dedupedPaymentsMap.containsKey(invoiceNum)) {
                 final statusStr = mship['payment_status']?.toString() ?? 'Paid';
-                _paymentHistory.add({
+                dedupedPaymentsMap[invoiceNum] = {
                   'invoice': invoiceNum,
                   'date': formattedDate,
                   'amount': amtStr,
                   'status': statusStr == 'Fully Paid' ? 'Paid' : statusStr,
                   'raw_date': pDate,
-                });
+                  'tx_id': mId,
+                };
               }
             }
           }
         }
 
-        // Sort payments descending by date
-        _paymentHistory.sort((a, b) {
-          final da = a['raw_date'] as DateTime? ?? DateTime(2000);
-          final db = b['raw_date'] as DateTime? ?? DateTime(2000);
-          return db.compareTo(da);
-        });
+        // Atomically replace _paymentHistory with sorted unique entries
+        final sortedList = dedupedPaymentsMap.values.toList()
+          ..sort((a, b) {
+            final da = a['raw_date'] as DateTime? ?? DateTime(2000);
+            final db = b['raw_date'] as DateTime? ?? DateTime(2000);
+            return db.compareTo(da);
+          });
+        _paymentHistory.clear();
+        _paymentHistory.addAll(sortedList);
 
         // Fetch workout logs for the last 30 days and clean up old ones
         try {
@@ -1253,6 +1406,10 @@ class MemberAppViewModel extends ChangeNotifier {
             _attendedDaysOfCurrentMonth.clear();
             
             final now = DateTime.now();
+            final todayIso = DateFormat('yyyy-MM-dd').format(now);
+            bool markedTodayInDb = false;
+            String todayTimeInDb = '';
+            String todayDateInDb = '';
 
             for (var row in attendanceData) {
               final status = row['status']?.toString() ?? 'Present';
@@ -1274,13 +1431,38 @@ class MemberAppViewModel extends ChangeNotifier {
                 }
               }
 
+              // Determine if this row is for today
+              final rawCheckIn = row['check_in']?.toString() ?? '';
+              bool isRowToday = false;
+              if (rawDateStr.startsWith(todayIso)) {
+                isRowToday = true;
+              } else if (rawCheckIn.isNotEmpty) {
+                try {
+                  final dt = DateTime.parse(rawCheckIn).toLocal();
+                  if (DateFormat('yyyy-MM-dd').format(dt) == todayIso) {
+                    isRowToday = true;
+                  }
+                } catch (_) {}
+              }
+
+              if (isRowToday && status != 'Absent' && status != 'Leave' && status != 'On Leave') {
+                markedTodayInDb = true;
+                if (rawCheckIn.isNotEmpty) {
+                  try {
+                    todayTimeInDb = DateFormat('hh:mm a').format(DateTime.parse(rawCheckIn).toLocal());
+                  } catch (_) {
+                    todayTimeInDb = rawCheckIn;
+                  }
+                }
+                todayDateInDb = DateFormat('dd-MM-yyyy').format(now);
+              }
+
               String displayDate = 'Unknown Date';
               if (parsedDate != null) {
                 displayDate = DateFormat('dd MMM yyyy').format(parsedDate);
               }
 
               String checkInTime = '—';
-              final rawCheckIn = row['check_in']?.toString() ?? '';
               if (rawCheckIn.isNotEmpty) {
                 try {
                   checkInTime = DateFormat('hh:mm a').format(DateTime.parse(rawCheckIn));
@@ -1305,6 +1487,28 @@ class MemberAppViewModel extends ChangeNotifier {
                 'checkOut': checkOutTime,
                 'status': status,
               });
+            }
+
+            // Sync today's attendance flag with actual logs
+            if (markedTodayInDb) {
+              _checkedInToday = true;
+              _checkInTime = todayTimeInDb.isNotEmpty ? todayTimeInDb : (_checkInTime.isNotEmpty ? _checkInTime : DateFormat('hh:mm a').format(now));
+              _checkInDate = todayDateInDb.isNotEmpty ? todayDateInDb : DateFormat('dd-MM-yyyy').format(now);
+              _checkInDateIso = todayIso;
+              await prefs.setBool('member_checked_in_today', true);
+              await prefs.setString('member_check_in_time', _checkInTime);
+              await prefs.setString('member_check_in_date', _checkInDate);
+              await prefs.setString('member_check_in_date_iso', todayIso);
+            } else {
+              // Not marked today: reset check in state so QR scanner is available
+              _checkedInToday = false;
+              _checkInTime = '';
+              _checkInDate = '';
+              _checkInDateIso = '';
+              await prefs.setBool('member_checked_in_today', false);
+              await prefs.remove('member_check_in_time');
+              await prefs.remove('member_check_in_date');
+              await prefs.remove('member_check_in_date_iso');
             }
             
             await prefs.setString('member_cached_attendance_history', jsonEncode(_attendanceHistory));
@@ -1352,16 +1556,205 @@ class MemberAppViewModel extends ChangeNotifier {
         _isMemberCodeVerified = true;
         _isLoggedIn = true;
 
+        await checkRulesAgreementStatus();
+
         notifyListeners();
       } else {
         clearAllDataInMemory();
       }
     } catch (e) {
       print('loadMemberDataFromSupabase error: $e');
+    } finally {
+      _isLoadingMemberData = false;
+      if (_loadingMemberDataCompleter != null && !_loadingMemberDataCompleter!.isCompleted) {
+        _loadingMemberDataCompleter!.complete();
+      }
+      _loadingMemberDataCompleter = null;
+      notifyListeners();
+    }
+  }
+
+
+  // ── Gym Rules & Agreement Methods (Phase 09) ──
+  Future<bool> checkRulesAgreementStatus() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    // 1. If memory already has true, NEVER revert to false
+    if (_hasAgreedRules) {
+      return true;
+    }
+
+    // 2. Restore cached IDs if empty
+    if (_memberId.isEmpty || _gymId.isEmpty) {
+      _memberId = prefs.getString('member_cached_id') ?? _memberId;
+      _gymId = prefs.getString('member_cached_gym_id') ?? _gymId;
+      _gymName = prefs.getString('member_cached_gym_name') ?? _gymName;
+    }
+
+    final cacheKey = 'gymos_rule_agreed_${_gymId}_$_memberId';
+    final isAgreedLocally = (prefs.getBool(cacheKey) == true) ||
+        (_memberId.isNotEmpty && (prefs.getBool('gymos_rule_agreed_member_$_memberId') == true)) ||
+        (prefs.getBool('gymos_rule_agreed_global') == true);
+
+    if (isAgreedLocally) {
+      _hasAgreedRules = true;
+      notifyListeners();
+      return true;
+    }
+
+    if (_memberId.isEmpty || _gymId.isEmpty) {
+      if (SupabaseService.isInitialized && SupabaseService.client.auth.currentUser != null) {
+        await loadMemberDataFromSupabase();
+      }
+    }
+
+    if (_hasAgreedRules) return true;
+    if (_memberId.isEmpty || _gymId.isEmpty) return false;
+
+    _isCheckingAgreement = true;
+    notifyListeners();
+
+    try {
+      if (SupabaseService.isInitialized) {
+        var query = SupabaseService.client
+            .from('member_rule_agreements')
+            .select();
+
+        if (_memberId.isNotEmpty) {
+          query = query.eq('member_id', _memberId);
+        } else {
+          final user = SupabaseService.client.auth.currentUser;
+          if (user != null) {
+            query = query.eq('user_id', user.id);
+          }
+        }
+
+        final res = await query
+            .order('agreed_at', ascending: false)
+            .limit(1)
+            .maybeSingle();
+
+        if (res != null && res['agreed'] == true) {
+          _agreementRecord = MemberAgreementRecord.fromMap(Map<String, dynamic>.from(res));
+          _hasAgreedRules = true;
+          await prefs.setBool(cacheKey, true);
+          await prefs.setBool('gymos_rule_agreed_member_$_memberId', true);
+          await prefs.setBool('gymos_rule_agreed_global', true);
+          await prefs.setString('${cacheKey}_record', jsonEncode(_agreementRecord!.toMap()));
+          await prefs.setString('gymos_rule_agreed_record_global', jsonEncode(_agreementRecord!.toMap()));
+
+        } else {
+          if (!_hasAgreedRules) {
+            _hasAgreedRules = false;
+            _agreementRecord = null;
+          }
+        }
+      }
+    } catch (e) {
+      print('checkRulesAgreementStatus error: $e');
+    } finally {
+      _isCheckingAgreement = false;
+      notifyListeners();
+    }
+    return _hasAgreedRules;
+  }
+
+  Future<bool> submitRulesAgreement({required String languageCode}) async {
+    if (_memberId.isEmpty || _gymId.isEmpty) {
+      final prefs = await SharedPreferences.getInstance();
+      _memberId = prefs.getString('member_cached_id') ?? _memberId;
+      _gymId = prefs.getString('member_cached_gym_id') ?? _gymId;
+      _gymName = prefs.getString('member_cached_gym_name') ?? _gymName;
+      if (_memberId.isEmpty || _gymId.isEmpty) {
+        await loadMemberDataFromSupabase();
+      }
+    }
+    if (_memberId.isEmpty || _gymId.isEmpty) return false;
+    _isSubmittingAgreement = true;
+    notifyListeners();
+
+    try {
+      final user = SupabaseService.client.auth.currentUser;
+      final now = DateTime.now();
+
+      final payload = {
+        'gym_id': _gymId,
+        'member_id': _memberId,
+        'user_id': user?.id,
+        'member_name': _memberName.isNotEmpty ? _memberName : 'Member',
+        'member_phone': user?.phone ?? '',
+        'rules_version': _currentRulesVersion,
+        'language': languageCode,
+        'agreed': true,
+        'agreed_at': now.toIso8601String(),
+        'device_info': kIsWeb ? 'Web Browser' : 'Mobile App',
+      };
+
+      if (SupabaseService.isInitialized) {
+        try {
+          final rpcRes = await SupabaseService.client.rpc(
+            'submit_member_rule_agreement',
+            params: {
+              'p_gym_id': _gymId,
+              'p_member_id': _memberId,
+              'p_user_id': user?.id,
+              'p_member_name': _memberName.isNotEmpty ? _memberName : 'Member',
+              'p_member_phone': user?.phone ?? '',
+              'p_rules_version': _currentRulesVersion,
+              'p_language': languageCode,
+              'p_device_info': kIsWeb ? 'Web Browser' : 'Mobile App',
+            },
+          );
+          if (rpcRes != null && rpcRes is Map) {
+            _agreementRecord = MemberAgreementRecord.fromMap(Map<String, dynamic>.from(rpcRes));
+          }
+        } catch (rpcErr) {
+          print('RPC submit_member_rule_agreement fallback: $rpcErr');
+          try {
+            final res = await SupabaseService.client
+                .from('member_rule_agreements')
+                .upsert(payload, onConflict: 'gym_id, member_id, rules_version')
+                .select()
+                .maybeSingle();
+
+            if (res != null) {
+              _agreementRecord = MemberAgreementRecord.fromMap(Map<String, dynamic>.from(res));
+            }
+          } catch (upsertErr) {
+            print('Direct upsert fallback: $upsertErr');
+          }
+        }
+      }
+
+      // Guarantee local persistence so the member is NEVER trapped in the modal
+      _agreementRecord ??= MemberAgreementRecord.fromMap(payload);
+      _hasAgreedRules = true;
+      final prefs = await SharedPreferences.getInstance();
+      final cacheKey = 'gymos_rule_agreed_${_gymId}_$_memberId';
+      await prefs.setBool(cacheKey, true);
+      await prefs.setBool('gymos_rule_agreed_member_$_memberId', true);
+      if (user != null) {
+        await prefs.setBool('gymos_rule_agreed_user_${user.id}', true);
+      }
+      await prefs.setBool('gymos_rule_agreed_global', true);
+      await prefs.setString('${cacheKey}_record', jsonEncode(_agreementRecord!.toMap()));
+      await prefs.setString('gymos_rule_agreed_record_global', jsonEncode(_agreementRecord!.toMap()));
+
+      notifyListeners();
+      return true;
+    } catch (e) {
+      print('submitRulesAgreement error: $e');
+      _hasAgreedRules = true;
+      notifyListeners();
+      return true;
+    } finally {
+      _isSubmittingAgreement = false;
+      notifyListeners();
     }
   }
 
   // ── Auth Methods ──
+
   Future<bool> login(String email, String password) async {
     _isLoading = true;
     notifyListeners();
@@ -1561,6 +1954,8 @@ class MemberAppViewModel extends ChangeNotifier {
     _checkInTime = '';
     _checkInDate = '';
     _checkedInToday = false;
+    _hasAgreedRules = false;
+    _agreementRecord = null;
 
     notifyListeners();
   }
@@ -1603,9 +1998,11 @@ class MemberAppViewModel extends ChangeNotifier {
         final Map<String, dynamic> result = Map<String, dynamic>.from(res as Map);
         if (result['success'] == true) {
           final now = DateTime.now();
+          final todayIso = DateFormat('yyyy-MM-dd').format(now);
           _checkedInToday = true;
           _checkInTime = result['check_in'] ?? DateFormat('hh:mm a').format(now);
           _checkInDate = result['attendance_date'] ?? DateFormat('dd MMM yyyy').format(now);
+          _checkInDateIso = todayIso;
           if (result['already_marked'] != true) {
             _currentStreak += 1;
             _currentXP += 250;
@@ -1618,6 +2015,7 @@ class MemberAppViewModel extends ChangeNotifier {
           await prefs.setBool('member_checked_in_today', true);
           await prefs.setString('member_check_in_time', _checkInTime);
           await prefs.setString('member_check_in_date', _checkInDate);
+          await prefs.setString('member_check_in_date_iso', todayIso);
           try {
             await loadMemberDataFromSupabase();
           } catch (e) {

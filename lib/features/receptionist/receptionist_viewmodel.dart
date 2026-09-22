@@ -116,7 +116,7 @@ class ReceptionistViewModel extends ChangeNotifier {
             value: _staffRecord!.id,
           ),
           callback: (payload) {
-            print('Receptionist permissions updated in real-time: ${payload.newRecord}');
+            debugPrint('Receptionist permissions updated in real-time for staff ID: [REDACTED]');
             _staffRecord = Staff.fromJson(payload.newRecord);
             notifyListeners();
           },

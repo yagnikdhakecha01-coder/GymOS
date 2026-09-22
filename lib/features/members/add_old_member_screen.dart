@@ -10,6 +10,7 @@ import '../membership/membership_viewmodel.dart';
 import '../staff/staff_viewmodel.dart';
 import '../authentication/auth_viewmodel.dart';
 import '../../core/services/supabase_service.dart';
+import '../../core/services/image_security_service.dart';
 import '../../core/models/member.dart';
 import '../../core/models/membership_plan.dart';
 import 'member_add_success_screen.dart';
@@ -127,15 +128,14 @@ class _AddOldMemberScreenState extends State<AddOldMemberScreen> {
 
       final authVm = Provider.of<AuthViewModel>(context, listen: false);
       final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'] ?? 'default_gym';
-      final fileName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final path = '$gymId/members/$fileName';
 
       setState(() => _photoUploadProgress = 0.7);
 
-      await SupabaseService.client.storage.from('avatars').uploadBinary(path, bytes);
-      setState(() => _photoUploadProgress = 0.9);
-
-      final publicUrl = SupabaseService.client.storage.from('avatars').getPublicUrl(path);
+      final publicUrl = await ImageSecurityService.uploadSecureImage(
+        bucket: 'avatars',
+        directoryPath: '$gymId/members',
+        bytes: bytes,
+      );
 
       setState(() {
         _avatarUrl = publicUrl;

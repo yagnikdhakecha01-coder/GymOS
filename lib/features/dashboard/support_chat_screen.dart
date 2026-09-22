@@ -4,8 +4,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'dart:io';
-import '../../core/theme/theme.dart';
 import '../../core/services/supabase_service.dart';
+import '../../core/services/image_security_service.dart';
 import '../authentication/auth_viewmodel.dart';
 
 class SupportChatScreen extends StatefulWidget {
@@ -221,18 +221,18 @@ class _SupportChatScreenState extends State<SupportChatScreen> {
       } else {
         final file = File(pickedFile.path);
         final bytes = await file.readAsBytes();
-        final path = 'attachments/${widget.ticket['id']}/${DateTime.now().millisecondsSinceEpoch}_${pickedFile.name}';
         
-        await SupabaseService.client.storage.from('support_attachments').uploadBinary(path, bytes);
-        uploadUrl = SupabaseService.client.storage.from('support_attachments').getPublicUrl(path);
+        uploadUrl = await ImageSecurityService.uploadSecureImage(
+          bucket: 'support_attachments',
+          directoryPath: 'attachments/${widget.ticket['id']}',
+          bytes: bytes,
+        );
       }
 
       // Close loader
       Navigator.pop(context);
 
-      if (uploadUrl != null) {
-        _sendMessage(imageUrl: uploadUrl);
-      }
+      _sendMessage(imageUrl: uploadUrl);
     } catch (e) {
       // Close loader
       if (Navigator.canPop(context)) {

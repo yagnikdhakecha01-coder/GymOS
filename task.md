@@ -1,30 +1,17 @@
-# Quick Actions & UI Navigation Audit Tasks
+# Google Drive Auto-Renewal & 12-Hour Backup Scheduler
 
-- `[x]` 1. Build PendingPaymentsScreen (Take Payment)
-- `[x]` 2. Build PaymentDetailScreen (record payment form)
-- `[x]` 3. Build ReportsScreen (10-card grid dashboard)
-- `[x]` 4. Build ReportDetailScreen (date filter + export + data)
-- `[x]` 5. Build BroadcastScreen (compose + history)
-- `[x]` Add `mobile_scanner: ^5.1.1` dependency in `pubspec.yaml`.
-- `[x]` Update `member_scan_qr_screen.dart` with real camera `MobileScanner`.
-- `[x]` Update `owner_scanner_screen.dart` with real camera `MobileScanner`.
-- `[x]` Run build checks and verify compilation
-- `[x]` Phase 1: Database Redesign Migration Script (SQL)
-- `[x]` Phase 2: Update Dart Models (`member.dart`, `staff.dart`, `pt_assignment.dart`)
-- `[x]` Phase 3: Update Repository & ViewModel Integration
-- `[x]` Phase 4: UI Connection & Integration Verification
-- `[x]` 9. Add Staff quick action directly triggers AddStaffSheet modal bottom sheet
-- `[x]` 10. Audit More settings screen: replace Backup snackbar with fully functioning BackupRestoreScreen
-- `[x]` 11. Audit Staff Dashboard: fetch live announcements, link notification bell
-- `[x]` 12. Audit Staff More screen: link Profile, Work Schedule, Change Password, Help, Settings
-- `[x]` 13. Audit Member Profile screen: replace placeholder menu items with functional dialogs/sheets
-- `[x]` 14. Fix Today's Overview date picker on Owner Dashboard
-- `[x]` 15. Fix Calendar click and filter functionality in Finance screen
-- `[x]` 16. Wire notification bell on Owner Home screen
-- `[x]` Update Member & Staff Details screens
-  - `[x]` Add Activation Card (showing Pending/Connected/Expired)
-  - `[x]` Add Generate New Invitation Code action
-  - `[x]` Add Unlink Account logic (confirm, unlink, generate new code)
-- `[x]` 17. Implement Notification details dialog and "Mark all read" updates
-- `[x]` 18. Remove "Add New Client" button from Staff Clients screen due to permissions
-- `[x]` 19. Implement StaffCodeScreen and require staff access code after sign-in
+- [x] 1. Supabase Backend: Setup 12-Hour pg_cron schedule & update `trigger_scheduled_auto_backup()`
+  - [x] Schedule `pg_cron` at `30 6,18 * * *` (12:00 PM & 12:00 AM IST)
+  - [x] Update `platform_settings` table (`auto_backup_config`) with 12-hour interval
+  - [x] Test execution via `SELECT public.trigger_scheduled_auto_backup();`
+- [x] 2. GymOS Admin Web: Google Drive Service & OAuth Auto-Renewal
+  - [x] Update `auth_service.dart` `signInWithGoogle()` to request Google Drive scopes and offline access
+  - [x] Update `auth_provider.dart` to automatically save provider tokens to `platform_settings` upon Google login
+  - [x] Update `google_drive_service.dart` with default Web Client ID and robust silent auto-renewal
+  - [x] Update `database_screen.dart` to add 1-Click Google Drive connect button and 12-Hour frequency option
+- [x] 3. Build & Deploy
+  - [x] Compile `gymos_admin` for web: `flutter build web --release`
+  - [x] Deploy build artifacts to `netlify_super_admin_deploy` and `super_admin` folders
+- [x] 4. Verification & Testing
+  - [x] Verify `pg_cron` job status in Supabase (Job 3: `auto_database_backup_12h`)
+  - [x] Test live build via browser subagent and verify Google login & clean UI

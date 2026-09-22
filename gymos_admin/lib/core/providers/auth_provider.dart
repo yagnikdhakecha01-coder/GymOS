@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
+import '../services/google_drive_service.dart';
 
 class AuthProvider extends ChangeNotifier {
   final AdminAuthService _authService = AdminAuthService();
@@ -18,6 +19,23 @@ class AuthProvider extends ChangeNotifier {
     checkSession();
   }
 
+  Future<void> _syncGoogleTokensIfAvailable() async {
+    try {
+      final session = _authService.currentSession;
+      if (session != null && session.providerToken != null && session.providerToken!.isNotEmpty) {
+        await GoogleDriveService.saveCredentials(
+          accessToken: session.providerToken!,
+          refreshToken: (session.providerRefreshToken != null && session.providerRefreshToken!.isNotEmpty)
+              ? session.providerRefreshToken
+              : null,
+          clientId: GoogleDriveService.defaultClientId,
+        );
+      }
+    } catch (e) {
+      debugPrint('Error syncing Google Drive tokens: $e');
+    }
+  }
+
   Future<void> checkSession() async {
     try {
       if (_authService.isLoggedIn) {
@@ -26,6 +44,9 @@ class AuthProvider extends ChangeNotifier {
         try {
           final isAdmin = await _authService.verifySuperAdmin();
           _isAuthenticated = isAdmin;
+          if (isAdmin) {
+            await _syncGoogleTokensIfAvailable();
+          }
         } catch (_) {
           _isAuthenticated = false;
         } finally {

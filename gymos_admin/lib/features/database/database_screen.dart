@@ -11,6 +11,7 @@ import '../../core/theme/responsive.dart';
 import '../../core/widgets/confirm_dialog.dart';
 import '../../core/widgets/skeleton_loader.dart';
 import '../../core/services/supabase_service.dart';
+import '../../core/services/auth_service.dart';
 import '../../core/services/google_drive_service.dart';
 import '../../core/services/audit_service.dart';
 
@@ -37,8 +38,9 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
 
   // Auto-Backup Configuration
   bool _autoBackupEnabled = true;
+  int _autoBackupIntervalHours = 12;
   int _autoBackupIntervalDays = 1;
-  String _autoBackupTime = '02:00';
+  String _autoBackupTime = '12:00 PM & 12:00 AM IST';
   bool _autoDriveUpload = true;
   DateTime? _lastAutoBackupRun;
   DateTime? _nextAutoBackupRun;
@@ -49,9 +51,13 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
   // Google Drive
   bool _driveConnected = false;
   String _driveEmail = '';
+  bool _showManualDriveTokens = false;
   final _driveTokenController = TextEditingController();
   final _driveRefreshTokenController = TextEditingController();
+  final _driveClientIdController = TextEditingController();
+  final _driveClientSecretController = TextEditingController();
   final _driveFolderController = TextEditingController();
+  bool _obscureClientSecret = true;
 
   // Diagnostics & Tracker
   List<String> _diagnosticLogs = [];
@@ -74,6 +80,8 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
     _tabController.dispose();
     _driveTokenController.dispose();
     _driveRefreshTokenController.dispose();
+    _driveClientIdController.dispose();
+    _driveClientSecretController.dispose();
     _driveFolderController.dispose();
     _restoreJsonController.dispose();
     super.dispose();
@@ -104,8 +112,18 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
         txCount = (tx as List).length;
       } catch (_) {}
 
-      final total = (gyms as List).length + (members as List).length + (staff as List).length + txCount;
-      final double estimatedKb = 5.2 + (total * 1.1);
+      int total = (gyms as List).length + (members as List).length + (staff as List).length + txCount;
+      try {
+        final latestBackup = await client.from('database_backups').select('total_records, size_bytes').order('created_at', ascending: false).limit(1).maybeSingle();
+        if (latestBackup != null && latestBackup['total_records'] != null) {
+          final backupRecords = latestBackup['total_records'] as int;
+          if (backupRecords > total) {
+            total = backupRecords;
+          }
+        }
+      } catch (_) {}
+
+      final double estimatedKb = 150.0 + (total * 1.8);
       final sizeStr = estimatedKb > 1024
           ? '${(estimatedKb / 1024).toStringAsFixed(1)} MB'
           : '${estimatedKb.toStringAsFixed(1)} KB';
@@ -161,8 +179,9 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
         final cfg = res['value'] as Map<String, dynamic>;
         setState(() {
           _autoBackupEnabled = cfg['enabled'] == true;
+          _autoBackupIntervalHours = (cfg['interval_hours'] as num?)?.toInt() ?? 12;
           _autoBackupIntervalDays = (cfg['interval_days'] as num?)?.toInt() ?? 1;
-          _autoBackupTime = cfg['schedule_time']?.toString() ?? '02:00';
+          _autoBackupTime = cfg['schedule_time']?.toString() ?? '12:00 PM & 12:00 AM IST';
           _autoDriveUpload = cfg['auto_drive_upload'] != false;
           _totalAutoBackups = (cfg['total_auto_backups'] as num?)?.toInt() ?? 0;
           _autoBackupStatus = cfg['last_status']?.toString() ?? 'Active';
@@ -173,7 +192,7 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
           if (cfg['next_run_at'] != null) {
             _nextAutoBackupRun = DateTime.tryParse(cfg['next_run_at'].toString());
           } else {
-            _nextAutoBackupRun = DateTime.now().add(Duration(days: _autoBackupIntervalDays));
+            _nextAutoBackupRun = DateTime.now().add(Duration(hours: _autoBackupIntervalHours));
           }
         });
       }
@@ -188,19 +207,24 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
       if (!AdminSupabaseService.isInitialized) return;
       final client = AdminSupabaseService.client;
 
-      final nextRun = DateTime.now().add(Duration(days: _autoBackupIntervalDays));
+      final nextRun = DateTime.now().add(Duration(hours: _autoBackupIntervalHours));
+      final String timeLabel = _autoBackupIntervalHours == 12
+          ? '12:00 PM & 12:00 AM IST'
+          : _autoBackupTime;
 
       await client.from('platform_settings').upsert({
         'key': 'auto_backup_config',
         'value': {
           'enabled': _autoBackupEnabled,
-          'interval_days': _autoBackupIntervalDays,
-          'schedule_time': _autoBackupTime,
+          'interval_hours': _autoBackupIntervalHours,
+          'interval_days': _autoBackupIntervalHours / 24.0,
+          'schedule_time': timeLabel,
+          'schedule_times': _autoBackupIntervalHours == 12 ? ['12:00', '00:00'] : [_autoBackupTime],
           'auto_drive_upload': _autoDriveUpload,
           'last_run_at': _lastAutoBackupRun?.toIso8601String(),
           'next_run_at': nextRun.toIso8601String(),
           'total_auto_backups': _totalAutoBackups,
-          'last_status': _autoBackupEnabled ? 'Active (Cloud Scheduled)' : 'Paused',
+          'last_status': _autoBackupEnabled ? 'Active (Every ${_autoBackupIntervalHours}h: $timeLabel)' : 'Paused',
         },
         'updated_at': DateTime.now().toIso8601String(),
       });
@@ -208,11 +232,11 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
       await AuditService.log(
         action: 'Updated Auto-Backup Schedule',
         category: 'database',
-        details: 'Auto-backup: ${_autoBackupEnabled ? "Enabled" : "Disabled"}, Interval: $_autoBackupIntervalDays day(s), Time: $_autoBackupTime, Drive Sync: $_autoDriveUpload',
+        details: 'Auto-backup: ${_autoBackupEnabled ? "Enabled" : "Disabled"}, Interval: $_autoBackupIntervalHours hour(s), Schedule: $timeLabel, Drive Sync: $_autoDriveUpload',
         metadata: {
           'enabled': _autoBackupEnabled,
-          'interval_days': _autoBackupIntervalDays,
-          'schedule_time': _autoBackupTime,
+          'interval_hours': _autoBackupIntervalHours,
+          'schedule_time': timeLabel,
           'auto_drive_upload': _autoDriveUpload,
         },
       );
@@ -313,14 +337,71 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
   }
 
   Future<void> _loadDriveStatus() async {
+    // Automatically pick up providerToken if current session came from Google Sign In
+    if (AdminSupabaseService.isInitialized) {
+      final session = AdminSupabaseService.client.auth.currentSession;
+      if (session != null && session.providerToken != null && session.providerToken!.isNotEmpty) {
+        await GoogleDriveService.saveCredentials(
+          accessToken: session.providerToken!,
+          refreshToken: (session.providerRefreshToken != null && session.providerRefreshToken!.isNotEmpty)
+              ? session.providerRefreshToken
+              : null,
+          clientId: GoogleDriveService.defaultClientId,
+        );
+      }
+    }
+
     await GoogleDriveService.loadCredentials();
+
+    // Prefill controllers if fields are empty
+    if (_driveTokenController.text.isEmpty && GoogleDriveService.currentAccessToken != null) {
+      _driveTokenController.text = GoogleDriveService.currentAccessToken!;
+    }
+    if (_driveRefreshTokenController.text.isEmpty && GoogleDriveService.currentRefreshToken != null) {
+      _driveRefreshTokenController.text = GoogleDriveService.currentRefreshToken!;
+    }
+    if (_driveClientIdController.text.isEmpty) {
+      _driveClientIdController.text = GoogleDriveService.currentClientId ?? GoogleDriveService.defaultClientId;
+    }
+    if (_driveClientSecretController.text.isEmpty && GoogleDriveService.currentClientSecret != null) {
+      _driveClientSecretController.text = GoogleDriveService.currentClientSecret!;
+    }
+    if (_driveFolderController.text.isEmpty && GoogleDriveService.folderId != null) {
+      _driveFolderController.text = GoogleDriveService.folderId!;
+    }
+
     if (GoogleDriveService.isConnected) {
       final user = await GoogleDriveService.getUserInfo();
       if (mounted) {
         setState(() {
-          _driveConnected = true;
-          _driveEmail = user?['emailAddress'] ?? 'Connected';
+          _driveConnected = user != null;
+          _driveEmail = user?['emailAddress'] ?? (_driveEmail.isNotEmpty ? _driveEmail : 'Connected');
         });
+      }
+    } else {
+      if (mounted) {
+        setState(() {
+          _driveConnected = false;
+          _driveEmail = '';
+        });
+      }
+    }
+  }
+
+  Future<void> _connectDriveWithGoogle() async {
+    setState(() {
+      _isActionInProgress = true;
+      _actionMessage = 'Redirecting to Google for 1-Click Drive Access...';
+    });
+    try {
+      final authService = AdminAuthService();
+      await authService.signInWithGoogle(requestDriveScopes: true);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isActionInProgress = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Google Sign-In failed: $e'), backgroundColor: AdminTheme.danger),
+        );
       }
     }
   }
@@ -709,6 +790,8 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
   Future<void> _connectDrive() async {
     final accessToken = _driveTokenController.text.trim();
     final refreshToken = _driveRefreshTokenController.text.trim();
+    final clientId = _driveClientIdController.text.trim();
+    final clientSecret = _driveClientSecretController.text.trim();
     final folderId = _driveFolderController.text.trim();
 
     if (accessToken.isEmpty && refreshToken.isEmpty) {
@@ -720,19 +803,21 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
 
     setState(() {
       _isActionInProgress = true;
-      _actionMessage = 'Validating Google Drive connection...';
+      _actionMessage = 'Validating Google Drive connection & saving credentials...';
     });
 
     try {
       await GoogleDriveService.saveCredentials(
         accessToken: accessToken,
         refreshToken: refreshToken.isNotEmpty ? refreshToken : null,
+        clientId: clientId.isNotEmpty ? clientId : null,
+        clientSecret: clientSecret.isNotEmpty ? clientSecret : null,
         folderId: folderId.isNotEmpty ? folderId : null,
       );
 
       final user = await GoogleDriveService.getUserInfo();
       if (user == null) {
-        throw 'Invalid token or unable to connect. Please check permissions.';
+        throw 'Connection validation failed. Check if your Refresh Token or Client Secret is correct.';
       }
 
       final email = user['emailAddress'] ?? 'Connected';
@@ -747,14 +832,13 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
         );
       }
     } catch (e) {
-      await GoogleDriveService.disconnect();
+      // NOTE: Do NOT delete credentials from database on test error!
       if (mounted) {
         setState(() {
-          _driveConnected = false;
           _isActionInProgress = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Connection failed: $e'), backgroundColor: AdminTheme.danger),
+          SnackBar(content: Text('Connection note: $e'), backgroundColor: AdminTheme.danger),
         );
       }
     }
@@ -768,6 +852,8 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
       _driveEmail = '';
       _driveTokenController.clear();
       _driveRefreshTokenController.clear();
+      _driveClientIdController.clear();
+      _driveClientSecretController.clear();
       _driveFolderController.clear();
       _diagnosticLogs.clear();
     });
@@ -1245,7 +1331,7 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
           const SizedBox(height: 16),
 
           // Interval Dropdown
-          Text('Backup Frequency (Days)', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AdminTheme.textColor(context))),
+          Text('Backup Frequency', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AdminTheme.textColor(context))),
           const SizedBox(height: 6),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -1256,19 +1342,27 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
             ),
             child: DropdownButtonHideUnderline(
               child: DropdownButton<int>(
-                value: _autoBackupIntervalDays,
+                value: _autoBackupIntervalHours,
                 isExpanded: true,
                 dropdownColor: AdminTheme.cardColor(context),
                 items: const [
-                  DropdownMenuItem(value: 1, child: Text('Every 1 Day — Daily Auto-Backup (Recommended)')),
-                  DropdownMenuItem(value: 2, child: Text('Every 2 Days')),
-                  DropdownMenuItem(value: 3, child: Text('Every 3 Days')),
-                  DropdownMenuItem(value: 7, child: Text('Every 7 Days — Weekly Auto-Backup')),
-                  DropdownMenuItem(value: 14, child: Text('Every 14 Days — Bi-Weekly')),
-                  DropdownMenuItem(value: 30, child: Text('Every 30 Days — Monthly')),
+                  DropdownMenuItem(value: 12, child: Text('Every 12 Hours — 12:00 PM & 12:00 AM IST (Recommended)')),
+                  DropdownMenuItem(value: 24, child: Text('Every 1 Day (24 Hours)')),
+                  DropdownMenuItem(value: 48, child: Text('Every 2 Days')),
+                  DropdownMenuItem(value: 72, child: Text('Every 3 Days')),
+                  DropdownMenuItem(value: 168, child: Text('Every 7 Days — Weekly')),
+                  DropdownMenuItem(value: 720, child: Text('Every 30 Days — Monthly')),
                 ],
                 onChanged: (val) {
-                  if (val != null) setState(() => _autoBackupIntervalDays = val);
+                  if (val != null) {
+                    setState(() {
+                      _autoBackupIntervalHours = val;
+                      _autoBackupIntervalDays = (val / 24).ceil();
+                      if (val == 12) {
+                        _autoBackupTime = '12:00 PM & 12:00 AM IST';
+                      }
+                    });
+                  }
                 },
               ),
             ),
@@ -1276,32 +1370,54 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
           const SizedBox(height: 20),
 
           // Preferred Time
-          Text('Preferred Execution Time (UTC / IST)', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AdminTheme.textColor(context))),
+          Text('Scheduled Execution Time', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AdminTheme.textColor(context))),
           const SizedBox(height: 6),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-            decoration: BoxDecoration(
-              color: AdminTheme.surfaceColor(context),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: AdminTheme.borderColor(context)),
-            ),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                value: _autoBackupTime,
-                isExpanded: true,
-                dropdownColor: AdminTheme.cardColor(context),
-                items: const [
-                  DropdownMenuItem(value: '02:00', child: Text('02:00 AM (Night — Minimal Traffic, Best for backup)')),
-                  DropdownMenuItem(value: '04:00', child: Text('04:00 AM (Early Morning)')),
-                  DropdownMenuItem(value: '12:00', child: Text('12:00 PM (Noon)')),
-                  DropdownMenuItem(value: '18:00', child: Text('06:00 PM (Evening)')),
+          if (_autoBackupIntervalHours == 12)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                color: AdminTheme.teal.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AdminTheme.teal.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.alarm_on_rounded, color: AdminTheme.teal, size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Every 12 Hours: 12:00 PM (Noon) & 12:00 AM (Midnight) IST (Automated Cloud Cron)',
+                      style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AdminTheme.teal),
+                    ),
+                  ),
                 ],
-                onChanged: (val) {
-                  if (val != null) setState(() => _autoBackupTime = val);
-                },
+              ),
+            )
+          else
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              decoration: BoxDecoration(
+                color: AdminTheme.surfaceColor(context),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AdminTheme.borderColor(context)),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: _autoBackupTime,
+                  isExpanded: true,
+                  dropdownColor: AdminTheme.cardColor(context),
+                  items: const [
+                    DropdownMenuItem(value: '02:00', child: Text('02:00 AM (Night — Minimal Traffic, Best for backup)')),
+                    DropdownMenuItem(value: '04:00', child: Text('04:00 AM (Early Morning)')),
+                    DropdownMenuItem(value: '12:00', child: Text('12:00 PM (Noon)')),
+                    DropdownMenuItem(value: '18:00', child: Text('06:00 PM (Evening)')),
+                  ],
+                  onChanged: (val) {
+                    if (val != null) setState(() => _autoBackupTime = val);
+                  },
+                ),
               ),
             ),
-          ),
           const SizedBox(height: 20),
 
           // Auto-Upload to Google Drive Checkbox
@@ -1490,30 +1606,62 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
               color: (_driveConnected ? AdminTheme.success : Colors.orange).withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: (_driveConnected ? AdminTheme.success : Colors.orange).withValues(alpha: 0.2)),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: (_driveConnected ? AdminTheme.success : Colors.orange).withValues(alpha: 0.25)),
             ),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
-                  _driveConnected ? Icons.cloud_done_rounded : Icons.cloud_off_rounded,
-                  color: _driveConnected ? AdminTheme.success : Colors.orange,
-                  size: 24,
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: (_driveConnected ? AdminTheme.success : Colors.orange).withValues(alpha: 0.15),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    _driveConnected ? Icons.cloud_done_rounded : Icons.cloud_off_rounded,
+                    color: _driveConnected ? AdminTheme.success : Colors.orange,
+                    size: 28,
+                  ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 16),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        _driveConnected ? 'Google Drive Connected' : 'Google Drive Not Connected',
-                        style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: _driveConnected ? AdminTheme.success : Colors.orange),
+                      Row(
+                        children: [
+                          Text(
+                            _driveConnected ? 'Google Drive Connected' : 'Google Drive Disconnected',
+                            style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: _driveConnected ? AdminTheme.success : Colors.orange),
+                          ),
+                          if (_driveConnected) ...[
+                            const SizedBox(width: 10),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: AdminTheme.teal.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: AdminTheme.teal.withValues(alpha: 0.3)),
+                              ),
+                              child: Text(
+                                '⚡ Lifetime Auto-Renewal Active',
+                                style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: AdminTheme.teal),
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
-                      if (_driveConnected)
-                        Text(_driveEmail, style: GoogleFonts.inter(fontSize: 12, color: AdminTheme.mutedTextColor(context))),
+                      const SizedBox(height: 4),
+                      Text(
+                        _driveConnected
+                            ? 'Account: $_driveEmail • Backups will automatically upload every 12 hours.'
+                            : 'Connect your Google account to automatically store cloud backup snapshots inside "GYM OS BACKUP" folder.',
+                        style: GoogleFonts.inter(fontSize: 12, color: AdminTheme.mutedTextColor(context)),
+                      ),
                     ],
                   ),
                 ),
@@ -1527,6 +1675,15 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
                             : const Icon(Icons.speed_rounded, size: 16),
                         label: const Text('Test Drive Upload'),
                         style: ElevatedButton.styleFrom(backgroundColor: AdminTheme.teal),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton.icon(
+                        onPressed: _connectDriveWithGoogle,
+                        icon: const Icon(Icons.refresh_rounded, size: 16, color: AdminTheme.primary),
+                        label: const Text('Reconnect / Switch', style: TextStyle(color: AdminTheme.primary)),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: AdminTheme.primary),
+                        ),
                       ),
                       const SizedBox(width: 8),
                       OutlinedButton(
@@ -1591,77 +1748,237 @@ class _DatabaseScreenState extends State<DatabaseScreen> with SingleTickerProvid
           ],
 
           if (!_driveConnected) ...[
-            Text('Connect Google Drive', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: AdminTheme.textColor(context))),
-            const SizedBox(height: 8),
-            Text(
-              'Backups will automatically upload to your Google Drive when connected. Use OAuth2 Access Token & Refresh Token.',
-              style: GoogleFonts.inter(fontSize: 12, color: AdminTheme.secondaryTextColor(context)),
-            ),
-            const SizedBox(height: 20),
-
-            Text('OAuth2 Access Token', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AdminTheme.textColor(context))),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _driveTokenController,
-              maxLines: 2,
-              style: GoogleFonts.firaCode(fontSize: 11),
-              decoration: InputDecoration(
-                hintText: 'Paste your Google OAuth2 access token here (starts with ya29...)...',
-                hintStyle: GoogleFonts.firaCode(fontSize: 11, color: AdminTheme.mutedTextColor(context)),
-                filled: true,
-                fillColor: AdminTheme.surfaceColor(context),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF1E293B), Color(0xFF0F172A)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AdminTheme.primary.withValues(alpha: 0.3)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.cloud_upload_rounded, color: Color(0xFF4285F4), size: 28),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '1-Click Google Drive Connection',
+                              style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Authorize GymOS with your Google account once. Your token will auto-renew forever — no need to copy or paste tokens manually ever again!',
+                              style: GoogleFonts.inter(fontSize: 13, color: Colors.white70),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  ElevatedButton.icon(
+                    onPressed: _connectDriveWithGoogle,
+                    icon: const Icon(Icons.login_rounded, size: 20),
+                    label: Text(
+                      '⚡ Connect Google Drive with 1-Click',
+                      style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AdminTheme.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 24),
 
-            Text('Refresh Token (Permanent Lifetime Auto-Renewal)', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AdminTheme.textColor(context))),
-            const SizedBox(height: 4),
-            Text('Copy from "Refresh token" in Step 2 of OAuth Playground. With this, token will never expire!', style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.mutedTextColor(context))),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _driveRefreshTokenController,
-              maxLines: 2,
-              style: GoogleFonts.firaCode(fontSize: 11),
-              decoration: InputDecoration(
-                hintText: 'Paste Refresh Token (e.g. 1//04ATsM...) for lifetime auto-renewal...',
-                hintStyle: GoogleFonts.firaCode(fontSize: 11, color: AdminTheme.mutedTextColor(context)),
-                filled: true,
-                fillColor: AdminTheme.surfaceColor(context),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            // Collapsible Manual Token Section
+            InkWell(
+              onTap: () => setState(() => _showManualDriveTokens = !_showManualDriveTokens),
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Row(
+                  children: [
+                    Icon(_showManualDriveTokens ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, size: 20, color: AdminTheme.secondaryTextColor(context)),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Lifetime Auto-Renewal Settings & Manual OAuth Setup (Permanent Fix)',
+                      style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AdminTheme.primary),
+                    ),
+                  ],
+                ),
               ),
             ),
-            const SizedBox(height: 16),
 
-            Text('Drive Folder ID (Optional)', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AdminTheme.textColor(context))),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _driveFolderController,
-              style: GoogleFonts.firaCode(fontSize: 11),
-              decoration: InputDecoration(
-                hintText: 'e.g. 1ABC_xyz... (leave empty to auto-create "GYM OS BACKUP" folder)',
-                hintStyle: GoogleFonts.firaCode(fontSize: 11, color: AdminTheme.mutedTextColor(context)),
-                filled: true,
-                fillColor: AdminTheme.surfaceColor(context),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            if (_showManualDriveTokens) ...[
+              const SizedBox(height: 14),
+              // Explanatory Info Card
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AdminTheme.primary.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AdminTheme.primary.withValues(alpha: 0.25)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.verified_user_rounded, color: AdminTheme.primary, size: 20),
+                        const SizedBox(width: 8),
+                        Text(
+                          'How Lifetime Auto-Renewal Works (Never Disconnects)',
+                          style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AdminTheme.textColor(context)),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Google access tokens naturally expire after 1 hour. To auto-renew forever without logging out after 12h or 24h, Google OAuth requires your Client ID, Client Secret (GOCSPX-...), and Refresh Token.',
+                      style: GoogleFonts.inter(fontSize: 12, height: 1.5, color: AdminTheme.textColor(context)),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '💡 Pro-Tip for Google Cloud: In your Google Cloud Console (APIs & Services → OAuth consent screen), ensure Publishing status is set to "In Production" (or add your admin email under Test Users) so Google does not expire your refresh token after 7 days.',
+                      style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w500, height: 1.5, color: AdminTheme.secondaryTextColor(context)),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(height: 20),
+              const SizedBox(height: 16),
 
-            Row(
-              children: [
-                ElevatedButton.icon(
-                  onPressed: _connectDrive,
-                  icon: const Icon(Icons.cloud_upload_rounded, size: 18),
-                  label: Text('Connect Google Drive', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AdminTheme.primary,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+              // OAuth Client ID
+              Text('Google OAuth Client ID', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AdminTheme.textColor(context))),
+              const SizedBox(height: 4),
+              Text('Your Google Cloud Web Application Client ID.', style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.mutedTextColor(context))),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _driveClientIdController,
+                style: GoogleFonts.firaCode(fontSize: 11),
+                decoration: InputDecoration(
+                  hintText: 'e.g. 225633708172-...apps.googleusercontent.com',
+                  hintStyle: GoogleFonts.firaCode(fontSize: 11, color: AdminTheme.mutedTextColor(context)),
+                  filled: true,
+                  fillColor: AdminTheme.surfaceColor(context),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // OAuth Client Secret
+              Text('Google OAuth Client Secret (Mandatory for Lifetime Auto-Renewal)', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AdminTheme.textColor(context))),
+              const SizedBox(height: 4),
+              Text('From Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client IDs (starts with GOCSPX-...).', style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.mutedTextColor(context))),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _driveClientSecretController,
+                obscureText: _obscureClientSecret,
+                style: GoogleFonts.firaCode(fontSize: 11),
+                decoration: InputDecoration(
+                  hintText: 'Paste Client Secret (e.g. GOCSPX-abc123xyz...)...',
+                  hintStyle: GoogleFonts.firaCode(fontSize: 11, color: AdminTheme.mutedTextColor(context)),
+                  filled: true,
+                  fillColor: AdminTheme.surfaceColor(context),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  suffixIcon: IconButton(
+                    icon: Icon(_obscureClientSecret ? Icons.visibility_off_rounded : Icons.visibility_rounded, size: 18),
+                    onPressed: () => setState(() => _obscureClientSecret = !_obscureClientSecret),
                   ),
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(height: 16),
+
+              // Refresh Token
+              Text('Refresh Token (Permanent Auto-Renewal Key)', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AdminTheme.textColor(context))),
+              const SizedBox(height: 4),
+              Text('Obtained automatically via 1-Click login or OAuth Playground Step 2 (starts with 1//0...).', style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.mutedTextColor(context))),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _driveRefreshTokenController,
+                maxLines: 2,
+                style: GoogleFonts.firaCode(fontSize: 11),
+                decoration: InputDecoration(
+                  hintText: 'Paste Refresh Token (e.g. 1//04ATsM... or 1//0gQi...)...',
+                  hintStyle: GoogleFonts.firaCode(fontSize: 11, color: AdminTheme.mutedTextColor(context)),
+                  filled: true,
+                  fillColor: AdminTheme.surfaceColor(context),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // OAuth2 Access Token
+              Text('OAuth2 Access Token (Optional Fallback / Auto-Renewed)', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AdminTheme.textColor(context))),
+              const SizedBox(height: 4),
+              Text('Short-lived 1-hour token (starts with ya29...). If empty, will be auto-generated from Refresh Token & Secret.', style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.mutedTextColor(context))),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _driveTokenController,
+                maxLines: 2,
+                style: GoogleFonts.firaCode(fontSize: 11),
+                decoration: InputDecoration(
+                  hintText: 'Paste Google access token (starts with ya29...)...',
+                  hintStyle: GoogleFonts.firaCode(fontSize: 11, color: AdminTheme.mutedTextColor(context)),
+                  filled: true,
+                  fillColor: AdminTheme.surfaceColor(context),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Folder ID
+              Text('Drive Folder ID (Optional)', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AdminTheme.textColor(context))),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _driveFolderController,
+                style: GoogleFonts.firaCode(fontSize: 11),
+                decoration: InputDecoration(
+                  hintText: 'e.g. 1ABC_xyz... (leave empty to auto-create "GYM OS BACKUP" folder)',
+                  hintStyle: GoogleFonts.firaCode(fontSize: 11, color: AdminTheme.mutedTextColor(context)),
+                  filled: true,
+                  fillColor: AdminTheme.surfaceColor(context),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              Row(
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: _connectDrive,
+                    icon: const Icon(Icons.verified_rounded, size: 18),
+                    label: Text('Save & Connect Lifetime Google Drive', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AdminTheme.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ],
         ],
       ),
