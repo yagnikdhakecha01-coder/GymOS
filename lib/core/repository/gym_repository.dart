@@ -3675,7 +3675,46 @@ class GymRepository extends ChangeNotifier {
           .order('created_at', ascending: false)
           .limit(1)
           .maybeSingle();
-      return response;
+      if (response != null) return response;
+
+      // Auto-fallback: If no invitation exists yet for this member, auto-generate one immediately
+      if (!isStaff) {
+        final member = _members.firstWhere(
+          (m) => m.id == id,
+          orElse: () => Member(
+            id: id,
+            name: '',
+            email: '',
+            phone: '',
+            avatar: '',
+            joinDate: '',
+            status: 'Active',
+            membershipPlanId: '',
+            ptMember: false,
+            ptTrainer: '',
+            assignedWorkoutId: '',
+            assignedDietId: '',
+            medicalDetails: '',
+            notes: '',
+            pendingAmount: 0,
+          ),
+        );
+        if (member.name.isNotEmpty || member.phone.isNotEmpty) {
+          final code = await generateInvitation(
+            recordId: id,
+            name: member.name,
+            phone: member.phone,
+            isStaff: false,
+          );
+          return {
+            'invitation_code': code,
+            'status': 'Pending',
+            'code_used': false,
+            'member_id': id,
+          };
+        }
+      }
+      return null;
     } catch (e) {
       print('getLatestInvitation error: $e');
       return null;
@@ -3821,10 +3860,12 @@ class GymRepository extends ChangeNotifier {
         'created_by': ownerId,
       });
 
-      await SupabaseService.client
-          .from(isStaff ? 'staff' : 'members')
-          .update({'status': 'Pending Activation'})
-          .eq('id', recordId);
+      if (isStaff) {
+        await SupabaseService.client
+            .from('staff')
+            .update({'status': 'Pending Activation'})
+            .eq('id', recordId);
+      }
     } catch (e) {
       print('generateInvitation Supabase warning/error: $e. Returning generated code.');
     }

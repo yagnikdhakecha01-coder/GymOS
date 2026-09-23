@@ -117,7 +117,14 @@ class MembersViewModel extends ChangeNotifier {
     String medicalDetails = 'None',
     String notes = '',
     double pendingAmount = 0.0,
+    String goal = 'General Fitness',
+    String assignedWorkoutId = '',
+    String assignedDietId = '',
+    Map<String, dynamic>? extraFields,
   }) async {
+    final extra = Map<String, dynamic>.from(extraFields ?? {});
+    extra['goal'] = goal;
+
     final newMember = Member(
       id: _generateUUIDv4(),
       name: name,
@@ -129,20 +136,54 @@ class MembersViewModel extends ChangeNotifier {
       membershipPlanId: membershipPlanId,
       ptMember: ptMember,
       ptTrainer: ptTrainer,
-      assignedWorkoutId: '',
-      assignedDietId: '',
+      assignedWorkoutId: assignedWorkoutId,
+      assignedDietId: assignedDietId,
       medicalDetails: medicalDetails,
       notes: notes,
       pendingAmount: pendingAmount,
+      extraFields: extra,
     );
 
     await _repository.saveMember(newMember);
+
+    // Guaranteed automatic invitation code creation on member create
+    try {
+      await generateInvitation(
+        recordId: newMember.id,
+        name: newMember.name,
+        phone: newMember.phone,
+      );
+    } catch (e) {
+      debugPrint('Auto invitation generation notice: $e');
+    }
+
     notifyListeners();
   }
 
   /// Update member profile details (avatar, name, phone, notes, measurements, etc.)
   /// directly without creating any financial transactions.
   Future<void> updateMemberProfile(Member member) => saveMember(member);
+
+  /// Atomically update member's fitness goal, workout plan, and diet plan
+  Future<void> updateMemberGoalAndPlans(
+    String memberId, {
+    required String goal,
+    String? workoutId,
+    String? dietId,
+  }) async {
+    final member = allMembers.firstWhere((m) => m.id == memberId);
+    final updatedExtra = Map<String, dynamic>.from(member.extraFields);
+    updatedExtra['goal'] = goal;
+
+    final updated = member.copyWith(
+      assignedWorkoutId: workoutId ?? member.assignedWorkoutId,
+      assignedDietId: dietId ?? member.assignedDietId,
+      extraFields: updatedExtra,
+    );
+
+    await saveMember(updated);
+    notifyListeners();
+  }
 
   // Update
   Future<void> updateMember(Member member, {String paymentMethod = 'Cash', double? transactionAmount, bool isRenewal = false}) async {

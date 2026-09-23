@@ -226,6 +226,7 @@ class _AddOldMemberScreenState extends State<AddOldMemberScreen> {
     }
 
     final Map<String, dynamic> extra = {
+      'goal': 'General Fitness',
       'is_old_member': true,
       'old_payment_status': _oldPaymentStatus,
       'old_amount_received': paidAmount,

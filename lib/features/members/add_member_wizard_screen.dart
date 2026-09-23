@@ -1673,6 +1673,7 @@ class _AddMemberWizardScreenState extends State<AddMemberWizardScreen> {
     final id = _generateUUIDv4();
 
     final Map<String, dynamic> extra = {
+      'goal': _selectedGoal ?? 'General Fitness',
       'altPhone': _altPhoneController.text.trim(),
       'address': _addressController.text.trim(),
       'gender': _selectedGender,

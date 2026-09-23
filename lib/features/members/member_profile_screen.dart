@@ -23,6 +23,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../staff/staff_viewmodel.dart';
 import '../authentication/auth_viewmodel.dart';
 import '../receptionist/receptionist_viewmodel.dart';
+import '../gym_settings/gym_settings_viewmodel.dart';
 import '../../core/models/association_model.dart';
 import '../../core/models/user_profile.dart';
 import '../../core/services/supabase_service.dart';
@@ -430,7 +431,24 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
   Future<void> _loadInvitation() async {
     setState(() => _loadingInvitation = true);
     final membersVm = Provider.of<MembersViewModel>(context, listen: false);
-    final invite = await membersVm.getLatestInvitation(widget.member.id);
+    var invite = await membersVm.getLatestInvitation(widget.member.id);
+    if (invite == null) {
+      try {
+        final code = await membersVm.generateInvitation(
+          recordId: widget.member.id,
+          name: widget.member.name,
+          phone: widget.member.phone,
+        );
+        invite = {
+          'invitation_code': code,
+          'status': 'Pending',
+          'code_used': false,
+          'member_id': widget.member.id,
+        };
+      } catch (e) {
+        debugPrint('Auto invitation generation error: $e');
+      }
+    }
     if (mounted) {
       setState(() {
         _invitation = invite;
@@ -928,6 +946,10 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
 
   void _showEditMemberDetailsSheet(BuildContext context, Member member) {
     final membersVm = Provider.of<MembersViewModel>(context, listen: false);
+    final workoutVm = Provider.of<WorkoutViewModel>(context, listen: false);
+    final dietVm = Provider.of<DietViewModel>(context, listen: false);
+    final settingsVm = Provider.of<GymSettingsViewModel>(context, listen: false);
+
     final nameController = TextEditingController(text: member.name);
     final phoneController = TextEditingController(text: member.phone);
     final emailController = TextEditingController(text: member.email);
@@ -952,6 +974,26 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
     if (!bloodGroups.contains(selectedBloodGroup)) {
       selectedBloodGroup = 'Not Specified';
     }
+
+    String selectedGoal = member.extraFields['goal']?.toString() ?? 'General Fitness';
+    final goalsList = settingsVm.goals.map((g) => g.name).toList();
+    if (goalsList.isEmpty) {
+      goalsList.addAll([
+        'Weight Loss',
+        'Muscle Gain',
+        'Fat Loss',
+        'General Fitness',
+        'Strength Training',
+        'Endurance',
+        'Body Recomposition',
+      ]);
+    }
+    if (!goalsList.contains(selectedGoal)) {
+      goalsList.insert(0, selectedGoal);
+    }
+
+    String selectedWorkoutId = member.assignedWorkoutId;
+    String selectedDietId = member.assignedDietId;
 
     bool isSaving = false;
 
@@ -982,7 +1024,7 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          'Edit Member Details',
+                          'Edit Member Details & Goals',
                           style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
                         ),
                         IconButton(
@@ -1082,7 +1124,120 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
                       maxLines: 2,
                       decoration: const InputDecoration(labelText: 'Notes / Medical Info', prefixIcon: Icon(Icons.notes_rounded)),
                     ),
+                    const SizedBox(height: 16),
+
+                    // --- FITNESS GOAL & DYNAMIC PROGRAM ASSIGNMENT ---
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primaryLight.withValues(alpha: 0.35),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: AppTheme.primary.withValues(alpha: 0.25)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.track_changes_rounded, color: AppTheme.primary, size: 18),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Fitness Goal & Plan Alignment',
+                                style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+
+                          // Goal Dropdown
+                          DropdownButtonFormField<String>(
+                            value: selectedGoal,
+                            decoration: const InputDecoration(
+                              labelText: 'Fitness Goal *',
+                              filled: true,
+                              fillColor: Colors.white,
+                              prefixIcon: Icon(Icons.flag_outlined, color: AppTheme.primary),
+                            ),
+                            items: goalsList.map((g) => DropdownMenuItem(value: g, child: Text(g))).toList(),
+                            onChanged: (val) {
+                              if (val != null) {
+                                setSheetState(() {
+                                  selectedGoal = val;
+                                });
+                              }
+                            },
+                          ),
+                          const SizedBox(height: 12),
+
+                          // Workout Plan Dropdown (Matching Goal highlighted)
+                          DropdownButtonFormField<String>(
+                            value: workoutVm.workouts.any((w) => w.id == selectedWorkoutId) ? selectedWorkoutId : '',
+                            decoration: InputDecoration(
+                              labelText: 'Workout Routine',
+                              filled: true,
+                              fillColor: Colors.white,
+                              prefixIcon: const Icon(Icons.fitness_center_rounded, color: Colors.blue),
+                              helperText: 'Showing plans matching "$selectedGoal"',
+                              helperStyle: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary),
+                            ),
+                            items: [
+                              const DropdownMenuItem(value: '', child: Text('No Workout Assigned')),
+                              ...workoutVm.workouts.map((w) {
+                                final matches = w.goal.toLowerCase() == selectedGoal.toLowerCase();
+                                return DropdownMenuItem(
+                                  value: w.id,
+                                  child: Text(
+                                    matches ? '${w.title} (${w.goal}) ⭐' : '${w.title} (${w.goal})',
+                                    style: GoogleFonts.inter(
+                                      fontWeight: matches ? FontWeight.bold : FontWeight.normal,
+                                      color: matches ? AppTheme.primary : AppTheme.textPrimary,
+                                    ),
+                                  ),
+                                );
+                              }),
+                            ],
+                            onChanged: (val) {
+                              if (val != null) setSheetState(() => selectedWorkoutId = val);
+                            },
+                          ),
+                          const SizedBox(height: 12),
+
+                          // Diet Plan Dropdown (Matching Goal highlighted)
+                          DropdownButtonFormField<String>(
+                            value: dietVm.diets.any((d) => d.id == selectedDietId) ? selectedDietId : '',
+                            decoration: InputDecoration(
+                              labelText: 'Diet Plan',
+                              filled: true,
+                              fillColor: Colors.white,
+                              prefixIcon: const Icon(Icons.restaurant_rounded, color: Colors.orange),
+                              helperText: 'Showing diets matching "$selectedGoal"',
+                              helperStyle: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary),
+                            ),
+                            items: [
+                              const DropdownMenuItem(value: '', child: Text('No Diet Assigned')),
+                              ...dietVm.diets.map((d) {
+                                final matches = d.goal.toLowerCase() == selectedGoal.toLowerCase();
+                                return DropdownMenuItem(
+                                  value: d.id,
+                                  child: Text(
+                                    matches ? '${d.title} (${d.goal}) ⭐' : '${d.title} (${d.goal})',
+                                    style: GoogleFonts.inter(
+                                      fontWeight: matches ? FontWeight.bold : FontWeight.normal,
+                                      color: matches ? AppTheme.primary : AppTheme.textPrimary,
+                                    ),
+                                  ),
+                                );
+                              }),
+                            ],
+                            onChanged: (val) {
+                              if (val != null) setSheetState(() => selectedDietId = val);
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
                     const SizedBox(height: 24),
+
                     ElevatedButton(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppTheme.primary,
@@ -1110,12 +1265,15 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
                         newExtra['gender'] = selectedGender;
                         newExtra['bloodGroup'] = selectedBloodGroup;
                         newExtra['address'] = addressController.text.trim();
+                        newExtra['goal'] = selectedGoal;
 
                         final updated = member.copyWith(
                           name: updatedName,
                           phone: updatedPhone,
                           email: emailController.text.trim(),
                           notes: notesController.text.trim(),
+                          assignedWorkoutId: selectedWorkoutId,
+                          assignedDietId: selectedDietId,
                           extraFields: newExtra,
                         );
 
@@ -1130,7 +1288,7 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
                           SuccessDialog.show(
                             context,
                             title: 'Member Details Updated!',
-                            message: 'Profile information for ${updated.name} has been updated successfully.',
+                            message: 'Goal and profile information for ${updated.name} have been updated successfully.',
                           );
                         }
                       },
@@ -1522,81 +1680,143 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
   void _showAssignWorkoutBottomSheet(MembersViewModel membersVm, Member member) {
     final workoutVm = Provider.of<WorkoutViewModel>(context, listen: false);
     final workouts = workoutVm.workouts;
-    WorkoutPlan? selectedWorkout = workouts.isNotEmpty ? workouts.first : null;
+    final memberGoal = (member.extraFields['goal'] ?? '').toString().trim();
+    final currentWorkout = workouts.where((w) => w.id == member.assignedWorkoutId).firstOrNull;
+    WorkoutPlan? selectedWorkout = currentWorkout ??
+        (memberGoal.isNotEmpty ? workouts.where((w) => w.goal.toLowerCase() == memberGoal.toLowerCase()).firstOrNull : null) ??
+        (workouts.isNotEmpty ? workouts.first : null);
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (context) {
+      builder: (sheetContext) {
         return StatefulBuilder(
           builder: (context, setSheetState) {
             return SafeArea(
               child: SingleChildScrollView(
-                child: Padding(
-                  padding: const EdgeInsets.all(24.0),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('Assign Workout', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold)),
-                      IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  Text('Select Workout Plan *', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 6),
-                  DropdownButtonFormField<WorkoutPlan>(
-                    value: selectedWorkout,
-                    items: workouts.map((w) => DropdownMenuItem(value: w, child: Text(w.title))).toList(),
-                    onChanged: (val) {
-                      setSheetState(() => selectedWorkout = val);
-                    },
-                  ),
-                  if (selectedWorkout != null) ...[
-                    const SizedBox(height: 20),
-                    Text('Plan Details', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textSecondary)),
-                    const SizedBox(height: 10),
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(color: AppTheme.surfaceGray, borderRadius: BorderRadius.circular(16)),
-                      child: Column(
-                        children: [
-                          _buildDetailIconRow(Icons.timer_outlined, 'Duration', '8 Weeks'),
-                          const Divider(height: 16),
-                          _buildDetailIconRow(Icons.emoji_events_outlined, 'Focus', selectedWorkout!.goal),
-                          const Divider(height: 16),
-                          _buildDetailIconRow(Icons.bar_chart_rounded, 'Level', selectedWorkout!.difficulty),
-                        ],
+                padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(context).viewInsets.bottom + 24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.fitness_center_rounded, color: AppTheme.primary, size: 22),
+                            const SizedBox(width: 8),
+                            Text('Assign Workout Routine', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close),
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () => Navigator.pop(sheetContext),
+                        ),
+                      ],
+                    ),
+                    if (memberGoal.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: AppTheme.primary.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: AppTheme.primary.withValues(alpha: 0.2)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.flag_outlined, size: 16, color: AppTheme.primary),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Member Goal: $memberGoal  (Recommended plans marked with ⭐)',
+                                style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: AppTheme.primary),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
+                    ],
+                    const SizedBox(height: 16),
+                    Text('Select Workout Plan *', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 6),
+                    DropdownButtonFormField<WorkoutPlan>(
+                      value: selectedWorkout,
+                      isExpanded: true,
+                      decoration: InputDecoration(
+                        filled: true,
+                        fillColor: AppTheme.surfaceGray,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      ),
+                      items: workouts.map((w) {
+                        final isGoalMatch = memberGoal.isNotEmpty && w.goal.toLowerCase() == memberGoal.toLowerCase();
+                        return DropdownMenuItem(
+                          value: w,
+                          child: Text(
+                            isGoalMatch ? '${w.title} (${w.goal}) ⭐' : '${w.title} (${w.goal})',
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              fontWeight: isGoalMatch ? FontWeight.bold : FontWeight.normal,
+                              color: isGoalMatch ? AppTheme.primary : AppTheme.textPrimary,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (val) {
+                        setSheetState(() => selectedWorkout = val);
+                      },
+                    ),
+                    if (selectedWorkout != null) ...[
+                      const SizedBox(height: 16),
+                      Text('Plan Details', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textSecondary)),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(color: AppTheme.surfaceGray, borderRadius: BorderRadius.circular(14)),
+                        child: Column(
+                          children: [
+                            _buildDetailIconRow(Icons.timer_outlined, 'Duration', '8 Weeks'),
+                            const Divider(height: 14),
+                            _buildDetailIconRow(Icons.emoji_events_outlined, 'Focus / Goal', selectedWorkout!.goal),
+                            const Divider(height: 14),
+                            _buildDetailIconRow(Icons.bar_chart_rounded, 'Difficulty Level', selectedWorkout!.difficulty),
+                          ],
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 20),
+                    ElevatedButton(
+                      onPressed: () async {
+                        if (selectedWorkout == null) return;
+                        Navigator.pop(sheetContext);
+                        await membersVm.assignWorkout(member.id, selectedWorkout!.id);
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Workout routine assigned: ${selectedWorkout!.title}')),
+                          );
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        elevation: 0,
+                      ),
+                      child: Text('Assign Workout', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 14)),
                     ),
                   ],
-                  const SizedBox(height: 24),
-                  ElevatedButton(
-                    onPressed: () async {
-                      if (selectedWorkout == null) return;
-                      Navigator.pop(context);
-                      await membersVm.assignWorkout(member.id, selectedWorkout!.id);
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.primary,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    child: Text('Assign Workout', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-                  ),
-                ],
+                ),
               ),
-            ),
-          ),
+            );
+          },
         );
-      },
-    );
       },
     );
   }
@@ -1604,81 +1824,143 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
   void _showAssignDietBottomSheet(MembersViewModel membersVm, Member member) {
     final dietVm = Provider.of<DietViewModel>(context, listen: false);
     final diets = dietVm.diets;
-    DietPlan? selectedDiet = diets.isNotEmpty ? diets.first : null;
+    final memberGoal = (member.extraFields['goal'] ?? '').toString().trim();
+    final currentDiet = diets.where((d) => d.id == member.assignedDietId).firstOrNull;
+    DietPlan? selectedDiet = currentDiet ??
+        (memberGoal.isNotEmpty ? diets.where((d) => d.goal.toLowerCase() == memberGoal.toLowerCase()).firstOrNull : null) ??
+        (diets.isNotEmpty ? diets.first : null);
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (context) {
+      builder: (sheetContext) {
         return StatefulBuilder(
           builder: (context, setSheetState) {
             return SafeArea(
               child: SingleChildScrollView(
-                child: Padding(
-                  padding: const EdgeInsets.all(24.0),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('Assign Diet', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold)),
-                      IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  Text('Select Diet Plan *', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 6),
-                  DropdownButtonFormField<DietPlan>(
-                    value: selectedDiet,
-                    items: diets.map((d) => DropdownMenuItem(value: d, child: Text(d.title))).toList(),
-                    onChanged: (val) {
-                      setSheetState(() => selectedDiet = val);
-                    },
-                  ),
-                  if (selectedDiet != null) ...[
-                    const SizedBox(height: 20),
-                    Text('Plan Details', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textSecondary)),
-                    const SizedBox(height: 10),
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(color: AppTheme.surfaceGray, borderRadius: BorderRadius.circular(16)),
-                      child: Column(
-                        children: [
-                          _buildDetailIconRow(Icons.restaurant_menu_rounded, 'Type', 'High Protein'),
-                          const Divider(height: 16),
-                          _buildDetailIconRow(Icons.local_fire_department_outlined, 'Calories', '2000 kcal / Day'),
-                          const Divider(height: 16),
-                          _buildDetailIconRow(Icons.emoji_events_outlined, 'Goal', selectedDiet!.goal),
-                        ],
+                padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(context).viewInsets.bottom + 24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.restaurant_rounded, color: Colors.orange, size: 22),
+                            const SizedBox(width: 8),
+                            Text('Assign Diet Plan', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close),
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () => Navigator.pop(sheetContext),
+                        ),
+                      ],
+                    ),
+                    if (memberGoal.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.orange.withValues(alpha: 0.2)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.flag_outlined, size: 16, color: Colors.orange),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Member Goal: $memberGoal  (Recommended plans marked with ⭐)',
+                                style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.orange.shade800),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
+                    ],
+                    const SizedBox(height: 16),
+                    Text('Select Diet Plan *', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 6),
+                    DropdownButtonFormField<DietPlan>(
+                      value: selectedDiet,
+                      isExpanded: true,
+                      decoration: InputDecoration(
+                        filled: true,
+                        fillColor: AppTheme.surfaceGray,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      ),
+                      items: diets.map((d) {
+                        final isGoalMatch = memberGoal.isNotEmpty && d.goal.toLowerCase() == memberGoal.toLowerCase();
+                        return DropdownMenuItem(
+                          value: d,
+                          child: Text(
+                            isGoalMatch ? '${d.title} (${d.goal}) ⭐' : '${d.title} (${d.goal})',
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              fontWeight: isGoalMatch ? FontWeight.bold : FontWeight.normal,
+                              color: isGoalMatch ? Colors.orange.shade900 : AppTheme.textPrimary,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (val) {
+                        setSheetState(() => selectedDiet = val);
+                      },
+                    ),
+                    if (selectedDiet != null) ...[
+                      const SizedBox(height: 16),
+                      Text('Plan Details', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textSecondary)),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(color: AppTheme.surfaceGray, borderRadius: BorderRadius.circular(14)),
+                        child: Column(
+                          children: [
+                            _buildDetailIconRow(Icons.restaurant_menu_rounded, 'Diet Type', selectedDiet!.title),
+                            const Divider(height: 14),
+                            _buildDetailIconRow(Icons.local_fire_department_outlined, 'Calories', '${selectedDiet!.calories ?? 2000} kcal / Day'),
+                            const Divider(height: 14),
+                            _buildDetailIconRow(Icons.emoji_events_outlined, 'Target Goal', selectedDiet!.goal),
+                          ],
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 20),
+                    ElevatedButton(
+                      onPressed: () async {
+                        if (selectedDiet == null) return;
+                        Navigator.pop(sheetContext);
+                        await membersVm.assignDiet(member.id, selectedDiet!.id);
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Diet plan assigned: ${selectedDiet!.title}')),
+                          );
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orange,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        elevation: 0,
+                      ),
+                      child: Text('Assign Diet', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 14)),
                     ),
                   ],
-                  const SizedBox(height: 24),
-                  ElevatedButton(
-                    onPressed: () async {
-                      if (selectedDiet == null) return;
-                      Navigator.pop(context);
-                      await membersVm.assignDiet(member.id, selectedDiet!.id);
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.primary,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    child: Text('Assign Diet', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-                  ),
-                ],
+                ),
               ),
-            ),
-          ),
+            );
+          },
         );
-      },
-    );
       },
     );
   }
@@ -2095,6 +2377,171 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
         ),
         const SizedBox(height: 24),
 
+        // 3.8 Fitness Goal & Plans Card
+        Consumer2<WorkoutViewModel, DietViewModel>(
+          builder: (context, workoutVm, dietVm, _) {
+            final memberGoal = (member.extraFields['goal'] ?? 'General Fitness').toString();
+            final currentWorkout = workoutVm.workouts.where((w) => w.id == member.assignedWorkoutId).firstOrNull;
+            final currentDiet = dietVm.diets.where((d) => d.id == member.assignedDietId).firstOrNull;
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('FITNESS GOAL & ASSIGNED PLANS', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textSecondary, letterSpacing: 0.5)),
+                    GestureDetector(
+                      onTap: () => _showEditMemberDetailsSheet(context, member),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.edit_outlined, size: 14, color: AppTheme.primary),
+                          const SizedBox(width: 4),
+                          Text('Edit', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.primary)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                CustomCard(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      // Goal Row
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: AppTheme.primary.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(Icons.track_changes_rounded, color: AppTheme.primary, size: 20),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Current Goal', style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary)),
+                                const SizedBox(height: 2),
+                                Text(memberGoal, style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
+                              ],
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: AppTheme.primary.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              'Goal',
+                              style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: AppTheme.primary),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const Divider(height: 24),
+                      // Workout Row
+                      InkWell(
+                        onTap: () => _showAssignWorkoutBottomSheet(membersVm, member),
+                        borderRadius: BorderRadius.circular(8),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Icon(Icons.fitness_center_rounded, color: Colors.blue, size: 20),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Assigned Workout Routine', style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary)),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      currentWorkout?.title ?? 'No Routine Assigned',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.bold,
+                                        color: currentWorkout != null ? AppTheme.textPrimary : AppTheme.textSecondary,
+                                      ),
+                                    ),
+                                    if (currentWorkout != null)
+                                      Text(
+                                        'Focus: ${currentWorkout.goal} • ${currentWorkout.difficulty}',
+                                        style: GoogleFonts.inter(fontSize: 10, color: AppTheme.textSecondary),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                              const Icon(Icons.chevron_right_rounded, color: AppTheme.textSecondary, size: 20),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const Divider(height: 24),
+                      // Diet Row
+                      InkWell(
+                        onTap: () => _showAssignDietBottomSheet(membersVm, member),
+                        borderRadius: BorderRadius.circular(8),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Icon(Icons.restaurant_rounded, color: Colors.orange, size: 20),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Assigned Diet Plan', style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary)),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      currentDiet?.title ?? 'No Diet Assigned',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.bold,
+                                        color: currentDiet != null ? AppTheme.textPrimary : AppTheme.textSecondary,
+                                      ),
+                                    ),
+                                    if (currentDiet != null)
+                                      Text(
+                                        'Target: ${currentDiet.goal} • ${currentDiet.calories ?? 2000} kcal',
+                                        style: GoogleFonts.inter(fontSize: 10, color: AppTheme.textSecondary),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                              const Icon(Icons.chevron_right_rounded, color: AppTheme.textSecondary, size: 20),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+              ],
+            );
+          },
+        ),
+
         // 4. Member Information
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -2117,6 +2564,8 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Column(
             children: [
+              _buildRowInfo(Icons.flag_outlined, 'Fitness Goal', member.extraFields['goal'] ?? 'General Fitness'),
+              const Divider(height: 1),
               _buildRowInfo(Icons.cake_outlined, 'Date of Birth', dob),
               const Divider(height: 1),
               _buildRowInfo(Icons.wc_outlined, 'Gender', gender),
