@@ -54,7 +54,7 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: 6, vsync: this);
     _isLocked = widget.gym['is_locked'] == true;
     _gymStatus = widget.gym['status']?.toString() ?? 'Active';
     _loadAllData();
@@ -1853,10 +1853,10 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
               content: Text('✅ Member "$name" deleted & archived. You can restore anytime!'),
               backgroundColor: AdminTheme.success,
               action: SnackBarAction(
-                label: 'View Trash',
+                label: 'Open Restore Tab',
                 textColor: Colors.white,
                 onPressed: () {
-                  setState(() => _showDeletedMembersView = true);
+                  _tabController.animateTo(5);
                 },
               ),
             ),
@@ -1965,6 +1965,72 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
     }
   }
 
+  // --- RESTORE ALL DELETED MEMBERS (BATCH 1-CLICK) ---
+  Future<void> _restoreAllDeletedMembers() async {
+    if (_deletedMembers.isEmpty) return;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.settings_backup_restore_rounded, color: AdminTheme.success),
+            SizedBox(width: 8),
+            Text('Restore All Deleted Records?'),
+          ],
+        ),
+        content: Text(
+          'Are you sure you want to restore all ${_deletedMembers.length} deleted records back to active status?\n\n'
+          'All financial entries will be smartly re-linked without duplicates, and member profiles will become active immediately.',
+          style: GoogleFonts.inter(fontSize: 13),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(backgroundColor: AdminTheme.success, foregroundColor: Colors.white),
+            icon: const Icon(Icons.settings_backup_restore_rounded, size: 16),
+            label: const Text('Restore All'),
+            onPressed: () => Navigator.pop(ctx, true),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      if (mounted) setState(() => _loadingDeletedMembers = true);
+      final client = AdminSupabaseService.client;
+      int successCount = 0;
+      for (final dm in List<Map<String, dynamic>>.from(_deletedMembers)) {
+        try {
+          await client.rpc('admin_restore_deleted_member', params: {'p_deleted_id': dm['id']});
+          successCount++;
+        } catch (e) {
+          debugPrint('Error restoring item: $e');
+        }
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ Successfully restored $successCount deleted records!'),
+            backgroundColor: AdminTheme.success,
+          ),
+        );
+        _loadMembersData();
+        _loadFinanceData();
+        _loadDeletedMembersData();
+        _loadUnlinkedEntries();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error during batch restore: $e'), backgroundColor: AdminTheme.danger),
+        );
+        _loadDeletedMembersData();
+      }
+    }
+  }
+
   // --- BUILD UI ---
   @override
   Widget build(BuildContext context) {
@@ -2020,6 +2086,15 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
               ),
               text: 'Unlinked Entries',
             ),
+            Tab(
+              icon: Badge(
+                isLabelVisible: _deletedMembers.isNotEmpty,
+                label: Text('${_deletedMembers.length}', style: const TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold)),
+                backgroundColor: AdminTheme.danger,
+                child: const Icon(Icons.settings_backup_restore_rounded),
+              ),
+              text: 'Restore (${_deletedMembers.length})',
+            ),
           ],
         ),
       ),
@@ -2046,6 +2121,9 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
                 _loadingUnlinked
                     ? const Center(child: CircularProgressIndicator(color: AdminTheme.primary))
                     : _buildUnlinkedTab(currencyFormat),
+                _loadingDeletedMembers
+                    ? const Center(child: CircularProgressIndicator(color: AdminTheme.danger))
+                    : _buildRestoreTab(currencyFormat),
               ],
             ),
           ),
@@ -2717,17 +2795,9 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
             children: [
               Expanded(
                 child: TextField(
-                  onChanged: (val) => setState(() {
-                    if (_showDeletedMembersView) {
-                      _deletedMemberSearch = val;
-                    } else {
-                      _memberSearch = val;
-                    }
-                  }),
+                  onChanged: (val) => setState(() => _memberSearch = val),
                   decoration: InputDecoration(
-                    hintText: _showDeletedMembersView
-                        ? 'Search deleted members in archive...'
-                        : 'Search members by name or mobile number...',
+                    hintText: 'Search members by name or mobile number...',
                     prefixIcon: const Icon(Icons.search_rounded),
                     filled: true,
                     fillColor: AdminTheme.surfaceColor(context),
@@ -2736,76 +2806,35 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
                 ),
               ),
               const SizedBox(width: 16),
-              // Segmented Switcher for Active vs Deleted Members Archive
-              Container(
-                decoration: BoxDecoration(
-                  color: AdminTheme.surfaceColor(context),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AdminTheme.borderColor(context)),
+              // Direct Shortcut to Restore Tab
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  side: BorderSide(
+                    color: _deletedMembers.isNotEmpty ? Colors.redAccent.withValues(alpha: 0.5) : AdminTheme.borderColor(context),
+                  ),
+                  backgroundColor: _deletedMembers.isNotEmpty ? Colors.redAccent.withValues(alpha: 0.05) : Colors.transparent,
                 ),
-                padding: const EdgeInsets.all(4),
-                child: Row(
-                  children: [
-                    InkWell(
-                      borderRadius: BorderRadius.circular(8),
-                      onTap: () => setState(() => _showDeletedMembersView = false),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: !_showDeletedMembersView ? AdminTheme.primary : Colors.transparent,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(Icons.people_rounded, size: 16, color: !_showDeletedMembersView ? Colors.white : AdminTheme.secondaryTextColor(context)),
-                            const SizedBox(width: 6),
-                            Text(
-                              'Active (${_members.length})',
-                              style: GoogleFonts.inter(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: !_showDeletedMembersView ? Colors.white : AdminTheme.secondaryTextColor(context),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    InkWell(
-                      borderRadius: BorderRadius.circular(8),
-                      onTap: () => setState(() => _showDeletedMembersView = true),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: _showDeletedMembersView ? AdminTheme.danger : Colors.transparent,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(Icons.delete_sweep_rounded, size: 16, color: _showDeletedMembersView ? Colors.white : AdminTheme.danger),
-                            const SizedBox(width: 6),
-                            Text(
-                              'Deleted Archive (${_deletedMembers.length})',
-                              style: GoogleFonts.inter(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: _showDeletedMembersView ? Colors.white : AdminTheme.danger,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
+                icon: Icon(
+                  Icons.settings_backup_restore_rounded,
+                  size: 18,
+                  color: _deletedMembers.isNotEmpty ? Colors.redAccent : AdminTheme.secondaryTextColor(context),
                 ),
+                label: Text(
+                  'Restore Tab (${_deletedMembers.length})',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: _deletedMembers.isNotEmpty ? Colors.redAccent : AdminTheme.secondaryTextColor(context),
+                  ),
+                ),
+                onPressed: () => _tabController.animateTo(5),
               ),
             ],
           ),
           const SizedBox(height: 20),
-          if (_showDeletedMembersView)
-            _buildDeletedMembersView(currencyFormat)
-          else if (filtered.isEmpty)
+          if (filtered.isEmpty)
             Expanded(
               child: Center(
                 child: Column(
@@ -2917,14 +2946,8 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
     );
   }
 
-  // --- DELETED MEMBERS ARCHIVE VIEW (WITH 1-CLICK RESTORE) ---
-  Widget _buildDeletedMembersView(NumberFormat currencyFormat) {
-    if (_loadingDeletedMembers) {
-      return const Expanded(
-        child: Center(child: CircularProgressIndicator(color: AdminTheme.danger)),
-      );
-    }
-
+  // --- DEDICATED RESTORE / ARCHIVE TAB ---
+  Widget _buildRestoreTab(NumberFormat currencyFormat) {
     final filtered = _deletedMembers.where((dm) {
       final name = (dm['full_name'] ?? '').toString().toLowerCase();
       final phone = (dm['phone'] ?? '').toString().toLowerCase();
@@ -2932,172 +2955,286 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
       return name.contains(q) || phone.contains(q);
     }).toList();
 
-    if (filtered.isEmpty) {
-      return Expanded(
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.delete_sweep_outlined, size: 64, color: AdminTheme.mutedTextColor(context)),
-              const SizedBox(height: 12),
-              Text(
-                'No deleted members in archive',
-                style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: AdminTheme.textColor(context)),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'When you delete a member, all profile data, financial transactions, and attendance logs are safely saved here with 1-click restore.',
-                style: GoogleFonts.inter(fontSize: 12, color: AdminTheme.secondaryTextColor(context)),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return Expanded(
-      child: GridView.builder(
-        itemCount: filtered.length,
-        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-          maxCrossAxisExtent: 380,
-          childAspectRatio: 1.6,
-          crossAxisSpacing: 16,
-          mainAxisSpacing: 16,
-        ),
-        itemBuilder: (context, index) {
-          final dm = filtered[index];
-          final name = dm['full_name'] ?? 'Member';
-          final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
-          final avatar = dm['avatar_url'];
-          final phone = dm['phone'] ?? '-';
-          final planName = dm['membership_name'] ?? 'No Plan';
-          final totalRec = double.tryParse(dm['total_received_amount']?.toString() ?? '0') ?? 0.0;
-          final pending = double.tryParse(dm['pending_amount']?.toString() ?? '0') ?? 0.0;
-          final deletedAtRaw = dm['deleted_at']?.toString();
-          DateTime? deletedAt = deletedAtRaw != null ? DateTime.tryParse(deletedAtRaw) : null;
-          final deletedDateStr = deletedAt != null
-              ? DateFormat('dd MMM yyyy, hh:mm a').format(deletedAt)
-              : 'Unknown date';
-
-          return Container(
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header Banner
+          Container(
+            padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
-              color: AdminTheme.surfaceColor(context),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.red.withValues(alpha: 0.04),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
+              gradient: LinearGradient(
+                colors: [
+                  AdminTheme.primary.withValues(alpha: 0.1),
+                  AdminTheme.surfaceColor(context),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AdminTheme.primary.withValues(alpha: 0.2)),
             ),
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            child: Row(
               children: [
-                Row(
-                  children: [
-                    CircleAvatar(
-                      radius: 20,
-                      backgroundColor: Colors.red.withValues(alpha: 0.12),
-                      backgroundImage: (avatar != null && avatar.toString().isNotEmpty) ? NetworkImage(avatar) : null,
-                      child: (avatar == null || avatar.toString().isEmpty)
-                          ? Text(initial, style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.redAccent))
-                          : null,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(name, style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 14, color: AdminTheme.textColor(context)), maxLines: 1, overflow: TextOverflow.ellipsis),
-                          const SizedBox(height: 2),
-                          Text(phone, style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.secondaryTextColor(context))),
-                        ],
-                      ),
-                    ),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: Colors.red.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text('Archived', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.redAccent)),
-                        ),
-                        const SizedBox(height: 3),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: (dm['delete_scope'] == 'profile_only') ? Colors.blue.withValues(alpha: 0.1) : Colors.orange.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            (dm['delete_scope'] == 'profile_only') ? 'Profile Only' : 'Full Data',
-                            style: GoogleFonts.inter(
-                              fontSize: 9,
-                              fontWeight: FontWeight.w600,
-                              color: (dm['delete_scope'] == 'profile_only') ? Colors.blueAccent : Colors.orangeAccent,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: AdminTheme.backgroundColor(context),
-                    borderRadius: BorderRadius.circular(6),
+                    color: AdminTheme.primary.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  child: const Icon(Icons.settings_backup_restore_rounded, color: AdminTheme.primary, size: 28),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Plan: $planName', style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.secondaryTextColor(context))),
-                      Text('Paid: ${currencyFormat.format(totalRec)}', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: AdminTheme.success)),
-                      if (pending > 0)
-                        Text('Due: ${currencyFormat.format(pending)}', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: AdminTheme.danger)),
+                      Text(
+                        'Gym Recycle Bin & 1-Click Restore Hub',
+                        style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: AdminTheme.textColor(context)),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'All deleted members, attendance records, and transactions are safely stored here. Click "Restore" to bring them back instantly without data loss or duplicates.',
+                        style: GoogleFonts.inter(fontSize: 12, color: AdminTheme.secondaryTextColor(context), height: 1.3),
+                      ),
                     ],
                   ),
                 ),
-                Text(
-                  'Deleted: $deletedDateStr',
-                  style: GoogleFonts.inter(fontSize: 10, color: AdminTheme.mutedTextColor(context)),
-                ),
-                Row(
-                  children: [
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        icon: const Icon(Icons.restore_rounded, size: 15),
-                        label: const Text('1-Click Restore'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AdminTheme.success,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 8),
-                          textStyle: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                        ),
-                        onPressed: () => _restoreDeletedMember(dm),
-                      ),
+                if (_deletedMembers.isNotEmpty) ...[
+                  const SizedBox(width: 16),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AdminTheme.success,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
-                    const SizedBox(width: 8),
-                    IconButton(
-                      icon: const Icon(Icons.delete_forever_rounded, color: AdminTheme.danger, size: 20),
-                      tooltip: 'Permanently Wipe from Archive',
-                      onPressed: () => _permanentPurgeDeletedMember(dm),
+                    icon: const Icon(Icons.restore_page_rounded, size: 18),
+                    label: Text('Restore All (${_deletedMembers.length})', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 13)),
+                    onPressed: _restoreAllDeletedMembers,
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // Search and Action Bar
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  onChanged: (val) => setState(() => _deletedMemberSearch = val),
+                  decoration: InputDecoration(
+                    hintText: 'Search deleted records by member name or phone number...',
+                    prefixIcon: const Icon(Icons.search_rounded),
+                    filled: true,
+                    fillColor: AdminTheme.surfaceColor(context),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  side: BorderSide(color: AdminTheme.borderColor(context)),
+                ),
+                icon: const Icon(Icons.refresh_rounded, size: 18),
+                label: const Text('Refresh'),
+                onPressed: _loadDeletedMembersData,
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+
+          // Content Area
+          if (_loadingDeletedMembers)
+            const Expanded(
+              child: Center(child: CircularProgressIndicator(color: AdminTheme.primary)),
+            )
+          else if (filtered.isEmpty)
+            Expanded(
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.restore_from_trash_rounded, size: 64, color: AdminTheme.mutedTextColor(context)),
+                    const SizedBox(height: 12),
+                    Text(
+                      _deletedMembers.isEmpty ? 'Recycle bin is clean!' : 'No matching deleted records found',
+                      style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: AdminTheme.textColor(context)),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      _deletedMembers.isEmpty
+                          ? 'No members have been deleted from this gym yet. When any member is deleted, they will safely appear here for 1-click restore.'
+                          : 'Try searching with a different name or phone number.',
+                      style: GoogleFonts.inter(fontSize: 12, color: AdminTheme.secondaryTextColor(context)),
+                      textAlign: TextAlign.center,
                     ),
                   ],
                 ),
-              ],
+              ),
+            )
+          else
+            Expanded(
+              child: GridView.builder(
+                itemCount: filtered.length,
+                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                  maxCrossAxisExtent: 400,
+                  childAspectRatio: 1.5,
+                  crossAxisSpacing: 16,
+                  mainAxisSpacing: 16,
+                ),
+                itemBuilder: (context, index) {
+                  final dm = filtered[index];
+                  final name = dm['full_name'] ?? 'Member';
+                  final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
+                  final avatar = dm['avatar_url'];
+                  final phone = dm['phone'] ?? '-';
+                  final planName = dm['membership_name'] ?? 'No Plan';
+                  final totalRec = double.tryParse(dm['total_received_amount']?.toString() ?? '0') ?? 0.0;
+                  final pending = double.tryParse(dm['pending_amount']?.toString() ?? '0') ?? 0.0;
+                  final deletedAtRaw = dm['deleted_at']?.toString();
+                  DateTime? deletedAt = deletedAtRaw != null ? DateTime.tryParse(deletedAtRaw) : null;
+                  final deletedDateStr = deletedAt != null
+                      ? DateFormat('dd MMM yyyy, hh:mm a').format(deletedAt)
+                      : 'Unknown date';
+                  final isProfileOnly = (dm['delete_scope'] == 'profile_only');
+                  final deletedBy = dm['deleted_by_role'] ?? 'owner';
+
+                  return Container(
+                    decoration: BoxDecoration(
+                      color: AdminTheme.surfaceColor(context),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: AdminTheme.borderColor(context)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.03),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            CircleAvatar(
+                              radius: 22,
+                              backgroundColor: AdminTheme.primary.withValues(alpha: 0.12),
+                              backgroundImage: (avatar != null && avatar.toString().isNotEmpty) ? NetworkImage(avatar) : null,
+                              child: (avatar == null || avatar.toString().isEmpty)
+                                  ? Text(initial, style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 16, color: AdminTheme.primary))
+                                  : null,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(name, style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 14, color: AdminTheme.textColor(context)), maxLines: 1, overflow: TextOverflow.ellipsis),
+                                  const SizedBox(height: 2),
+                                  Text('📞 $phone', style: GoogleFonts.inter(fontSize: 12, color: AdminTheme.secondaryTextColor(context))),
+                                ],
+                              ),
+                            ),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red.withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text('Archived', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.redAccent)),
+                                ),
+                                const SizedBox(height: 4),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: isProfileOnly ? Colors.blue.withValues(alpha: 0.1) : Colors.orange.withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    isProfileOnly ? 'Profile Only' : 'Full Data',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w600,
+                                      color: isProfileOnly ? Colors.blueAccent : Colors.orangeAccent,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: AdminTheme.backgroundColor(context),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text('Plan: $planName', style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.secondaryTextColor(context))),
+                              Text('Paid: ${currencyFormat.format(totalRec)}', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: AdminTheme.success)),
+                              if (pending > 0)
+                                Text('Due: ${currencyFormat.format(pending)}', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: AdminTheme.danger)),
+                            ],
+                          ),
+                        ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Deleted: $deletedDateStr',
+                              style: GoogleFonts.inter(fontSize: 10, color: AdminTheme.mutedTextColor(context)),
+                            ),
+                            Text(
+                              'By: ${deletedBy.toString().toUpperCase()}',
+                              style: GoogleFonts.inter(fontSize: 10, color: AdminTheme.mutedTextColor(context), fontWeight: FontWeight.w500),
+                            ),
+                          ],
+                        ),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                icon: const Icon(Icons.restore_rounded, size: 16),
+                                label: const Text('1-Click Restore'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AdminTheme.success,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(vertical: 10),
+                                  textStyle: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                ),
+                                onPressed: () => _restoreDeletedMember(dm),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            IconButton(
+                              icon: const Icon(Icons.delete_forever_rounded, color: AdminTheme.danger, size: 22),
+                              tooltip: 'Permanently Wipe from Database',
+                              onPressed: () => _permanentPurgeDeletedMember(dm),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
             ),
-          );
-        },
+        ],
       ),
     );
   }
