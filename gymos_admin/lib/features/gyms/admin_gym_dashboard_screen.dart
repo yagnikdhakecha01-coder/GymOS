@@ -1651,73 +1651,195 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
   // --- DELETE & ARCHIVE MEMBER (WITH 1-CLICK RESTORE GUARANTEE) ---
   Future<void> _confirmDeleteMember(Map<String, dynamic> m, {BuildContext? modalCtx}) async {
     final name = m['full_name'] ?? 'Member';
-    final confirm = await showDialog<bool>(
+    String selectedScope = 'profile_only';
+
+    final resultScope = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Row(
-          children: [
-            const Icon(Icons.delete_sweep_rounded, color: AdminTheme.danger),
-            const SizedBox(width: 8),
-            Expanded(child: Text('Delete "$name"?', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 16))),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Are you sure you want to delete this member from the active gym database?',
-              style: GoogleFonts.inter(fontSize: 13, color: AdminTheme.textColor(ctx)),
-            ),
-            const SizedBox(height: 14),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AdminTheme.success.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AdminTheme.success.withValues(alpha: 0.3)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: Row(
+            children: [
+              const Icon(Icons.delete_sweep_rounded, color: AdminTheme.danger),
+              const SizedBox(width: 8),
+              Expanded(child: Text('Delete "$name"?', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 16))),
+            ],
+          ),
+          content: SizedBox(
+            width: 480,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Select what information you want to remove for this member:',
+                  style: GoogleFonts.inter(fontSize: 13, color: AdminTheme.textColor(ctx)),
+                ),
+                const SizedBox(height: 14),
+
+                // Option 1: Profile Only (Recommended)
+                InkWell(
+                  onTap: () => setDialogState(() => selectedScope = 'profile_only'),
+                  borderRadius: BorderRadius.circular(10),
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: selectedScope == 'profile_only'
+                          ? AdminTheme.primary.withValues(alpha: 0.08)
+                          : AdminTheme.surfaceColor(ctx),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: selectedScope == 'profile_only'
+                            ? AdminTheme.primary
+                            : AdminTheme.borderColor(ctx),
+                        width: selectedScope == 'profile_only' ? 1.5 : 1.0,
+                      ),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Radio<String>(
+                          value: 'profile_only',
+                          groupValue: selectedScope,
+                          onChanged: (val) => setDialogState(() => selectedScope = val!),
+                          activeColor: AdminTheme.primary,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Text(
+                                    'Delete Profile Only',
+                                    style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 13, color: AdminTheme.textColor(ctx)),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: AdminTheme.primary.withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      'Recommended',
+                                      style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.bold, color: AdminTheme.primary),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Removes member from active member list and frees up slot, but keeps past payment transactions in your financial ledger so revenue reports remain accurate.',
+                                style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.secondaryTextColor(ctx), height: 1.3),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+
+                // Option 2: Full Cascade
+                InkWell(
+                  onTap: () => setDialogState(() => selectedScope = 'all'),
+                  borderRadius: BorderRadius.circular(10),
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: selectedScope == 'all'
+                          ? AdminTheme.danger.withValues(alpha: 0.08)
+                          : AdminTheme.surfaceColor(ctx),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: selectedScope == 'all'
+                            ? AdminTheme.danger
+                            : AdminTheme.borderColor(ctx),
+                        width: selectedScope == 'all' ? 1.5 : 1.0,
+                      ),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Radio<String>(
+                          value: 'all',
+                          groupValue: selectedScope,
+                          onChanged: (val) => setDialogState(() => selectedScope = val!),
+                          activeColor: AdminTheme.danger,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Delete Member & All Linked Records',
+                                style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 13, color: AdminTheme.danger),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Removes member, active finance transactions, memberships, and attendance logs. All items are backed up in the Deleted Archive.',
+                                style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.secondaryTextColor(ctx), height: 1.3),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // Safe Archive Notice
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AdminTheme.success.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AdminTheme.success.withValues(alpha: 0.25)),
+                  ),
+                  child: Row(
                     children: [
                       const Icon(Icons.shield_rounded, size: 16, color: AdminTheme.success),
-                      const SizedBox(width: 6),
-                      Text('Safe Archive & 1-Click Restore', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AdminTheme.success)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Safe Archive Guarantee: No data is permanently destroyed. You can restore this member with 1-click anytime.',
+                          style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.success, fontWeight: FontWeight.w500),
+                        ),
+                      ),
                     ],
                   ),
-                  const SizedBox(height: 6),
-                  Text(
-                    '• Member data and active finances will be removed from live gym stats.\n'
-                    '• All transactions, memberships, and attendance logs are backed up in the "Deleted Members" archive.\n'
-                    '• You can restore this member with 1 click anytime!',
-                    style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.secondaryTextColor(ctx), height: 1.4),
-                  ),
-                ],
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, null), child: const Text('Cancel')),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: selectedScope == 'all' ? AdminTheme.danger : AdminTheme.primary,
+                foregroundColor: Colors.white,
               ),
+              icon: const Icon(Icons.delete_outline_rounded, size: 16),
+              label: Text(selectedScope == 'all' ? 'Delete Everything' : 'Delete Profile Only'),
+              onPressed: () => Navigator.pop(ctx, selectedScope),
             ),
           ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(backgroundColor: AdminTheme.danger, foregroundColor: Colors.white),
-            icon: const Icon(Icons.delete_outline_rounded, size: 16),
-            label: const Text('Delete & Archive'),
-            onPressed: () => Navigator.pop(ctx, true),
-          ),
-        ],
       ),
     );
 
-    if (confirm != true) return;
+    if (resultScope == null) return;
 
     try {
       final client = AdminSupabaseService.client;
       final res = await client.rpc('admin_archive_delete_member', params: {
         'p_member_id': m['id'],
         'p_gym_id': widget.gym['id'],
+        'p_delete_scope': resultScope,
       });
 
       final result = Map<String, dynamic>.from(res as Map);
@@ -2897,13 +3019,34 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
                         ],
                       ),
                     ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: Colors.red.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text('Archived', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.redAccent)),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: Colors.red.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text('Archived', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.redAccent)),
+                        ),
+                        const SizedBox(height: 3),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: (dm['delete_scope'] == 'profile_only') ? Colors.blue.withValues(alpha: 0.1) : Colors.orange.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            (dm['delete_scope'] == 'profile_only') ? 'Profile Only' : 'Full Data',
+                            style: GoogleFonts.inter(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w600,
+                              color: (dm['delete_scope'] == 'profile_only') ? Colors.blueAccent : Colors.orangeAccent,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),

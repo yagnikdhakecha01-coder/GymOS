@@ -2989,82 +2989,200 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
   }
 
   Future<void> _confirmDeleteMember(BuildContext context, Member member) async {
-    final confirmed = await showDialog<bool>(
+    String selectedScope = 'profile_only';
+
+    final confirmedScope = await showDialog<String>(
       context: context,
-      builder: (dialogCtx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: AppTheme.danger.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppTheme.danger.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.delete_sweep_rounded, color: AppTheme.danger, size: 24),
               ),
-              child: const Icon(Icons.delete_forever_rounded, color: AppTheme.danger, size: 24),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                'Delete Member',
-                style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 18, color: AppTheme.textPrimary),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Delete Member',
+                  style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 18, color: AppTheme.textPrimary),
+                ),
               ),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Are you sure you want to permanently delete "${member.name}"?',
-              style: GoogleFonts.inter(fontSize: 14, color: AppTheme.textPrimary),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFEF2F2),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFFCA5A5)),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Choose how you want to delete "${member.name}":',
+                style: GoogleFonts.inter(fontSize: 13, color: AppTheme.textPrimary, fontWeight: FontWeight.w600),
               ),
-              child: Row(
-                children: [
-                  const Icon(Icons.info_outline, color: AppTheme.danger, size: 18),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'This will permanently remove this member and free up 1 membership slot in your gym.',
-                      style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF991B1B), fontWeight: FontWeight.w500),
+              const SizedBox(height: 14),
+
+              // Option 1: Profile Only (Recommended)
+              InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: () => setDialogState(() => selectedScope = 'profile_only'),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: selectedScope == 'profile_only'
+                        ? AppTheme.primary.withValues(alpha: 0.08)
+                        : const Color(0xFFF9FAFB),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: selectedScope == 'profile_only'
+                          ? AppTheme.primary
+                          : AppTheme.border,
+                      width: selectedScope == 'profile_only' ? 1.5 : 1,
                     ),
                   ),
-                ],
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Radio<String>(
+                        value: 'profile_only',
+                        groupValue: selectedScope,
+                        activeColor: AppTheme.primary,
+                        onChanged: (val) {
+                          if (val != null) setDialogState(() => selectedScope = val);
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Delete Profile Only (Recommended)',
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                color: selectedScope == 'profile_only' ? AppTheme.primary : AppTheme.textPrimary,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Removes member profile and frees up 1 slot. Retains all past payments and revenue records in gym finances.',
+                              style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary, height: 1.3),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
+              const SizedBox(height: 12),
+
+              // Option 2: Delete Everything (Cascade)
+              InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: () => setDialogState(() => selectedScope = 'all'),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: selectedScope == 'all'
+                        ? AppTheme.danger.withValues(alpha: 0.08)
+                        : const Color(0xFFF9FAFB),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: selectedScope == 'all'
+                          ? AppTheme.danger
+                          : AppTheme.border,
+                      width: selectedScope == 'all' ? 1.5 : 1,
+                    ),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Radio<String>(
+                        value: 'all',
+                        groupValue: selectedScope,
+                        activeColor: AppTheme.danger,
+                        onChanged: (val) {
+                          if (val != null) setDialogState(() => selectedScope = val);
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Delete Member & All Linked Records',
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                color: selectedScope == 'all' ? AppTheme.danger : AppTheme.textPrimary,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Removes member, linked payment records from active revenue/dues calculations, and attendance logs.',
+                              style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary, height: 1.3),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+
+              // Safe Archive Notice
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF6FF),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFBFDBFE)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.shield_outlined, color: Colors.blue, size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Data is safely archived in the database and can be restored anytime by an Admin.',
+                        style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF1E40AF), fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogCtx, null),
+              child: Text('Cancel', style: GoogleFonts.inter(color: AppTheme.textSecondary, fontWeight: FontWeight.w600)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.danger,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              onPressed: () => Navigator.pop(dialogCtx, selectedScope),
+              child: Text('Delete Member', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogCtx, false),
-            child: Text('Cancel', style: GoogleFonts.inter(color: AppTheme.textSecondary, fontWeight: FontWeight.w600)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.danger,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-            onPressed: () => Navigator.pop(dialogCtx, true),
-            child: Text('Delete Member', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-          ),
-        ],
       ),
     );
 
-    if (confirmed == true && mounted) {
+    if (confirmedScope != null && mounted) {
       final membersVm = Provider.of<MembersViewModel>(context, listen: false);
       try {
-        await membersVm.deleteMember(member.id);
+        await membersVm.deleteMember(member.id, deleteScope: confirmedScope);
         
         try {
           final recVm = Provider.of<ReceptionistViewModel>(context, listen: false);

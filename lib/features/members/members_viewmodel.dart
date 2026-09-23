@@ -217,8 +217,8 @@ class MembersViewModel extends ChangeNotifier {
   }
 
   // Delete
-  Future<void> deleteMember(String id) async {
-    await _repository.deleteMember(id);
+  Future<void> deleteMember(String id, {String deleteScope = 'profile_only'}) async {
+    await _repository.deleteMember(id, deleteScope: deleteScope);
     notifyListeners();
   }
 

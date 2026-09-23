@@ -1,5 +1,6 @@
 -- =========================================================================
--- SUPER ADMIN DELETED MEMBERS ARCHIVE & 1-CLICK RESTORE SYSTEM
+-- SUPER ADMIN DELETED MEMBERS ARCHIVE & 1-CLICK RESTORE SYSTEM (V2)
+-- Granular Deletion (Profile vs Full) + Smart Conflict-Free Re-linking
 -- =========================================================================
 
 -- 1. Create deleted_members Archive Table
@@ -22,6 +23,8 @@ CREATE TABLE IF NOT EXISTS public.deleted_members (
     membership_payments JSONB DEFAULT '[]'::jsonb,
     attendance_logs JSONB DEFAULT '[]'::jsonb,
     user_associations JSONB DEFAULT '[]'::jsonb,
+    delete_scope TEXT DEFAULT 'all',
+    deleted_by_role TEXT DEFAULT 'owner',
     deleted_at TIMESTAMPTZ DEFAULT now(),
     deleted_by UUID DEFAULT auth.uid()
 );
@@ -36,10 +39,11 @@ GRANT ALL ON TABLE public.deleted_members TO anon, authenticated, service_role;
 CREATE INDEX IF NOT EXISTS idx_deleted_members_gym ON public.deleted_members(gym_id);
 CREATE INDEX IF NOT EXISTS idx_deleted_members_deleted_at ON public.deleted_members(deleted_at DESC);
 
--- 2. RPC to Archive & Delete Member (Clean cascade with full JSONB backup)
+-- 2. RPC to Archive & Delete Member (Granular: Profile Only vs All Cascade)
 CREATE OR REPLACE FUNCTION public.admin_archive_delete_member(
     p_member_id UUID,
-    p_gym_id UUID
+    p_gym_id UUID,
+    p_delete_scope TEXT DEFAULT 'all'
 )
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -58,6 +62,7 @@ DECLARE
     v_archive_id UUID;
     v_ft_count INT := 0;
     v_att_count INT := 0;
+    v_scope TEXT := COALESCE(NULLIF(TRIM(p_delete_scope), ''), 'all');
 BEGIN
     -- 1. Fetch Member record
     SELECT * INTO v_member FROM public.members WHERE id = p_member_id AND gym_id = p_gym_id;
@@ -76,7 +81,7 @@ BEGIN
 
     v_member_json := to_jsonb(v_member);
 
-    -- 2. Snapshot linked financial transactions
+    -- 2. Always Snapshot linked financial transactions (for complete backup & relinking)
     BEGIN
         SELECT COALESCE(jsonb_agg(to_jsonb(ft)), '[]'::jsonb), COUNT(*)
         INTO v_fin_json, v_ft_count
@@ -148,6 +153,8 @@ BEGIN
         membership_payments,
         attendance_logs,
         user_associations,
+        delete_scope,
+        deleted_by_role,
         deleted_at,
         deleted_by
     ) VALUES (
@@ -168,36 +175,41 @@ BEGIN
         v_payments_json,
         v_att_json,
         v_user_assoc_json,
+        v_scope,
+        'owner',
         now(),
         auth.uid()
     ) RETURNING id INTO v_archive_id;
 
-    -- 8. Delete all active records cleanly so they don't affect live finances or active lists
-    -- Clean finance transactions
-    BEGIN
-        DELETE FROM public.finance_transactions
-        WHERE (reference_id = p_member_id::text OR notes ILIKE '%' || v_member.name || '%')
-          AND gym_id = p_gym_id;
-    EXCEPTION WHEN OTHERS THEN NULL; END;
+    -- 8. Granular Deletion based on delete_scope:
+    -- If 'all', delete linked financial transactions & attendance
+    IF v_scope = 'all' THEN
+        -- Delete linked finance transactions
+        BEGIN
+            DELETE FROM public.finance_transactions
+            WHERE (reference_id = p_member_id::text OR notes ILIKE '%' || v_member.name || '%')
+              AND gym_id = p_gym_id;
+        EXCEPTION WHEN OTHERS THEN NULL; END;
 
-    -- Clean attendance
-    BEGIN
-        DELETE FROM public.attendance_logs
-        WHERE member_id::text = p_member_id::text AND gym_id = p_gym_id;
-    EXCEPTION WHEN OTHERS THEN NULL; END;
+        -- Delete attendance logs
+        BEGIN
+            DELETE FROM public.attendance_logs
+            WHERE member_id::text = p_member_id::text AND gym_id = p_gym_id;
+        EXCEPTION WHEN OTHERS THEN NULL; END;
 
-    -- Clean membership records
-    BEGIN
-        DELETE FROM public.member_memberships
-        WHERE member_id::text = p_member_id::text AND gym_id = p_gym_id;
-    EXCEPTION WHEN OTHERS THEN NULL; END;
+        -- Delete member memberships
+        BEGIN
+            DELETE FROM public.member_memberships
+            WHERE member_id::text = p_member_id::text AND gym_id = p_gym_id;
+        EXCEPTION WHEN OTHERS THEN NULL; END;
 
-    BEGIN
-        DELETE FROM public.membership_payments
-        WHERE member_id::text = p_member_id::text;
-    EXCEPTION WHEN OTHERS THEN NULL; END;
+        BEGIN
+            DELETE FROM public.membership_payments
+            WHERE member_id::text = p_member_id::text;
+        EXCEPTION WHEN OTHERS THEN NULL; END;
+    END IF;
 
-    -- Clean user gym associations for member role
+    -- In both scopes, clean member role association
     IF v_member.user_id IS NOT NULL THEN
         BEGIN
             DELETE FROM public.user_gym_associations
@@ -212,17 +224,21 @@ BEGIN
         'success', true,
         'archive_id', v_archive_id,
         'member_name', v_member.name,
+        'delete_scope', v_scope,
         'transactions_archived', v_ft_count,
         'attendance_archived', v_att_count,
-        'message', 'Member safely archived and removed from active gym data'
+        'message', CASE WHEN v_scope = 'profile_only' 
+            THEN 'Member profile archived. Financial transactions retained in active gym records.'
+            ELSE 'Member and all linked financial records safely archived.'
+        END
     );
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.admin_archive_delete_member(UUID, UUID) TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.admin_archive_delete_member(UUID, UUID, TEXT) TO anon, authenticated, service_role;
 
 
--- 3. RPC to 1-Click Restore Deleted Member
+-- 3. RPC to 1-Click Restore Deleted Member with Smart Conflict-Free Re-linking
 CREATE OR REPLACE FUNCTION public.admin_restore_deleted_member(
     p_deleted_id UUID
 )
@@ -234,8 +250,14 @@ AS $$
 DECLARE
     v_arch RECORD;
     v_item JSONB;
+    v_member_uuid UUID;
+    v_tx_id UUID;
+    v_att_id UUID;
+    v_mship_id UUID;
     v_restored_tx INT := 0;
+    v_relinked_tx INT := 0;
     v_restored_att INT := 0;
+    v_relinked_att INT := 0;
 BEGIN
     -- 1. Fetch from deleted_members
     SELECT * INTO v_arch FROM public.deleted_members WHERE id = p_deleted_id;
@@ -243,7 +265,9 @@ BEGIN
         RETURN jsonb_build_object('success', false, 'message', 'Deleted member archive record not found');
     END IF;
 
-    -- 2. Restore into members table
+    v_member_uuid := (v_arch.member_data->>'id')::uuid;
+
+    -- 2. Restore into members table (UPSERT)
     INSERT INTO public.members (
         id,
         gym_id,
@@ -269,7 +293,7 @@ BEGIN
         created_by_info,
         email
     ) VALUES (
-        (v_arch.member_data->>'id')::uuid,
+        v_member_uuid,
         (v_arch.member_data->>'gym_id')::uuid,
         CASE WHEN v_arch.member_data->>'user_id' IS NOT NULL AND v_arch.member_data->>'user_id' != '' THEN (v_arch.member_data->>'user_id')::uuid ELSE NULL END,
         COALESCE(v_arch.member_data->>'name', v_arch.full_name),
@@ -302,91 +326,113 @@ BEGIN
         pending_amount = EXCLUDED.pending_amount,
         payment_status = EXCLUDED.payment_status;
 
-    -- 3. Restore finance_transactions
+    -- 3. Smart Conflict-Free Financial Transactions Restore / Re-linking
     IF v_arch.financial_transactions IS NOT NULL AND jsonb_array_length(v_arch.financial_transactions) > 0 THEN
         FOR v_item IN SELECT * FROM jsonb_array_elements(v_arch.financial_transactions)
         LOOP
-            BEGIN
-                INSERT INTO public.finance_transactions (
-                    id,
-                    gym_id,
-                    amount,
-                    type,
-                    category,
-                    payment_method,
-                    transaction_date,
-                    reference_id,
-                    created_by,
-                    notes,
-                    created_at,
-                    expense_date,
-                    entry_date,
-                    revenue_date,
-                    created_by_info
-                ) VALUES (
-                    (v_item->>'id')::uuid,
-                    (v_item->>'gym_id')::uuid,
-                    (v_item->>'amount')::numeric,
-                    v_item->>'type',
-                    v_item->>'category',
-                    v_item->>'payment_method',
-                    (v_item->>'transaction_date')::timestamptz,
-                    v_item->>'reference_id',
-                    CASE WHEN v_item->>'created_by' IS NOT NULL AND v_item->>'created_by' != '' THEN (v_item->>'created_by')::uuid ELSE NULL END,
-                    v_item->>'notes',
-                    COALESCE((v_item->>'created_at')::timestamptz, now()),
-                    CASE WHEN v_item->>'expense_date' IS NOT NULL AND v_item->>'expense_date' != '' THEN (v_item->>'expense_date')::date ELSE NULL END,
-                    CASE WHEN v_item->>'entry_date' IS NOT NULL AND v_item->>'entry_date' != '' THEN (v_item->>'entry_date')::date ELSE NULL END,
-                    CASE WHEN v_item->>'revenue_date' IS NOT NULL AND v_item->>'revenue_date' != '' THEN (v_item->>'revenue_date')::date ELSE NULL END,
-                    v_item->>'created_by_info'
-                ) ON CONFLICT (id) DO NOTHING;
-                v_restored_tx := v_restored_tx + 1;
-            EXCEPTION WHEN OTHERS THEN NULL; END;
+            v_tx_id := (v_item->>'id')::uuid;
+            -- Check if transaction already exists in finance_transactions (Profile Only case)
+            IF EXISTS (SELECT 1 FROM public.finance_transactions WHERE id = v_tx_id) THEN
+                -- Re-link existing transaction to restored member without duplicating amounts!
+                UPDATE public.finance_transactions
+                SET reference_id = v_member_uuid::text
+                WHERE id = v_tx_id;
+                v_relinked_tx := v_relinked_tx + 1;
+            ELSE
+                -- Transaction was deleted during 'all' delete -> Re-insert it cleanly
+                BEGIN
+                    INSERT INTO public.finance_transactions (
+                        id,
+                        gym_id,
+                        amount,
+                        type,
+                        category,
+                        payment_method,
+                        transaction_date,
+                        reference_id,
+                        created_by,
+                        notes,
+                        created_at,
+                        expense_date,
+                        entry_date,
+                        revenue_date,
+                        created_by_info
+                    ) VALUES (
+                        v_tx_id,
+                        (v_item->>'gym_id')::uuid,
+                        (v_item->>'amount')::numeric,
+                        v_item->>'type',
+                        v_item->>'category',
+                        v_item->>'payment_method',
+                        (v_item->>'transaction_date')::timestamptz,
+                        v_member_uuid::text,
+                        CASE WHEN v_item->>'created_by' IS NOT NULL AND v_item->>'created_by' != '' THEN (v_item->>'created_by')::uuid ELSE NULL END,
+                        v_item->>'notes',
+                        COALESCE((v_item->>'created_at')::timestamptz, now()),
+                        CASE WHEN v_item->>'expense_date' IS NOT NULL AND v_item->>'expense_date' != '' THEN (v_item->>'expense_date')::date ELSE NULL END,
+                        CASE WHEN v_item->>'entry_date' IS NOT NULL AND v_item->>'entry_date' != '' THEN (v_item->>'entry_date')::date ELSE NULL END,
+                        CASE WHEN v_item->>'revenue_date' IS NOT NULL AND v_item->>'revenue_date' != '' THEN (v_item->>'revenue_date')::date ELSE NULL END,
+                        v_item->>'created_by_info'
+                    ) ON CONFLICT (id) DO UPDATE SET reference_id = v_member_uuid::text;
+                    v_restored_tx := v_restored_tx + 1;
+                EXCEPTION WHEN OTHERS THEN NULL; END;
+            END IF;
         END LOOP;
     END IF;
 
-    -- 4. Restore member_memberships
+    -- 4. Smart Member Memberships Restore / Re-linking
     IF v_arch.member_memberships IS NOT NULL AND jsonb_array_length(v_arch.member_memberships) > 0 THEN
         FOR v_item IN SELECT * FROM jsonb_array_elements(v_arch.member_memberships)
         LOOP
-            BEGIN
-                INSERT INTO public.member_memberships (
-                    id, gym_id, member_id, plan_id, start_date, end_date, price, status, created_at
-                ) VALUES (
-                    (v_item->>'id')::uuid,
-                    (v_item->>'gym_id')::uuid,
-                    (v_item->>'member_id')::uuid,
-                    (v_item->>'plan_id')::uuid,
-                    (v_item->>'start_date')::date,
-                    (v_item->>'end_date')::date,
-                    (v_item->>'price')::numeric,
-                    COALESCE(v_item->>'status', 'Active'),
-                    COALESCE((v_item->>'created_at')::timestamptz, now())
-                ) ON CONFLICT (id) DO NOTHING;
-            EXCEPTION WHEN OTHERS THEN NULL; END;
+            v_mship_id := (v_item->>'id')::uuid;
+            IF EXISTS (SELECT 1 FROM public.member_memberships WHERE id = v_mship_id) THEN
+                UPDATE public.member_memberships SET member_id = v_member_uuid WHERE id = v_mship_id;
+            ELSE
+                BEGIN
+                    INSERT INTO public.member_memberships (
+                        id, gym_id, member_id, plan_id, start_date, end_date, price, status, created_at
+                    ) VALUES (
+                        v_mship_id,
+                        (v_item->>'gym_id')::uuid,
+                        v_member_uuid,
+                        (v_item->>'plan_id')::uuid,
+                        (v_item->>'start_date')::date,
+                        (v_item->>'end_date')::date,
+                        (v_item->>'price')::numeric,
+                        COALESCE(v_item->>'status', 'Active'),
+                        COALESCE((v_item->>'created_at')::timestamptz, now())
+                    ) ON CONFLICT (id) DO UPDATE SET member_id = v_member_uuid;
+                EXCEPTION WHEN OTHERS THEN NULL; END;
+            END IF;
         END LOOP;
     END IF;
 
-    -- 5. Restore attendance_logs
+    -- 5. Smart Attendance Logs Restore / Re-linking
     IF v_arch.attendance_logs IS NOT NULL AND jsonb_array_length(v_arch.attendance_logs) > 0 THEN
         FOR v_item IN SELECT * FROM jsonb_array_elements(v_arch.attendance_logs)
         LOOP
-            BEGIN
-                INSERT INTO public.attendance_logs (
-                    id, gym_id, member_id, date, status, check_in, check_out, method, created_at
-                ) VALUES (
-                    (v_item->>'id')::uuid,
-                    (v_item->>'gym_id')::uuid,
-                    v_item->>'member_id',
-                    v_item->>'date',
-                    COALESCE(v_item->>'status', 'Present'),
-                    CASE WHEN v_item->>'check_in' IS NOT NULL AND v_item->>'check_in' != '' THEN (v_item->>'check_in')::timestamptz ELSE NULL END,
-                    CASE WHEN v_item->>'check_out' IS NOT NULL AND v_item->>'check_out' != '' THEN (v_item->>'check_out')::timestamptz ELSE NULL END,
-                    COALESCE(v_item->>'method', 'Manual'),
-                    COALESCE((v_item->>'created_at')::timestamptz, now())
-                ) ON CONFLICT (id) DO NOTHING;
-                v_restored_att := v_restored_att + 1;
-            EXCEPTION WHEN OTHERS THEN NULL; END;
+            v_att_id := (v_item->>'id')::uuid;
+            IF EXISTS (SELECT 1 FROM public.attendance_logs WHERE id = v_att_id) THEN
+                UPDATE public.attendance_logs SET member_id = v_member_uuid::text WHERE id = v_att_id;
+                v_relinked_att := v_relinked_att + 1;
+            ELSE
+                BEGIN
+                    INSERT INTO public.attendance_logs (
+                        id, gym_id, member_id, date, status, check_in, check_out, method, created_at
+                    ) VALUES (
+                        v_att_id,
+                        (v_item->>'gym_id')::uuid,
+                        v_member_uuid::text,
+                        v_item->>'date',
+                        COALESCE(v_item->>'status', 'Present'),
+                        CASE WHEN v_item->>'check_in' IS NOT NULL AND v_item->>'check_in' != '' THEN (v_item->>'check_in')::timestamptz ELSE NULL END,
+                        CASE WHEN v_item->>'check_out' IS NOT NULL AND v_item->>'check_out' != '' THEN (v_item->>'check_out')::timestamptz ELSE NULL END,
+                        COALESCE(v_item->>'method', 'Manual'),
+                        COALESCE((v_item->>'created_at')::timestamptz, now())
+                    ) ON CONFLICT (id) DO UPDATE SET member_id = v_member_uuid::text;
+                    v_restored_att := v_restored_att + 1;
+                EXCEPTION WHEN OTHERS THEN NULL; END;
+            END IF;
         END LOOP;
     END IF;
 
@@ -415,7 +461,9 @@ BEGIN
         'success', true,
         'member_name', v_arch.full_name,
         'transactions_restored', v_restored_tx,
+        'transactions_relinked', v_relinked_tx,
         'attendance_restored', v_restored_att,
+        'attendance_relinked', v_relinked_att,
         'message', 'Member and all records restored successfully'
     );
 END;

@@ -2647,7 +2647,7 @@ class GymRepository extends ChangeNotifier {
     }
   }
 
-  Future<void> deleteMember(String id) async {
+  Future<void> deleteMember(String id, {String deleteScope = 'profile_only'}) async {
     if (!_isValidUUID(id)) {
       throw Exception('Invalid member ID format.');
     }
@@ -2657,24 +2657,41 @@ class GymRepository extends ChangeNotifier {
     _members.removeWhere((m) => m.id == id);
     await _storage.setString(_membersKey, jsonEncode(_members.map((e) => e.toJson()).toList()));
 
-    // Clean up local cached attendance
-    _attendance.removeWhere((a) => a.userId == id);
-    await _storage.setString(_attendanceKey, jsonEncode(_attendance.map((e) => e.toJson()).toList()));
+    // Clean up local cached attendance & transactions if scope is 'all'
+    if (deleteScope == 'all') {
+      _attendance.removeWhere((a) => a.userId == id);
+      await _storage.setString(_attendanceKey, jsonEncode(_attendance.map((e) => e.toJson()).toList()));
+
+      _transactions.removeWhere((tx) => tx.referenceId == id);
+      await _storage.setString(_transactionsKey, jsonEncode(_transactions.map((e) => e.toJson()).toList()));
+    }
 
     notifyListeners();
 
-    // 2. Direct Supabase delete if online
+    // 2. Safe Archive Delete via RPC if online
     bool isDirectlyDeleted = false;
     if (SupabaseService.isInitialized && gymId != null) {
       try {
-        await SupabaseService.client
-            .from('members')
-            .delete()
-            .eq('id', id)
-            .eq('gym_id', gymId);
-        isDirectlyDeleted = true;
+        final res = await SupabaseService.client.rpc('admin_archive_delete_member', params: {
+          'p_member_id': id,
+          'p_gym_id': gymId,
+          'p_delete_scope': deleteScope,
+        });
+        if (res != null && (res as Map)['success'] == true) {
+          isDirectlyDeleted = true;
+        }
       } catch (e) {
-        print('deleteMember direct Supabase delete skipped/failed: $e. Fallback to queue.');
+        print('admin_archive_delete_member RPC skipped/failed: $e. Fallback to direct delete.');
+        try {
+          await SupabaseService.client
+              .from('members')
+              .delete()
+              .eq('id', id)
+              .eq('gym_id', gymId);
+          isDirectlyDeleted = true;
+        } catch (e2) {
+          print('deleteMember direct Supabase delete failed: $e2');
+        }
       }
     }
 
@@ -2687,6 +2704,7 @@ class GymRepository extends ChangeNotifier {
         'payload': {
           'id': id,
           if (gymId != null) 'gym_id': gymId,
+          'delete_scope': deleteScope,
         },
         'created_at': DateTime.now().toIso8601String(),
         'retry_count': 0,
