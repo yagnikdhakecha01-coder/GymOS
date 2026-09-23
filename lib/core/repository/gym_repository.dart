@@ -5500,16 +5500,29 @@ class GymRepository extends ChangeNotifier {
   }
 
   Future<List<MemberAgreementRecord>> fetchGymAgreements(String gymId) async {
-    if (!SupabaseService.isInitialized) return [];
+    if (!SupabaseService.isInitialized || gymId.trim().isEmpty) return [];
     try {
+      // 1. Try secure RPC first
+      try {
+        final rpcRes = await SupabaseService.client
+            .rpc('get_gym_rule_agreements', params: {'p_gym_id': gymId.trim()});
+        if (rpcRes != null && rpcRes is List && rpcRes.isNotEmpty) {
+          return rpcRes
+              .map((row) => MemberAgreementRecord.fromMap(Map<String, dynamic>.from(row)))
+              .toList();
+        }
+      } catch (rpcErr) {
+        print('fetchGymAgreements RPC error: $rpcErr');
+      }
+
+      // 2. Direct table select fallback
       final data = await SupabaseService.client
           .from('member_rule_agreements')
           .select()
-          .eq('gym_id', gymId)
+          .eq('gym_id', gymId.trim())
           .order('agreed_at', ascending: false);
 
-      if (data == null) return [];
-      return (data as List).map((row) => MemberAgreementRecord.fromMap(Map<String, dynamic>.from(row))).toList();
+      return data.map((row) => MemberAgreementRecord.fromMap(Map<String, dynamic>.from(row))).toList();
     } catch (e) {
       print('fetchGymAgreements error: $e');
       return [];
@@ -5517,13 +5530,31 @@ class GymRepository extends ChangeNotifier {
   }
 
   Future<MemberAgreementRecord?> fetchMemberAgreement(String gymId, String memberId) async {
-    if (!SupabaseService.isInitialized) return null;
+    if (!SupabaseService.isInitialized || gymId.trim().isEmpty || memberId.trim().isEmpty) return null;
     try {
+      // 1. Try secure RPC first
+      try {
+        final rpcRes = await SupabaseService.client
+            .rpc('get_gym_rule_agreements', params: {'p_gym_id': gymId.trim()});
+        if (rpcRes != null && rpcRes is List) {
+          final match = rpcRes.cast<Map<String, dynamic>>().firstWhere(
+            (row) => row['member_id']?.toString() == memberId.trim(),
+            orElse: () => <String, dynamic>{},
+          );
+          if (match.isNotEmpty) {
+            return MemberAgreementRecord.fromMap(match);
+          }
+        }
+      } catch (rpcErr) {
+        print('fetchMemberAgreement RPC fallback: $rpcErr');
+      }
+
+      // 2. Direct select fallback
       final data = await SupabaseService.client
           .from('member_rule_agreements')
           .select()
-          .eq('gym_id', gymId)
-          .eq('member_id', memberId)
+          .eq('gym_id', gymId.trim())
+          .eq('member_id', memberId.trim())
           .order('agreed_at', ascending: false)
           .limit(1)
           .maybeSingle();

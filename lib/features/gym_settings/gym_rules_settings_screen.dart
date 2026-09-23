@@ -44,7 +44,10 @@ class _GymRulesSettingsScreenState extends State<GymRulesSettingsScreen>
     setState(() => _isLoading = true);
     final authVm = Provider.of<AuthViewModel>(context, listen: false);
     final repo = Provider.of<GymRepository>(context, listen: false);
-    final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id']?.toString() ?? '';
+    final gymId = authVm.activeAssociation?.gymId ??
+        authVm.gymInfo?['id']?.toString() ??
+        authVm.currentProfile?.gymId ??
+        '';
 
     if (gymId.isNotEmpty) {
       final records = await repo.fetchGymAgreements(gymId);
@@ -395,31 +398,39 @@ class _GymRulesSettingsScreenState extends State<GymRulesSettingsScreen>
           // List or Empty state
           Expanded(
             child: list.isEmpty
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(32),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.assignment_turned_in_outlined, size: 56, color: AppTheme.textMuted),
-                          const SizedBox(height: 12),
-                          Text(
-                            _agreements.isEmpty
-                                ? 'No Agreements Recorded Yet'
-                                : 'No matching members found',
-                            style: GoogleFonts.inter(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                              color: AppTheme.textPrimary,
+                ? LayoutBuilder(
+                    builder: (context, constraints) => SingleChildScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                        child: Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(32),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(Icons.assignment_turned_in_outlined, size: 56, color: AppTheme.textMuted),
+                                const SizedBox(height: 12),
+                                Text(
+                                  _agreements.isEmpty
+                                      ? 'No Agreements Recorded Yet'
+                                      : 'No matching members found',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppTheme.textPrimary,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  'When members open their app and accept the gym rules, their exact date and time audit history will appear here.',
+                                  textAlign: TextAlign.center,
+                                  style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary),
+                                ),
+                              ],
                             ),
                           ),
-                          const SizedBox(height: 6),
-                          Text(
-                            'When members open their app and accept the gym rules, their exact date and time audit history will appear here.',
-                            textAlign: TextAlign.center,
-                            style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary),
-                          ),
-                        ],
+                        ),
                       ),
                     ),
                   )
@@ -657,7 +668,10 @@ class _GymRulesSettingsScreenState extends State<GymRulesSettingsScreen>
                                 setSheetState(() => isSaving = true);
                                 final authVm = Provider.of<AuthViewModel>(context, listen: false);
                                 final repo = Provider.of<GymRepository>(context, listen: false);
-                                final gymId = authVm.gymInfo?['id']?.toString() ?? '';
+                                final gymId = authVm.activeAssociation?.gymId ??
+                                    authVm.gymInfo?['id']?.toString() ??
+                                    authVm.currentProfile?.gymId ??
+                                    '';
 
                                 final List<dynamic> updatedList = List<dynamic>.from(_customRulesData ?? []);
                                 updatedList.add({
