@@ -39,6 +39,11 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
   String _memberSearch = '';
   String _staffSearch = '';
   String _unlinkedSearch = '';
+  String _deletedMemberSearch = '';
+
+  List<Map<String, dynamic>> _deletedMembers = [];
+  bool _loadingDeletedMembers = false;
+  bool _showDeletedMembersView = false;
 
   // Quick Action States
   late bool _isLocked;
@@ -66,6 +71,7 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
       _loadFinanceData(),
       _loadMembersData(),
       _loadStaffData(),
+      _loadDeletedMembersData(),
     ]);
     if (mounted) {
       await Future.wait([
@@ -238,6 +244,29 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
     } catch (e) {
       debugPrint('Error loading members: $e');
       if (mounted) setState(() => _loadingMembers = false);
+    }
+  }
+
+  Future<void> _loadDeletedMembersData() async {
+    if (!AdminSupabaseService.isInitialized) return;
+    try {
+      if (mounted) setState(() => _loadingDeletedMembers = true);
+      final client = AdminSupabaseService.client;
+      final response = await client
+          .from('deleted_members')
+          .select('*')
+          .eq('gym_id', widget.gym['id'])
+          .order('deleted_at', ascending: false);
+
+      if (mounted) {
+        setState(() {
+          _deletedMembers = List<Map<String, dynamic>>.from(response);
+          _loadingDeletedMembers = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading deleted members: $e');
+      if (mounted) setState(() => _loadingDeletedMembers = false);
     }
   }
 
@@ -1271,12 +1300,12 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
 
                                         _actionCard(
                                           context,
-                                          title: 'Delete Member (Cascade Purge)',
-                                          subtitle: 'Permanently remove this member from the gym and clean all linked records.',
-                                          icon: Icons.delete_forever_rounded,
+                                          title: 'Delete Member (Safe Archive & 1-Click Restore)',
+                                          subtitle: 'Remove from active members and finances. Backup is safely saved in Deleted Members archive with 1-click restore.',
+                                          icon: Icons.delete_sweep_rounded,
                                           btnColor: AdminTheme.danger,
                                           btnText: 'Delete Member',
-                                          onTap: () => _confirmDeleteMemberFromModal(dialogCtx, m),
+                                          onTap: () => _confirmDeleteMember(m, modalCtx: dialogCtx),
                                         ),
                                         const SizedBox(height: 24),
 
@@ -1619,28 +1648,64 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
     );
   }
 
-  // --- DELETE MEMBER FROM MODAL ---
-  Future<void> _confirmDeleteMemberFromModal(BuildContext modalCtx, Map<String, dynamic> m) async {
+  // --- DELETE & ARCHIVE MEMBER (WITH 1-CLICK RESTORE GUARANTEE) ---
+  Future<void> _confirmDeleteMember(Map<String, dynamic> m, {BuildContext? modalCtx}) async {
+    final name = m['full_name'] ?? 'Member';
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.warning_amber_rounded, color: AdminTheme.danger),
-            SizedBox(width: 8),
-            Text('Confirm Member Deletion'),
+            const Icon(Icons.delete_sweep_rounded, color: AdminTheme.danger),
+            const SizedBox(width: 8),
+            Expanded(child: Text('Delete "$name"?', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 16))),
           ],
         ),
-        content: Text(
-          'Are you sure you want to permanently delete "${m['full_name']}"?\n\n'
-          'This will purge all member records, memberships, attendance logs, and financial transactions permanently.',
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Are you sure you want to delete this member from the active gym database?',
+              style: GoogleFonts.inter(fontSize: 13, color: AdminTheme.textColor(ctx)),
+            ),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AdminTheme.success.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AdminTheme.success.withValues(alpha: 0.3)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.shield_rounded, size: 16, color: AdminTheme.success),
+                      const SizedBox(width: 6),
+                      Text('Safe Archive & 1-Click Restore', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AdminTheme.success)),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '• Member data and active finances will be removed from live gym stats.\n'
+                    '• All transactions, memberships, and attendance logs are backed up in the "Deleted Members" archive.\n'
+                    '• You can restore this member with 1 click anytime!',
+                    style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.secondaryTextColor(ctx), height: 1.4),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AdminTheme.danger),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(backgroundColor: AdminTheme.danger, foregroundColor: Colors.white),
+            icon: const Icon(Icons.delete_outline_rounded, size: 16),
+            label: const Text('Delete & Archive'),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete Member'),
           ),
         ],
       ),
@@ -1650,29 +1715,129 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
 
     try {
       final client = AdminSupabaseService.client;
-      // 1. Clean related records via RPC
-      await client.rpc('admin_delete_unlinked_entry', params: {
-        'p_tx_id': null,
+      final res = await client.rpc('admin_archive_delete_member', params: {
+        'p_member_id': m['id'],
         'p_gym_id': widget.gym['id'],
-        'p_ref_id': m['id'],
       });
 
-      // 2. Delete member record
-      await client.from('members').delete().eq('id', m['id']);
-
-      if (mounted) {
-        Navigator.pop(modalCtx); // Close member details dialog
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('✅ Member deleted successfully.'), backgroundColor: AdminTheme.success),
-        );
-        _loadMembersData();
-        _loadFinanceData();
-        _loadUnlinkedEntries();
+      final result = Map<String, dynamic>.from(res as Map);
+      if (result['success'] == true) {
+        if (modalCtx != null && mounted) {
+          Navigator.pop(modalCtx);
+        }
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('✅ Member "$name" deleted & archived. You can restore anytime!'),
+              backgroundColor: AdminTheme.success,
+              action: SnackBarAction(
+                label: 'View Trash',
+                textColor: Colors.white,
+                onPressed: () {
+                  setState(() => _showDeletedMembersView = true);
+                },
+              ),
+            ),
+          );
+          _loadMembersData();
+          _loadFinanceData();
+          _loadDeletedMembersData();
+          _loadUnlinkedEntries();
+        }
+      } else {
+        throw Exception(result['message'] ?? 'Failed to delete member');
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to delete member: $e'), backgroundColor: AdminTheme.danger),
+        );
+      }
+    }
+  }
+
+  // --- 1-CLICK RESTORE DELETED MEMBER ---
+  Future<void> _restoreDeletedMember(Map<String, dynamic> dm) async {
+    final name = dm['full_name'] ?? 'Member';
+    try {
+      final client = AdminSupabaseService.client;
+      final res = await client.rpc('admin_restore_deleted_member', params: {
+        'p_deleted_id': dm['id'],
+      });
+
+      final result = Map<String, dynamic>.from(res as Map);
+      if (result['success'] == true) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('✅ "$name" and all financial/attendance records restored successfully!'),
+              backgroundColor: AdminTheme.success,
+            ),
+          );
+          _loadMembersData();
+          _loadFinanceData();
+          _loadDeletedMembersData();
+          _loadUnlinkedEntries();
+        }
+      } else {
+        throw Exception(result['message'] ?? 'Failed to restore member');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to restore member: $e'), backgroundColor: AdminTheme.danger),
+        );
+      }
+    }
+  }
+
+  // --- PERMANENT PURGE DELETED MEMBER ---
+  Future<void> _permanentPurgeDeletedMember(Map<String, dynamic> dm) async {
+    final name = dm['full_name'] ?? 'Member';
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: AdminTheme.danger),
+            SizedBox(width: 8),
+            Text('Permanently Wipe Member?'),
+          ],
+        ),
+        content: Text(
+          'Are you sure you want to permanently delete "$name" from the archive?\n\n'
+          'This will wipe all backup snapshots. This action CANNOT be undone.',
+          style: GoogleFonts.inter(fontSize: 13),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AdminTheme.danger),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Permanent Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      final client = AdminSupabaseService.client;
+      await client.rpc('admin_purge_deleted_member', params: {
+        'p_deleted_id': dm['id'],
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Member "$name" permanently removed from archive.'), backgroundColor: AdminTheme.danger),
+        );
+        _loadDeletedMembersData();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to purge: $e'), backgroundColor: AdminTheme.danger),
         );
       }
     }
@@ -2426,18 +2591,99 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
       padding: const EdgeInsets.all(24),
       child: Column(
         children: [
-          TextField(
-            onChanged: (val) => setState(() => _memberSearch = val),
-            decoration: InputDecoration(
-              hintText: 'Search members by name or mobile number...',
-              prefixIcon: const Icon(Icons.search_rounded),
-              filled: true,
-              fillColor: AdminTheme.surfaceColor(context),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  onChanged: (val) => setState(() {
+                    if (_showDeletedMembersView) {
+                      _deletedMemberSearch = val;
+                    } else {
+                      _memberSearch = val;
+                    }
+                  }),
+                  decoration: InputDecoration(
+                    hintText: _showDeletedMembersView
+                        ? 'Search deleted members in archive...'
+                        : 'Search members by name or mobile number...',
+                    prefixIcon: const Icon(Icons.search_rounded),
+                    filled: true,
+                    fillColor: AdminTheme.surfaceColor(context),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+              // Segmented Switcher for Active vs Deleted Members Archive
+              Container(
+                decoration: BoxDecoration(
+                  color: AdminTheme.surfaceColor(context),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AdminTheme.borderColor(context)),
+                ),
+                padding: const EdgeInsets.all(4),
+                child: Row(
+                  children: [
+                    InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () => setState(() => _showDeletedMembersView = false),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: !_showDeletedMembersView ? AdminTheme.primary : Colors.transparent,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.people_rounded, size: 16, color: !_showDeletedMembersView ? Colors.white : AdminTheme.secondaryTextColor(context)),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Active (${_members.length})',
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: !_showDeletedMembersView ? Colors.white : AdminTheme.secondaryTextColor(context),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () => setState(() => _showDeletedMembersView = true),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: _showDeletedMembersView ? AdminTheme.danger : Colors.transparent,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.delete_sweep_rounded, size: 16, color: _showDeletedMembersView ? Colors.white : AdminTheme.danger),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Deleted Archive (${_deletedMembers.length})',
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: _showDeletedMembersView ? Colors.white : AdminTheme.danger,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 20),
-          if (filtered.isEmpty)
+          if (_showDeletedMembersView)
+            _buildDeletedMembersView(currencyFormat)
+          else if (filtered.isEmpty)
             Expanded(
               child: Center(
                 child: Column(
@@ -2458,7 +2704,7 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
                 itemCount: filtered.length,
                 gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
                   maxCrossAxisExtent: 360,
-                  childAspectRatio: 1.8,
+                  childAspectRatio: 1.75,
                   crossAxisSpacing: 16,
                   mainAxisSpacing: 16,
                 ),
@@ -2507,6 +2753,11 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
                                     ],
                                   ),
                                 ),
+                                IconButton(
+                                  icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 20),
+                                  tooltip: 'Delete & Archive Member',
+                                  onPressed: () => _confirmDeleteMember(m),
+                                ),
                                 const Icon(Icons.chevron_right_rounded, color: Colors.grey, size: 20),
                               ],
                             ),
@@ -2540,6 +2791,170 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  // --- DELETED MEMBERS ARCHIVE VIEW (WITH 1-CLICK RESTORE) ---
+  Widget _buildDeletedMembersView(NumberFormat currencyFormat) {
+    if (_loadingDeletedMembers) {
+      return const Expanded(
+        child: Center(child: CircularProgressIndicator(color: AdminTheme.danger)),
+      );
+    }
+
+    final filtered = _deletedMembers.where((dm) {
+      final name = (dm['full_name'] ?? '').toString().toLowerCase();
+      final phone = (dm['phone'] ?? '').toString().toLowerCase();
+      final q = _deletedMemberSearch.toLowerCase();
+      return name.contains(q) || phone.contains(q);
+    }).toList();
+
+    if (filtered.isEmpty) {
+      return Expanded(
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.delete_sweep_outlined, size: 64, color: AdminTheme.mutedTextColor(context)),
+              const SizedBox(height: 12),
+              Text(
+                'No deleted members in archive',
+                style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: AdminTheme.textColor(context)),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'When you delete a member, all profile data, financial transactions, and attendance logs are safely saved here with 1-click restore.',
+                style: GoogleFonts.inter(fontSize: 12, color: AdminTheme.secondaryTextColor(context)),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Expanded(
+      child: GridView.builder(
+        itemCount: filtered.length,
+        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+          maxCrossAxisExtent: 380,
+          childAspectRatio: 1.6,
+          crossAxisSpacing: 16,
+          mainAxisSpacing: 16,
+        ),
+        itemBuilder: (context, index) {
+          final dm = filtered[index];
+          final name = dm['full_name'] ?? 'Member';
+          final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
+          final avatar = dm['avatar_url'];
+          final phone = dm['phone'] ?? '-';
+          final planName = dm['membership_name'] ?? 'No Plan';
+          final totalRec = double.tryParse(dm['total_received_amount']?.toString() ?? '0') ?? 0.0;
+          final pending = double.tryParse(dm['pending_amount']?.toString() ?? '0') ?? 0.0;
+          final deletedAtRaw = dm['deleted_at']?.toString();
+          DateTime? deletedAt = deletedAtRaw != null ? DateTime.tryParse(deletedAtRaw) : null;
+          final deletedDateStr = deletedAt != null
+              ? DateFormat('dd MMM yyyy, hh:mm a').format(deletedAt)
+              : 'Unknown date';
+
+          return Container(
+            decoration: BoxDecoration(
+              color: AdminTheme.surfaceColor(context),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.red.withValues(alpha: 0.04),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 20,
+                      backgroundColor: Colors.red.withValues(alpha: 0.12),
+                      backgroundImage: (avatar != null && avatar.toString().isNotEmpty) ? NetworkImage(avatar) : null,
+                      child: (avatar == null || avatar.toString().isEmpty)
+                          ? Text(initial, style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.redAccent))
+                          : null,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(name, style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 14, color: AdminTheme.textColor(context)), maxLines: 1, overflow: TextOverflow.ellipsis),
+                          const SizedBox(height: 2),
+                          Text(phone, style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.secondaryTextColor(context))),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text('Archived', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.redAccent)),
+                    ),
+                  ],
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AdminTheme.backgroundColor(context),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Plan: $planName', style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.secondaryTextColor(context))),
+                      Text('Paid: ${currencyFormat.format(totalRec)}', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: AdminTheme.success)),
+                      if (pending > 0)
+                        Text('Due: ${currencyFormat.format(pending)}', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: AdminTheme.danger)),
+                    ],
+                  ),
+                ),
+                Text(
+                  'Deleted: $deletedDateStr',
+                  style: GoogleFonts.inter(fontSize: 10, color: AdminTheme.mutedTextColor(context)),
+                ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        icon: const Icon(Icons.restore_rounded, size: 15),
+                        label: const Text('1-Click Restore'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AdminTheme.success,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          textStyle: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        onPressed: () => _restoreDeletedMember(dm),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      icon: const Icon(Icons.delete_forever_rounded, color: AdminTheme.danger, size: 20),
+                      tooltip: 'Permanently Wipe from Archive',
+                      onPressed: () => _permanentPurgeDeletedMember(dm),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
