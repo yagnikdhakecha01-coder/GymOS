@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/theme/admin_theme.dart';
 import '../../core/services/supabase_service.dart';
 import '../../core/services/google_drive_service.dart';
@@ -51,6 +52,7 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
   late String _gymStatus;
   int _selectedMonth = DateTime.now().month;
   int _selectedYear = DateTime.now().year;
+  RealtimeChannel? _financeChannel;
 
   @override
   void initState() {
@@ -59,10 +61,45 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
     _isLocked = widget.gym['is_locked'] == true;
     _gymStatus = widget.gym['status']?.toString() ?? 'Active';
     _loadAllData();
+    _setupFinanceRealtime();
+  }
+
+  void _setupFinanceRealtime() {
+    if (!AdminSupabaseService.isInitialized) return;
+    try {
+      final gymId = widget.gym['id']?.toString();
+      if (gymId == null || gymId.isEmpty) return;
+
+      _financeChannel = AdminSupabaseService.client
+          .channel('realtime_finance_$gymId')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'finance_transactions',
+            filter: PostgresChangeFilter(
+              type: PostgresChangeFilterType.eq,
+              column: 'gym_id',
+              value: gymId,
+            ),
+            callback: (payload) {
+              if (mounted) {
+                _loadFinanceData();
+              }
+            },
+          )
+          .subscribe();
+    } catch (e) {
+      debugPrint('Realtime finance error: $e');
+    }
   }
 
   @override
   void dispose() {
+    if (_financeChannel != null && AdminSupabaseService.isInitialized) {
+      try {
+        AdminSupabaseService.client.removeChannel(_financeChannel!);
+      } catch (_) {}
+    }
     _tabController.dispose();
     super.dispose();
   }
@@ -1384,7 +1421,12 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
               else
                 ...txList.map((tx) {
                   final amt = double.tryParse(tx['amount']?.toString() ?? '0') ?? 0.0;
-                  final date = tx['transaction_date']?.toString().split('T').first ?? '-';
+                  final rawTxDate = tx['transaction_date'] != null
+                      ? DateTime.tryParse(tx['transaction_date'].toString())?.toLocal()
+                      : null;
+                  final dateFormatted = rawTxDate != null ? DateFormat('dd MMM yyyy').format(rawTxDate) : '-';
+                  final timeFormatted = rawTxDate != null ? DateFormat('hh:mm a').format(rawTxDate) : '';
+                  final dateWithTime = timeFormatted.isNotEmpty ? '$dateFormatted • $timeFormatted' : dateFormatted;
                   return Container(
                     margin: const EdgeInsets.only(bottom: 8),
                     padding: const EdgeInsets.all(12),
@@ -1400,7 +1442,8 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(tx['notes'] ?? 'Payment', style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 13)),
-                            Text('$date • ${tx['payment_method'] ?? 'UPI'}', style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.mutedTextColor(context))),
+                            const SizedBox(height: 2),
+                            Text('$dateWithTime • ${tx['payment_method'] ?? 'UPI'}', style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.mutedTextColor(context))),
                           ],
                         ),
                         Text(currencyFormat.format(amt), style: GoogleFonts.inter(fontWeight: FontWeight.bold, color: AdminTheme.success)),
@@ -2247,7 +2290,28 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Ledger Transactions (${_transactions.length})', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: AdminTheme.textColor(context))),
+              Row(
+                children: [
+                  Text('Ledger Transactions (${_transactions.length})', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: AdminTheme.textColor(context))),
+                  const SizedBox(width: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(width: 6, height: 6, decoration: const BoxDecoration(color: Colors.green, shape: BoxShape.circle)),
+                        const SizedBox(width: 5),
+                        Text('LIVE DATA', style: GoogleFonts.inter(fontSize: 9.5, fontWeight: FontWeight.w800, color: Colors.green, letterSpacing: 0.5)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
               ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AdminTheme.primary,
@@ -2279,9 +2343,30 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
                       final tx = _transactions[index];
                       final isRev = tx['type'] == 'Revenue';
                       final amt = double.tryParse(tx['amount'].toString()) ?? 0.0;
-                      final txDateStr = tx['transaction_date']?.toString();
-                      final txDate = txDateStr != null ? DateTime.tryParse(txDateStr) : null;
+                      final txDateStr = tx['transaction_date']?.toString() ?? tx['created_at']?.toString();
+                      final rawTxDate = txDateStr != null ? DateTime.tryParse(txDateStr) : null;
+                      final txDate = rawTxDate?.toLocal();
                       final dateFormatted = txDate != null ? DateFormat('dd MMM yyyy').format(txDate) : '';
+                      final timeFormatted = txDate != null ? DateFormat('hh:mm a').format(txDate) : '';
+                      final fullTimestamp = txDate != null ? DateFormat('dd MMM yyyy, hh:mm:ss a').format(txDate) : '';
+
+                      final now = DateTime.now();
+                      final isToday = txDate != null &&
+                          txDate.year == now.year &&
+                          txDate.month == now.month &&
+                          txDate.day == now.day;
+
+                      String relText = '';
+                      if (txDate != null && isToday) {
+                        final diff = now.difference(txDate);
+                        if (diff.inSeconds < 60 && !diff.isNegative) {
+                          relText = 'Just now';
+                        } else if (diff.inMinutes < 60 && !diff.isNegative) {
+                          relText = '${diff.inMinutes}m ago';
+                        } else if (diff.inHours < 24 && !diff.isNegative) {
+                          relText = '${diff.inHours}h ago';
+                        }
+                      }
 
                       // Check for linked member or staff
                       String linkedName = '';
@@ -2335,11 +2420,87 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
                             ],
                             if (dateFormatted.isNotEmpty) ...[
                               const SizedBox(width: 8),
-                              Text('• $dateFormatted', style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.mutedTextColor(context))),
+                              Tooltip(
+                                message: 'Exact Entry Time: $fullTimestamp (IST)',
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                                  decoration: BoxDecoration(
+                                    color: isToday
+                                        ? AdminTheme.success.withValues(alpha: 0.08)
+                                        : AdminTheme.primary.withValues(alpha: 0.05),
+                                    borderRadius: BorderRadius.circular(5),
+                                    border: Border.all(
+                                      color: isToday
+                                          ? AdminTheme.success.withValues(alpha: 0.3)
+                                          : AdminTheme.borderColor(context),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (isToday) ...[
+                                        Container(
+                                          width: 6,
+                                          height: 6,
+                                          decoration: const BoxDecoration(
+                                            color: AdminTheme.success,
+                                            shape: BoxShape.circle,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 5),
+                                      ] else ...[
+                                        Icon(Icons.schedule_rounded, size: 11, color: AdminTheme.secondaryTextColor(context)),
+                                        const SizedBox(width: 4),
+                                      ],
+                                      Text(
+                                        '$dateFormatted • $timeFormatted',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 11,
+                                          fontWeight: isToday ? FontWeight.w700 : FontWeight.w600,
+                                          color: isToday ? AdminTheme.success : AdminTheme.textColor(context),
+                                        ),
+                                      ),
+                                      if (relText.isNotEmpty) ...[
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          '($relText)',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w500,
+                                            color: AdminTheme.success,
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              ),
                             ],
                           ],
                         ),
-                        subtitle: Text(tx['notes'] ?? "", style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.mutedTextColor(context))),
+                        subtitle: Row(
+                          children: [
+                            if (tx['notes'] != null && tx['notes'].toString().isNotEmpty) ...[
+                              Flexible(
+                                child: Text(
+                                  tx['notes'],
+                                  style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.mutedTextColor(context)),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                            ],
+                            if (timeFormatted.isNotEmpty)
+                              Text(
+                                '• Logged at $timeFormatted',
+                                style: GoogleFonts.inter(
+                                  fontSize: 10.5,
+                                  color: AdminTheme.mutedTextColor(context),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                          ],
+                        ),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
@@ -2485,8 +2646,8 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
                   const SizedBox(height: 12),
                   ListTile(
                     contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.calendar_today_rounded, size: 20),
-                    title: Text('Date: ${DateFormat('dd MMM yyyy').format(txDate)}', style: GoogleFonts.inter(fontSize: 13)),
+                    leading: const Icon(Icons.schedule_rounded, size: 20),
+                    title: Text('Date & Time: ${DateFormat('dd MMM yyyy, hh:mm a').format(txDate)}', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600)),
                     trailing: TextButton(
                       child: const Text('Change'),
                       onPressed: () async {
@@ -2496,7 +2657,16 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
                           firstDate: DateTime(2020),
                           lastDate: DateTime(2030),
                         );
-                        if (picked != null) setDialogState(() => txDate = picked);
+                        if (picked != null) {
+                          if (context.mounted) {
+                            final pickedTime = await showTimePicker(
+                              context: context,
+                              initialTime: TimeOfDay.fromDateTime(txDate),
+                            );
+                            final time = pickedTime ?? TimeOfDay.fromDateTime(txDate);
+                            setDialogState(() => txDate = DateTime(picked.year, picked.month, picked.day, time.hour, time.minute));
+                          }
+                        }
                       },
                     ),
                   ),
@@ -2678,8 +2848,8 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
                   const SizedBox(height: 12),
                   ListTile(
                     contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.calendar_today_rounded, size: 20),
-                    title: Text('Date: ${DateFormat('dd MMM yyyy').format(txDate)}', style: GoogleFonts.inter(fontSize: 13)),
+                    leading: const Icon(Icons.schedule_rounded, size: 20),
+                    title: Text('Date & Time: ${DateFormat('dd MMM yyyy, hh:mm a').format(txDate)}', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600)),
                     trailing: TextButton(
                       child: const Text('Change'),
                       onPressed: () async {
@@ -2689,7 +2859,16 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
                           firstDate: DateTime(2020),
                           lastDate: DateTime(2030),
                         );
-                        if (picked != null) setDialogState(() => txDate = picked);
+                        if (picked != null) {
+                          if (context.mounted) {
+                            final pickedTime = await showTimePicker(
+                              context: context,
+                              initialTime: TimeOfDay.fromDateTime(txDate),
+                            );
+                            final time = pickedTime ?? TimeOfDay.fromDateTime(txDate);
+                            setDialogState(() => txDate = DateTime(picked.year, picked.month, picked.day, time.hour, time.minute));
+                          }
+                        }
                       },
                     ),
                   ),
