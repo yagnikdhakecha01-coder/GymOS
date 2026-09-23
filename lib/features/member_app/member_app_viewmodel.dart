@@ -1954,8 +1954,9 @@ class MemberAppViewModel extends ChangeNotifier {
     _checkInTime = '';
     _checkInDate = '';
     _checkedInToday = false;
-    _hasAgreedRules = false;
-    _agreementRecord = null;
+    // NOTE: _hasAgreedRules and _agreementRecord are NEVER cleared.
+    // Once a member agrees to gym rules, it is permanent and irreversible.
+    // Agreement persists across logout/login cycles.
 
     notifyListeners();
   }

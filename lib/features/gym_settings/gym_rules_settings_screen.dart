@@ -44,7 +44,7 @@ class _GymRulesSettingsScreenState extends State<GymRulesSettingsScreen>
     setState(() => _isLoading = true);
     final authVm = Provider.of<AuthViewModel>(context, listen: false);
     final repo = Provider.of<GymRepository>(context, listen: false);
-    final gymId = authVm.gymInfo?['id']?.toString() ?? '';
+    final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id']?.toString() ?? '';
 
     if (gymId.isNotEmpty) {
       final records = await repo.fetchGymAgreements(gymId);
@@ -186,30 +186,38 @@ class _GymRulesSettingsScreenState extends State<GymRulesSettingsScreen>
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: AppTheme.border),
             ),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.tune_rounded, color: AppTheme.primary, size: 20),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    _customRulesData != null && _customRulesData!.isNotEmpty
-                        ? '${_customRulesData!.length} Custom Rules Added by Owner'
-                        : 'Default Gym Rules Active',
-                    style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.w600, color: AppTheme.textPrimary),
-                  ),
-                ),
-                ElevatedButton.icon(
-                  onPressed: () => _showAddCustomRuleSheet(context),
-                  icon: const Icon(Icons.add_rounded, size: 16),
-                  label: const Text('Add Rule'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.primary,
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    textStyle: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
+                Row(
+                  children: [
+                    const Icon(Icons.tune_rounded, color: AppTheme.primary, size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        _customRulesData != null && _customRulesData!.isNotEmpty
+                            ? '${_customRulesData!.length} Custom Rules Added by Owner'
+                            : 'Default Gym Rules Active',
+                        style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.w600, color: AppTheme.textPrimary),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton.icon(
+                      onPressed: () => _showAddCustomRuleSheet(context),
+                      icon: const Icon(Icons.add_rounded, size: 16),
+                      label: const Text('Add Rule'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primary,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        textStyle: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
