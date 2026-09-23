@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 import '../../core/theme/admin_theme.dart';
 import '../../core/services/supabase_service.dart';
 import '../../core/services/google_drive_service.dart';
+import '../../core/widgets/full_screen_image_viewer.dart';
 
 class AdminGymDashboardScreen extends StatefulWidget {
   final Map<String, dynamic> gym;
@@ -964,13 +965,19 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
                       ),
                       child: Row(
                         children: [
-                          CircleAvatar(
+                          InteractiveAvatarWrapper(
+                            imageUrl: s['avatar_url']?.toString(),
+                            title: s['full_name']?.toString() ?? 'Staff Member',
+                            subtitle: 'Staff Console • Role: ${s['role'] ?? 'Staff'}',
                             radius: 26,
-                            backgroundColor: Colors.indigo.withValues(alpha: 0.15),
-                            backgroundImage: (s['avatar_url'] != null && s['avatar_url'].toString().isNotEmpty) ? NetworkImage(s['avatar_url']) : null,
-                            child: (s['avatar_url'] == null || s['avatar_url'].toString().isEmpty)
-                                ? Text(s['full_name'] != null && s['full_name'].toString().isNotEmpty ? s['full_name'][0].toUpperCase() : '?', style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.indigo))
-                                : null,
+                            child: CircleAvatar(
+                              radius: 26,
+                              backgroundColor: Colors.indigo.withValues(alpha: 0.15),
+                              backgroundImage: (s['avatar_url'] != null && s['avatar_url'].toString().isNotEmpty) ? NetworkImage(s['avatar_url']) : null,
+                              child: (s['avatar_url'] == null || s['avatar_url'].toString().isEmpty)
+                                  ? Text(s['full_name'] != null && s['full_name'].toString().isNotEmpty ? s['full_name'][0].toUpperCase() : '?', style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.indigo))
+                                  : null,
+                            ),
                           ),
                           const SizedBox(width: 16),
                           Expanded(
@@ -1105,13 +1112,19 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
                       ),
                       child: Row(
                         children: [
-                          CircleAvatar(
+                          InteractiveAvatarWrapper(
+                            imageUrl: avatarUrl,
+                            title: name,
+                            subtitle: 'Member Profile Photo • ID: ${m['id']}',
                             radius: 26,
-                            backgroundColor: AdminTheme.primary.withValues(alpha: 0.15),
-                            backgroundImage: (avatarUrl != null && avatarUrl.isNotEmpty) ? NetworkImage(avatarUrl) : null,
-                            child: (avatarUrl == null || avatarUrl.isEmpty)
-                                ? Text(name.isNotEmpty ? name[0].toUpperCase() : '?', style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.bold, color: AdminTheme.primary))
-                                : null,
+                            child: CircleAvatar(
+                              radius: 26,
+                              backgroundColor: AdminTheme.primary.withValues(alpha: 0.15),
+                              backgroundImage: (avatarUrl != null && avatarUrl.isNotEmpty) ? NetworkImage(avatarUrl) : null,
+                              child: (avatarUrl == null || avatarUrl.isEmpty)
+                                  ? Text(name.isNotEmpty ? name[0].toUpperCase() : '?', style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.bold, color: AdminTheme.primary))
+                                  : null,
+                            ),
                           ),
                           const SizedBox(width: 16),
                           Expanded(
@@ -2885,13 +2898,20 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
                           children: [
                             Row(
                               children: [
-                                CircleAvatar(
+                                InteractiveAvatarWrapper(
+                                  imageUrl: avatar?.toString(),
+                                  title: name,
+                                  subtitle: 'Member Profile Photo • ${m['phone'] ?? ''}',
                                   radius: 22,
-                                  backgroundColor: AdminTheme.primary.withValues(alpha: 0.12),
-                                  backgroundImage: (avatar != null && avatar.toString().isNotEmpty) ? NetworkImage(avatar) : null,
-                                  child: (avatar == null || avatar.toString().isEmpty)
-                                      ? Text(initial, style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 16, color: AdminTheme.primary))
-                                      : null,
+                                  showZoomBadge: false,
+                                  child: CircleAvatar(
+                                    radius: 22,
+                                    backgroundColor: AdminTheme.primary.withValues(alpha: 0.12),
+                                    backgroundImage: (avatar != null && avatar.toString().isNotEmpty) ? NetworkImage(avatar) : null,
+                                    child: (avatar == null || avatar.toString().isEmpty)
+                                        ? Text(initial, style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 16, color: AdminTheme.primary))
+                                        : null,
+                                  ),
                                 ),
                                 const SizedBox(width: 12),
                                 Expanded(
@@ -3125,13 +3145,20 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
                       children: [
                         Row(
                           children: [
-                            CircleAvatar(
+                            InteractiveAvatarWrapper(
+                              imageUrl: avatar?.toString(),
+                              title: name,
+                              subtitle: 'Member Profile Photo • $phone',
                               radius: 22,
-                              backgroundColor: AdminTheme.primary.withValues(alpha: 0.12),
-                              backgroundImage: (avatar != null && avatar.toString().isNotEmpty) ? NetworkImage(avatar) : null,
-                              child: (avatar == null || avatar.toString().isEmpty)
-                                  ? Text(initial, style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 16, color: AdminTheme.primary))
-                                  : null,
+                              showZoomBadge: false,
+                              child: CircleAvatar(
+                                radius: 22,
+                                backgroundColor: AdminTheme.primary.withValues(alpha: 0.12),
+                                backgroundImage: (avatar != null && avatar.toString().isNotEmpty) ? NetworkImage(avatar) : null,
+                                child: (avatar == null || avatar.toString().isEmpty)
+                                    ? Text(initial, style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 16, color: AdminTheme.primary))
+                                    : null,
+                              ),
                             ),
                             const SizedBox(width: 12),
                             Expanded(
@@ -3300,13 +3327,20 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
                         padding: const EdgeInsets.all(16),
                         child: Row(
                           children: [
-                            CircleAvatar(
+                            InteractiveAvatarWrapper(
+                              imageUrl: avatar?.toString(),
+                              title: name,
+                              subtitle: 'Staff Profile Photo • Role: ${s['role'] ?? 'Staff'}',
                               radius: 24,
-                              backgroundColor: Colors.indigo.withValues(alpha: 0.12),
-                              backgroundImage: (avatar != null && avatar.toString().isNotEmpty) ? NetworkImage(avatar) : null,
-                              child: (avatar == null || avatar.toString().isEmpty)
-                                  ? Text(initial, style: GoogleFonts.inter(fontWeight: FontWeight.bold, color: Colors.indigo, fontSize: 16))
-                                  : null,
+                              showZoomBadge: false,
+                              child: CircleAvatar(
+                                radius: 24,
+                                backgroundColor: Colors.indigo.withValues(alpha: 0.12),
+                                backgroundImage: (avatar != null && avatar.toString().isNotEmpty) ? NetworkImage(avatar) : null,
+                                child: (avatar == null || avatar.toString().isEmpty)
+                                    ? Text(initial, style: GoogleFonts.inter(fontWeight: FontWeight.bold, color: Colors.indigo, fontSize: 16))
+                                    : null,
+                              ),
                             ),
                             const SizedBox(width: 16),
                             Expanded(
