@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme/theme.dart';
 import '../../core/config/env.dart';
 import '../../features/authentication/auth_viewmodel.dart';
+import '../../core/services/supabase_service.dart';
 import 'attendance_viewmodel.dart';
 import 'emergency_attendance_hub_screen.dart';
 import 'owner_attendance_correction_screen.dart';
@@ -19,11 +20,120 @@ class OwnerQrSettingsScreen extends StatefulWidget {
 }
 
 class _OwnerQrSettingsScreenState extends State<OwnerQrSettingsScreen> {
+  bool _biometricEnabled = false;
+  String _deviceSecret = '';
+  bool _loadingBiometric = true;
+  bool _showSecret = false;
+  int _connectedDevicesCount = 0;
+  String _biometricConnectionMode = 'bridge'; // 'bridge' or 'cloud'
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadBiometricSettings());
+  }
+
+  String _resolveGymId() {
+    final authVm = Provider.of<AuthViewModel>(context, listen: false);
+    final attVm = Provider.of<AttendanceViewModel>(context, listen: false);
+    return authVm.activeAssociation?.gymId ??
+        authVm.gymInfo?['id'] ??
+        attVm.settings?.gymId ??
+        '';
+  }
+
+  Future<void> _loadBiometricSettings() async {
+    final gymId = _resolveGymId();
+    if (gymId.isEmpty) {
+      if (mounted) setState(() => _loadingBiometric = false);
+      return;
+    }
+
+    try {
+      final res = await SupabaseService.client.rpc(
+        'get_or_create_gym_biometric_settings',
+        params: {'p_gym_id': gymId},
+      );
+
+      if (mounted && res != null) {
+        final data = Map<String, dynamic>.from(res as Map);
+        setState(() {
+          _biometricEnabled = data['enabled'] == true;
+          _deviceSecret = (data['secret'] ?? '').toString();
+          _connectedDevicesCount = (data['device_count'] as num?)?.toInt() ?? 0;
+          _loadingBiometric = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('[Biometric] Error loading settings: $e');
+      if (mounted) setState(() => _loadingBiometric = false);
+    }
+  }
+
+  Future<void> _toggleBiometric(bool val) async {
+    final gymId = _resolveGymId();
+    if (gymId.isEmpty) return;
+
+    setState(() => _biometricEnabled = val);
+    try {
+      await SupabaseService.client.rpc(
+        'toggle_gym_biometric_attendance',
+        params: {'p_gym_id': gymId, 'p_enabled': val},
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(val ? 'Biometric Attendance Enabled' : 'Biometric Attendance Disabled'),
+            backgroundColor: val ? AppTheme.success : AppTheme.textSecondary,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() => _biometricEnabled = !val);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to update: $e'), backgroundColor: AppTheme.danger),
+        );
+      }
+    }
+  }
+
+  Future<void> _regenerateSecret() async {
+    final gymId = _resolveGymId();
+    if (gymId.isEmpty) return;
+
+    try {
+      final newSecret = await SupabaseService.client.rpc(
+        'regenerate_gym_biometric_secret',
+        params: {'p_gym_id': gymId},
+      );
+      if (mounted && newSecret != null) {
+        setState(() => _deviceSecret = newSecret.toString());
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('✅ New Secret Key Generated!'), backgroundColor: AppTheme.success),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to regenerate: $e'), backgroundColor: AppTheme.danger),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final vm = Provider.of<AttendanceViewModel>(context);
     final authVm = Provider.of<AuthViewModel>(context);
-    final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'] ?? '';
+    final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'] ?? vm.settings?.gymId ?? '';
+
+    // If biometric secret wasn't loaded because gymId was delayed during initial post-frame callback
+    if (_deviceSecret.isEmpty && !_loadingBiometric && gymId.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _loadBiometricSettings());
+    }
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -79,28 +189,73 @@ class _OwnerQrSettingsScreenState extends State<OwnerQrSettingsScreen> {
                         ),
                         child: DropdownButtonHideUnderline(
                           child: DropdownButton<String>(
-                            value: (vm.settings?.method == 'QR Only' || vm.settings?.method == 'Dynamic QR' || vm.settings?.method == 'Dynamic QR + WiFi' || vm.settings?.method == 'QR + WiFi')
-                                ? 'Dynamic QR'
-                                : (vm.settings?.method == 'Static QR' || vm.settings?.method == 'Static QR + WiFi' ? 'Static QR' : 'Static QR'),
+                            value: () {
+                              final m = vm.settings?.method ?? 'Static QR';
+                              if (m == 'Biometric') return 'Biometric';
+                              if (m == 'QR + Biometric') return 'QR + Biometric';
+                              if (m == 'Dynamic QR' || m == 'Dynamic QR + WiFi' || m == 'QR Only' || m == 'Dynamic QR + Gym WiFi') {
+                                return 'Dynamic QR';
+                              }
+                              return 'Static QR';
+                            }(),
                             isExpanded: true,
                             items: const [
                               DropdownMenuItem(
                                 value: 'Static QR',
-                                child: Text('Static QR', style: TextStyle(color: AppTheme.textPrimary, fontSize: 13.5)),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.qr_code_rounded, size: 18, color: AppTheme.primary),
+                                    SizedBox(width: 10),
+                                    Text('Static QR Code', style: TextStyle(color: AppTheme.textPrimary, fontSize: 13.5)),
+                                  ],
+                                ),
                               ),
                               DropdownMenuItem(
                                 value: 'Dynamic QR',
-                                child: Text('Dynamic QR', style: TextStyle(color: AppTheme.textPrimary, fontSize: 13.5)),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.qr_code_scanner_rounded, size: 18, color: AppTheme.primary),
+                                    SizedBox(width: 10),
+                                    Text('Dynamic QR (Auto Refresh)', style: TextStyle(color: AppTheme.textPrimary, fontSize: 13.5)),
+                                  ],
+                                ),
+                              ),
+                              DropdownMenuItem(
+                                value: 'Biometric',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.fingerprint_rounded, size: 18, color: AppTheme.primary),
+                                    SizedBox(width: 10),
+                                    Text('Biometric (Fingerprint & Face)', style: TextStyle(color: AppTheme.textPrimary, fontSize: 13.5)),
+                                  ],
+                                ),
+                              ),
+                              DropdownMenuItem(
+                                value: 'QR + Biometric',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.devices_other_rounded, size: 18, color: AppTheme.primary),
+                                    SizedBox(width: 10),
+                                    Text('QR + Biometric (Both)', style: TextStyle(color: AppTheme.textPrimary, fontSize: 13.5)),
+                                  ],
+                                ),
                               ),
                             ],
                             onChanged: (val) {
                               if (val != null) {
                                 vm.updateAttendanceMethod(val);
+                                if (val == 'Biometric' || val == 'QR + Biometric') {
+                                  if (!_biometricEnabled) _toggleBiometric(true);
+                                }
                               }
                             },
                           ),
                         ),
                       ),
+                      if (vm.settings?.method == 'Biometric' || vm.settings?.method == 'QR + Biometric' || _biometricEnabled) ...[
+                        const SizedBox(height: 16),
+                        _buildBiometricCard(),
+                      ],
                       
                       if (vm.settings?.method == 'Dynamic QR' || vm.settings?.method == 'QR Only' || vm.settings?.method == 'Dynamic QR + WiFi' || vm.settings?.method == 'QR + WiFi') ...[
                         const SizedBox(height: 16),
@@ -115,9 +270,13 @@ class _OwnerQrSettingsScreenState extends State<OwnerQrSettingsScreen> {
                           children: [30, 60, 90, 120, 300].map((seconds) {
                             final isSelected = vm.settings?.qrValiditySeconds == seconds;
                             String label = '';
-                            if (seconds < 60) label = '${seconds}s';
-                            else if (seconds == 90) label = '1.5m';
-                            else label = '${seconds ~/ 60}m';
+                            if (seconds < 60) {
+                              label = '${seconds}s';
+                            } else if (seconds == 90) {
+                              label = '1.5m';
+                            } else {
+                              label = '${seconds ~/ 60}m';
+                            }
 
                             return ChoiceChip(
                               label: Text(label),
@@ -243,7 +402,7 @@ class _OwnerQrSettingsScreenState extends State<OwnerQrSettingsScreen> {
 
 
                   // ── Section: Static QR ──
-                  if (vm.settings?.method == 'Static QR') ...[
+                  if (vm.settings?.method == 'Static QR' || vm.settings?.method == 'QR + Biometric') ...[
                     Text(
                       'Static QR Settings',
                       style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
@@ -336,6 +495,7 @@ class _OwnerQrSettingsScreenState extends State<OwnerQrSettingsScreen> {
                       TextButton.icon(
                         onPressed: () async {
                           final link = await vm.getOrGenerateDisplayLink();
+                          if (!context.mounted) return;
                           if (link.isEmpty) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(content: Text('Failed to generate display link'), backgroundColor: AppTheme.danger),
@@ -760,6 +920,366 @@ class _OwnerQrSettingsScreenState extends State<OwnerQrSettingsScreen> {
             ),
             child: Text('Save', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBiometricCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppTheme.primary.withValues(alpha: 0.3), width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: AppTheme.primary.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: const BoxDecoration(
+                  color: AppTheme.primaryLight,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.fingerprint_rounded, color: AppTheme.primary, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Biometric & Gate Turnstile',
+                      style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                    ),
+                    Text(
+                      _connectedDevicesCount > 0
+                          ? 'Fingerprint, Face & RFID • $_connectedDevicesCount Connected'
+                          : 'Fingerprint, Face Recognition & RFID Cards',
+                      style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary),
+                    ),
+                  ],
+                ),
+              ),
+              Switch(
+                value: _biometricEnabled,
+                activeColor: AppTheme.primary,
+                onChanged: _loadingBiometric ? null : (val) => _toggleBiometric(val),
+              ),
+            ],
+          ),
+          if (_biometricEnabled) ...[
+            const Divider(height: 24),
+
+            // Connection Mode Tabs (PC Bridge vs Direct Cloud)
+            Text(
+              'Integration Mode',
+              style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: InkWell(
+                    onTap: () => setState(() => _biometricConnectionMode = 'bridge'),
+                    borderRadius: BorderRadius.circular(10),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+                      decoration: BoxDecoration(
+                        color: _biometricConnectionMode == 'bridge' ? AppTheme.primaryLight : const Color(0xFFF9F9FB),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: _biometricConnectionMode == 'bridge' ? AppTheme.primary : const Color(0xFFE5E7EB),
+                          width: _biometricConnectionMode == 'bridge' ? 1.5 : 1,
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.computer_rounded,
+                                size: 16,
+                                color: _biometricConnectionMode == 'bridge' ? AppTheme.primary : AppTheme.textSecondary,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                'PC Sync Bridge',
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: _biometricConnectionMode == 'bridge' ? AppTheme.primary : AppTheme.textPrimary,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            'Offline-Safe • Recommended',
+                            style: GoogleFonts.inter(
+                              fontSize: 9.5,
+                              color: _biometricConnectionMode == 'bridge' ? AppTheme.primary : AppTheme.textSecondary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: InkWell(
+                    onTap: () => setState(() => _biometricConnectionMode = 'cloud'),
+                    borderRadius: BorderRadius.circular(10),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+                      decoration: BoxDecoration(
+                        color: _biometricConnectionMode == 'cloud' ? AppTheme.primaryLight : const Color(0xFFF9F9FB),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: _biometricConnectionMode == 'cloud' ? AppTheme.primary : const Color(0xFFE5E7EB),
+                          width: _biometricConnectionMode == 'cloud' ? 1.5 : 1,
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.cloud_upload_rounded,
+                                size: 16,
+                                color: _biometricConnectionMode == 'cloud' ? AppTheme.primary : AppTheme.textSecondary,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Direct Cloud',
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: _biometricConnectionMode == 'cloud' ? AppTheme.primary : AppTheme.textPrimary,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            'eSSL ADMS / Realtime Cloud',
+                            style: GoogleFonts.inter(
+                              fontSize: 9.5,
+                              color: _biometricConnectionMode == 'cloud' ? AppTheme.primary : AppTheme.textSecondary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+
+            // Mode Explanation Banner
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: _biometricConnectionMode == 'bridge'
+                    ? const Color(0xFFECFDF5)
+                    : const Color(0xFFEFF6FF),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: _biometricConnectionMode == 'bridge'
+                      ? const Color(0xFFA7F3D0)
+                      : const Color(0xFFBFDBFE),
+                ),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    _biometricConnectionMode == 'bridge'
+                        ? Icons.offline_bolt_rounded
+                        : Icons.wifi_tethering_rounded,
+                    size: 16,
+                    color: _biometricConnectionMode == 'bridge' ? const Color(0xFF047857) : const Color(0xFF1D4ED8),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _biometricConnectionMode == 'bridge'
+                          ? 'PC Bridge Mode: Reception PC par chalta hai. Internet band ya PC power cut hone par bhi SQLite WAL buffer me attendance safe rehti hai aur internet aane par automatic sync hoti hai.'
+                          : 'Direct Cloud Mode: Machine directly internet/SIM se judi hoti hai aur Cloud Webhook URL par attendance push karti hai.',
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        color: _biometricConnectionMode == 'bridge' ? const Color(0xFF047857) : const Color(0xFF1D4ED8),
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+
+            // Device Connection Secret
+            Text(
+              'Gym Biometric Secret Key',
+              style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+            ),
+            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8F8FA),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppTheme.border),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _showSecret ? _deviceSecret : '••••••••••••••••••••••••••••••••',
+                      style: const TextStyle(fontSize: 12, fontFamily: 'monospace', fontWeight: FontWeight.w600, color: AppTheme.textPrimary),
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(_showSecret ? Icons.visibility_off : Icons.visibility, size: 18, color: AppTheme.textMuted),
+                    onPressed: () => setState(() => _showSecret = !_showSecret),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.copy_rounded, size: 18, color: AppTheme.primary),
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: _deviceSecret));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Secret Key copied to clipboard!'), behavior: SnackBarBehavior.floating),
+                      );
+                    },
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // If Cloud mode: show Webhook API URL
+            if (_biometricConnectionMode == 'cloud') ...[
+              Text(
+                'Cloud Webhook API URL (Push Endpoint)',
+                style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+              ),
+              const SizedBox(height: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8F8FA),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppTheme.border),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${Env.supabaseUrl}/rest/v1/rpc/process_biometric_punch_batch',
+                        style: const TextStyle(fontSize: 11, fontFamily: 'monospace', color: AppTheme.textSecondary),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.copy_rounded, size: 18, color: AppTheme.primary),
+                      onPressed: () {
+                        Clipboard.setData(ClipboardData(text: '${Env.supabaseUrl}/rest/v1/rpc/process_biometric_punch_batch'));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('API URL copied to clipboard!'), behavior: SnackBarBehavior.floating),
+                        );
+                      },
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+
+            // 2-Way Expiry Sync Badge
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.purple.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.purple.withValues(alpha: 0.2)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.lock_clock_rounded, size: 18, color: Colors.purple),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Two-Way Expiry Gate Lock Active',
+                          style: GoogleFonts.inter(fontSize: 11.5, fontWeight: FontWeight.bold, color: Colors.purple),
+                        ),
+                        Text(
+                          'App me membership renew ya edit hone par machine me auto validity time update ho jati hai.',
+                          style: GoogleFonts.inter(fontSize: 10.5, color: Colors.purple.shade700),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Regenerate Secret Key button
+            OutlinedButton.icon(
+              onPressed: () {
+                showDialog(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    title: const Text('Regenerate Secret Key?'),
+                    content: const Text(
+                      'Existing biometric devices and PC bridge tools will stop connecting until updated with the new key.',
+                    ),
+                    actions: [
+                      TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                      ElevatedButton(
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          _regenerateSecret();
+                        },
+                        style: ElevatedButton.styleFrom(backgroundColor: AppTheme.danger),
+                        child: const Text('Regenerate', style: TextStyle(color: Colors.white)),
+                      ),
+                    ],
+                  ),
+                );
+              },
+              icon: const Icon(Icons.refresh_rounded, size: 16),
+              label: const Text('Regenerate Secret Key', style: TextStyle(fontSize: 12)),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppTheme.danger,
+                side: const BorderSide(color: AppTheme.danger),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
+          ],
         ],
       ),
     );

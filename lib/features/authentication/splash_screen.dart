@@ -19,6 +19,7 @@ import '../member_app/screens/member_code_screen.dart';
 import 'data_sync_screen.dart';
 import 'biometric_lock_screen.dart';
 import '../../core/services/biometric_service.dart';
+import '../../core/services/version_check_service.dart';
 
 import '../../core/widgets/app_branding_header.dart';
 
@@ -42,7 +43,26 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     _scaleAnim = Tween<double>(begin: 0.8, end: 1.0).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutBack));
     _controller.forward();
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+
+      // 1. Critical Startup Gate: Immediate Force Update Check
+      try {
+        final versionResult = await VersionCheckService.checkVersion();
+        if (versionResult.isUpdateAvailable && versionResult.shouldForce) {
+          if (mounted) {
+            VersionCheckEngine.isShowingForceDialog = true;
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (_) => ForceUpdateScreen(result: versionResult)),
+            );
+            return;
+          }
+        }
+      } catch (e) {
+        debugPrint('Splash force update check warning: $e');
+      }
+
       if (!mounted) return;
       final authVm = Provider.of<AuthViewModel>(context, listen: false);
       final hasActiveSession = SupabaseService.isInitialized &&

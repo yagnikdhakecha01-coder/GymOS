@@ -1743,8 +1743,9 @@ button {
   color: white;
 }
 
-/* ── Play Store Notice Modal ── */
-#playStoreModal {
+/* ── Play Store & App Store Notice Modals ── */
+#playStoreModal,
+#appStoreModal {
   display: none;
   position: fixed;
   inset: 0;
@@ -1753,16 +1754,19 @@ button {
   justify-content: center;
   padding: 20px;
 }
-#playStoreModal.active {
-  display: flex;
+#playStoreModal.active,
+#appStoreModal.active {
+  display: flex !important;
 }
-#playStoreModal .modal-backdrop {
+#playStoreModal .modal-backdrop,
+#appStoreModal .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(3, 7, 18, 0.8);
+  background: rgba(3, 7, 18, 0.85);
   backdrop-filter: blur(8px);
 }
-#playStoreModal .modal-dialog {
+#playStoreModal .modal-dialog,
+#appStoreModal .modal-dialog {
   position: relative;
   background: var(--bg-card, #1E293B);
   border: 1px solid rgba(108, 58, 237, 0.4);
@@ -1773,12 +1777,14 @@ button {
   text-align: center;
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 35px rgba(108, 58, 237, 0.25);
   animation: playModalPop 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 100000;
 }
 @keyframes playModalPop {
   0% { transform: scale(0.9); opacity: 0; }
   100% { transform: scale(1); opacity: 1; }
 }
-#playStoreModal .modal-icon {
+#playStoreModal .modal-icon,
+#appStoreModal .modal-icon {
   width: 64px;
   height: 64px;
   margin: 0 auto 18px;
@@ -1790,19 +1796,27 @@ button {
   justify-content: center;
   color: #8B5CF6;
 }
-#playStoreModal .modal-title {
+#appStoreModal .modal-icon {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #FFFFFF;
+}
+#playStoreModal .modal-title,
+#appStoreModal .modal-title {
   font-size: 1.35rem;
   font-weight: 700;
   color: #F8FAFC;
   margin-bottom: 10px;
 }
-#playStoreModal .modal-desc {
+#playStoreModal .modal-desc,
+#appStoreModal .modal-desc {
   font-size: 0.95rem;
   color: #94A3B8;
   line-height: 1.6;
   margin-bottom: 24px;
 }
-#playStoreModal .modal-btn {
+#playStoreModal .modal-btn,
+#appStoreModal .modal-btn {
   background: #6C3AED;
   color: #FFFFFF;
   font-weight: 600;
@@ -1812,8 +1826,10 @@ button {
   border: none;
   font-size: 0.95rem;
   transition: all 0.2s ease;
+  width: 100%;
 }
-#playStoreModal .modal-btn:hover {
+#playStoreModal .modal-btn:hover,
+#appStoreModal .modal-btn:hover {
   background: #7C3AED;
   transform: translateY(-2px);
   box-shadow: 0 10px 20px rgba(108, 58, 237, 0.35);

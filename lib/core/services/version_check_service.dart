@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../config/app_config.dart';
+import '../theme/theme.dart';
 
 class VersionCheckResult {
   final String latestVersion;
@@ -160,107 +161,155 @@ class VersionCheckService {
 
     return VersionCheckResult.empty();
   }
+  static Future<void> launchStoreUrl(String url) async {
+    if (url.isEmpty) return;
+    final uri = Uri.tryParse(url);
+    if (uri != null) {
+      try {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } catch (_) {}
+    }
+  }
 }
 
-class VersionCheckEngine {
-  static bool _hasChecked = false;
+class ForceUpdateScreen extends StatelessWidget {
+  final VersionCheckResult result;
 
-  static void start(BuildContext context) {
-    if (_hasChecked) return;
-    _hasChecked = true;
+  const ForceUpdateScreen({super.key, required this.result});
 
-    // Perform silent background check
-    VersionCheckService.checkVersion().then((result) {
-      if (result.isUpdateAvailable) {
-        if (result.shouldForce) {
-          _showForceUpdateDialog(context, result);
-        } else if (result.isOptionalUpdate) {
-          _showOptionalUpdateDialog(context, result);
-        }
-      }
-    });
-  }
-
-  static void _showForceUpdateDialog(BuildContext context, VersionCheckResult result) {
-    showGeneralDialog(
-      context: context,
-      barrierDismissible: false,
-      barrierLabel: 'Force Update',
-      pageBuilder: (context, anim1, anim2) {
-        return PopScope(
-          canPop: false, // Prevent physical back button on Android
-          child: Scaffold(
-            backgroundColor: const Color(0xFF0F172A),
-            body: Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 24.0),
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false, // Prevent physical back button on Android
+      child: Scaffold(
+        backgroundColor: AppTheme.background,
+        body: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 24.0),
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 440),
+                padding: const EdgeInsets.all(28.0),
+                decoration: BoxDecoration(
+                  color: AppTheme.cardBackground,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.06),
+                      blurRadius: 24,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
                 child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Container(
-                      width: 80,
-                      height: 80,
-                      decoration: BoxDecoration(
-                        color: Colors.redAccent.withValues(alpha: 0.15),
+                      width: 76,
+                      height: 76,
+                      decoration: const BoxDecoration(
+                        color: AppTheme.primaryLight,
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(Icons.system_update_rounded, size: 40, color: Colors.redAccent),
+                      child: const Icon(
+                        Icons.system_update_rounded,
+                        size: 38,
+                        color: AppTheme.primary,
+                      ),
                     ),
-                    const SizedBox(height: 24),
-                    const Text(
-                      'Update Required',
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                        letterSpacing: -0.5,
+                    const SizedBox(height: 20),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primaryLight,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        'CRITICAL UPDATE',
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.primary,
+                          letterSpacing: 0.5,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      'A critical update (v${result.latestVersion}) is required to continue using GymOS. Please update the app to proceed.',
+                      'Update Required',
+                      style: GoogleFonts.inter(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.textPrimary,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'A mandatory update (v${result.latestVersion}) is required to continue using GymOS. Please update the app to proceed.',
                       textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 14, color: Color(0xFF94A3B8), height: 1.5),
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        color: AppTheme.textSecondary,
+                        height: 1.5,
+                      ),
                     ),
                     if (result.releaseNotes.isNotEmpty) ...[
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 20),
                       Container(
                         width: double.infinity,
-                        padding: const EdgeInsets.all(16),
+                        padding: const EdgeInsets.all(14),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF1E293B),
+                          color: AppTheme.surfaceGray,
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: const Color(0xFF334155)),
+                          border: Border.all(color: AppTheme.border),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
-                              'What\'s New:',
-                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white),
+                            Text(
+                              "What's New:",
+                              style: GoogleFonts.inter(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                                color: AppTheme.textPrimary,
+                              ),
                             ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 6),
                             Text(
                               result.releaseNotes,
-                              style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8), height: 1.4),
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                color: AppTheme.textSecondary,
+                                height: 1.4,
+                              ),
                             ),
                           ],
                         ),
                       ),
                     ],
-                    const SizedBox(height: 36),
+                    const SizedBox(height: 28),
                     SizedBox(
                       width: double.infinity,
-                      height: 48,
-                      child: ElevatedButton(
-                        onPressed: () => _launchStoreUrl(result.downloadUrl),
+                      height: 50,
+                      child: ElevatedButton.icon(
+                        onPressed: () => VersionCheckService.launchStoreUrl(result.downloadUrl),
+                        icon: const Icon(Icons.download_rounded, size: 20),
+                        label: Text(
+                          'Update Now',
+                          style: GoogleFonts.inter(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF6C3AED),
+                          backgroundColor: AppTheme.primary,
                           foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                           elevation: 0,
                         ),
-                        child: const Text('Update Now', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
                       ),
                     ),
                   ],
@@ -268,8 +317,48 @@ class VersionCheckEngine {
               ),
             ),
           ),
-        );
-      },
+        ),
+      ),
+    );
+  }
+}
+
+class VersionCheckEngine {
+  static GlobalKey<NavigatorState>? navigatorKey;
+  static bool _hasChecked = false;
+  static bool isShowingForceDialog = false;
+
+  static void start(BuildContext context, {GlobalKey<NavigatorState>? key}) {
+    if (key != null) navigatorKey = key;
+    if (_hasChecked) return;
+    _hasChecked = true;
+
+    // Perform silent background check
+    VersionCheckService.checkVersion().then((result) {
+      if (result.isUpdateAvailable) {
+        if (result.shouldForce) {
+          showForceUpdateDialog(result);
+        } else if (result.isOptionalUpdate) {
+          final targetContext = navigatorKey?.currentContext;
+          if (targetContext != null) {
+            _showOptionalUpdateDialog(targetContext, result);
+          }
+        }
+      }
+    }).catchError((e) {
+      debugPrint('VersionCheckEngine error: $e');
+    });
+  }
+
+  static void showForceUpdateDialog(VersionCheckResult result, [BuildContext? context]) {
+    if (isShowingForceDialog) return;
+    final targetContext = navigatorKey?.currentContext ?? context;
+    if (targetContext == null) return;
+    isShowingForceDialog = true;
+
+    Navigator.of(targetContext, rootNavigator: true).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => ForceUpdateScreen(result: result)),
+      (route) => false,
     );
   }
 
@@ -279,41 +368,72 @@ class VersionCheckEngine {
       barrierDismissible: true,
       builder: (context) {
         return AlertDialog(
-          backgroundColor: const Color(0xFF1E293B),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: Text(
-            'New Version Available',
-            style: GoogleFonts.inter(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 18),
+          backgroundColor: AppTheme.cardBackground,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: const BoxDecoration(
+                  color: AppTheme.primaryLight,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.system_update_rounded, color: AppTheme.primary, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Update Available',
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.textPrimary,
+                    fontSize: 17,
+                  ),
+                ),
+              ),
+            ],
           ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'A new version (v${result.latestVersion}) of GymOS is available. Would you like to update now?',
-                style: GoogleFonts.inter(color: const Color(0xFF94A3B8), fontSize: 14, height: 1.4),
+                'A new version (v${result.latestVersion}) of GymOS is ready. Would you like to update?',
+                style: GoogleFonts.inter(
+                  color: AppTheme.textSecondary,
+                  fontSize: 13,
+                  height: 1.4,
+                ),
               ),
               if (result.releaseNotes.isNotEmpty) ...[
-                const SizedBox(height: 16),
+                const SizedBox(height: 14),
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF0F172A),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFF334155)),
+                    color: AppTheme.surfaceGray,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppTheme.border),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Release Notes:',
-                        style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white),
+                        "What's New:",
+                        style: GoogleFonts.inter(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 11,
+                          color: AppTheme.textPrimary,
+                        ),
                       ),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 4),
                       Text(
                         result.releaseNotes,
-                        style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF94A3B8), height: 1.4),
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: AppTheme.textSecondary,
+                          height: 1.4,
+                        ),
                       ),
                     ],
                   ),
@@ -321,12 +441,13 @@ class VersionCheckEngine {
               ],
             ],
           ),
+          actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
               child: Text(
                 'Later',
-                style: GoogleFonts.inter(color: const Color(0xFF94A3B8), fontWeight: FontWeight.w600),
+                style: GoogleFonts.inter(color: AppTheme.textMuted, fontWeight: FontWeight.w600),
               ),
             ),
             ElevatedButton(
@@ -335,9 +456,10 @@ class VersionCheckEngine {
                 _launchStoreUrl(result.downloadUrl);
               },
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF6C3AED),
+                backgroundColor: AppTheme.primary,
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                elevation: 0,
               ),
               child: Text(
                 'Update Now',

@@ -3945,12 +3945,14 @@ class GymRepository extends ChangeNotifier {
   }
 
   List<Member> _mergeMembersList(List<Member> serverList) {
+    // Keep any member that is in local queue and not marked for deletion, regardless of retry count or failure
     final pendingIds = _crudQueue
-        .where((q) => q['table'] == 'members' && (q['retry_count'] ?? 0) <= 5)
+        .where((q) => q['table'] == 'members' && q['action'] != 'delete')
         .map((q) {
           final payload = q['payload'] as Map<String, dynamic>;
-          return payload['id'] as String;
+          return payload['id']?.toString() ?? '';
         })
+        .where((id) => id.isNotEmpty)
         .toSet();
 
     final Map<String, Member> merged = {};
@@ -3958,8 +3960,11 @@ class GymRepository extends ChangeNotifier {
       merged[m.id] = m;
     }
     for (var m in _members) {
-      if (pendingIds.contains(m.id)) {
-        merged[m.id] = m;
+      if (pendingIds.contains(m.id) || !merged.containsKey(m.id)) {
+        // If it's pending in queue or locally created and not in serverList, preserve local record
+        if (pendingIds.contains(m.id)) {
+          merged[m.id] = m;
+        }
       }
     }
     return merged.values.toList();
@@ -3967,11 +3972,12 @@ class GymRepository extends ChangeNotifier {
 
   List<Staff> _mergeStaffList(List<Staff> serverList) {
     final pendingIds = _crudQueue
-        .where((q) => q['table'] == 'staff' && (q['retry_count'] ?? 0) <= 5)
+        .where((q) => q['table'] == 'staff' && q['action'] != 'delete')
         .map((q) {
           final payload = q['payload'] as Map<String, dynamic>;
-          return payload['id'] as String;
+          return payload['id']?.toString() ?? '';
         })
+        .where((id) => id.isNotEmpty)
         .toSet();
 
     final Map<String, Staff> merged = {};
@@ -3988,11 +3994,12 @@ class GymRepository extends ChangeNotifier {
 
   List<FinanceTransaction> _mergeTransactionsList(List<FinanceTransaction> serverList) {
     final pendingIds = _crudQueue
-        .where((q) => q['table'] == 'finance_transactions' && q['sync_status'] != 'failed' && (q['retry_count'] ?? 0) <= 5)
+        .where((q) => q['table'] == 'finance_transactions' && q['action'] != 'delete')
         .map((q) {
           final payload = q['payload'] as Map<String, dynamic>;
-          return payload['id'] as String;
+          return payload['id']?.toString() ?? '';
         })
+        .where((id) => id.isNotEmpty)
         .toSet();
 
     final Map<String, FinanceTransaction> merged = {};

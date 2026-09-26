@@ -32,6 +32,9 @@ import '../../core/widgets/invitation_share_sheet.dart';
 import '../../core/models/gym_rules_model.dart';
 import '../../core/repository/gym_repository.dart';
 import '../member_app/widgets/member_rules_agreement_dialog.dart';
+import '../../core/models/attendance.dart';
+import '../attendance/attendance_viewmodel.dart';
+import '../attendance/owner_history_screen.dart';
 class MemberProfileScreen extends StatefulWidget {
   final Member member;
   const MemberProfileScreen({super.key, required this.member});
@@ -394,6 +397,7 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
   final _ownerNotesController = TextEditingController();
   final _trainerNotesController = TextEditingController();
   final _privateNotesController = TextEditingController();
+  bool _isSavingNotes = false;
 
   @override
   void initState() {
@@ -401,9 +405,58 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
     _loadInvitation();
     _loadPtAssignment();
     _loadAgreement();
-    _ownerNotesController.text = widget.member.notes.isNotEmpty ? widget.member.notes : 'Prefers morning sessions.\nFocus on weight loss goal.';
-    _trainerNotesController.text = 'Suggesting low carb diet and moderate cardio intensity.';
-    _privateNotesController.text = 'VIP Client. Needs premium attention.';
+    // Load actual notes specific to this member without hardcoded dummy defaults
+    _ownerNotesController.text = widget.member.notes.isNotEmpty
+        ? widget.member.notes
+        : (widget.member.extraFields['owner_notes']?.toString() ?? '');
+    _trainerNotesController.text = widget.member.extraFields['trainer_notes']?.toString() ?? '';
+    _privateNotesController.text = widget.member.extraFields['private_notes']?.toString() ?? '';
+  }
+
+  Future<void> _saveMemberNotes(Member currentMember) async {
+    setState(() => _isSavingNotes = true);
+    try {
+      final membersVm = Provider.of<MembersViewModel>(context, listen: false);
+      final updatedExtra = Map<String, dynamic>.from(currentMember.extraFields);
+      final ownerNote = _ownerNotesController.text.trim();
+      final trainerNote = _trainerNotesController.text.trim();
+      final privateNote = _privateNotesController.text.trim();
+
+      updatedExtra['owner_notes'] = ownerNote;
+      updatedExtra['trainer_notes'] = trainerNote;
+      updatedExtra['private_notes'] = privateNote;
+
+      final updated = currentMember.copyWith(
+        notes: ownerNote,
+        extraFields: updatedExtra,
+      );
+
+      await membersVm.updateMemberProfile(updated);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Notes saved successfully!'),
+            backgroundColor: AppTheme.success,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to save notes: $e'),
+            backgroundColor: AppTheme.danger,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSavingNotes = false);
+      }
+    }
   }
 
   Future<void> _loadAgreement() async {
@@ -955,6 +1008,7 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
     final emailController = TextEditingController(text: member.email);
     final addressController = TextEditingController(text: member.extraFields['address']?.toString() ?? '');
     final notesController = TextEditingController(text: member.notes);
+    final biometricPinController = TextEditingController(text: member.biometricPin != null ? member.biometricPin.toString() : '');
     
     DateTime? selectedDob;
     final dobStr = member.extraFields['dob']?.toString() ?? '';
@@ -1043,6 +1097,16 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
                       controller: phoneController,
                       keyboardType: TextInputType.phone,
                       decoration: const InputDecoration(labelText: 'Phone Number *', prefixIcon: Icon(Icons.phone_outlined)),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: biometricPinController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Biometric Machine PIN / User ID',
+                        prefixIcon: Icon(Icons.fingerprint_rounded, color: AppTheme.primary),
+                        hintText: 'e.g. 101, 1024',
+                      ),
                     ),
                     const SizedBox(height: 12),
                     TextField(
@@ -1275,6 +1339,7 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
                           assignedWorkoutId: selectedWorkoutId,
                           assignedDietId: selectedDietId,
                           extraFields: newExtra,
+                          biometricPin: int.tryParse(biometricPinController.text.trim()),
                         );
 
                         await membersVm.saveMember(updated);
@@ -2156,6 +2221,23 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
                       Text('Joined on ${member.joinDate}', style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary)),
                     ],
                   ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      const Icon(Icons.fingerprint_rounded, size: 12, color: AppTheme.primary),
+                      const SizedBox(width: 4),
+                      Text(
+                        member.biometricPin != null
+                            ? 'Biometric PIN: #${member.biometricPin}'
+                            : 'Biometric: Not linked',
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: member.biometricPin != null ? AppTheme.primary : AppTheme.textMuted,
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -2819,48 +2901,51 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: hasAgreed ? const Color(0xFFECFDF5) : const Color(0xFFFFFBEB),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(
-                      hasAgreed ? Icons.verified_user_rounded : Icons.gavel_rounded,
-                      color: hasAgreed ? const Color(0xFF10B981) : const Color(0xFFF59E0B),
-                      size: 22,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Gym Rules & Legal Agreement',
-                        style: GoogleFonts.inter(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                          color: AppTheme.textPrimary,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        hasAgreed
-                            ? 'Agreed on $dateStr (v${_memberAgreement!.rulesVersion})'
-                            : 'Member has not accepted gym rules yet',
-                        style: GoogleFonts.inter(
-                          fontSize: 11,
-                          color: hasAgreed ? const Color(0xFF047857) : const Color(0xFFB45309),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: hasAgreed ? const Color(0xFFECFDF5) : const Color(0xFFFFFBEB),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  hasAgreed ? Icons.verified_user_rounded : Icons.gavel_rounded,
+                  color: hasAgreed ? const Color(0xFF10B981) : const Color(0xFFF59E0B),
+                  size: 20,
+                ),
               ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Gym Rules & Legal Agreement',
+                      style: GoogleFonts.inter(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: AppTheme.textPrimary,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      hasAgreed
+                          ? 'Agreed on $dateStr (v${_memberAgreement!.rulesVersion})'
+                          : 'Member has not accepted gym rules yet',
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        color: hasAgreed ? const Color(0xFF047857) : const Color(0xFFB45309),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
@@ -2873,7 +2958,7 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
                 child: Text(
                   hasAgreed ? '✅ Agreed' : '⚠️ Pending',
                   style: GoogleFonts.inter(
-                    fontSize: 11,
+                    fontSize: 10,
                     fontWeight: FontWeight.w700,
                     color: hasAgreed ? const Color(0xFF047857) : const Color(0xFFB45309),
                   ),
@@ -3121,7 +3206,7 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
   }
 
   // Notes Tab
-  Widget _buildNotesTab() {
+  Widget _buildNotesTab(Member member) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -3150,20 +3235,297 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
         ),
         const SizedBox(height: 24),
         ElevatedButton(
-          onPressed: () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Notes updated successfully!'), backgroundColor: AppTheme.success),
-            );
-          },
+          onPressed: _isSavingNotes ? null : () => _saveMemberNotes(member),
           style: ElevatedButton.styleFrom(
             backgroundColor: AppTheme.primary,
             foregroundColor: Colors.white,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             padding: const EdgeInsets.symmetric(vertical: 16),
           ),
-          child: Text('Save Notes', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+          child: _isSavingNotes
+              ? const SizedBox(
+                  height: 20,
+                  width: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                )
+              : Text('Save Notes', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
         ),
       ],
+    );
+  }
+
+  void _showMemberAttendanceSheet(BuildContext context, Member member) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (modalContext, setModalState) {
+            final repo = Provider.of<GymRepository>(context, listen: false);
+            final allRecords = repo.getAttendance();
+            final memberRecords = allRecords.where((r) {
+              final matchId = r.userId.isNotEmpty && r.userId == member.id;
+              final matchPhone = member.phone.isNotEmpty && r.userId == member.phone;
+              final matchName = member.name.isNotEmpty && r.userName.trim().toLowerCase() == member.name.trim().toLowerCase();
+              return matchId || matchPhone || matchName;
+            }).toList();
+
+            final totalVisits = memberRecords.length;
+            final now = DateTime.now();
+            final currentMonthPrefix = DateFormat('-MM-yyyy').format(now);
+            final thisMonthVisits = memberRecords.where((r) => r.date.endsWith(currentMonthPrefix)).length;
+            final todayStr = DateFormat('dd-MM-yyyy').format(now);
+            final todayRecord = memberRecords.where((r) => r.date == todayStr).firstOrNull;
+
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.75,
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              child: Column(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.symmetric(vertical: 12),
+                    decoration: BoxDecoration(
+                      color: AppTheme.border,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: AppTheme.primary.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(Icons.co_present_rounded, color: AppTheme.primary, size: 22),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Attendance History',
+                                style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '${member.name} • ${member.phone.isNotEmpty ? member.phone : 'Member'}',
+                                style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close_rounded, size: 20, color: AppTheme.textSecondary),
+                          onPressed: () => Navigator.pop(sheetContext),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                            decoration: BoxDecoration(
+                              color: AppTheme.surfaceGray,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Column(
+                              children: [
+                                Text('$totalVisits', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.primary)),
+                                const SizedBox(height: 2),
+                                Text('Total Visits', style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary, fontWeight: FontWeight.w500)),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                            decoration: BoxDecoration(
+                              color: AppTheme.surfaceGray,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Column(
+                              children: [
+                                Text('$thisMonthVisits', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold, color: const Color(0xFF16A34A))),
+                                const SizedBox(height: 2),
+                                Text('This Month', style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary, fontWeight: FontWeight.w500)),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                            decoration: BoxDecoration(
+                              color: todayRecord != null ? const Color(0xFFECFDF5) : const Color(0xFFFFFBEB),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: todayRecord != null ? const Color(0xFFA7F3D0) : const Color(0xFFFDE68A)),
+                            ),
+                            child: Column(
+                              children: [
+                                Text(
+                                  todayRecord != null ? 'Present' : 'Not In',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    color: todayRecord != null ? const Color(0xFF047857) : const Color(0xFFB45309),
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text('Today', style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary, fontWeight: FontWeight.w500)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  if (todayRecord == null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          final nowTime = DateFormat('hh:mm a').format(DateTime.now());
+                          await repo.saveMemberAttendanceLog(
+                            memberId: member.id,
+                            memberName: member.name,
+                            date: todayStr,
+                            status: 'Present',
+                            checkInTime: nowTime,
+                            checkOutTime: null,
+                          );
+                          setModalState(() {});
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('✅ Attendance recorded for ${member.name}!'),
+                                backgroundColor: AppTheme.success,
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
+                          }
+                        },
+                        icon: const Icon(Icons.check_circle_outline_rounded, size: 18, color: AppTheme.primary),
+                        label: Text('Mark Present Today', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.primary)),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: AppTheme.primary),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          minimumSize: const Size.fromHeight(40),
+                        ),
+                      ),
+                    ),
+                  const Divider(height: 20),
+                  Expanded(
+                    child: memberRecords.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.calendar_month_outlined, size: 48, color: AppTheme.textSecondary.withOpacity(0.4)),
+                                const SizedBox(height: 12),
+                                Text('No attendance records yet', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
+                                const SizedBox(height: 4),
+                                Text('Member check-ins will show up here.', style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary)),
+                              ],
+                            ),
+                          )
+                        : ListView.separated(
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+                            itemCount: memberRecords.length,
+                            separatorBuilder: (_, __) => const Divider(height: 1),
+                            itemBuilder: (context, i) {
+                              final rec = memberRecords[i];
+                              final isPresent = rec.status.toLowerCase() == 'present';
+                              return ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                leading: Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: isPresent ? const Color(0xFFECFDF5) : const Color(0xFFFEF2F2),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Icon(
+                                    isPresent ? Icons.check_circle_rounded : Icons.schedule_rounded,
+                                    size: 18,
+                                    color: isPresent ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                                  ),
+                                ),
+                                title: Text(
+                                  rec.date,
+                                  style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textPrimary),
+                                ),
+                                subtitle: Text(
+                                  'In: ${rec.checkInTime.isNotEmpty ? rec.checkInTime : '—'}${rec.checkOutTime != null && rec.checkOutTime!.isNotEmpty ? '  •  Out: ${rec.checkOutTime}' : ''}',
+                                  style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary),
+                                ),
+                                trailing: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: isPresent ? const Color(0xFFECFDF5) : const Color(0xFFFFFBEB),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(
+                                      color: isPresent ? const Color(0xFFA7F3D0) : const Color(0xFFFDE68A),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    rec.status,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: isPresent ? const Color(0xFF047857) : const Color(0xFFB45309),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: TextButton.icon(
+                      onPressed: () {
+                        Navigator.pop(sheetContext);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const OwnerAttendanceHistoryScreen(userTypeFilter: 'Member'),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.open_in_new_rounded, size: 16),
+                      label: Text('View Full Gym Attendance Logs', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600)),
+                      style: TextButton.styleFrom(
+                        foregroundColor: AppTheme.primary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -3189,23 +3551,24 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
             children: List.generate(items.length, (idx) {
               final item = items[idx];
               final isMeasurements = item['action'] == 'measurements';
+              final isAttendance = item['action'] == 'attendance';
 
               return Column(
                 children: [
                   ListTile(
                     onTap: isMeasurements
                         ? () => _showEditBodyMeasurementsSheet(context, member)
-                        : null,
+                        : (isAttendance ? () => _showMemberAttendanceSheet(context, member) : null),
                     leading: Icon(item['icon'] as IconData, color: AppTheme.primary),
                     title: Text(item['title'] as String, style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 13)),
-                    trailing: isMeasurements
+                    trailing: (isMeasurements || isAttendance)
                         ? Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                             decoration: BoxDecoration(color: AppTheme.primary.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Text('Edit / View', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.primary)),
+                                Text(isAttendance ? 'View Logs' : 'Edit / View', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.primary)),
                                 const SizedBox(width: 4),
                                 const Icon(Icons.chevron_right, size: 14, color: AppTheme.primary),
                               ],
@@ -3347,7 +3710,7 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
                     : _currentTab == 1
                         ? _buildHistoryTab(membersVm, member)
                         : _currentTab == 2
-                            ? _buildNotesTab()
+                            ? _buildNotesTab(member)
                             : _buildMoreTab(member),
               ),
             ),

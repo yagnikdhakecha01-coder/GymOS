@@ -1756,8 +1756,9 @@ button {
   color: white;
 }
 
-/* ── Play Store Notice Modal ── */
-#playStoreModal {
+/* ── Play Store & App Store Notice Modals ── */
+#playStoreModal,
+#appStoreModal {
   display: none;
   position: fixed;
   inset: 0;
@@ -1766,16 +1767,19 @@ button {
   justify-content: center;
   padding: 20px;
 }
-#playStoreModal.active {
-  display: flex;
+#playStoreModal.active,
+#appStoreModal.active {
+  display: flex !important;
 }
-#playStoreModal .modal-backdrop {
+#playStoreModal .modal-backdrop,
+#appStoreModal .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(3, 7, 18, 0.8);
+  background: rgba(3, 7, 18, 0.85);
   backdrop-filter: blur(8px);
 }
-#playStoreModal .modal-dialog {
+#playStoreModal .modal-dialog,
+#appStoreModal .modal-dialog {
   position: relative;
   background: var(--bg-card, #1E293B);
   border: 1px solid rgba(108, 58, 237, 0.4);
@@ -1786,12 +1790,14 @@ button {
   text-align: center;
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 35px rgba(108, 58, 237, 0.25);
   animation: playModalPop 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 100000;
 }
 @keyframes playModalPop {
   0% { transform: scale(0.9); opacity: 0; }
   100% { transform: scale(1); opacity: 1; }
 }
-#playStoreModal .modal-icon {
+#playStoreModal .modal-icon,
+#appStoreModal .modal-icon {
   width: 64px;
   height: 64px;
   margin: 0 auto 18px;
@@ -1803,19 +1809,27 @@ button {
   justify-content: center;
   color: #8B5CF6;
 }
-#playStoreModal .modal-title {
+#appStoreModal .modal-icon {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #FFFFFF;
+}
+#playStoreModal .modal-title,
+#appStoreModal .modal-title {
   font-size: 1.35rem;
   font-weight: 700;
   color: #F8FAFC;
   margin-bottom: 10px;
 }
-#playStoreModal .modal-desc {
+#playStoreModal .modal-desc,
+#appStoreModal .modal-desc {
   font-size: 0.95rem;
   color: #94A3B8;
   line-height: 1.6;
   margin-bottom: 24px;
 }
-#playStoreModal .modal-btn {
+#playStoreModal .modal-btn,
+#appStoreModal .modal-btn {
   background: #6C3AED;
   color: #FFFFFF;
   font-weight: 600;
@@ -1825,8 +1839,10 @@ button {
   border: none;
   font-size: 0.95rem;
   transition: all 0.2s ease;
+  width: 100%;
 }
-#playStoreModal .modal-btn:hover {
+#playStoreModal .modal-btn:hover,
+#appStoreModal .modal-btn:hover {
   background: #7C3AED;
   transform: translateY(-2px);
   box-shadow: 0 10px 20px rgba(108, 58, 237, 0.35);
@@ -1861,19 +1877,19 @@ button {
     <div class="container">
       <div class="legal-page__header">
         <h1 class="legal-page__title">Privacy Policy</h1>
-        <p class="legal-page__updated">Last updated: August 25, 2026</p>
+        <p class="legal-page__updated">Last updated: September 24, 2026</p>
       </div>
 
       <div class="legal-content">
         <h2>1. Introduction</h2>
-        <p>Welcome to GymOS ("we," "our," or "us"). This Privacy Policy explains how GymOS Inc. collects, uses, discloses, and safeguards your information when you use our mobile application and related services (collectively, the "Service"). By using GymOS, you agree to the collection and use of information in accordance with this policy.</p>
+        <p>Welcome to GymOS ("we," "our," or "us"). This Privacy Policy explains how GymOS Inc. collects, uses, discloses, and safeguards your information when you use our mobile application across Android and iOS platforms and related services (collectively, the "Service"). By using GymOS, you agree to the collection and use of information in accordance with this policy.</p>
 
         <h2>2. Information We Collect</h2>
 
         <h3>2.1 Personal Information</h3>
         <p>When you register and use GymOS, we may collect the following personal information:</p>
         <ul>
-          <li><strong>Account Information:</strong> Name, email address, phone number, and profile photo (via Google Sign-In or manual registration)</li>
+          <li><strong>Account Information:</strong> Name, email address, phone number, and profile photo (via Google Sign-In, Sign in with Apple, or manual registration)</li>
           <li><strong>Gym Information:</strong> Gym name, address, logo, operating hours, and gym type</li>
           <li><strong>Member Data:</strong> Member names, contact details, membership plans, payment records, attendance history, fitness goals, and custom registration fields</li>
           <li><strong>Staff Data:</strong> Staff names, roles, salary information, attendance records, leave history, and commission details</li>
@@ -1882,21 +1898,30 @@ button {
 
         <h3>2.2 Automatically Collected Information</h3>
         <ul>
-          <li><strong>Device Information:</strong> Device type, operating system version, unique device identifiers</li>
+          <li><strong>Device Information:</strong> Device type, operating system version (Android / iOS), unique device identifiers</li>
           <li><strong>Usage Data:</strong> App usage patterns, feature interaction logs, session duration</li>
-          <li><strong>Attendance Data:</strong> QR code scan timestamps, check-in/check-out records, location data (only during attendance scanning, if permitted)</li>
+          <li><strong>Attendance Data:</strong> QR code scan timestamps, check-in/check-out records</li>
         </ul>
 
         <h3>2.3 Biometric Data</h3>
-        <p>If you enable biometric lock (fingerprint/face unlock), this data is processed locally on your device and is <strong>never transmitted or stored</strong> on our servers.</p>
+        <p>If you enable biometric lock (Touch ID, Face ID on iOS, or Fingerprint / Biometric prompt on Android), all biometric authentication is processed exclusively locally by your device's hardware Secure Enclave. Biometric data is <strong>never transmitted or stored</strong> on our servers or accessible to GymOS.</p>
 
-        <h3>2.4 Camera and Hardware Permissions</h3>
-        <p>GymOS requests access to your device's camera (<code>android.permission.CAMERA</code>) strictly for essential in-app functionality:</p>
+        <h3>2.4 Camera and Hardware Permissions (Android &amp; iOS)</h3>
+        <p>GymOS requests only the minimum necessary device permissions strictly required for essential in-app functionality:</p>
         <ul>
-          <li><strong>QR Code Attendance Scanning:</strong> To scan member QR codes for real-time gym check-in, check-out, and attendance logging. Camera frames are processed locally in real time on your device and are never recorded, recorded to video, or stored on remote servers.</li>
-          <li><strong>Profile Avatars:</strong> To allow gym owners, staff, and members to optionally photograph and upload profile pictures.</li>
+          <li><strong>Camera Access (<code>android.permission.CAMERA</code> / <code>NSCameraUsageDescription</code>):</strong> Used exclusively to scan member QR codes for real-time gym check-in, check-out, and attendance logging, and to capture profile photos. Camera frames are processed on-device in real time and are never recorded, streamed, or stored on remote servers.</li>
+          <li><strong>Photo Library Access (<code>NSPhotoLibraryUsageDescription</code> &amp; <code>NSPhotoLibraryAddUsageDescription</code>):</strong> Used on iOS and Android to allow users to select gym logos, member avatars, and exercise progress photos, and to save attendance reports, receipts, and membership cards to your photo album when requested.</li>
+          <li><strong>Face ID / Biometric Access (<code>NSFaceIDUsageDescription</code> / <code>USE_BIOMETRIC</code>):</strong> Used to authenticate and unlock the GymOS app securely if enabled by the user.</li>
         </ul>
-        <p>We do <strong>not</strong> use camera access for background tracking, surveillance, facial recognition, or advertising. Camera video feeds and photos are never sold or disclosed to unauthorized third parties.</p>
+        <p>We do <strong>not</strong> access microphones, background location, contacts, or external storage for tracking or advertising. Camera video feeds and photos are never sold or disclosed to unauthorized third parties.</p>
+
+        <h3>2.5 Apple App Store Privacy Details (App Privacy Nutrition Label)</h3>
+        <p>In accordance with Apple App Store Review Guidelines and App Privacy details requirements, we declare:</p>
+        <ul>
+          <li><strong>Data Linked to You:</strong> Contact Information (Name, Email, Phone Number), User Content (Profile and Gym Photos), Identifiers (User Account ID, Gym ID), and Usage Data (Check-in/Check-out timestamps, app feature usage). This data is linked solely to deliver your gym management account and attendance services.</li>
+          <li><strong>Data Used for Tracking:</strong> None. GymOS does <strong>not</strong> track users across apps and websites owned by other companies and does not use Apple's Advertising Identifier (IDFA) or App Tracking Transparency frameworks for profiling or ad targeting.</li>
+          <li><strong>No Data Sold:</strong> GymOS does not sell any personal or business data to brokers, advertising networks, or third-party marketing entities.</li>
+        </ul>
 
         <h2>3. How We Use Your Information</h2>
         <p>We use the collected information for the following purposes:</p>
@@ -1924,9 +1949,10 @@ button {
         <h2>5. Third-Party Services</h2>
         <p>GymOS integrates with the following third-party services:</p>
         <ul>
-          <li><strong>Supabase:</strong> Cloud database and authentication (<a href="https://supabase.com/privacy" target="_blank" rel="noopener">Supabase Privacy Policy</a>)</li>
+          <li><strong>Supabase:</strong> Cloud database, storage, and authentication (<a href="https://supabase.com/privacy" target="_blank" rel="noopener">Supabase Privacy Policy</a>)</li>
+          <li><strong>Sign in with Apple:</strong> Secure authentication option on iOS (<a href="https://www.apple.com/legal/privacy/" target="_blank" rel="noopener">Apple Privacy Policy</a>)</li>
           <li><strong>Google Sign-In:</strong> Authentication service (<a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Google Privacy Policy</a>)</li>
-          <li><strong>Razorpay:</strong> Payment processing for subscriptions (<a href="https://razorpay.com/privacy/" target="_blank" rel="noopener">Razorpay Privacy Policy</a>)</li>
+          <li><strong>Razorpay:</strong> Payment processing for web/Android subscriptions (<a href="https://razorpay.com/privacy/" target="_blank" rel="noopener">Razorpay Privacy Policy</a>)</li>
           <li><strong>Google Fonts:</strong> Typography rendering</li>
           <li><strong>Firebase Cloud Messaging:</strong> Push notifications</li>
         </ul>
@@ -1948,10 +1974,10 @@ button {
           <li>Backup copies are purged within 90 days</li>
         </ul>
 
-        <h2>8. Account & Data Deletion (Google Play Compliance)</h2>
-        <p>In full compliance with Google Play's User Data & Account Deletion policies, GymOS gives all users complete control over their personal information and accounts:</p>
+        <h2>8. Account & Data Deletion (Google Play &amp; Apple App Store Compliance)</h2>
+        <p>In full compliance with Google Play's User Data &amp; Account Deletion policies and Apple App Store Review Guideline 5.1.1(v), GymOS gives all users complete control over their personal information and accounts:</p>
         <ul>
-          <li><strong>In-App Deletion:</strong> You can delete your account directly inside the GymOS mobile app by navigating to <strong>Settings ➔ Security ➔ Delete Account</strong>. This initiates immediate account deactivation.</li>
+          <li><strong>In-App Deletion:</strong> You can delete your account directly inside the GymOS mobile app at any time by navigating to <strong>Settings ➔ Security ➔ Delete Account</strong> (or from your profile screen). Initiating deletion takes effect immediately and confirms permanent deactivation.</li>
           <li><strong>Web-Based Deletion Request:</strong> If you have uninstalled the app or prefer to request deletion via the web, you can submit a deletion request on our dedicated <a href="delete-account.html">Account Deletion Page</a> or email us directly at <a href="mailto:support@gymos.com">support@gymos.com</a> with your registered email address.</li>
           <li><strong>Data Purged:</strong> Upon confirmed deletion, your profile details, login credentials, attendance records, member lists, and gym preferences are permanently erased from our primary database within 30 days.</li>
           <li><strong>Data Retained:</strong> Basic transaction logs and tax invoices processed via Razorpay may be retained for the minimum statutory period required by local financial regulations.</li>

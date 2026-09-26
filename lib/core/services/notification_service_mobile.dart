@@ -7,6 +7,7 @@ class NotificationService {
       FlutterLocalNotificationsPlugin();
 
   static bool _initialized = false;
+  static bool _permissionRequested = false;
   static bool isAppInForeground = true;
 
   static void setAppInForeground(bool inForeground) {
@@ -60,6 +61,7 @@ class NotificationService {
   }
 
   static Future<void> requestPermissions() async {
+    _permissionRequested = true;
     try {
       await initialize();
       final status = await Permission.notification.request();
@@ -99,6 +101,9 @@ class NotificationService {
 
     try {
       await initialize();
+      if (!_permissionRequested) {
+        await requestPermissions();
+      }
 
       final BigTextStyleInformation bigTextStyleInformation =
           BigTextStyleInformation(

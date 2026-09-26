@@ -1,3 +1,4 @@
+import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -85,7 +86,11 @@ class _LoginScreenState extends State<LoginScreen> {
         setState(() => _isLoading = false);
         String errorMsg = e.toString().replaceAll('AuthException:', '').replaceAll('Exception:', '').trim();
         if (errorMsg.contains('Invalid login credentials')) {
-          errorMsg = 'Invalid login credentials. If you registered using Google, please login with Google.';
+          if (!kIsWeb && Platform.isIOS) {
+            errorMsg = 'Invalid credentials. If your account was registered with Google on Android/Web, please tap "Forgot Password?" below to set an iOS password, or login at gymos.tech.';
+          } else {
+            errorMsg = 'Invalid login credentials. If you registered using Google, please login with Google.';
+          }
         }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -291,62 +296,63 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 28),
 
-                // Google sign in
-                OutlinedButton(
-                  onPressed: () async {
-                    setState(() => _isLoading = true);
-                    try {
-                      final authVm = Provider.of<AuthViewModel>(context, listen: false);
-                      await _applySelectedRole(authVm);
-                      final signedIn = await authVm.signInWithGoogle();
-                      if (!signedIn || !mounted) return;
+                // Social Login (Active on Android & Web; on iOS app uses standard Email/Password until Apple Developer account is connected)
+                if (kIsWeb || !Platform.isIOS) ...[
+                  OutlinedButton(
+                    onPressed: () async {
+                      setState(() => _isLoading = true);
+                      try {
+                        final authVm = Provider.of<AuthViewModel>(context, listen: false);
+                        await _applySelectedRole(authVm);
+                        final signedIn = await authVm.signInWithGoogle();
+                        if (!signedIn || !mounted) return;
 
-                      if (!kIsWeb) {
-                        await _navigateToRoleDashboard(authVm);
+                        if (!kIsWeb) {
+                          await _navigateToRoleDashboard(authVm);
+                        }
+                      } catch (e) {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              backgroundColor: Colors.redAccent,
+                              behavior: SnackBarBehavior.floating,
+                              content: Text('Google Sign-in failed: $e'),
+                            ),
+                          );
+                        }
+                      } finally {
+                        if (mounted) {
+                          setState(() => _isLoading = false);
+                        }
                       }
-                    } catch (e) {
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            backgroundColor: Colors.redAccent,
-                            behavior: SnackBarBehavior.floating,
-                            content: Text('Google Sign-in failed: $e'),
-                          ),
-                        );
-                      }
-                    } finally {
-                      if (mounted) {
-                        setState(() => _isLoading = false);
-                      }
-                    }
-                  },
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: AppTheme.border),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusInput)),
+                    },
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: AppTheme.border),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusInput)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text('G', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
+                        const SizedBox(width: 10),
+                        Text('Continue with Google', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w500, color: AppTheme.textPrimary)),
+                      ],
+                    ),
                   ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                  const SizedBox(height: 20),
+                  Row(
                     children: [
-                      Text('G', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
-                      const SizedBox(width: 10),
-                      Text('Continue with Google', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w500, color: AppTheme.textPrimary)),
+                      const Expanded(child: Divider(color: AppTheme.border)),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Text('OR', style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textMuted)),
+                      ),
+                      const Expanded(child: Divider(color: AppTheme.border)),
                     ],
                   ),
-                ),
-                const SizedBox(height: 20),
-
-                Row(
-                  children: [
-                    const Expanded(child: Divider(color: AppTheme.border)),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Text('OR', style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textMuted)),
-                    ),
-                    const Expanded(child: Divider(color: AppTheme.border)),
-                  ],
-                ),
-                const SizedBox(height: 20),
+                  const SizedBox(height: 20),
+                ],
 
                 // Email field
                 Align(
@@ -426,6 +432,14 @@ class _LoginScreenState extends State<LoginScreen> {
                     child: Text('Forgot Password?', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.primary)),
                   ),
                 ),
+                if (!kIsWeb && Platform.isIOS)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      'Tip: If you registered via Google on Android or Web, tap "Forgot Password?" to set your password for iPhone.',
+                      style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textMuted),
+                    ),
+                  ),
                 const SizedBox(height: 8),
 
                 CustomButton(

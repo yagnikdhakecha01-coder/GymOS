@@ -20,6 +20,7 @@ class Member {
   final String paymentStatus;
   final Map<String, dynamic> extraFields; // Stores health history, measurements, custom form values, etc.
   final String? createdAt; // Database created_at timestamp
+  final int? biometricPin;
 
   Member({
     required this.id,
@@ -43,6 +44,7 @@ class Member {
     this.paymentStatus = 'Pending',
     this.extraFields = const {},
     this.createdAt,
+    this.biometricPin,
   });
 
   String get memberCode =>
@@ -80,6 +82,7 @@ class Member {
       paymentStatus: (json['payment_status'] ?? json['paymentStatus']) as String? ?? 'Pending',
       extraFields: _parseExtraFields(json['extra_fields'] ?? json['extraFields']),
       createdAt: json['created_at'] as String?,
+      biometricPin: json['biometric_pin'] as int?,
     );
   }
 
@@ -119,6 +122,7 @@ class Member {
       'extra_fields': extraFields,
       'extraFields': extraFields,
       if (createdAt != null) 'created_at': createdAt,
+      if (biometricPin != null) 'biometric_pin': biometricPin,
     };
   }
 
@@ -144,6 +148,7 @@ class Member {
     String? paymentStatus,
     Map<String, dynamic>? extraFields,
     String? createdAt,
+    int? biometricPin,
   }) {
     return Member(
       id: id ?? this.id,
@@ -167,6 +172,7 @@ class Member {
       paymentStatus: paymentStatus ?? this.paymentStatus,
       extraFields: extraFields ?? this.extraFields,
       createdAt: createdAt ?? this.createdAt,
+      biometricPin: biometricPin ?? this.biometricPin,
     );
   }
 }

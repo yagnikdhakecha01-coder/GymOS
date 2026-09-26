@@ -349,30 +349,37 @@ class _AddStaffScreenState extends State<AddStaffScreen> {
           return Row(
             children: [
               // Circle indicator
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: isCurrent
-                      ? AppTheme.primary
-                      : (isCompleted ? AppTheme.primary : Colors.transparent),
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: isCurrent || isCompleted ? AppTheme.primary : AppTheme.border,
-                    width: 2,
+              GestureDetector(
+                onTap: () {
+                  if (stepNum < _currentStep) {
+                    setState(() => _currentStep = stepNum);
+                  }
+                },
+                child: Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: isCurrent
+                        ? AppTheme.primary
+                        : (isCompleted ? AppTheme.primary : Colors.transparent),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: isCurrent || isCompleted ? AppTheme.primary : AppTheme.border,
+                      width: 2,
+                    ),
                   ),
-                ),
-                alignment: Alignment.center,
-                child: isCompleted
-                    ? const Icon(Icons.check, color: Colors.white, size: 16)
-                    : Text(
-                        '$stepNum',
-                        style: GoogleFonts.inter(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                          color: isCurrent ? Colors.white : AppTheme.textSecondary,
+                  alignment: Alignment.center,
+                  child: isCompleted
+                      ? const Icon(Icons.check, color: Colors.white, size: 16)
+                      : Text(
+                          '$stepNum',
+                          style: GoogleFonts.inter(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            color: isCurrent ? Colors.white : AppTheme.textSecondary,
+                          ),
                         ),
-                      ),
+                ),
               ),
               // Connector Line
               if (stepNum < _totalSteps)
@@ -451,7 +458,7 @@ class _AddStaffScreenState extends State<AddStaffScreen> {
             },
             style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primary),
             child: Text(
-              'Upgrade Now',
+              'View Plan Details',
               style: GoogleFonts.inter(fontWeight: FontWeight.bold),
             ),
           ),
@@ -1135,7 +1142,16 @@ class _AddStaffScreenState extends State<AddStaffScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PopScope(
+      canPop: _currentStep == 1,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && _currentStep > 1) {
+          setState(() {
+            _currentStep--;
+          });
+        }
+      },
+      child: Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
         backgroundColor: Colors.white,
@@ -1229,6 +1245,7 @@ class _AddStaffScreenState extends State<AddStaffScreen> {
                 ),
               ],
             ),
+      ),
     );
   }
 

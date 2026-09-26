@@ -1,0 +1,19 @@
+{
+  "supabase_url": "https://gilxxyvwqucwwwqaxosx.supabase.co",
+  "supabase_anon_key": "sb_publishable_EId-4nC0kB8MG9omaGCTIA_EuAoJ3WP",
+  "device_secret": "44ef58efc336911d98d70d8bd02d131a288c9b92a432916a",
+  "gym_name": "KD Test 1",
+  "gym_id": "5874f4b0-7b53-438f-9f16-fd383ae674bc",
+  "devices": [
+    {
+      "device_id": "GATE_01",
+      "name": "Main Entrance Gate",
+      "ip": "192.168.1.201",
+      "port": 4370,
+      "device_type": "zkteco"
+    }
+  ],
+  "pull_interval_seconds": 15,
+  "push_interval_seconds": 10,
+  "sync_commands_interval_seconds": 30
+}

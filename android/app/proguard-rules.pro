@@ -17,11 +17,3 @@
 # General Flutter rules
 -keep class io.flutter.** { *; }
 -dontwarn io.flutter.embedding.**
-
-# Razorpay Rules
--keep class com.razorpay.** { *; }
--dontwarn com.razorpay.**
--keepattributes *Annotation*
--keepclassmembers class * {
-    @android.webkit.JavascriptInterface <methods>;
-}

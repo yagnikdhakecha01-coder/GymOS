@@ -38,7 +38,11 @@ class _AboutGymOSScreenState extends State<AboutGymOSScreen> {
 
       if (mounted) {
         if (result.isUpdateAvailable) {
-          _showUpdateDetailsBottomSheet(result);
+          if (result.shouldForce) {
+            VersionCheckEngine.showForceUpdateDialog(result, context);
+          } else {
+            _showUpdateDetailsBottomSheet(result);
+          }
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -75,89 +79,105 @@ class _AboutGymOSScreenState extends State<AboutGymOSScreen> {
   void _showUpdateDetailsBottomSheet(VersionCheckResult result) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1E293B),
+      backgroundColor: AppTheme.cardBackground,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (ctx) {
-        return Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
                     decoration: BoxDecoration(
-                      color: AppTheme.primary.withOpacity(0.15),
-                      shape: BoxShape.circle,
+                      color: const Color(0xFFE2E8F0),
+                      borderRadius: BorderRadius.circular(2),
                     ),
-                    child: const Icon(Icons.system_update_rounded, color: AppTheme.primary, size: 24),
                   ),
-                  const SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'New Update Available',
-                        style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: const BoxDecoration(
+                        color: AppTheme.primaryLight,
+                        shape: BoxShape.circle,
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'v${result.latestVersion} (Build ${result.latestBuildNumber})',
-                        style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF94A3B8)),
+                      child: const Icon(Icons.system_update_rounded, color: AppTheme.primary, size: 24),
+                    ),
+                    const SizedBox(width: 14),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'New Update Available',
+                          style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'v${result.latestVersion} (Build ${result.latestBuildNumber})',
+                          style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.primary),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                if (result.releaseNotes.isNotEmpty) ...[
+                  Text(
+                    'Release Notes:',
+                    style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    constraints: const BoxConstraints(maxHeight: 160),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: AppTheme.surfaceGray,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppTheme.border),
+                    ),
+                    child: SingleChildScrollView(
+                      child: Text(
+                        result.releaseNotes,
+                        style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textSecondary, height: 1.45),
                       ),
-                    ],
+                    ),
                   ),
                 ],
-              ),
-              const SizedBox(height: 20),
-              if (result.releaseNotes.isNotEmpty) ...[
-                Text(
-                  'Release Notes:',
-                  style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white),
-                ),
-                const SizedBox(height: 8),
-                Container(
+                const SizedBox(height: 24),
+                SizedBox(
                   width: double.infinity,
-                  constraints: const BoxConstraints(maxHeight: 150),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF0F172A),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFF334155)),
-                  ),
-                  child: SingleChildScrollView(
-                    child: Text(
-                      result.releaseNotes,
-                      style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF94A3B8), height: 1.4),
+                  height: 50,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _launchStoreUrl(result.downloadUrl);
+                    },
+                    icon: const Icon(Icons.download_rounded, size: 20),
+                    label: Text(
+                      'Update Now',
+                      style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.bold),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primary,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      elevation: 0,
                     ),
                   ),
                 ),
               ],
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    _launchStoreUrl(result.downloadUrl);
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.primary,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                  child: Text(
-                    'Update Now',
-                    style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
         );
       },

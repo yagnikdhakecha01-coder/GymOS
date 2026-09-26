@@ -137,6 +137,7 @@ class _AddMemberWizardScreenState extends State<AddMemberWizardScreen> {
   final _phoneController = TextEditingController();
   final _altPhoneController = TextEditingController();
   final _addressController = TextEditingController();
+  final _biometricPinController = TextEditingController();
   bool _showAltPhone = false;
   String _selectedGender = 'Male';
   DateTime? _dob;
@@ -186,6 +187,7 @@ class _AddMemberWizardScreenState extends State<AddMemberWizardScreen> {
     _phoneController.dispose();
     _altPhoneController.dispose();
     _addressController.dispose();
+    _biometricPinController.dispose();
     _feesController.dispose();
     _discountController.dispose();
     _paidController.dispose();
@@ -318,30 +320,37 @@ class _AddMemberWizardScreenState extends State<AddMemberWizardScreen> {
 
       // Circle
       children.add(
-        Container(
-          width: 32,
-          height: 32,
-          decoration: BoxDecoration(
-            color: isCurrent
-                ? AppTheme.primary
-                : (isCompleted ? AppTheme.primary : Colors.transparent),
-            shape: BoxShape.circle,
-            border: Border.all(
-              color: isCurrent || isCompleted ? AppTheme.primary : AppTheme.textMuted.withValues(alpha: 0.4),
-              width: 2,
+        GestureDetector(
+          onTap: () {
+            if (stepNum < _currentStep) {
+              setState(() => _currentStep = stepNum);
+            }
+          },
+          child: Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: isCurrent
+                  ? AppTheme.primary
+                  : (isCompleted ? AppTheme.primary : Colors.transparent),
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: isCurrent || isCompleted ? AppTheme.primary : AppTheme.textMuted.withValues(alpha: 0.4),
+                width: 2,
+              ),
             ),
-          ),
-          alignment: Alignment.center,
-          child: isCompleted
-              ? const Icon(Icons.check, color: Colors.white, size: 16)
-              : Text(
-                  '$stepNum',
-                  style: GoogleFonts.inter(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
-                    color: isCurrent ? Colors.white : AppTheme.textMuted,
+            alignment: Alignment.center,
+            child: isCompleted
+                ? const Icon(Icons.check, color: Colors.white, size: 16)
+                : Text(
+                    '$stepNum',
+                    style: GoogleFonts.inter(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                      color: isCurrent ? Colors.white : AppTheme.textMuted,
+                    ),
                   ),
-                ),
+          ),
         ),
       );
 
@@ -672,6 +681,20 @@ class _AddMemberWizardScreenState extends State<AddMemberWizardScreen> {
         // Age
         _fieldLabel('Age'),
         _readOnlyField(_calculatedAge > 0 ? '$_calculatedAge years' : 'Auto calculated'),
+        const SizedBox(height: 16),
+
+        // Biometric Machine PIN / User ID
+        _fieldLabel('Biometric Machine User ID / PIN (Optional)'),
+        TextFormField(
+          controller: _biometricPinController,
+          keyboardType: TextInputType.number,
+          decoration: InputDecoration(
+            hintText: 'e.g. 101, 1024',
+            prefixIcon: const Icon(Icons.fingerprint_rounded, color: AppTheme.primary),
+            helperText: 'Enroll this same ID number on the fingerprint/face machine',
+            helperStyle: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary),
+          ),
+        ),
       ],
     );
   }
@@ -1640,7 +1663,7 @@ class _AddMemberWizardScreenState extends State<AddMemberWizardScreen> {
             },
             style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primary),
             child: Text(
-              'Upgrade Now',
+              'View Plan Details',
               style: GoogleFonts.inter(fontWeight: FontWeight.bold),
             ),
           ),
@@ -1734,6 +1757,7 @@ class _AddMemberWizardScreenState extends State<AddMemberWizardScreen> {
       paymentStatus: (double.tryParse(_remainingController.text) ?? 0.0) <= 0 ? 'Paid' : 'Partial',
       extraFields: extra,
       createdAt: customCreatedAt,
+      biometricPin: int.tryParse(_biometricPinController.text.trim()),
     );
 
     final vm = Provider.of<MembersViewModel>(context, listen: false);
@@ -1832,94 +1856,128 @@ class _AddMemberWizardScreenState extends State<AddMemberWizardScreen> {
         stepContent = const SizedBox();
     }
 
-    return Scaffold(
-      backgroundColor: AppTheme.background,
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios, size: 20),
-          onPressed: () => Navigator.pop(context),
+    return PopScope(
+      canPop: _currentStep == 1,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && _currentStep > 1) {
+          _prevStep();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: AppTheme.background,
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios, size: 20),
+            onPressed: () {
+              if (_currentStep > 1) {
+                _prevStep();
+              } else {
+                Navigator.pop(context);
+              }
+            },
+          ),
+          title: Text('Add Member', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w600)),
+          centerTitle: true,
+          elevation: 0,
         ),
-        title: Text('Add Member', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w600)),
-        centerTitle: true,
-        elevation: 0,
-      ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Step circles
-            _buildStepIndicator(),
+        body: SafeArea(
+          child: Column(
+            children: [
+              // Step circles
+              _buildStepIndicator(),
 
-            // Scrollable step content
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-                child: stepContent,
+              // Scrollable step content
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+                  child: stepContent,
+                ),
               ),
-            ),
 
-            // Bottom buttons
-            Container(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.04),
-                    blurRadius: 8,
-                    offset: const Offset(0, -2),
-                  ),
-                ],
-              ),
-              child: _currentStep == _totalSteps
-                  ? Column(
-                      children: [
-                        // Save Member button
-                        SizedBox(
-                          width: double.infinity,
-                          height: AppTheme.buttonHeight,
-                          child: ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppTheme.primary,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusButton)),
-                            ),
-                            onPressed: _saveMember,
-                            icon: const Icon(Icons.check_circle_outline, size: 20),
-                            label: Text('Save Member', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600)),
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        // Back button
-                        SizedBox(
-                          width: double.infinity,
-                          height: AppTheme.buttonHeight,
-                          child: OutlinedButton(
-                            onPressed: _prevStep,
-                            child: Text('Back', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600)),
-                          ),
-                        ),
-                      ],
-                    )
-                  : SizedBox(
-                      width: double.infinity,
-                      height: AppTheme.buttonHeight,
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppTheme.primary,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusButton)),
-                        ),
-                        onPressed: _nextStep,
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text('Next', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600)),
-                            const SizedBox(width: 8),
-                            const Icon(Icons.arrow_forward, size: 18),
-                          ],
-                        ),
-                      ),
+              // Bottom buttons
+              Container(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.04),
+                      blurRadius: 8,
+                      offset: const Offset(0, -2),
                     ),
-            ),
-          ],
+                  ],
+                ),
+                child: _currentStep == 1
+                    ? SizedBox(
+                        width: double.infinity,
+                        height: AppTheme.buttonHeight,
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.primary,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusButton)),
+                          ),
+                          onPressed: _nextStep,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text('Next', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600)),
+                              const SizedBox(width: 8),
+                              const Icon(Icons.arrow_forward, size: 18),
+                            ],
+                          ),
+                        ),
+                      )
+                    : Row(
+                        children: [
+                          Expanded(
+                            child: SizedBox(
+                              height: AppTheme.buttonHeight,
+                              child: OutlinedButton(
+                                onPressed: _prevStep,
+                                style: OutlinedButton.styleFrom(
+                                  side: const BorderSide(color: AppTheme.border),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusButton)),
+                                ),
+                                child: Text('Back', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: SizedBox(
+                              height: AppTheme.buttonHeight,
+                              child: _currentStep == _totalSteps
+                                  ? ElevatedButton.icon(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: AppTheme.primary,
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusButton)),
+                                      ),
+                                      onPressed: _saveMember,
+                                      icon: const Icon(Icons.check_circle_outline, size: 20),
+                                      label: Text('Save Member', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600)),
+                                    )
+                                  : ElevatedButton(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: AppTheme.primary,
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusButton)),
+                                      ),
+                                      onPressed: _nextStep,
+                                      child: Row(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Text('Next', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600)),
+                                          const SizedBox(width: 8),
+                                          const Icon(Icons.arrow_forward, size: 18),
+                                        ],
+                                      ),
+                                    ),
+                            ),
+                          ),
+                        ],
+                      ),
+              ),
+            ],
+          ),
         ),
       ),
     );

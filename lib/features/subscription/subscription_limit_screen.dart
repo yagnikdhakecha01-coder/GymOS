@@ -116,7 +116,7 @@ class SubscriptionLimitScreen extends StatelessWidget {
                   shadowColor: AppTheme.primary.withOpacity(0.3),
                 ),
                 child: Text(
-                  'Change Plan / Upgrade Now',
+                  'View Subscription Details',
                   style: GoogleFonts.inter(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,

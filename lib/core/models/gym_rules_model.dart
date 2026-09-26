@@ -109,7 +109,7 @@ class MemberAgreementRecord {
       language: map['language']?.toString() ?? 'en',
       agreed: map['agreed'] == true,
       agreedAt: map['agreed_at'] != null 
-          ? DateTime.tryParse(map['agreed_at'].toString()) ?? DateTime.now()
+          ? (DateTime.tryParse(map['agreed_at'].toString())?.toLocal() ?? DateTime.now())
           : DateTime.now(),
       deviceInfo: map['device_info']?.toString(),
     );

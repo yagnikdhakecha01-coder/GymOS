@@ -1756,8 +1756,9 @@ button {
   color: white;
 }
 
-/* ── Play Store Notice Modal ── */
-#playStoreModal {
+/* ── Play Store & App Store Notice Modals ── */
+#playStoreModal,
+#appStoreModal {
   display: none;
   position: fixed;
   inset: 0;
@@ -1766,16 +1767,19 @@ button {
   justify-content: center;
   padding: 20px;
 }
-#playStoreModal.active {
-  display: flex;
+#playStoreModal.active,
+#appStoreModal.active {
+  display: flex !important;
 }
-#playStoreModal .modal-backdrop {
+#playStoreModal .modal-backdrop,
+#appStoreModal .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(3, 7, 18, 0.8);
+  background: rgba(3, 7, 18, 0.85);
   backdrop-filter: blur(8px);
 }
-#playStoreModal .modal-dialog {
+#playStoreModal .modal-dialog,
+#appStoreModal .modal-dialog {
   position: relative;
   background: var(--bg-card, #1E293B);
   border: 1px solid rgba(108, 58, 237, 0.4);
@@ -1786,12 +1790,14 @@ button {
   text-align: center;
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 35px rgba(108, 58, 237, 0.25);
   animation: playModalPop 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 100000;
 }
 @keyframes playModalPop {
   0% { transform: scale(0.9); opacity: 0; }
   100% { transform: scale(1); opacity: 1; }
 }
-#playStoreModal .modal-icon {
+#playStoreModal .modal-icon,
+#appStoreModal .modal-icon {
   width: 64px;
   height: 64px;
   margin: 0 auto 18px;
@@ -1803,19 +1809,27 @@ button {
   justify-content: center;
   color: #8B5CF6;
 }
-#playStoreModal .modal-title {
+#appStoreModal .modal-icon {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #FFFFFF;
+}
+#playStoreModal .modal-title,
+#appStoreModal .modal-title {
   font-size: 1.35rem;
   font-weight: 700;
   color: #F8FAFC;
   margin-bottom: 10px;
 }
-#playStoreModal .modal-desc {
+#playStoreModal .modal-desc,
+#appStoreModal .modal-desc {
   font-size: 0.95rem;
   color: #94A3B8;
   line-height: 1.6;
   margin-bottom: 24px;
 }
-#playStoreModal .modal-btn {
+#playStoreModal .modal-btn,
+#appStoreModal .modal-btn {
   background: #6C3AED;
   color: #FFFFFF;
   font-weight: 600;
@@ -1825,8 +1839,10 @@ button {
   border: none;
   font-size: 0.95rem;
   transition: all 0.2s ease;
+  width: 100%;
 }
-#playStoreModal .modal-btn:hover {
+#playStoreModal .modal-btn:hover,
+#appStoreModal .modal-btn:hover {
   background: #7C3AED;
   transform: translateY(-2px);
   box-shadow: 0 10px 20px rgba(108, 58, 237, 0.35);
@@ -1861,7 +1877,7 @@ button {
     <div class="container">
       <div class="legal-page__header">
         <h1 class="legal-page__title">Terms of Service</h1>
-        <p class="legal-page__updated">Last updated: August 25, 2026</p>
+        <p class="legal-page__updated">Last updated: September 24, 2026</p>
       </div>
 
       <div class="legal-content">
@@ -2013,7 +2029,19 @@ button {
         <h2>14. Changes to Terms</h2>
         <p>We reserve the right to modify these Terms at any time. Material changes will be communicated through in-app notifications or email at least 30 days before taking effect. Continued use of the Service after changes constitutes acceptance of the modified Terms.</p>
 
-        <h2>15. Contact Us</h2>
+        <h2>15. Apple App Store Supplemental Terms (Schedule 2 Compliance)</h2>
+        <p>If you downloaded or access GymOS via the Apple App Store, the following supplemental terms apply:</p>
+        <ul>
+          <li><strong>Acknowledgment:</strong> You and GymOS Inc. acknowledge that these Terms are concluded between you and GymOS Inc. only, and not with Apple Inc. GymOS Inc., not Apple, is solely responsible for the GymOS application and its content.</li>
+          <li><strong>Scope of License:</strong> The license granted to you for GymOS is limited to a non-transferable license to use the app on any Apple-branded products that you own or control as permitted by the Usage Rules set forth in the Apple Media Services Terms and Conditions.</li>
+          <li><strong>Maintenance and Support:</strong> GymOS Inc. is solely responsible for providing any maintenance and support services. You and GymOS Inc. acknowledge that Apple has no obligation whatsoever to furnish any maintenance and support services with respect to GymOS.</li>
+          <li><strong>Warranty:</strong> GymOS Inc. is solely responsible for any product warranties, whether express or implied by law. In the event of any failure of GymOS to conform to any applicable warranty, you may notify Apple, and Apple will refund the purchase price (if any) for the app to you. To the maximum extent permitted by applicable law, Apple will have no other warranty obligation whatsoever.</li>
+          <li><strong>Product Claims:</strong> You and GymOS Inc. acknowledge that GymOS Inc., not Apple, is responsible for addressing any claims relating to the app, including product liability, regulatory compliance, and consumer protection.</li>
+          <li><strong>Legal Compliance:</strong> You represent and warrant that (i) you are not located in a country that is subject to a U.S. Government embargo; and (ii) you are not listed on any U.S. Government list of prohibited or restricted parties.</li>
+          <li><strong>Third-Party Beneficiary:</strong> You and GymOS Inc. acknowledge and agree that Apple, and Apple's subsidiaries, are third-party beneficiaries of these Terms, and that upon your acceptance, Apple will have the right to enforce these Terms against you as a third-party beneficiary.</li>
+        </ul>
+
+        <h2>16. Contact Us</h2>
         <p>For any questions regarding these Terms of Service, please contact us:</p>
         <ul>
           <li><strong>Email:</strong> <a href="mailto:support@gymos.com">support@gymos.com</a></li>

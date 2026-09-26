@@ -1,17 +1,18 @@
-# Google Drive Auto-Renewal & 12-Hour Backup Scheduler
+# Phase 12: Database-Level India Kolkata (IST) Timezone Standardization
 
-- [x] 1. Supabase Backend: Setup 12-Hour pg_cron schedule & update `trigger_scheduled_auto_backup()`
-  - [x] Schedule `pg_cron` at `30 6,18 * * *` (12:00 PM & 12:00 AM IST)
-  - [x] Update `platform_settings` table (`auto_backup_config`) with 12-hour interval
-  - [x] Test execution via `SELECT public.trigger_scheduled_auto_backup();`
-- [x] 2. GymOS Admin Web: Google Drive Service & OAuth Auto-Renewal
-  - [x] Update `auth_service.dart` `signInWithGoogle()` to request Google Drive scopes and offline access
-  - [x] Update `auth_provider.dart` to automatically save provider tokens to `platform_settings` upon Google login
-  - [x] Update `google_drive_service.dart` with default Web Client ID and robust silent auto-renewal
-  - [x] Update `database_screen.dart` to add 1-Click Google Drive connect button and 12-Hour frequency option
-- [x] 3. Build & Deploy
-  - [x] Compile `gymos_admin` for web: `flutter build web --release`
-  - [x] Deploy build artifacts to `netlify_super_admin_deploy` and `super_admin` folders
-- [x] 4. Verification & Testing
-  - [x] Verify `pg_cron` job status in Supabase (Job 3: `auto_database_backup_12h`)
-  - [x] Test live build via browser subagent and verify Google login & clean UI
+- [x] 1. Scan Database Schema & Audit Time Handling <!-- id: 0 -->
+  - [x] Scan 120+ tables & columns for date/time types in public schema <!-- id: 1 -->
+  - [x] Audit role timezone configurations (anon, authenticated, authenticator, etc.) <!-- id: 2 -->
+  - [x] Uncover timezone format bugs (month vs minute in `process_scan_attendance`) <!-- id: 3 -->
+  - [x] Uncover double timezone shift (5.5hr delay in `get_owner_staff_cards_v1`) <!-- id: 4 -->
+  - [x] Uncover pg_cron GMT drift bug (Job 1 running at 5:29 AM IST) <!-- id: 5 -->
+  - [x] Audit live production data (142 attendance records, 40 members intact) <!-- id: 6 -->
+- [x] 2. Implementation & Migration Script Execution <!-- id: 7 -->
+  - [x] Apply `Asia/Kolkata` timezone to database and all connection roles <!-- id: 8 -->
+  - [x] Standardize UTC column defaults to `now()` on 5 affected tables <!-- id: 9 -->
+  - [x] Deploy corrected RPC functions (`get_owner_staff_cards_v1`, `process_scan_attendance`, `process_daily_absences_and_leaves`, `fn_ensure_shift_absent`) <!-- id: 10 -->
+  - [x] Reschedule `pg_cron` jobs to exact IST times (11:59 PM IST = 18:29 UTC) <!-- id: 11 -->
+- [x] 3. Database Verification & Validation <!-- id: 12 -->
+  - [x] Verify session timezone resolution for PostgREST & authenticated queries <!-- id: 13 -->
+  - [x] Test `get_owner_staff_cards_v1` and verify live staff last check-in displays exact IST <!-- id: 14 -->
+  - [x] Confirm 0 live data records lost or mutated <!-- id: 15 -->

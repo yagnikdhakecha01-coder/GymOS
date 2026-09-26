@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'supabase_service.dart';
 import 'notification_service_mobile.dart';
+import 'version_check_service.dart';
 import '../repository/gym_repository.dart';
 import '../../features/authentication/auth_viewmodel.dart';
 
@@ -12,10 +13,13 @@ class AlertsNotificationEngine {
   static final Set<String> _notifiedEntities = {};
   static bool _isRunning = false;
 
-  /// Starts the notification background check loop (every 3 seconds)
+  /// Starts the notification background check loop (every 30 seconds)
   static void start(BuildContext context) {
     if (_isRunning) return;
     _isRunning = true;
+
+    // Smoothly request notification permissions when user enters active gym dashboard
+    NotificationService.requestPermissions();
 
     final gymRepo = Provider.of<GymRepository>(context, listen: false);
     final storage = gymRepo.storage;
@@ -32,6 +36,17 @@ class AlertsNotificationEngine {
     // Periodically run check every 30 seconds to guarantee push alerts & badge count without network thrashing
     _timer = Timer.periodic(const Duration(seconds: 30), (timer) async {
       try {
+        // Periodic check for forced app update
+        if (!VersionCheckEngine.isShowingForceDialog) {
+          try {
+            final verResult = await VersionCheckService.checkVersion();
+            if (verResult.isUpdateAvailable && verResult.shouldForce) {
+              VersionCheckEngine.showForceUpdateDialog(verResult);
+              return;
+            }
+          } catch (_) {}
+        }
+
         final authVm = Provider.of<AuthViewModel>(context, listen: false);
         final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
         final role = (authVm.selectedRole ?? authVm.storage.getUserRole() ?? '').toLowerCase();

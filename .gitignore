@@ -58,7 +58,10 @@ key.properties
 *.aab
 *.zip
 *.jks.old
+*.db
+*.db-*
 scratch/
+.scratch/
 supabase/.temp/
 netlify_super_admin_deploy/
 

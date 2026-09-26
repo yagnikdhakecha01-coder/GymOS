@@ -45,10 +45,9 @@ void main() async {
     return;
   }
 
-  // Initialize Notification Service safely
+  // Initialize Notification Service safely (channels & handlers initialized; permissions requested in user flow)
   try {
     await NotificationService.initialize();
-    await NotificationService.requestPermissions();
   } catch (e, stack) {
     debugPrint('Notification initialization error: $e');
     debugPrint(stack.toString());
@@ -111,6 +110,8 @@ void main() async {
     ));
   }
 }
+
+final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
 class GymOSApp extends StatefulWidget {
   final LocalStorageService localStorageService;
@@ -207,6 +208,7 @@ class _GymOSAppState extends State<GymOSApp> with WidgetsBindingObserver {
         ),
       ],
       child: MaterialApp(
+        navigatorKey: rootNavigatorKey,
         title: 'GymOS',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.lightTheme,
@@ -214,7 +216,7 @@ class _GymOSAppState extends State<GymOSApp> with WidgetsBindingObserver {
         builder: (context, child) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             AlertsNotificationEngine.start(context);
-            VersionCheckEngine.start(context);
+            VersionCheckEngine.start(context, key: rootNavigatorKey);
           });
           return child!;
         },

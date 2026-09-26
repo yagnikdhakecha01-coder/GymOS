@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
-import 'package:razorpay_flutter/razorpay_flutter.dart';
 import '../../core/theme/theme.dart';
-import '../../core/config/app_config.dart';
 import '../../core/services/supabase_service.dart';
 import '../../core/services/subscription_plans_service.dart';
 import '../authentication/auth_viewmodel.dart';
@@ -16,26 +14,11 @@ class OwnerSubscriptionScreen extends StatefulWidget {
 }
 
 class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
-  late Razorpay _razorpay;
-  bool _isProcessing = false;
-  String? _selectedPlanId;
-  String? _pendingOrderId;
-  double? _selectedPrice;
-
-  // Dynamic free trial settings
-  int _trialDuration = 45;
-  String _trialUnit = 'days';
-  bool _isLoadingSettings = true;
   List<SubscriptionPlanModel> _plans = [];
 
   @override
   void initState() {
     super.initState();
-    _razorpay = Razorpay();
-    _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _handlePaymentSuccess);
-    _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handlePaymentError);
-    _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWallet);
-
     final authVm = Provider.of<AuthViewModel>(context, listen: false);
     _plans = SubscriptionPlansService.getPlans(authVm.storage);
     SubscriptionPlansService.fetchAndCachePlans(authVm.storage).then((updated) {
@@ -47,13 +30,10 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
     _loadTrialSettings();
   }
 
-  bool _isQueuedPlan = false;
   String _queuedPlanName = '';
-  String _trialEndStr = '';
   String _planEndStr = '';
   int _trialDaysLeft = 0;
   String? _currentPurchasedPlanId;
-  bool _isTrialActive = true;
   bool _isTrialExpired = false;
   bool _autoPayEnabled = true;
   bool _cancelAtPeriodEnd = false;
@@ -134,11 +114,9 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
 
               setState(() {
                 _currentPurchasedPlanId = hasPurchased ? rawPlan : null;
-                _isTrialActive = isTrialActive;
                 _isTrialExpired = isTrialExpired;
                 _queuedPlanName = formattedPlanName;
                 _trialDaysLeft = daysLeft;
-                _trialEndStr = formatDate(trialEnd);
                 _planEndStr = formatDate(planEnd);
                 _autoPayEnabled = isAutoPay && !isCancelAtEnd;
                 _cancelAtPeriodEnd = isCancelAtEnd || !isAutoPay;
@@ -148,32 +126,9 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
             debugPrint('Error fetching subscription details: $e');
           }
         }
-
-        final res = await SupabaseService.client
-            .from('platform_settings')
-            .select('value')
-            .eq('key', 'default_free_trial')
-            .maybeSingle();
-
-        if (res != null && res['value'] != null) {
-          final Map<String, dynamic> val = Map<String, dynamic>.from(res['value']);
-          if (mounted) {
-            setState(() {
-              _trialDuration = int.tryParse(val['duration_value']?.toString() ?? '45') ?? 45;
-              _trialUnit = val['duration_unit']?.toString() ?? 'days';
-              _isLoadingSettings = false;
-            });
-            return;
-          }
-        }
       }
     } catch (e) {
-      debugPrint('Error loading dynamic trial settings: $e');
-    }
-    if (mounted) {
-      setState(() {
-        _isLoadingSettings = false;
-      });
+      debugPrint('Error loading trial settings: $e');
     }
   }
 
@@ -353,283 +308,67 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
     }
   }
 
-  @override
-  void dispose() {
-    _razorpay.clear();
-    super.dispose();
-  }
-
-  void _handlePaymentSuccess(PaymentSuccessResponse response) async {
-    _verifyPayment(
-      response.orderId ?? _pendingOrderId ?? '',
-      response.paymentId ?? '',
-      response.signature ?? '',
-    );
-  }
-
-  void _handlePaymentError(PaymentFailureResponse response) {
-    setState(() => _isProcessing = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Payment Failed: ${response.message ?? "User cancelled payment"}'),
-        backgroundColor: AppTheme.danger,
-      ),
-    );
-  }
-
-  void _handleExternalWallet(ExternalWalletResponse response) {
-    // Handle external wallet
-  }
-
-  Future<void> _verifyPayment(String orderId, String paymentId, String signature) async {
+  void _showWebPortalInfoDialog(String planName) {
     showDialog(
       context: context,
-      barrierDismissible: false,
       builder: (ctx) => AlertDialog(
-        content: Row(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
           children: [
-            const CircularProgressIndicator(color: Color(0xFF6C4EFF)),
-            const SizedBox(width: 20),
-            Expanded(child: Text('Verifying payment details...', style: GoogleFonts.inter())),
-          ],
-        ),
-      ),
-    );
-    
-    setState(() => _isProcessing = true);
-    
-    try {
-      final authVm = Provider.of<AuthViewModel>(context, listen: false);
-      final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
-      final ownerId = authVm.currentUser?.id;
-      
-      if (gymId == null || ownerId == null) {
-        throw Exception('Missing gym/owner context.');
-      }
-      
-      if (!SupabaseService.isInitialized) {
-        throw Exception('Database connection is offline. Cannot verify payment.');
-      }
-      
-      bool verified = false;
-      String? errorMessage;
-      try {
-        final response = await SupabaseService.client.functions.invoke(
-          'verify-payment',
-          body: {
-            'razorpay_order_id': orderId,
-            'razorpay_payment_id': paymentId,
-            'razorpay_signature': signature,
-            'gym_id': gymId,
-            'plan_id': _selectedPlanId,
-            'owner_id': ownerId,
-          },
-        );
-        final data = response.data;
-        if (data != null && data['success'] == true) {
-          verified = true;
-        } else {
-          errorMessage = data?['error']?.toString() ?? 'Payment verification failed.';
-        }
-      } catch (fnErr) {
-        debugPrint('Edge function verify-payment failed: $fnErr');
-        errorMessage = 'Payment verification service error. Please contact support.';
-      }
-
-      if (Navigator.canPop(context)) {
-        Navigator.pop(context); // Close loading dialog
-      }
-
-      if (!verified) {
-        throw Exception(errorMessage ?? 'Payment verification was rejected by the server.');
-      }
-      
-      if (verified) {
-        await authVm.fetchSubscriptionStatus();
-        await authVm.loadCurrentProfile();
-        
-        if (!mounted) return;
-        
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (ctx) => AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const SizedBox(height: 10),
-                const Icon(Icons.check_circle_rounded, color: Colors.green, size: 64),
-                const SizedBox(height: 16),
-                Text(
-                  'AutoPay Subscription Active! 🎉',
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF0FDF4),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFFDCFCE7)),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.autorenew_rounded, color: Colors.green, size: 22),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          'AutoPay Enabled via Razorpay.\nNext auto-debit trigger: After 30 days on plan expiry (Auto-debits ₹${_selectedPrice?.toInt() ?? 699}/mo).',
-                          style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF166534), fontWeight: FontWeight.w500, height: 1.3),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Your gym plan will seamlessly renew automatically without any manual payment steps!',
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.inter(fontSize: 13, color: AppTheme.textSecondary),
-                ),
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  height: 48,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      Navigator.pop(ctx); // Close success dialog
-                      Navigator.pop(context); // Close subscription screen
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF6C4EFF),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    child: Text('Get Started', style: GoogleFonts.inter(fontWeight: FontWeight.bold, color: Colors.white)),
-                  ),
-                ),
-              ],
+            const Icon(Icons.info_outline_rounded, color: Color(0xFF6C4EFF), size: 24),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                '$planName Plan',
+                style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 18),
+              ),
             ),
-          ),
-        );
-      } else {
-        throw Exception('Signature verification failed');
-      }
-    } catch (e) {
-      if (Navigator.canPop(context)) {
-        Navigator.pop(context);
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Verification Failed: $e'),
-          backgroundColor: AppTheme.danger,
-        ),
-      );
-    } finally {
-      setState(() => _isProcessing = false);
-    }
-  }
-
-  Future<void> _handlePayment(String planId, double price) async {
-    final authVm = Provider.of<AuthViewModel>(context, listen: false);
-    final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
-    final ownerId = authVm.currentUser?.id;
-    final ownerEmail = authVm.currentUser?.email ?? 'owner@gymos.com';
-    final ownerPhone = authVm.currentProfile?.phoneNumber ?? '';
-    
-    if (gymId == null || ownerId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Missing owner or gym profile context.'), backgroundColor: AppTheme.danger),
-      );
-      return;
-    }
-    
-    setState(() {
-      _isProcessing = true;
-      _selectedPlanId = planId;
-      _selectedPrice = price;
-    });
-    
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        content: Row(
-          children: [
-            const CircularProgressIndicator(color: Color(0xFF6C4EFF)),
-            const SizedBox(width: 20),
-            Expanded(child: Text('Generating Razorpay checkout...', style: GoogleFonts.inter())),
           ],
         ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Gym OS subscription upgrades, renewals, and billing invoices are managed through our secure web management portal.',
+              style: GoogleFonts.inter(fontSize: 14, color: AppTheme.textSecondary, height: 1.5),
+            ),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.language_rounded, color: Color(0xFF6C4EFF), size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Portal: gymos.tech',
+                      style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: const Color(0xFF1E293B)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Please visit gymos.tech on your web browser to manage your subscription tier.',
+              style: GoogleFonts.inter(fontSize: 13, color: AppTheme.textMuted),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Understood', style: GoogleFonts.inter(color: const Color(0xFF6C4EFF), fontWeight: FontWeight.bold)),
+          ),
+        ],
       ),
     );
-    
-    try {
-      if (!SupabaseService.isInitialized) {
-        if (Navigator.canPop(context)) Navigator.pop(context);
-        throw Exception('Service is offline. Cannot initiate secure checkout.');
-      }
-      
-      final razorpayPlanId = AppConfig.getRazorpayPlanId(planId);
-      final response = await SupabaseService.client.functions.invoke(
-        'create-subscription',
-        body: {
-          'gym_id': gymId,
-          'plan_id': planId,
-          'razorpay_plan_id': razorpayPlanId,
-          'owner_id': ownerId,
-        },
-      );
-      
-      final data = response.data;
-      if (data == null || data['success'] != true) {
-        throw Exception(data?['error'] ?? 'Order creation failed');
-      }
-      
-      final orderId = data['order_id'] as String;
-      final keyId = data['key_id'] as String;
-      final amount = data['amount'] as num;
-      
-      _pendingOrderId = orderId;
-      
-      final options = {
-        'key': keyId,
-        'amount': amount,
-        'name': 'Gym OS',
-        'description': 'Subscription (${planId.toUpperCase()} Plan)',
-        'order_id': orderId,
-        'timeout': 300,
-        'prefill': {
-          'contact': ownerPhone.isNotEmpty ? ownerPhone : '9999999999',
-          'email': ownerEmail,
-        },
-        'notes': {
-          'gym_id': gymId,
-          'plan_id': planId,
-          'razorpay_plan_id': razorpayPlanId,
-          'auto_pay': 'true',
-          'owner_id': ownerId,
-        },
-        'theme': {
-          'color': '#6C4EFF',
-        }
-      };
-
-      if (Navigator.canPop(context)) {
-        Navigator.pop(context); // Close loading dialog
-      }
-      
-      _razorpay.open(options);
-    } catch (e) {
-      if (Navigator.canPop(context)) {
-        Navigator.pop(context);
-      }
-      setState(() => _isProcessing = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Transaction Initiation Failed: $e'), backgroundColor: AppTheme.danger),
-      );
-    }
   }
 
   @override
@@ -857,7 +596,55 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 18),
+            // Web Portal Subscription Management Notice
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF6C4EFF).withOpacity(0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.language_rounded, color: Color(0xFF6C4EFF), size: 22),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Subscription Management',
+                          style: GoogleFonts.inter(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: const Color(0xFF1E293B),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'To upgrade your tier, renew your plan, or view tax invoices, please visit the Gym OS Web Portal on your computer at gymos.tech.',
+                          style: GoogleFonts.inter(
+                            fontSize: 12.5,
+                            color: const Color(0xFF64748B),
+                            height: 1.4,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
 
             // Dynamic Plan Cards (Instantly loaded from local cache + Supabase sync)
             ..._plans.map((plan) {
@@ -1087,75 +874,83 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
           )),
           const SizedBox(height: 24),
 
-          // Action Button with state logic
-          SizedBox(
-            width: double.infinity,
-            height: 48,
-            child: ScaleButton(
-              onTap: () {
-                if (isPurchased) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('You are already subscribed to the $title plan.'),
-                      backgroundColor: const Color(0xFF16A34A),
+          // Read-Only Status & Details Button
+          if (isPurchased) ...[
+            Container(
+              width: double.infinity,
+              height: 48,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF0FDF4),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: const Color(0xFF22C55E),
+                  width: 1.5,
+                ),
+              ),
+              alignment: Alignment.center,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.check_circle_rounded, color: Color(0xFF16A34A), size: 18),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Your Active Plan',
+                    style: GoogleFonts.inter(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.bold,
+                      color: const Color(0xFF15803D),
                     ),
-                  );
-                  return;
-                }
-                _handlePayment(planId, double.parse(price.replaceAll('₹', '')));
-              },
+                  ),
+                ],
+              ),
+            ),
+          ] else ...[
+            InkWell(
+              onTap: () => _showWebPortalInfoDialog(title),
+              borderRadius: BorderRadius.circular(12),
               child: Container(
+                width: double.infinity,
+                height: 48,
                 decoration: BoxDecoration(
-                  color: isPurchased
-                      ? const Color(0xFFF0FDF4)
-                      : (_currentPurchasedPlanId == null && isPro ? const Color(0xFF6C4EFF) : Colors.white),
+                  color: isPro ? const Color(0xFF6C4EFF) : Colors.white,
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: isPurchased
-                        ? const Color(0xFF22C55E)
-                        : const Color(0xFF6C4EFF),
+                    color: const Color(0xFF6C4EFF),
                     width: 1.5,
                   ),
-                  boxShadow: (!isPurchased && _currentPurchasedPlanId == null && isPro)
+                  boxShadow: isPro
                       ? [
                           BoxShadow(
                             color: const Color(0xFF6C4EFF).withOpacity(0.2),
-                            blurRadius: 12,
-                            offset: const Offset(0, 4),
+                            blurRadius: 10,
+                            offset: const Offset(0, 3),
                           ),
                         ]
                       : null,
                 ),
                 alignment: Alignment.center,
-                child: isPurchased
-                    ? Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(Icons.check_circle_rounded, color: Color(0xFF16A34A), size: 18),
-                          const SizedBox(width: 6),
-                          Text(
-                            'Current Plan',
-                            style: GoogleFonts.inter(
-                              fontSize: 13.5,
-                              fontWeight: FontWeight.bold,
-                              color: const Color(0xFF15803D),
-                            ),
-                          ),
-                        ],
-                      )
-                    : Text(
-                        _currentPurchasedPlanId != null ? 'Change Plan' : 'Choose Plan',
-                        style: GoogleFonts.inter(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: (_currentPurchasedPlanId == null && isPro)
-                              ? Colors.white
-                              : const Color(0xFF6C4EFF),
-                        ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.info_outline_rounded,
+                      color: isPro ? Colors.white : const Color(0xFF6C4EFF),
+                      size: 16,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'View Plan Details',
+                      style: GoogleFonts.inter(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.bold,
+                        color: isPro ? Colors.white : const Color(0xFF6C4EFF),
                       ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
+          ],
         ],
       ),
     );
@@ -1175,35 +970,6 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
           ),
         ),
       ],
-    );
-  }
-}
-
-class ScaleButton extends StatefulWidget {
-  final Widget child;
-  final VoidCallback onTap;
-
-  const ScaleButton({Key? key, required this.child, required this.onTap}) : super(key: key);
-
-  @override
-  State<ScaleButton> createState() => _ScaleButtonState();
-}
-
-class _ScaleButtonState extends State<ScaleButton> {
-  double _scale = 1.0;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTapDown: (_) => setState(() => _scale = 0.97),
-      onTapUp: (_) => setState(() => _scale = 1.0),
-      onTapCancel: () => setState(() => _scale = 1.0),
-      onTap: widget.onTap,
-      child: AnimatedScale(
-        scale: _scale,
-        duration: const Duration(milliseconds: 100),
-        child: widget.child,
-      ),
     );
   }
 }

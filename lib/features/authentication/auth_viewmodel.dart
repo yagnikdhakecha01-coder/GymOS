@@ -617,6 +617,38 @@ class AuthViewModel extends ChangeNotifier {
     }
   }
 
+  /// Apple Sign-In flow for iOS and web compliance (Apple App Store Guideline 4.8)
+  Future<bool> signInWithApple() async {
+    _setLoading(true);
+    try {
+      try {
+        await SupabaseService.client.auth.signOut();
+      } catch (_) {}
+
+      if (kIsWeb) {
+        final String webRedirect = '${Uri.base.origin}/';
+        await SupabaseService.client.auth.signInWithOAuth(
+          OAuthProvider.apple,
+          redirectTo: webRedirect,
+        );
+        return true;
+      }
+
+      await SupabaseService.client.auth.signInWithOAuth(
+        OAuthProvider.apple,
+        redirectTo: 'gymos://login-callback/',
+      );
+
+      await loadCurrentProfile();
+      return SupabaseService.client.auth.currentSession != null || _authService.currentUser != null;
+    } catch (e) {
+      debugPrint('signInWithApple error: $e');
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
   /// Completes the first-time setup flow after authentication
   Future<void> completeFirstTimeSetup({
     required UserRole role,

@@ -5,9 +5,6 @@ class Env {
   /// Reads SUPABASE_ANON_KEY from Dart environment variables.
   static const String supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
 
-  /// Reads RAZORPAY_KEY_ID from Dart environment variables.
-  static const String razorpayKeyId = String.fromEnvironment('RAZORPAY_KEY_ID');
-
   /// Configurable Attendance Display base URL (defaults to https://localhost:3000)
   static const String displayBaseUrl = String.fromEnvironment('DISPLAY_BASE_URL', defaultValue: 'https://localhost:3000');
 }
