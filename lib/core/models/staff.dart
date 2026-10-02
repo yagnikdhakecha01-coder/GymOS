@@ -17,6 +17,7 @@ class Staff {
   final String avatar;
   final String? userId;
   final String gymId;
+  final String? createdAt;
 
   // New fields
   final String gender;
@@ -58,6 +59,7 @@ class Staff {
     required this.avatar,
     this.userId,
     this.gymId = '',
+    this.createdAt,
     this.gender = '',
     this.dob = '',
     this.aadhaar = '',
@@ -141,9 +143,10 @@ class Staff {
       membersTrained: (json['members_trained_count'] ?? json['membersTrained']) as int? ?? 0,
       salary: (json['salary'] as num?)?.toDouble() ?? 0.0,
       salaryDue: ((json['salary_due'] ?? json['salaryDue']) as num?)?.toDouble() ?? 0.0,
-      avatar: json['avatar'] as String? ?? 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
+      avatar: (json['avatar'] as String?) ?? '',
       userId: json['user_id'] as String?,
       gymId: json['gym_id'] as String? ?? '',
+      createdAt: (json['created_at'] ?? json['createdAt'] ?? json['join_date'] ?? json['joinDate']) as String?,
       gender: json['gender'] as String? ?? '',
       dob: json['dob'] as String? ?? '',
       aadhaar: json['aadhaar'] as String? ?? '',
@@ -196,6 +199,7 @@ class Staff {
       'avatar': avatar,
       'user_id': userId,
       'gym_id': gymId,
+      'created_at': createdAt,
       'gender': gender,
       'dob': dob,
       'aadhaar': aadhaar,
@@ -235,6 +239,7 @@ class Staff {
     String? avatar,
     String? userId,
     String? gymId,
+    String? createdAt,
     String? gender,
     String? dob,
     String? aadhaar,
@@ -272,6 +277,7 @@ class Staff {
       avatar: avatar ?? this.avatar,
       userId: userId ?? this.userId,
       gymId: gymId ?? this.gymId,
+      createdAt: createdAt ?? this.createdAt,
       gender: gender ?? this.gender,
       dob: dob ?? this.dob,
       aadhaar: aadhaar ?? this.aadhaar,

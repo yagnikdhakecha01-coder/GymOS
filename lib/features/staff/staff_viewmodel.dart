@@ -122,7 +122,7 @@ class StaffViewModel extends ChangeNotifier {
       membersTrained: 0,
       salary: salary,
       salaryDue: salary, // Initial salary due
-      avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
+      avatar: '',
     );
 
     await _repository.saveStaff(newStaff);

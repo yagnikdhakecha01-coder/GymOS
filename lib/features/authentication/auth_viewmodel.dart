@@ -242,6 +242,7 @@ class AuthViewModel extends ChangeNotifier {
     _activeAssociation = assoc;
     _selectedRole = assoc.role.name;
     await _storage.setUserRole(_selectedRole!);
+    await _storage.setActiveAssociationId(assoc.id);
 
     if (_currentProfile != null) {
       _currentProfile = _currentProfile!.copyWith(
@@ -784,176 +785,221 @@ class AuthViewModel extends ChangeNotifier {
       }
 
       if (_userAssociations.isNotEmpty) {
+        final savedAssocId = _storage.getActiveAssociationId();
         final savedRole = _storage.getUserRole();
         final savedGym = _storage.getGymInfo();
         
         UserGymAssociation? matchedAssoc;
-        if (savedGym != null && savedGym['id'] != null) {
+
+        // 1. Try matching by unique saved association ID
+        if (savedAssocId != null && savedAssocId.isNotEmpty) {
           for (var a in _userAssociations) {
-            if (a.gymId == savedGym['id'] && a.role.name == savedRole) {
+            if (a.id == savedAssocId) {
               matchedAssoc = a;
               break;
             }
           }
         }
-        
-        final assoc = matchedAssoc ?? _userAssociations.first;
-        _activeAssociation = assoc;
-        _selectedRole = assoc.role.name;
-        final activeProf = profile ?? UserProfile(
-          id: uid!,
-          email: authUser?.email ?? '',
-          role: assoc.role,
-          gymId: assoc.gymId,
-          setupCompleted: assoc.setupCompleted,
-        );
-        _currentProfile = activeProf.copyWith(
-          role: assoc.role,
-          gymId: assoc.gymId,
-          setupCompleted: assoc.setupCompleted,
-        );
-        await _storage.setUserRole(_selectedRole!);
 
-        if (_currentProfile?.role == UserRole.staff) {
-          try {
-            final res = await SupabaseService.client
-                .from('staff')
-                .select()
-                .eq('user_id', activeProf.id)
-                .eq('gym_id', assoc.gymId)
-                .maybeSingle();
-            if (res != null) {
-              _staffRecord = Staff.fromJson(res);
-            } else {
-              // Staff was unlinked — remove stale association for this gym
-              _userAssociations = _userAssociations
-                  .where((a) => !(a.gymId == assoc.gymId && a.role == UserRole.staff))
-                  .toList();
-              _staffRecord = null;
-              if (_userAssociations.isEmpty) {
-                _activeAssociation = null;
-                _gymInfo = null;
-                await _storage.remove(LocalStorageService.keyUserGymInfo);
-              }
+        // 2. Try matching by gym ID + role
+        if (matchedAssoc == null && savedGym != null && savedGym['id'] != null && savedRole != null) {
+          for (var a in _userAssociations) {
+            if (a.gymId == savedGym['id'] && a.role.name.toLowerCase() == savedRole.toLowerCase()) {
+              matchedAssoc = a;
+              break;
             }
-          } catch (e) {
-            print('Error loading staff record in loadCurrentProfile: $e');
           }
         }
 
-        // Load Gym Details
-        try {
-          final gymData = await SupabaseService.client
-              .from('gyms')
-              .select()
-              .eq('id', assoc.gymId)
-              .maybeSingle();
+        // 3. Try matching by role alone (e.g. user was active as owner)
+        if (matchedAssoc == null && savedRole != null) {
+          for (var a in _userAssociations) {
+            if (a.role.name.toLowerCase() == savedRole.toLowerCase()) {
+              matchedAssoc = a;
+              break;
+            }
+          }
+        }
 
-          if (gymData != null) {
-            final info = {
-              'id': gymData['id'],
-              'name': gymData['name'],
-              'logo': gymData['logo_url'] ?? '',
-              'logo_url': gymData['logo_url'] ?? '',
-              'gym_code': gymData['gym_code'],
-              'owner': activeProf.email,
-              'email': gymData['email'] ?? activeProf.email,
-              'phone': gymData['phone_number'] ?? '',
-              'address': gymData['address'] ?? '',
-              'city': gymData['city'] ?? '',
-              'state': gymData['state'] ?? '',
-              'country': gymData['country'] ?? '',
-              'pin_code': gymData['pin_code'] ?? '',
-              'gym_type': gymData['gym_type'] ?? '',
-              'status': gymData['status'] ?? 'active',
-              'is_locked': gymData['is_locked'] ?? false,
-              'custom_branding_allowed': gymData['custom_branding_allowed'] ?? false,
-              'plan': gymData['plan'] ?? 'free_trial',
-            };
-            _gymInfo = info;
-            await _storage.setGymInfo(info);
+        // 4. Try matching by gym ID alone
+        if (matchedAssoc == null && savedGym != null && savedGym['id'] != null) {
+          for (var a in _userAssociations) {
+            if (a.gymId == savedGym['id']) {
+              matchedAssoc = a;
+              break;
+            }
+          }
+        }
 
-            // Fetch and cache branding status from RPC
+        // 5. Fallback determination:
+        // If single association exists, use it. If multiple exist and none matched,
+        // leave matchedAssoc null so user is presented with GymRoleSelectorScreen rather than guessing.
+        final UserGymAssociation? assoc = matchedAssoc ?? (_userAssociations.length == 1 ? _userAssociations.first : null);
+
+        if (assoc != null) {
+          _activeAssociation = assoc;
+          _selectedRole = assoc.role.name;
+          final activeProf = profile ?? UserProfile(
+            id: uid!,
+            email: authUser?.email ?? '',
+            role: assoc.role,
+            gymId: assoc.gymId,
+            setupCompleted: assoc.setupCompleted,
+          );
+          _currentProfile = activeProf.copyWith(
+            role: assoc.role,
+            gymId: assoc.gymId,
+            setupCompleted: assoc.setupCompleted,
+          );
+          await _storage.setActiveAssociationId(assoc.id);
+          await _storage.setUserRole(_selectedRole!);
+
+          if (_currentProfile?.role == UserRole.staff) {
             try {
-              final brandingRes = await SupabaseService.client
-                  .rpc('check_custom_branding_status', params: {'p_gym_id': assoc.gymId})
+              final res = await SupabaseService.client
+                  .from('staff')
+                  .select()
+                  .eq('user_id', activeProf.id)
+                  .eq('gym_id', assoc.gymId)
                   .maybeSingle();
-
-              if (brandingRes != null) {
-                final bool isAllowed = brandingRes['is_allowed'] == true;
-                final String gName = brandingRes['gym_name'] ?? gymData['name'] ?? 'GYMOS';
-                final String gLogo = brandingRes['gym_logo'] ?? gymData['logo_url'] ?? '';
-
-                await _storage.setBrandingEnabled(isAllowed);
-                await _storage.setBrandingName(gName);
-                await _storage.setBrandingLogoUrl(gLogo);
-
-                if (isAllowed && gLogo.isNotEmpty) {
-                  // Cache image locally in background
-                  cacheImageLocally(gLogo, 'custom_gym_logo');
-                } else if (!isAllowed) {
-                  await _storage.remove('cached_img_custom_gym_logo');
+              if (res != null) {
+                _staffRecord = Staff.fromJson(res);
+              } else {
+                // Staff was unlinked — remove stale association for this gym
+                _userAssociations = _userAssociations
+                    .where((a) => !(a.gymId == assoc.gymId && a.role == UserRole.staff))
+                    .toList();
+                _staffRecord = null;
+                if (_userAssociations.isEmpty) {
+                  _activeAssociation = null;
+                  _gymInfo = null;
+                  await _storage.remove(LocalStorageService.keyUserGymInfo);
                 }
               }
             } catch (e) {
-              print('Error checking custom branding status in loadCurrentProfile: $e');
+              print('Error loading staff record in loadCurrentProfile: $e');
             }
           }
-        } catch (_) {
-          final info = _storage.getGymInfo() ?? {
-            'id': assoc.gymId,
-            'name': assoc.gymName ?? 'GYMOS',
-            'gym_code': assoc.gymCode ?? 'MOCK1234',
-            'owner': activeProf.email,
-          };
-          _gymInfo = info;
-          await _storage.setGymInfo(info);
-        }
 
-        // Fetch unread notifications count from Supabase for current role
-        try {
-          if (SupabaseService.isInitialized) {
-            final res = await SupabaseService.client
-                .from('notifications')
-                .select('id, target_role, user_id')
-                .eq('gym_id', assoc.gymId)
-                .eq('is_read', false);
-            
-            final role = (_selectedRole ?? _storage.getUserRole() ?? '').toLowerCase();
-            final bool isOwner = role == 'owner' || role == 'superadmin' || role == 'admin';
-            final bool isStaff = role == 'staff' || role == 'receptionist' || role == 'trainer';
-            final staffId = _staffRecord?.id;
-            final authUid = currentUser?.id;
-            final memberId = _storage.getString('member_id');
+          // Load Gym Details
+          try {
+            final gymData = await SupabaseService.client
+                .from('gyms')
+                .select()
+                .eq('id', assoc.gymId)
+                .maybeSingle();
 
-            final matching = (res as List).where((n) {
-              final targetRole = (n['target_role']?.toString() ?? '').toLowerCase();
-              final notifUserId = n['user_id']?.toString();
-              if (isOwner) {
-                return targetRole == 'owner' || targetRole == 'all' || targetRole == 'both' || targetRole.isEmpty;
-              } else if (isStaff) {
-                if (targetRole == 'owner') return false;
-                final isRoleMatch = targetRole == 'staff' || targetRole == 'all' || targetRole == 'both';
-                if (!isRoleMatch) return false;
-                if (notifUserId != null && notifUserId.isNotEmpty) {
-                  return notifUserId == staffId || notifUserId == authUid;
+            if (gymData != null) {
+              final info = {
+                'id': gymData['id'],
+                'name': gymData['name'],
+                'logo': gymData['logo_url'] ?? '',
+                'logo_url': gymData['logo_url'] ?? '',
+                'gym_code': gymData['gym_code'],
+                'owner': activeProf.email,
+                'email': gymData['email'] ?? activeProf.email,
+                'phone': gymData['phone_number'] ?? '',
+                'address': gymData['address'] ?? '',
+                'city': gymData['city'] ?? '',
+                'state': gymData['state'] ?? '',
+                'country': gymData['country'] ?? '',
+                'pin_code': gymData['pin_code'] ?? '',
+                'gym_type': gymData['gym_type'] ?? '',
+                'status': gymData['status'] ?? 'active',
+                'is_locked': gymData['is_locked'] ?? false,
+                'custom_branding_allowed': gymData['custom_branding_allowed'] ?? false,
+                'plan': gymData['plan'] ?? 'free_trial',
+              };
+              _gymInfo = info;
+              await _storage.setGymInfo(info);
+
+              // Fetch and cache branding status from RPC
+              try {
+                final brandingRes = await SupabaseService.client
+                    .rpc('check_custom_branding_status', params: {'p_gym_id': assoc.gymId})
+                    .maybeSingle();
+
+                if (brandingRes != null) {
+                  final bool isAllowed = brandingRes['is_allowed'] == true;
+                  final String gName = brandingRes['gym_name'] ?? gymData['name'] ?? 'GYMOS';
+                  final String gLogo = brandingRes['gym_logo'] ?? gymData['logo_url'] ?? '';
+
+                  await _storage.setBrandingEnabled(isAllowed);
+                  await _storage.setBrandingName(gName);
+                  await _storage.setBrandingLogoUrl(gLogo);
+
+                  if (isAllowed && gLogo.isNotEmpty) {
+                    // Cache image locally in background
+                    cacheImageLocally(gLogo, 'custom_gym_logo');
+                  } else if (!isAllowed) {
+                    await _storage.remove('cached_img_custom_gym_logo');
+                  }
                 }
-                return true;
-              } else {
-                if (targetRole == 'owner' || targetRole == 'staff') return false;
-                final isRoleMatch = targetRole == 'member' || targetRole == 'all' || targetRole == 'both';
-                if (!isRoleMatch) return false;
-                if (notifUserId != null && notifUserId.isNotEmpty) {
-                  return notifUserId == memberId || notifUserId == authUid;
-                }
-                return true;
+              } catch (e) {
+                print('Error checking custom branding status in loadCurrentProfile: $e');
               }
-            }).toList();
-
-            _unreadNotificationsCount = matching.length;
+            }
+          } catch (_) {
+            final info = _storage.getGymInfo() ?? {
+              'id': assoc.gymId,
+              'name': assoc.gymName ?? 'GYMOS',
+              'gym_code': assoc.gymCode ?? 'MOCK1234',
+              'owner': activeProf.email,
+            };
+            _gymInfo = info;
+            await _storage.setGymInfo(info);
           }
-        } catch (e) {
-          print('Error fetching unread notifications count: $e');
+
+          // Fetch unread notifications count from Supabase for current role
+          try {
+            if (SupabaseService.isInitialized) {
+              final res = await SupabaseService.client
+                  .from('notifications')
+                  .select('id, target_role, user_id')
+                  .eq('gym_id', assoc.gymId)
+                  .eq('is_read', false);
+              
+              final role = (_selectedRole ?? _storage.getUserRole() ?? '').toLowerCase();
+              final bool isOwner = role == 'owner' || role == 'superadmin' || role == 'admin';
+              final bool isStaff = role == 'staff' || role == 'receptionist' || role == 'trainer';
+              final staffId = _staffRecord?.id;
+              final authUid = currentUser?.id;
+              final memberId = _storage.getString('member_id');
+
+              final matching = (res as List).where((n) {
+                final targetRole = (n['target_role']?.toString() ?? '').toLowerCase();
+                final notifUserId = n['user_id']?.toString();
+                if (isOwner) {
+                  return targetRole == 'owner' || targetRole == 'all' || targetRole == 'both' || targetRole.isEmpty;
+                } else if (isStaff) {
+                  if (targetRole == 'owner') return false;
+                  final isRoleMatch = targetRole == 'staff' || targetRole == 'all' || targetRole == 'both';
+                  if (!isRoleMatch) return false;
+                  if (notifUserId != null && notifUserId.isNotEmpty) {
+                    return notifUserId == staffId || notifUserId == authUid;
+                  }
+                  return true;
+                } else {
+                  if (targetRole == 'owner' || targetRole == 'staff') return false;
+                  final isRoleMatch = targetRole == 'member' || targetRole == 'all' || targetRole == 'both';
+                  if (!isRoleMatch) return false;
+                  if (notifUserId != null && notifUserId.isNotEmpty) {
+                    return notifUserId == memberId || notifUserId == authUid;
+                  }
+                  return true;
+                }
+              }).toList();
+
+              _unreadNotificationsCount = matching.length;
+            }
+          } catch (e) {
+            print('Error fetching unread notifications count: $e');
+          }
+        } else {
+          // Multiple associations exist and no active association matched the session.
+          // Leave _activeAssociation as null so GymRoleSelectorScreen is shown without forcing a role.
+          _activeAssociation = null;
+          _selectedRole = savedRole;
         }
       } else {
         _selectedRole = _storage.getUserRole();

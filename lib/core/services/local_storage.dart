@@ -12,6 +12,7 @@ class LocalStorageService {
   static const String keyAttendance = 'gymos_attendance';
   static const String keyUserRole = 'gymos_user_role';
   static const String keyUserGymInfo = 'gymos_gym_info';
+  static const String keyActiveAssociationId = 'gymos_active_association_id';
   static const String keyIsLoggedIn = 'gymos_is_logged_in';
   static const String keyTrialMembers = 'gymos_trial_members';
   static const String keyAttendanceQueue = 'gymos_attendance_queue';
@@ -83,6 +84,11 @@ class LocalStorageService {
   // Save/Get role
   String? getUserRole() => _prefs.getString(keyUserRole);
   Future<bool> setUserRole(String role) => _prefs.setString(keyUserRole, role);
+
+  // Save/Get active association ID
+  String? getActiveAssociationId() => _prefs.getString(keyActiveAssociationId);
+  Future<bool> setActiveAssociationId(String id) =>
+      _prefs.setString(keyActiveAssociationId, id);
 
   // Save/Get gym details
   Map<String, dynamic>? getGymInfo() {

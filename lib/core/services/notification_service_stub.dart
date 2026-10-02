@@ -9,6 +9,7 @@ class NotificationService {
     required int id,
     required String title,
     required String body,
+    String? payload,
     bool force = false,
   }) async {}
 }

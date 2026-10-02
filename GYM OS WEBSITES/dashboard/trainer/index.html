@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GymOS — Trainer Portal</title>
+  <link rel="icon" type="image/png" href="https://img.icons8.com/color/48/dumbbell.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
+  
+  <link rel="stylesheet" href="/css/main.css">
+  <link rel="stylesheet" href="/css/dashboard.css">
+
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+<div class="dashboard-layout">
+  
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-brand-icon" style="background: linear-gradient(135deg, #10B981 0%, #059669 100%);">
+        <i data-lucide="dumbbell"></i>
+      </div>
+      <div>
+        <div class="sidebar-brand-name">GymOS</div>
+        <div class="sidebar-brand-role" style="color: #059669;">Trainer Portal</div>
+      </div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <div class="nav-section-title">Trainer Workspace</div>
+      <a class="nav-link active" onclick="switchTrainerTab('clients', this)">
+        <i data-lucide="users"></i>
+        <span>My PT Clients</span>
+      </a>
+      <a class="nav-link" onclick="switchTrainerTab('workouts', this)">
+        <i data-lucide="activity"></i>
+        <span>Workout & Diet Plans</span>
+      </a>
+      <a class="nav-link" onclick="switchTrainerTab('requests', this)">
+        <i data-lucide="send"></i>
+        <span>Leaves & Requests</span>
+      </a>
+      <a class="nav-link" onclick="switchTrainerTab('salary', this)">
+        <i data-lucide="award"></i>
+        <span>My Salary & Pay Slips</span>
+      </a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="user-snippet">
+        <div class="user-avatar" style="background: #10B981;">T</div>
+        <div class="user-meta">
+          <div class="user-name" id="trainer-name">Vikram Trainer</div>
+          <div class="user-sub">Fitness Coach</div>
+        </div>
+        <button class="btn-logout" title="Sign Out" onclick="logoutSession()">
+          <i data-lucide="log-out" style="width: 18px; height: 18px;"></i>
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <div class="main-wrapper">
+    <header class="top-header">
+      <div class="header-left">
+        <div class="gym-badge">
+          <span class="gym-badge-indicator" style="background: #10B981;"></span>
+          <span id="trainer-gym-name">GymOS Fitness</span>
+        </div>
+      </div>
+      <div class="header-right">
+        <button class="btn btn-primary" onclick="openRequestModal()">
+          <i data-lucide="plus-circle" style="width: 16px; height: 16px;"></i>
+          New Request / Leave
+        </button>
+      </div>
+    </header>
+
+    <main class="content-area">
+
+      <!-- ── SECTION 1: MY CLIENTS ── -->
+      <section id="trainer-tab-clients" class="view-section active">
+        <div class="page-header">
+          <div class="page-header-text">
+            <h2>Assigned Personal Training Clients</h2>
+            <p>Track your clients' attendance, body transformation goals, and workout progress.</p>
+          </div>
+        </div>
+
+        <div class="metrics-grid">
+          <div class="metric-card">
+            <div class="metric-info">
+              <h5>Active PT Clients</h5>
+              <div class="value" id="count-pt-clients">8</div>
+              <div class="subtext">Assigned to you</div>
+            </div>
+            <div class="metric-icon-box" style="background: #D1FAE5; color: #059669;">
+              <i data-lucide="user-check"></i>
+            </div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-info">
+              <h5>Today's PT Sessions</h5>
+              <div class="value" id="count-today-sessions">5</div>
+              <div class="subtext">Scheduled today</div>
+            </div>
+            <div class="metric-icon-box" style="background: #E0E7FF; color: #4F46E5;">
+              <i data-lucide="calendar"></i>
+            </div>
+          </div>
+        </div>
+
+        <div class="table-card">
+          <div class="table-header-tools">
+            <h3 style="font-size: 16px;">Client Roster</h3>
+          </div>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Client Name</th>
+                <th>Goal</th>
+                <th>Target Weight</th>
+                <th>Assigned Workout</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="trainer-clients-body">
+              <tr>
+                <td><strong>Aman Patel</strong></td>
+                <td><span class="badge badge-primary">Muscle Gain</span></td>
+                <td>78 kg</td>
+                <td>Hypertrophy 4-Day Split</td>
+                <td><span class="badge badge-success">Active</span></td>
+                <td><button class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px;">Log Workout</button></td>
+              </tr>
+              <tr>
+                <td><strong>Sneha Desai</strong></td>
+                <td><span class="badge badge-warning">Weight Loss</span></td>
+                <td>58 kg</td>
+                <td>HIIT + Fat Loss Diet</td>
+                <td><span class="badge badge-success">Active</span></td>
+                <td><button class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px;">Log Workout</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ── SECTION 2: WORKOUT & DIET PLANS ── -->
+      <section id="trainer-tab-workouts" class="view-section">
+        <div class="page-header">
+          <div class="page-header-text">
+            <h2>Workout & Diet Templates</h2>
+            <p>Assign proven workout schedules and nutrition macros to your trainees.</p>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
+          <div class="card">
+            <span class="badge badge-primary">Workout Routine</span>
+            <h3 style="font-size: 18px; margin: 10px 0 6px;">Push - Pull - Legs (6 Day)</h3>
+            <p style="font-size: 13px; margin-bottom: 16px;">Ideal for intermediate to advanced lifters aiming for hypertrophy.</p>
+            <button class="btn btn-outline" style="width: 100%; font-size: 13px;" onclick="alert('Template assigned to client!')">Assign to Client</button>
+          </div>
+
+          <div class="card">
+            <span class="badge badge-success">Nutrition Plan</span>
+            <h3 style="font-size: 18px; margin: 10px 0 6px;">High Protein Fat Loss (1800 kcal)</h3>
+            <p style="font-size: 13px; margin-bottom: 16px;">140g Protein, 160g Carbs, 55g Fats. Balanced caloric deficit.</p>
+            <button class="btn btn-outline" style="width: 100%; font-size: 13px;" onclick="alert('Diet assigned to client!')">Assign to Client</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── SECTION 3: REQUESTS & LEAVES ── -->
+      <section id="trainer-tab-requests" class="view-section">
+        <div class="page-header">
+          <div class="page-header-text">
+            <h2>My Requests (Leaves & Salary Advances)</h2>
+            <p>Submit leave applications and advance requests directly to the gym owner.</p>
+          </div>
+          <button class="btn btn-primary" onclick="openRequestModal()">New Request</button>
+        </div>
+
+        <div class="table-card">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Request Type</th>
+                <th>Details / Reason</th>
+                <th>Date Submitted</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="badge badge-info">Leave Request</span></td>
+                <td>Personal Family Function (1 Day)</td>
+                <td>2026-09-25</td>
+                <td><span class="badge badge-success">Approved</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ── SECTION 4: SALARY ── -->
+      <section id="trainer-tab-salary" class="view-section">
+        <div class="page-header">
+          <div class="page-header-text">
+            <h2>My Compensation & Pay Slips</h2>
+            <p>Transparent summary of base salary, PT client commissions, and deductions.</p>
+          </div>
+        </div>
+
+        <div class="metrics-grid">
+          <div class="metric-card">
+            <div class="metric-info">
+              <h5>Base Monthly Salary</h5>
+              <div class="value">₹22,000</div>
+              <div class="subtext">Fixed monthly pay</div>
+            </div>
+            <div class="metric-icon-box" style="background: var(--primary-light); color: var(--primary);">
+              <i data-lucide="wallet"></i>
+            </div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-info">
+              <h5>PT Commissions</h5>
+              <div class="value" style="color: var(--success);">₹6,500</div>
+              <div class="subtext">From 8 active clients</div>
+            </div>
+            <div class="metric-icon-box" style="background: var(--success-light); color: var(--success);">
+              <i data-lucide="trending-up"></i>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<!-- Modal: New Request -->
+<div id="modal-request" class="modal-backdrop">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h3 style="font-size: 18px;">Submit New Request</h3>
+      <button onclick="closeRequestModal()" style="background: none; border: none; cursor: pointer;">
+        <i data-lucide="x" style="width: 20px; height: 20px;"></i>
+      </button>
+    </div>
+    <form onsubmit="handleSubmitRequest(event)">
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">Request Type</label>
+          <select id="req-type" class="form-input">
+            <option value="leave">Leave Request</option>
+            <option value="advance">Salary Advance</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Date</label>
+          <input type="date" id="req-date" class="form-input" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Reason / Notes</label>
+          <textarea id="req-notes" class="form-input" rows="3" required placeholder="Provide explanation for gym owner..."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeRequestModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary">Submit to Owner</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="/js/config.js"></script>
+<script>
+  lucide.createIcons();
+
+  function switchTrainerTab(tabId, el) {
+    document.querySelectorAll('.view-section').forEach(sec => sec.classList.remove('active'));
+    document.querySelectorAll('.nav-link').forEach(link => link.classList.remove('active'));
+    const target = document.getElementById(`trainer-tab-${tabId}`);
+    if (target) target.classList.add('active');
+    if (el) el.classList.add('active');
+  }
+
+  function openRequestModal() { document.getElementById('modal-request').classList.add('active'); }
+  function closeRequestModal() { document.getElementById('modal-request').classList.remove('active'); }
+
+  function handleSubmitRequest(e) {
+    e.preventDefault();
+    alert('Request submitted to gym owner!');
+    closeRequestModal();
+  }
+
+  function logoutSession() {
+    if (confirm('Log out from Trainer Portal?')) {
+      localStorage.removeItem('gymos_web_session');
+      window.location.href = '../../index.html';
+    }
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GymOS — Receptionist (Front Desk) Portal</title>
+  <link rel="icon" type="image/png" href="https://img.icons8.com/color/48/dumbbell.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
+  
+  <link rel="stylesheet" href="/css/main.css">
+  <link rel="stylesheet" href="/css/dashboard.css">
+
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+<div class="dashboard-layout">
+  
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-brand-icon" style="background: linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%);">
+        <i data-lucide="clipboard-check"></i>
+      </div>
+      <div>
+        <div class="sidebar-brand-name">GymOS</div>
+        <div class="sidebar-brand-role" style="color: #2563EB;">Front Desk Desk</div>
+      </div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <div class="nav-section-title">Front Desk Operations</div>
+      <a class="nav-link active" onclick="switchRecepTab('speed-desk', this)">
+        <i data-lucide="zap"></i>
+        <span>Speed Check-In Desk</span>
+      </a>
+      <a class="nav-link" onclick="switchRecepTab('admissions', this)">
+        <i data-lucide="user-plus"></i>
+        <span>Walk-In Admissions</span>
+      </a>
+      <a class="nav-link" onclick="switchRecepTab('fees', this)">
+        <i data-lucide="credit-card"></i>
+        <span>Fee Collections</span>
+      </a>
+      <a class="nav-link" onclick="switchRecepTab('shift', this)">
+        <i data-lucide="clock"></i>
+        <span>Shift Handover</span>
+      </a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="user-snippet">
+        <div class="user-avatar" style="background: #3B82F6;">R</div>
+        <div class="user-meta">
+          <div class="user-name" id="recep-name">Pooja Front Desk</div>
+          <div class="user-sub">Receptionist</div>
+        </div>
+        <button class="btn-logout" title="Sign Out" onclick="logoutSession()">
+          <i data-lucide="log-out" style="width: 18px; height: 18px;"></i>
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <div class="main-wrapper">
+    <header class="top-header">
+      <div class="header-left">
+        <div class="gym-badge">
+          <span class="gym-badge-indicator" style="background: #3B82F6;"></span>
+          <span>GymOS Front Desk</span>
+        </div>
+      </div>
+      <div class="header-right">
+        <span class="badge badge-success">Morning Shift Active</span>
+      </div>
+    </header>
+
+    <main class="content-area">
+
+      <!-- ── SECTION 1: SPEED CHECK-IN DESK ── -->
+      <section id="recep-tab-speed-desk" class="view-section active">
+        <div class="page-header">
+          <div class="page-header-text">
+            <h2>Speed Check-In Desk</h2>
+            <p>Lightning fast member check-in. Search by phone number or name to mark attendance instantly.</p>
+          </div>
+        </div>
+
+        <!-- Quick Scan Search Box -->
+        <div class="card" style="margin-bottom: 24px; padding: 24px; border: 2px solid var(--primary-light);">
+          <div style="display: flex; gap: 12px; align-items: center;">
+            <div class="search-input-wrap" style="flex: 1; width: auto;">
+              <i data-lucide="search" style="width: 20px; height: 20px;"></i>
+              <input type="text" id="quick-search-input" placeholder="Type member name or phone..." style="padding: 14px 16px 14px 44px; font-size: 16px; border-radius: 12px;" oninput="handleQuickSearch()">
+            </div>
+            <button class="btn btn-primary" style="padding: 14px 24px; font-size: 15px;" onclick="handleQuickSearch()">
+              Search Member
+            </button>
+          </div>
+          <div id="quick-search-results" style="margin-top: 16px;"></div>
+        </div>
+
+        <div class="table-card">
+          <div class="table-header-tools">
+            <h3 style="font-size: 16px;">Today's Front Desk Check-Ins</h3>
+            <span class="badge badge-info" id="recep-today-count">Live Stream</span>
+          </div>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Member Name</th>
+                <th>Phone</th>
+                <th>Check-In Time</th>
+                <th>Plan Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="table-desk-attendance">
+              <tr>
+                <td colspan="5" style="text-align: center; color: var(--text-muted);">Loading check-ins...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ── SECTION 2: ADMISSIONS ── -->
+      <section id="recep-tab-admissions" class="view-section">
+        <div class="page-header">
+          <div class="page-header-text">
+            <h2>Walk-in Admission Desk</h2>
+            <p>Register new gym members and print initial fee receipts.</p>
+          </div>
+        </div>
+        <div class="card" style="max-width: 600px;">
+          <form onsubmit="handleRecepAdmission(event)">
+            <div class="form-group">
+              <label class="form-label">Member Full Name *</label>
+              <input type="text" id="recep-adm-name" class="form-input" required placeholder="Full Name">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Mobile Number *</label>
+              <input type="tel" id="recep-adm-phone" class="form-input" required placeholder="10 Digit Phone Number">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Plan *</label>
+              <select id="recep-adm-plan" class="form-input">
+                <option value="1500">Monthly Plan (₹1,500)</option>
+                <option value="4000">Quarterly Plan (₹4,000)</option>
+                <option value="12000">Annual Plan (₹12,000)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Payment Mode</label>
+              <select id="recep-adm-mode" class="form-input">
+                <option value="Cash">Cash at Counter</option>
+                <option value="UPI">Counter QR (UPI)</option>
+              </select>
+            </div>
+            <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 12px;">Complete Admission & Issue Bill</button>
+          </form>
+        </div>
+      </section>
+
+      <!-- ── SECTION 3: FEES ── -->
+      <section id="recep-tab-fees" class="view-section">
+        <div class="page-header">
+          <div class="page-header-text">
+            <h2>Fee Collections Desk</h2>
+            <p>Collect pending installments, renewals, and print instant receipts.</p>
+          </div>
+        </div>
+        <div class="metrics-grid">
+          <div class="metric-card">
+            <div class="metric-info">
+              <h5>Counter Cash in Hand</h5>
+              <div class="value" style="color: var(--success);">₹4,500</div>
+              <div class="subtext">Shift Cash Drawer</div>
+            </div>
+            <div class="metric-icon-box" style="background: var(--success-light); color: var(--success);">
+              <i data-lucide="banknote"></i>
+            </div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-info">
+              <h5>UPI Collections</h5>
+              <div class="value" style="color: var(--primary);">₹8,000</div>
+              <div class="subtext">Direct QR Scans</div>
+            </div>
+            <div class="metric-icon-box" style="background: var(--primary-light); color: var(--primary);">
+              <i data-lucide="smartphone"></i>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── SECTION 4: SHIFT ── -->
+      <section id="recep-tab-shift" class="view-section">
+        <div class="page-header">
+          <div class="page-header-text">
+            <h2>Shift Handover Report</h2>
+            <p>Review total check-ins and hand over the cash drawer to the evening shift.</p>
+          </div>
+        </div>
+        <div class="card" style="max-width: 500px;">
+          <h4 style="margin-bottom: 12px;">Shift Closing Summary</h4>
+          <p style="font-size: 13px; margin-bottom: 20px;">Ensure physical cash in the counter matches ₹4,500 before handing keys to the next shift staff.</p>
+          <button class="btn btn-primary" onclick="alert('Shift Handover report submitted to Gym Owner!')">Sign Off Shift</button>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<script src="/js/config.js"></script>
+<script>
+  lucide.createIcons();
+
+  function switchRecepTab(tabId, el) {
+    document.querySelectorAll('.view-section').forEach(sec => sec.classList.remove('active'));
+    document.querySelectorAll('.nav-link').forEach(link => link.classList.remove('active'));
+    const target = document.getElementById(`recep-tab-${tabId}`);
+    if (target) target.classList.add('active');
+    if (el) el.classList.add('active');
+  }
+
+  async function loadReceptionistLogs() {
+    const tbody = document.getElementById('table-desk-attendance');
+    try {
+      const { data: logs } = await supabase.from('attendance').select('id, member_id, created_at').order('created_at', { ascending: false }).limit(6);
+      if (logs && logs.length > 0) {
+        tbody.innerHTML = logs.map(l => `
+          <tr>
+            <td><strong>Member #${(l.member_id || '').substring(0, 6)}</strong></td>
+            <td>—</td>
+            <td>${new Date(l.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</td>
+            <td><span class="badge badge-success">Valid</span></td>
+            <td><span class="badge badge-primary">Speed Checked</span></td>
+          </tr>
+        `).join('');
+      } else {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted);">No check-ins yet today.</td></tr>`;
+      }
+    } catch(e) {}
+  }
+
+  async function handleQuickSearch() {
+    const q = document.getElementById('quick-search-input').value.trim();
+    const resBox = document.getElementById('quick-search-results');
+    if (q.length < 2) { resBox.innerHTML = ''; return; }
+
+    const { data: members } = await supabase.from('members').select('id, name, phone').ilike('name', `%${q}%`).limit(3);
+    if (members && members.length > 0) {
+      resBox.innerHTML = members.map(m => `
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: var(--bg-surface); border-radius: 8px; margin-top: 6px;">
+          <div>
+            <strong>${m.name}</strong> (${m.phone})
+          </div>
+          <button class="btn btn-primary" style="padding: 6px 12px; font-size: 12px;" onclick="checkInMember('${m.id}', '${m.name}')">
+            Check-In Now
+          </button>
+        </div>
+      `).join('');
+    } else {
+      resBox.innerHTML = `<p style="font-size: 13px; color: var(--text-muted); margin-top: 6px;">No members found with that name.</p>`;
+    }
+  }
+
+  async function checkInMember(id, name) {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      await supabase.from('attendance').insert([{
+        member_id: id,
+        date: today,
+        check_in: new Date().toISOString()
+      }]);
+      alert(`✅ Checked in: ${name}`);
+      document.getElementById('quick-search-input').value = '';
+      document.getElementById('quick-search-results').innerHTML = '';
+      loadReceptionistLogs();
+    } catch(e) {
+      alert('Check-in error: ' + e.message);
+    }
+  }
+
+  async function handleRecepAdmission(e) {
+    e.preventDefault();
+    const name = document.getElementById('recep-adm-name').value;
+    const phone = document.getElementById('recep-adm-phone').value;
+    const amount = document.getElementById('recep-adm-plan').value;
+    try {
+      await supabase.from('members').insert([{ name, phone, join_date: new Date().toISOString().split('T')[0] }]);
+      alert(`🎉 Member ${name} registered! Bill of ₹${amount} issued.`);
+      document.getElementById('recep-adm-name').value = '';
+      document.getElementById('recep-adm-phone').value = '';
+    } catch(err) {
+      alert('Error: ' + err.message);
+    }
+  }
+
+  function logoutSession() {
+    if (confirm('Log out from Receptionist Desk?')) {
+      localStorage.removeItem('gymos_web_session');
+      window.location.href = '../../index.html';
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', loadReceptionistLogs);
+</script>
+</body>
+</html>

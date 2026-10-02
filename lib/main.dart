@@ -25,6 +25,7 @@ import 'core/services/alerts_notification_engine.dart';
 import 'core/services/version_check_service.dart';
 import 'core/config/supabase_config.dart';
 import 'core/widgets/configuration_error_screen.dart';
+import 'core/navigation/app_router.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -111,7 +112,7 @@ void main() async {
   }
 }
 
-final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
+final GlobalKey<NavigatorState> rootNavigatorKey = AppRouter.rootNavigatorKey;
 
 class GymOSApp extends StatefulWidget {
   final LocalStorageService localStorageService;

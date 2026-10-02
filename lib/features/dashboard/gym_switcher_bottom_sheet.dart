@@ -234,11 +234,7 @@ class GymSwitcherBottomSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final authVm = Provider.of<AuthViewModel>(context);
     final activeAssoc = authVm.activeAssociation;
-    final activeRole = activeAssoc?.role;
-    final associations = authVm.userAssociations.where((assoc) {
-      if (activeRole == null) return true;
-      return assoc.role == activeRole;
-    }).toList();
+    final associations = authVm.userAssociations;
 
     return DraggableScrollableSheet(
       initialChildSize: 0.6,

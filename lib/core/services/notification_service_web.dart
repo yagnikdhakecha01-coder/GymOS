@@ -9,8 +9,9 @@ class NotificationService {
     required int id,
     required String title,
     required String body,
+    String? payload,
     bool force = false,
   }) async {
-    print('Web Notification: $title - $body');
+    print('Web Notification: $title - $body (payload: $payload)');
   }
 }

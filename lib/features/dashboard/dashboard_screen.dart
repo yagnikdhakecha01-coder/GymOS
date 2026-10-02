@@ -10,6 +10,7 @@ import '../../core/services/supabase_service.dart';
 import '../../core/services/gym_logo_cache_service.dart';
 import '../../core/widgets/sparkline.dart';
 import '../../core/widgets/sparkline_chart.dart';
+import '../../core/widgets/app_cached_avatar.dart';
 import '../authentication/auth_viewmodel.dart';
 import '../authentication/role_selection_screen.dart';
 import '../subscription/owner_subscription_screen.dart';
@@ -164,7 +165,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       const Icon(Icons.email_outlined, color: AppTheme.primary, size: 18),
                       const SizedBox(width: 8),
                       Text(
-                        'support@gymos.com',
+                        'support@gymos.tech',
                         style: GoogleFonts.inter(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
@@ -1263,11 +1264,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           ),
                           child: CircleAvatar(
                             radius: 8,
-                            backgroundImage: NetworkImage(
-                              url.isNotEmpty 
-                                  ? url 
-                                  : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=100'
-                            ),
+                            backgroundColor: const Color(0xFF6366F1),
+                            backgroundImage: (url.isNotEmpty && !AppCachedAvatar.isDummyUrl(url))
+                                ? NetworkImage(url)
+                                : null,
+                            child: (url.isEmpty || AppCachedAvatar.isDummyUrl(url))
+                                ? const Icon(Icons.person, size: 10, color: Colors.white)
+                                : null,
                           ),
                         ),
                       )),

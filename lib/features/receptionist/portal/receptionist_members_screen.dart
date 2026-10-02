@@ -14,6 +14,7 @@ import '../../members/add_trial_member_screen.dart';
 import '../../members/trial_members_viewmodel.dart';
 import '../../../core/widgets/add_member_selection_sheet.dart';
 import '../receptionist_viewmodel.dart';
+import '../../../core/widgets/app_cached_avatar.dart';
 
 class ReceptionistMembersScreen extends StatefulWidget {
   const ReceptionistMembersScreen({super.key});
@@ -389,18 +390,11 @@ class _ReceptionistMembersScreenState extends State<ReceptionistMembersScreen> w
             children: [
               Row(
                 children: [
-                  ClipRRect(
+                  AppCachedAvatar(
+                    imageUrl: member.avatar,
+                    name: member.name,
+                    size: 44,
                     borderRadius: BorderRadius.circular(20),
-                    child: Container(
-                      width: 44,
-                      height: 44,
-                      color: AppTheme.primaryLight,
-                      child: Image.network(
-                        member.avatar.isNotEmpty ? member.avatar : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
-                        fit: BoxFit.cover,
-                        errorBuilder: (c, e, s) => Center(child: Text(member.name.isNotEmpty ? member.name[0] : 'M', style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.primary))),
-                      ),
-                    ),
                   ),
                   const SizedBox(width: 14),
                   Expanded(

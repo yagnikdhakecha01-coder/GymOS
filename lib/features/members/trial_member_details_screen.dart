@@ -5,8 +5,9 @@ import 'package:intl/intl.dart';
 import '../../core/theme/theme.dart';
 import '../../core/widgets/custom_card.dart';
 import '../../core/models/trial_member.dart';
-import 'add_trial_member_screen.dart';
 import 'add_member_wizard_screen.dart';
+import 'add_trial_member_screen.dart';
+import '../../core/widgets/app_cached_avatar.dart';
 
 class TrialMemberDetailsScreen extends StatelessWidget {
   final TrialMember trial;
@@ -113,13 +114,10 @@ class TrialMemberDetailsScreen extends StatelessWidget {
                       child: Column(
                         children: [
                           Center(
-                            child: CircleAvatar(
-                              radius: 48,
-                              backgroundColor: AppTheme.primaryLight,
-                              backgroundImage: trial.avatar.isNotEmpty ? NetworkImage(trial.avatar) : null,
-                              child: trial.avatar.isEmpty
-                                  ? Icon(Icons.person, size: 48, color: AppTheme.primary)
-                                  : null,
+                            child: AppCachedAvatar(
+                              imageUrl: trial.avatar,
+                              name: trial.name,
+                              size: 96,
                             ),
                           ),
                           const SizedBox(height: 12),

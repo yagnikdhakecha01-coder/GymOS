@@ -137,7 +137,7 @@ class _HelpSupportScreenState extends State<HelpSupportScreen> {
                     children: [
                       const Icon(Icons.email_outlined, color: AppTheme.primary, size: 20),
                       const SizedBox(width: 12),
-                      Text('support@gymos.com', style: GoogleFonts.inter(fontSize: 13.5, color: AppTheme.textPrimary)),
+                      Text('support@gymos.tech', style: GoogleFonts.inter(fontSize: 13.5, color: AppTheme.textPrimary)),
                     ],
                   ),
                   const SizedBox(height: 12),
@@ -145,7 +145,7 @@ class _HelpSupportScreenState extends State<HelpSupportScreen> {
                     children: [
                       const Icon(Icons.phone_outlined, color: AppTheme.primary, size: 20),
                       const SizedBox(width: 12),
-                      Text('+91 99887 76655', style: GoogleFonts.inter(fontSize: 13.5, color: AppTheme.textPrimary)),
+                      Text('+91 8160490013', style: GoogleFonts.inter(fontSize: 13.5, color: AppTheme.textPrimary)),
                     ],
                   ),
                 ],

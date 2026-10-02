@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'supabase_service.dart';
 import 'notification_service_mobile.dart';
 import 'version_check_service.dart';
@@ -10,10 +12,48 @@ import '../../features/authentication/auth_viewmodel.dart';
 
 class AlertsNotificationEngine {
   static Timer? _timer;
+  static RealtimeChannel? _realtimeChannel;
   static final Set<String> _notifiedEntities = {};
   static bool _isRunning = false;
 
-  /// Starts the notification background check loop (every 30 seconds)
+  static DateTime? _parseDate(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return null;
+    final trimmed = raw.trim();
+    final iso = DateTime.tryParse(trimmed);
+    if (iso != null) return DateTime(iso.year, iso.month, iso.day);
+    for (final fmt in ['dd MMM yyyy', 'dd-MM-yyyy', 'yyyy-MM-dd', 'dd/MM/yyyy', 'd MMM yyyy']) {
+      try {
+        final d = DateFormat(fmt).parse(trimmed);
+        return DateTime(d.year, d.month, d.day);
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  static DateTime? _getUserStartDate({
+    required bool isOwner,
+    required bool isStaff,
+    required bool isMember,
+    required AuthViewModel authVm,
+    required dynamic storage,
+  }) {
+    String? rawDate;
+    if (isMember) {
+      rawDate = storage.getString('member_cached_join_date') ??
+                storage.getString('member_join_date');
+    } else if (isStaff) {
+      rawDate = authVm.staffRecord?.joinDate ?? 
+                authVm.staffRecord?.createdAt ??
+                storage.getString('staff_join_date');
+    } else if (isOwner) {
+      rawDate = authVm.activeAssociation?.createdAt ??
+                authVm.gymInfo?['created_at']?.toString() ??
+                authVm.currentUser?.createdAt;
+    }
+    return _parseDate(rawDate);
+  }
+
+  /// Starts the notification background check loop & realtime listener
   static void start(BuildContext context) {
     if (_isRunning) return;
     _isRunning = true;
@@ -33,16 +73,28 @@ class AlertsNotificationEngine {
       } catch (_) {}
     }
 
-    // Periodically run check every 30 seconds to guarantee push alerts & badge count without network thrashing
+    // ── 1. REALTIME LISTENER FOR INSTANT SUPPORT MESSAGES & ALERTS ──
+    _subscribeRealtime(context);
+
+    // ── 2. PERIODIC POLL LOOP (every 30 seconds) ──
     _timer = Timer.periodic(const Duration(seconds: 30), (timer) async {
       try {
-        // Periodic check for forced app update
-        if (!VersionCheckEngine.isShowingForceDialog) {
+        // Periodic check for app update (respects daily snooze)
+        if (!VersionCheckEngine.isShowingDialog) {
           try {
-            final verResult = await VersionCheckService.checkVersion();
-            if (verResult.isUpdateAvailable && verResult.shouldForce) {
-              VersionCheckEngine.showForceUpdateDialog(verResult);
-              return;
+            final isSnoozed = await VersionCheckService.isSnoozedToday();
+            if (!isSnoozed) {
+              final verResult = await VersionCheckService.checkVersion();
+              if (verResult.isUpdateAvailable) {
+                final targetContext = VersionCheckEngine.navigatorKey?.currentContext;
+                if (targetContext != null && targetContext.mounted) {
+                  VersionCheckEngine.showUpdateDialog(verResult, targetContext);
+                  return;
+                } else if (context.mounted) {
+                  VersionCheckEngine.showUpdateDialog(verResult, context);
+                  return;
+                }
+              }
             }
           } catch (_) {}
         }
@@ -56,10 +108,16 @@ class AlertsNotificationEngine {
         final staffId = authVm.staffRecord?.id;
         final authUid = authVm.currentUser?.id;
         final memberId = storage.getString('member_id');
+        final userStartDate = _getUserStartDate(
+          isOwner: isOwner,
+          isStaff: isStaff,
+          isMember: isMember,
+          authVm: authVm,
+          storage: storage,
+        );
         
         if (gymId != null && SupabaseService.isInitialized) {
-          // 1. Run membership expiring alerts (Dual Notification: Owner + Specific Member)
-          // Run only on Owner client to avoid redundant DB executions
+          // A. Run membership expiring alerts (Owner only)
           if (isOwner) {
             try {
               await SupabaseService.client.rpc('check_membership_expiring_alerts', params: {'p_gym_id': gymId});
@@ -70,7 +128,7 @@ class AlertsNotificationEngine {
             }
           }
 
-          // 2. Fetch notifications for this gym and filter strictly by active role & user
+          // B. Fetch notifications for this gym and filter strictly by active role, user & join date
           try {
             final List allNotifs = await SupabaseService.client
                 .from('notifications')
@@ -81,6 +139,14 @@ class AlertsNotificationEngine {
             final matchingNotifs = allNotifs.where((n) {
               final targetRole = (n['target_role']?.toString() ?? '').toLowerCase();
               final notifUserId = n['user_id']?.toString();
+
+              // Strictly exclude notifications created before user's join / start date
+              if (userStartDate != null) {
+                final notifCreated = DateTime.tryParse(n['created_at']?.toString() ?? '');
+                if (notifCreated != null && notifCreated.isBefore(userStartDate)) {
+                  return false;
+                }
+              }
 
               if (isOwner) {
                 // Owner sees Owner, All, Both, or untargeted legacy alerts
@@ -117,6 +183,18 @@ class AlertsNotificationEngine {
               final id = notif['id']?.toString() ?? '';
               final title = notif['title']?.toString() ?? 'Notification';
               final body = notif['body']?.toString() ?? notif['message']?.toString() ?? '';
+              final type = notif['type']?.toString() ?? '';
+
+              String? payload;
+              bool forceAlert = false;
+              if (type.startsWith('support_ticket:')) {
+                final ticketId = type.replaceFirst('support_ticket:', '').trim();
+                payload = jsonEncode({'type': 'support_ticket', 'ticket_id': ticketId});
+                forceAlert = true;
+              } else if (type == 'support_ticket') {
+                payload = jsonEncode({'type': 'support_ticket', 'ticket_id': notif['entity_id'] ?? ''});
+                forceAlert = true;
+              }
 
               final uniqueKey = 'db_notif_$id';
               if (!_notifiedEntities.contains(uniqueKey)) {
@@ -127,6 +205,8 @@ class AlertsNotificationEngine {
                   id: uniqueKey.hashCode,
                   title: title,
                   body: body,
+                  payload: payload,
+                  force: forceAlert,
                 );
               }
             }
@@ -134,7 +214,7 @@ class AlertsNotificationEngine {
             debugPrint('Error polling notifications: $e');
           }
 
-          // 3. System Alerts Check (ONLY for Gym Owner / Admin)
+          // C. System Alerts Check (ONLY for Gym Owner / Admin)
           if (isOwner) {
             try {
               final List response = await SupabaseService.client.rpc(
@@ -184,9 +264,129 @@ class AlertsNotificationEngine {
     });
   }
 
+  static void _subscribeRealtime(BuildContext context) {
+    if (!SupabaseService.isInitialized) return;
+    try {
+      _realtimeChannel?.unsubscribe();
+      _realtimeChannel = SupabaseService.client
+          .channel('public:notifications_alerts_engine')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.insert,
+            schema: 'public',
+            table: 'notifications',
+            callback: (payload) async {
+              final record = payload.newRecord;
+              if (record.isEmpty) return;
+
+              final authVm = Provider.of<AuthViewModel>(context, listen: false);
+              final gymRepo = Provider.of<GymRepository>(context, listen: false);
+              final storage = gymRepo.storage;
+
+              final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
+              final notifGymId = record['gym_id']?.toString();
+              if (gymId != null && notifGymId != null && gymId != notifGymId) {
+                return; // Different gym
+              }
+
+              final role = (authVm.selectedRole ?? authVm.storage.getUserRole() ?? '').toLowerCase();
+              final bool isOwner = role == 'owner' || role == 'superadmin' || role == 'admin';
+              final bool isStaff = role == 'staff' || role == 'receptionist' || role == 'trainer';
+              final bool isMember = role == 'member';
+              final staffId = authVm.staffRecord?.id;
+              final authUid = authVm.currentUser?.id;
+              final memberId = storage.getString('member_id');
+
+              final targetRole = (record['target_role']?.toString() ?? '').toLowerCase();
+              final notifUserId = record['user_id']?.toString();
+
+              // Check join date
+              final userStartDate = _getUserStartDate(
+                isOwner: isOwner,
+                isStaff: isStaff,
+                isMember: isMember,
+                authVm: authVm,
+                storage: storage,
+              );
+              if (userStartDate != null) {
+                final notifCreated = DateTime.tryParse(record['created_at']?.toString() ?? '');
+                if (notifCreated != null && notifCreated.isBefore(userStartDate)) {
+                  return;
+                }
+              }
+
+              bool isMatch = false;
+              if (isOwner) {
+                isMatch = targetRole == 'owner' || targetRole == 'all' || targetRole == 'both' || targetRole.isEmpty;
+              } else if (isStaff) {
+                if (targetRole != 'owner') {
+                  final bool isRoleMatch = targetRole == 'staff' || targetRole == 'all' || targetRole == 'both';
+                  if (isRoleMatch) {
+                    if (notifUserId != null && notifUserId.isNotEmpty) {
+                      isMatch = (notifUserId == staffId || notifUserId == authUid);
+                    } else {
+                      isMatch = true;
+                    }
+                  }
+                }
+              } else if (isMember) {
+                if (targetRole != 'owner' && targetRole != 'staff') {
+                  final bool isRoleMatch = targetRole == 'member' || targetRole == 'all' || targetRole == 'both';
+                  if (isRoleMatch) {
+                    if (notifUserId != null && notifUserId.isNotEmpty) {
+                      isMatch = (notifUserId == memberId || notifUserId == authUid);
+                    } else {
+                      isMatch = true;
+                    }
+                  }
+                }
+              }
+
+              if (!isMatch) return;
+
+              final id = record['id']?.toString() ?? '';
+              final title = record['title']?.toString() ?? 'Notification';
+              final body = record['body']?.toString() ?? record['message']?.toString() ?? '';
+              final type = record['type']?.toString() ?? '';
+
+              String? notifPayload;
+              bool forceAlert = false;
+              if (type.startsWith('support_ticket:')) {
+                final ticketId = type.replaceFirst('support_ticket:', '').trim();
+                notifPayload = jsonEncode({'type': 'support_ticket', 'ticket_id': ticketId});
+                forceAlert = true;
+              } else if (type == 'support_ticket') {
+                notifPayload = jsonEncode({'type': 'support_ticket', 'ticket_id': record['entity_id'] ?? ''});
+                forceAlert = true;
+              }
+
+              final uniqueKey = 'db_notif_$id';
+              if (!_notifiedEntities.contains(uniqueKey)) {
+                _notifiedEntities.add(uniqueKey);
+                await storage.setString('notified_entities', jsonEncode(_notifiedEntities.toList()));
+
+                authVm.setUnreadNotificationsCount(authVm.unreadNotificationsCount + 1);
+
+                await NotificationService.showNotification(
+                  id: uniqueKey.hashCode,
+                  title: title,
+                  body: body,
+                  payload: notifPayload,
+                  force: forceAlert,
+                );
+              }
+            },
+          )
+          .subscribe();
+    } catch (e) {
+      debugPrint('AlertsNotificationEngine realtime subscription error: $e');
+    }
+  }
+
   static void stop() {
     _timer?.cancel();
     _timer = null;
+    _realtimeChannel?.unsubscribe();
+    _realtimeChannel = null;
     _isRunning = false;
   }
 }

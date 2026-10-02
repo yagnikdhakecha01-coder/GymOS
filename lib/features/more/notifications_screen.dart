@@ -5,6 +5,9 @@ import 'package:intl/intl.dart';
 import '../../core/theme/theme.dart';
 import '../../core/widgets/custom_card.dart';
 import '../../core/services/supabase_service.dart';
+import '../../core/navigation/app_router.dart';
+import '../dashboard/support_chat_screen.dart';
+import '../dashboard/support_tickets_screen.dart';
 import '../authentication/auth_viewmodel.dart';
 
 class NotificationsScreen extends StatefulWidget {
@@ -29,6 +32,20 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     });
   }
 
+  DateTime? _parseDate(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return null;
+    final trimmed = raw.trim();
+    final iso = DateTime.tryParse(trimmed);
+    if (iso != null) return DateTime(iso.year, iso.month, iso.day);
+    for (final fmt in ['dd MMM yyyy', 'dd-MM-yyyy', 'yyyy-MM-dd', 'dd/MM/yyyy', 'd MMM yyyy']) {
+      try {
+        final d = DateFormat(fmt).parse(trimmed);
+        return DateTime(d.year, d.month, d.day);
+      } catch (_) {}
+    }
+    return null;
+  }
+
   Future<void> _loadDbNotifications() async {
     try {
       final authVm = Provider.of<AuthViewModel>(context, listen: false);
@@ -38,6 +55,19 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       final bool isStaff = role == 'staff' || role == 'receptionist' || role == 'trainer';
       final staffId = authVm.staffRecord?.id;
       final authUid = authVm.currentUser?.id;
+
+      DateTime? userStartDate;
+      if (isStaff) {
+        final raw = authVm.staffRecord?.joinDate ?? authVm.staffRecord?.createdAt ?? authVm.activeAssociation?.createdAt;
+        if (raw != null && raw.isNotEmpty) {
+          userStartDate = _parseDate(raw);
+        }
+      } else if (isOwner) {
+        final raw = authVm.activeAssociation?.createdAt ?? authVm.gymInfo?['created_at']?.toString() ?? authVm.currentUser?.createdAt;
+        if (raw != null && raw.isNotEmpty) {
+          userStartDate = _parseDate(raw);
+        }
+      }
 
       if (gymId != null) {
         final res = await SupabaseService.client
@@ -50,6 +80,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         final filtered = rawList.where((n) {
           final targetRole = (n['target_role']?.toString() ?? '').toLowerCase();
           final notifUserId = n['user_id']?.toString();
+
+          if (userStartDate != null) {
+            final notifCreated = DateTime.tryParse(n['created_at']?.toString() ?? '');
+            if (notifCreated != null && notifCreated.isBefore(userStartDate)) {
+              return false; // Skip notifications created before user joined/started
+            }
+          }
 
           if (isOwner) {
             // Owner sees owner alerts, all, both, or legacy untargeted alerts
@@ -154,6 +191,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     final icon = _getIconForTitle(title);
     final color = _getColorForTitle(title);
 
+    final type = item['type']?.toString() ?? '';
+    final isSupportTicket = type.startsWith('support_ticket');
+    final ticketId = type.startsWith('support_ticket:') ? type.replaceFirst('support_ticket:', '').trim() : '';
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -179,6 +220,35 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             onPressed: () => Navigator.pop(context),
             child: const Text('Close'),
           ),
+          if (isSupportTicket)
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primary,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              onPressed: () async {
+                Navigator.pop(context);
+                final nav = Navigator.of(context);
+                Map<String, dynamic>? ticketData;
+                if (ticketId.isNotEmpty && SupabaseService.isInitialized) {
+                  try {
+                    final res = await SupabaseService.client
+                        .from('support_tickets')
+                        .select()
+                        .eq('id', ticketId)
+                        .maybeSingle();
+                    if (res != null) ticketData = Map<String, dynamic>.from(res);
+                  } catch (_) {}
+                }
+                if (ticketData != null) {
+                  nav.push(AppRouter.slideRoute(SupportChatScreen(ticket: ticketData)));
+                } else {
+                  nav.push(AppRouter.slideRoute(const SupportTicketsScreen()));
+                }
+              },
+              child: const Text('Open Ticket'),
+            ),
         ],
       ),
     );

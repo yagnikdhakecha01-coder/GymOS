@@ -1741,7 +1741,7 @@ class _AddMemberWizardScreenState extends State<AddMemberWizardScreen> {
       name: _nameController.text.trim(),
       email: '',
       phone: _phoneController.text.trim(),
-      avatar: _avatarUrl.isNotEmpty ? _avatarUrl : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
+      avatar: _avatarUrl,
       joinDate: _joiningDate != null ? DateFormat('dd MMM yyyy').format(_joiningDate!) : DateFormat('dd MMM yyyy').format(DateTime.now()),
       status: 'Active',
       membershipPlanId: _selectedPlan?.id ?? '',

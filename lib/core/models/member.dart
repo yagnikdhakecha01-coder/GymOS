@@ -52,6 +52,35 @@ class Member {
       (extraFields['memberCode'] as String?) ??
       (phone.isNotEmpty ? phone : (id.length > 8 ? id.substring(0, 8).toUpperCase() : id));
 
+  DateTime? get parsedExpiryDate {
+    final raw = (extraFields['expiryDate'] ?? extraFields['expiry_date']) as String?;
+    if (raw == null || raw.trim().isEmpty) return null;
+    return DateTime.tryParse(raw.trim());
+  }
+
+  DateTime? get parsedJoinDate {
+    if (joinDate.trim().isEmpty) return null;
+    return DateTime.tryParse(joinDate.trim());
+  }
+
+  bool get isExpired {
+    final exp = parsedExpiryDate;
+    if (exp == null) return false;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final expDay = DateTime(exp.year, exp.month, exp.day);
+    return expDay.isBefore(today);
+  }
+
+  int? get daysUntilExpiry {
+    final exp = parsedExpiryDate;
+    if (exp == null) return null;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final expDay = DateTime(exp.year, exp.month, exp.day);
+    return expDay.difference(today).inDays;
+  }
+
   static Map<String, dynamic> _parseExtraFields(dynamic raw) {
     if (raw == null) return const {};
     if (raw is Map<String, dynamic>) return raw;

@@ -11,6 +11,7 @@ import 'add_trial_member_screen.dart';
 import 'trial_member_details_screen.dart';
 import 'add_member_wizard_screen.dart';
 import '../authentication/auth_viewmodel.dart';
+import '../../core/widgets/app_cached_avatar.dart';
 
 class TrialMembersScreen extends StatefulWidget {
   final String? initialFilter;
@@ -247,24 +248,11 @@ class _TrialMembersScreenState extends State<TrialMembersScreen> {
                               Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  // Profile image
-                                  ClipRRect(
+                                  AppCachedAvatar(
+                                    imageUrl: trial.avatar,
+                                    name: trial.name,
+                                    size: 44,
                                     borderRadius: BorderRadius.circular(20),
-                                    child: Container(
-                                      width: 44,
-                                      height: 44,
-                                      color: AppTheme.primaryLight,
-                                      child: Image.network(
-                                        trial.avatar.isNotEmpty ? trial.avatar : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
-                                        fit: BoxFit.cover,
-                                        errorBuilder: (_, __, ___) => Center(
-                                          child: Text(
-                                            trial.name.isNotEmpty ? trial.name[0].toUpperCase() : '?',
-                                            style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.primary),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
                                   ),
                                   const SizedBox(width: 14),
 

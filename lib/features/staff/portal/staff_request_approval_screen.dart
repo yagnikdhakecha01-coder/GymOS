@@ -6,8 +6,9 @@ import '../../../core/theme/theme.dart';
 import '../../../core/widgets/custom_card.dart';
 import '../../../core/repository/gym_repository.dart';
 import '../../authentication/auth_viewmodel.dart';
-import '../staff_viewmodel.dart';
 import '../../../core/models/staff.dart';
+import '../staff_viewmodel.dart';
+import '../../../core/widgets/app_cached_avatar.dart';
 
 class StaffRequestApprovalScreen extends StatefulWidget {
   final int initialTabIndex; // 0 for Leaves, 1 for Advances
@@ -167,13 +168,10 @@ class _StaffRequestApprovalScreenState extends State<StaffRequestApprovalScreen>
               children: [
                 Row(
                   children: [
-                    CircleAvatar(
-                      radius: 20,
-                      backgroundImage: NetworkImage(
-                        (staff?.avatar != null && staff!.avatar.isNotEmpty)
-                            ? staff.avatar
-                            : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100',
-                      ),
+                    AppCachedAvatar(
+                      imageUrl: staff?.avatar,
+                      name: staff?.name ?? 'Staff',
+                      size: 40,
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -306,13 +304,10 @@ class _StaffRequestApprovalScreenState extends State<StaffRequestApprovalScreen>
               children: [
                 Row(
                   children: [
-                    CircleAvatar(
-                      radius: 20,
-                      backgroundImage: NetworkImage(
-                        (staff?.avatar != null && staff!.avatar.isNotEmpty)
-                            ? staff.avatar
-                            : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100',
-                      ),
+                    AppCachedAvatar(
+                      imageUrl: staff?.avatar,
+                      name: staff?.name ?? 'Staff',
+                      size: 40,
                     ),
                     const SizedBox(width: 12),
                     Expanded(

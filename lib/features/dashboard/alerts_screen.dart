@@ -12,6 +12,7 @@ import '../members/trial_members_screen.dart';
 import '../members/members_viewmodel.dart';
 import '../../core/models/member.dart';
 import '../staff/portal/staff_request_approval_screen.dart';
+import '../../core/widgets/app_cached_avatar.dart';
 
 class AlertsScreen extends StatefulWidget {
   const AlertsScreen({super.key});
@@ -904,11 +905,13 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
                           ),
                           child: CircleAvatar(
                             radius: 8,
-                            backgroundImage: NetworkImage(
-                              url.isNotEmpty 
-                                  ? url 
-                                  : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=100'
-                            ),
+                            backgroundColor: const Color(0xFF6366F1),
+                            backgroundImage: (url.isNotEmpty && !AppCachedAvatar.isDummyUrl(url))
+                                ? NetworkImage(url)
+                                : null,
+                            child: (url.isEmpty || AppCachedAvatar.isDummyUrl(url))
+                                ? const Icon(Icons.person, size: 10, color: Colors.white)
+                                : null,
                           ),
                         ),
                       )),

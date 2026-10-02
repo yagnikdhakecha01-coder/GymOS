@@ -28,6 +28,7 @@ import '../../core/models/association_model.dart';
 import '../../core/models/user_profile.dart';
 import '../../core/services/supabase_service.dart';
 import '../../core/services/image_security_service.dart';
+import '../../core/widgets/app_cached_avatar.dart';
 import '../../core/widgets/invitation_share_sheet.dart';
 import '../../core/models/gym_rules_model.dart';
 import '../../core/repository/gym_repository.dart';
@@ -136,10 +137,10 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
                     children: [
                       Row(
                         children: [
-                          CircleAvatar(
-                            radius: 18,
-                            backgroundImage: NetworkImage(member.avatar),
-                            backgroundColor: AppTheme.primaryLight,
+                          AppCachedAvatar(
+                            imageUrl: member.avatar,
+                            name: member.name,
+                            size: 36,
                           ),
                           const SizedBox(width: 10),
                           Column(
@@ -402,9 +403,13 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
   @override
   void initState() {
     super.initState();
-    _loadInvitation();
-    _loadPtAssignment();
-    _loadAgreement();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _loadInvitation();
+        _loadPtAssignment();
+        _loadAgreement();
+      }
+    });
     // Load actual notes specific to this member without hardcoded dummy defaults
     _ownerNotesController.text = widget.member.notes.isNotEmpty
         ? widget.member.notes
@@ -2131,18 +2136,18 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
                 children: [
                   CircleAvatar(
                     radius: 40,
-                    backgroundImage: member.avatar.isNotEmpty ? NetworkImage(member.avatar) : null,
-                    backgroundColor: AppTheme.primaryLight,
+                    backgroundImage: !AppCachedAvatar.isDummyUrl(member.avatar) ? NetworkImage(member.avatar) : null,
+                    backgroundColor: AppCachedAvatar.getColorPair(member.name).bg,
                     child: _isUploadingPhoto
                         ? const SizedBox(
                             width: 28,
                             height: 28,
                             child: CircularProgressIndicator(strokeWidth: 3, color: AppTheme.primary),
                           )
-                        : (member.avatar.isEmpty
+                        : (AppCachedAvatar.isDummyUrl(member.avatar)
                             ? Text(
                                 member.name.isNotEmpty ? member.name[0].toUpperCase() : 'M',
-                                style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.bold, color: AppTheme.primary),
+                                style: GoogleFonts.inter(fontSize: 28, fontWeight: FontWeight.bold, color: AppCachedAvatar.getColorPair(member.name).text),
                               )
                             : null),
                   ),

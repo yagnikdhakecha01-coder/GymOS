@@ -59,13 +59,39 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
   Future<void> _loadAnnouncements() async {
     try {
       final repo = Provider.of<GymRepository>(context, listen: false);
+      final authVm = Provider.of<AuthViewModel>(context, listen: false);
       final gymId = repo.storage.getGymInfo()?['id'];
-      final data = await AnnouncementsService.getAnnouncements(gymId: gymId);
+
+      DateTime? staffJoinDate;
+      final rawJoin = authVm.staffRecord?.joinDate ?? authVm.staffRecord?.createdAt ?? repo.storage.getString('staff_join_date');
+      if (rawJoin != null && rawJoin.trim().isNotEmpty) {
+        final trimmed = rawJoin.trim();
+        final iso = DateTime.tryParse(trimmed);
+        if (iso != null) {
+          staffJoinDate = DateTime(iso.year, iso.month, iso.day);
+        } else {
+          for (final fmt in ['dd MMM yyyy', 'dd-MM-yyyy', 'yyyy-MM-dd', 'dd/MM/yyyy', 'd MMM yyyy']) {
+            try {
+              final d = DateFormat(fmt).parse(trimmed);
+              staffJoinDate = DateTime(d.year, d.month, d.day);
+              break;
+            } catch (_) {}
+          }
+        }
+      }
+
+      final data = await AnnouncementsService.getAnnouncements(gymId: gymId, filterJoinDate: staffJoinDate);
       final filtered = data.where((e) {
         final aud = e.audience.toLowerCase();
         final st = e.status.toLowerCase();
-        return (st == 'sent' || st.isEmpty) && 
+        final matchesRole = (st == 'sent' || st.isEmpty) && 
                (aud.contains('staff') || aud.contains('member') || aud.contains('everyone') || aud == 'all');
+        if (!matchesRole) return false;
+        if (staffJoinDate != null && e.date.isNotEmpty) {
+          final d = DateTime.tryParse(e.date);
+          if (d != null && d.isBefore(staffJoinDate)) return false;
+        }
+        return true;
       }).toList();
       if (mounted) {
         setState(() {

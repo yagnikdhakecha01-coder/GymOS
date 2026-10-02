@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GymOS — Authorize Web Login</title>
+  <link rel="icon" type="image/png" href="https://img.icons8.com/color/48/dumbbell.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/main.css">
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body {
+      background: #F8F8FA;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 16px;
+    }
+    .verify-card {
+      width: 100%;
+      max-width: 440px;
+      background: #fff;
+      border-radius: 20px;
+      padding: 32px 24px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.06);
+      border: 1px solid var(--border);
+      text-align: center;
+    }
+    .lock-avatar {
+      width: 72px;
+      height: 72px;
+      background: var(--primary-light);
+      color: var(--primary);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 20px;
+    }
+    .role-select-box {
+      margin: 20px 0;
+      text-align: left;
+      background: var(--bg-surface);
+      padding: 16px;
+      border-radius: 12px;
+    }
+    .role-option {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      background: #fff;
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      margin-top: 8px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .role-option.selected {
+      border-color: var(--primary);
+      background: var(--primary-light);
+    }
+    .role-option input {
+      accent-color: var(--primary);
+    }
+  </style>
+</head>
+<body>
+
+  <div class="verify-card" id="main-card">
+    <div class="lock-avatar">
+      <i data-lucide="shield-check" style="width: 38px; height: 38px;"></i>
+    </div>
+
+    <h2 style="font-size: 22px; margin-bottom: 8px;">Authorize GymOS Web?</h2>
+    <p style="font-size: 14px; color: var(--text-secondary); margin-bottom: 20px;">
+      A computer is requesting to log in to your GymOS account.
+    </p>
+
+    <div class="role-select-box">
+      <span style="font-size: 12px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase;">Confirm Your Role</span>
+      
+      <label class="role-option selected" onclick="selectRole('owner', this)">
+        <input type="radio" name="auth_role" value="owner" checked>
+        <div>
+          <strong style="font-size: 14px; display: block;">👑 Gym Owner / Admin</strong>
+          <span style="font-size: 12px; color: var(--text-secondary);">Full access to analytics, finances, staff & members</span>
+        </div>
+      </label>
+
+      <label class="role-option" onclick="selectRole('trainer', this)">
+        <input type="radio" name="auth_role" value="trainer">
+        <div>
+          <strong style="font-size: 14px; display: block;">🏋️ Trainer</strong>
+          <span style="font-size: 12px; color: var(--text-secondary);">Access to assigned clients, diets & workouts</span>
+        </div>
+      </label>
+
+      <label class="role-option" onclick="selectRole('receptionist', this)">
+        <input type="radio" name="auth_role" value="receptionist">
+        <div>
+          <strong style="font-size: 14px; display: block;">📋 Receptionist (Front Desk)</strong>
+          <span style="font-size: 12px; color: var(--text-secondary);">Quick check-ins, walk-in admissions & fees</span>
+        </div>
+      </label>
+
+      <label class="role-option" onclick="selectRole('member', this)">
+        <input type="radio" name="auth_role" value="member">
+        <div>
+          <strong style="font-size: 14px; display: block;">🏃 Member</strong>
+          <span style="font-size: 12px; color: var(--text-secondary);">Personal attendance, diet plans & payment bills</span>
+        </div>
+      </label>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+      <button id="btn-approve" class="btn btn-primary" style="width: 100%; padding: 14px;" onclick="approveLogin()">
+        <i data-lucide="check-circle" style="width: 18px; height: 18px;"></i>
+        Approve Login
+      </button>
+      <button class="btn btn-secondary" style="width: 100%;" onclick="window.close()">
+        Cancel
+      </button>
+    </div>
+  </div>
+
+  <!-- Success Card -->
+  <div class="verify-card" id="success-card" style="display: none;">
+    <div class="lock-avatar" style="background: var(--success-light); color: var(--success);">
+      <i data-lucide="check" style="width: 38px; height: 38px;"></i>
+    </div>
+    <h2 style="font-size: 22px; margin-bottom: 8px; color: var(--success);">Login Approved!</h2>
+    <p style="font-size: 14px; color: var(--text-secondary); margin-bottom: 24px;">
+      Your computer has been securely logged in. You can now close this tab on your phone.
+    </p>
+    <button class="btn btn-secondary" style="width: 100%;" onclick="window.close()">Close Window</button>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script>
+    lucide.createIcons();
+    let currentSelectedRole = 'owner';
+
+    function selectRole(role, el) {
+      currentSelectedRole = role;
+      document.querySelectorAll('.role-option').forEach(opt => opt.classList.remove('selected'));
+      el.classList.add('selected');
+      el.querySelector('input').checked = true;
+    }
+
+    async function approveLogin() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const token = urlParams.get('token');
+
+      if (!token) {
+        alert('Invalid or missing session token. Please scan the QR code again.');
+        return;
+      }
+
+      const approveBtn = document.getElementById('btn-approve');
+      approveBtn.disabled = true;
+      approveBtn.innerHTML = 'Authorizing...';
+
+      try {
+        // Query active gym
+        let gymId = null;
+        let userId = null;
+        try {
+          const { data: gym } = await supabaseClient.from('gyms').select('id, owner_id').limit(1).single();
+          if (gym) {
+            gymId = gym.id;
+            userId = gym.owner_id;
+          }
+        } catch(e) {}
+
+        const { data, error } = await supabaseClient.rpc('approve_web_login_session', {
+          p_session_token: token,
+          p_user_id: userId || '00000000-0000-0000-0000-000000000001',
+          p_gym_id: gymId || '00000000-0000-0000-0000-000000000001',
+          p_role: currentSelectedRole,
+          p_metadata: {
+            auth_device: navigator.userAgent,
+            verified_at: new Date().toISOString()
+          }
+        });
+
+        if (error) throw error;
+
+        document.getElementById('main-card').style.display = 'none';
+        document.getElementById('success-card').style.display = 'block';
+        lucide.createIcons();
+
+      } catch (err) {
+        alert('Authentication failed: ' + err.message);
+        approveBtn.disabled = false;
+        approveBtn.innerHTML = 'Approve Login';
+      }
+    }
+  </script>
+</body>
+</html>

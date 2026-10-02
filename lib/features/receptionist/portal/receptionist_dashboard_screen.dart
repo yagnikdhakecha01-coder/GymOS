@@ -28,6 +28,7 @@ import '../../finance/pending_payments_screen.dart';
 import '../../members/member_profile_screen.dart';
 import '../../members/members_viewmodel.dart';
 import '../../../core/models/member.dart';
+import '../../../core/widgets/app_cached_avatar.dart';
 import '../../dashboard/expiring_memberships_screen.dart';
 import '../../dashboard/alerts_screen.dart';
 
@@ -1006,11 +1007,13 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
                         ),
                         child: CircleAvatar(
                           radius: 10,
-                          backgroundImage: NetworkImage(
-                            url.isNotEmpty 
-                                ? url 
-                                : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=100',
-                          ),
+                          backgroundColor: const Color(0xFF6366F1),
+                          backgroundImage: (url.isNotEmpty && !AppCachedAvatar.isDummyUrl(url))
+                              ? NetworkImage(url)
+                              : null,
+                          child: (url.isEmpty || AppCachedAvatar.isDummyUrl(url))
+                              ? const Icon(Icons.person, size: 12, color: Colors.white)
+                              : null,
                         ),
                       ),
                     )).toList(),
@@ -1066,13 +1069,10 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
             children: [
               Row(
                 children: [
-                  CircleAvatar(
-                    radius: 22,
-                    backgroundImage: NetworkImage(
-                      member.avatar.isNotEmpty
-                          ? member.avatar
-                          : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
-                    ),
+                  AppCachedAvatar(
+                    imageUrl: member.avatar,
+                    name: member.name,
+                    size: 44,
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -1285,12 +1285,10 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
                                   borderRadius: BorderRadius.circular(10),
                                 ),
                                 child: ListTile(
-                                  leading: CircleAvatar(
-                                    backgroundImage: NetworkImage(
-                                      member.avatar.isNotEmpty
-                                          ? member.avatar
-                                          : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
-                                    ),
+                                  leading: AppCachedAvatar(
+                                    imageUrl: member.avatar,
+                                    name: member.name,
+                                    size: 40,
                                   ),
                                   title: Text(
                                     member.name,

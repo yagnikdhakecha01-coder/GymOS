@@ -161,6 +161,41 @@ class VersionCheckService {
 
     return VersionCheckResult.empty();
   }
+  static const String _snoozeDateKey = 'gymos_update_snooze_date';
+
+  /// Returns true if the user has already snoozed the update dialog today
+  static Future<bool> isSnoozedToday() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedDate = prefs.getString(_snoozeDateKey);
+      if (savedDate == null || savedDate.isEmpty) return false;
+
+      final now = DateTime.now();
+      final todayStr = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+      return savedDate == todayStr;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Snoozes the update dialog for the current calendar day
+  static Future<void> snoozeForToday() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final now = DateTime.now();
+      final todayStr = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+      await prefs.setString(_snoozeDateKey, todayStr);
+    } catch (_) {}
+  }
+
+  /// Clears the snooze date
+  static Future<void> clearSnooze() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_snoozeDateKey);
+    } catch (_) {}
+  }
+
   static Future<void> launchStoreUrl(String url) async {
     if (url.isEmpty) return;
     final uri = Uri.tryParse(url);
@@ -172,133 +207,172 @@ class VersionCheckService {
   }
 }
 
-class ForceUpdateScreen extends StatelessWidget {
+/// Clean center modal dialog with [X] close button, Later, and Update buttons
+class UpdatePromptDialog extends StatelessWidget {
   final VersionCheckResult result;
 
-  const ForceUpdateScreen({super.key, required this.result});
+  const UpdatePromptDialog({super.key, required this.result});
 
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: false, // Prevent physical back button on Android
-      child: Scaffold(
-        backgroundColor: AppTheme.background,
-        body: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 24.0),
-              child: Container(
-                constraints: const BoxConstraints(maxWidth: 440),
-                padding: const EdgeInsets.all(28.0),
-                decoration: BoxDecoration(
-                  color: AppTheme.cardBackground,
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.06),
-                      blurRadius: 24,
-                      offset: const Offset(0, 8),
+      canPop: true,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) {
+          VersionCheckService.snoozeForToday();
+        }
+      },
+      child: Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 380),
+          padding: const EdgeInsets.fromLTRB(22, 16, 22, 22),
+          decoration: BoxDecoration(
+            color: AppTheme.cardBackground,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.12),
+                blurRadius: 28,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Top Bar with Version Badge and Close [X] Button
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primaryLight,
+                      borderRadius: BorderRadius.circular(16),
                     ),
-                  ],
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 76,
-                      height: 76,
+                    child: Text(
+                      'v${result.latestVersion}',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.primary,
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+                  ),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(20),
+                    onTap: () async {
+                      await VersionCheckService.snoozeForToday();
+                      if (context.mounted) Navigator.pop(context);
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(6),
                       decoration: const BoxDecoration(
-                        color: AppTheme.primaryLight,
+                        color: AppTheme.surfaceGray,
                         shape: BoxShape.circle,
                       ),
                       child: const Icon(
-                        Icons.system_update_rounded,
-                        size: 38,
-                        color: AppTheme.primary,
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: AppTheme.primaryLight,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        'CRITICAL UPDATE',
-                        style: GoogleFonts.inter(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          color: AppTheme.primary,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Update Required',
-                      style: GoogleFonts.inter(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                        color: AppTheme.textPrimary,
-                        letterSpacing: -0.5,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'A mandatory update (v${result.latestVersion}) is required to continue using GymOS. Please update the app to proceed.',
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.inter(
-                        fontSize: 13,
+                        Icons.close_rounded,
+                        size: 18,
                         color: AppTheme.textSecondary,
-                        height: 1.5,
                       ),
                     ),
-                    if (result.releaseNotes.isNotEmpty) ...[
-                      const SizedBox(height: 20),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: AppTheme.surfaceGray,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: AppTheme.border),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+
+              // Center Icon
+              Container(
+                width: 68,
+                height: 68,
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryLight,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppTheme.primary.withValues(alpha: 0.15),
+                      blurRadius: 16,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.system_update_rounded,
+                  size: 34,
+                  color: AppTheme.primary,
+                ),
+              ),
+              const SizedBox(height: 18),
+
+              // Title
+              Text(
+                'Update Available',
+                style: GoogleFonts.inter(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: AppTheme.textPrimary,
+                  letterSpacing: -0.4,
+                ),
+              ),
+              const SizedBox(height: 8),
+
+              // Description
+              Text(
+                'A new version of GymOS is ready. Please update the app to enjoy the latest version and improvements.',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  color: AppTheme.textSecondary,
+                  height: 1.45,
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // Action Buttons: Later and Update
+              Row(
+                children: [
+                  Expanded(
+                    child: SizedBox(
+                      height: 44,
+                      child: OutlinedButton(
+                        onPressed: () async {
+                          await VersionCheckService.snoozeForToday();
+                          if (context.mounted) Navigator.pop(context);
+                        },
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: AppTheme.border),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          foregroundColor: AppTheme.textSecondary,
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              "What's New:",
-                              style: GoogleFonts.inter(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 12,
-                                color: AppTheme.textPrimary,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              result.releaseNotes,
-                              style: GoogleFonts.inter(
-                                fontSize: 12,
-                                color: AppTheme.textSecondary,
-                                height: 1.4,
-                              ),
-                            ),
-                          ],
+                        child: Text(
+                          'Later',
+                          style: GoogleFonts.inter(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
-                    ],
-                    const SizedBox(height: 28),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 50,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: SizedBox(
+                      height: 44,
                       child: ElevatedButton.icon(
-                        onPressed: () => VersionCheckService.launchStoreUrl(result.downloadUrl),
-                        icon: const Icon(Icons.download_rounded, size: 20),
+                        onPressed: () {
+                          VersionCheckService.launchStoreUrl(result.downloadUrl);
+                        },
+                        icon: const Icon(Icons.download_rounded, size: 18),
                         label: Text(
-                          'Update Now',
+                          'Update',
                           style: GoogleFonts.inter(
-                            fontSize: 15,
+                            fontSize: 14,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -312,12 +386,29 @@ class ForceUpdateScreen extends StatelessWidget {
                         ),
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ),
+            ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Fallback legacy screen retained for backward compatibility
+class ForceUpdateScreen extends StatelessWidget {
+  final VersionCheckResult result;
+
+  const ForceUpdateScreen({super.key, required this.result});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppTheme.background,
+      body: Center(
+        child: UpdatePromptDialog(result: result),
       ),
     );
   }
@@ -326,7 +417,11 @@ class ForceUpdateScreen extends StatelessWidget {
 class VersionCheckEngine {
   static GlobalKey<NavigatorState>? navigatorKey;
   static bool _hasChecked = false;
-  static bool isShowingForceDialog = false;
+  static bool isShowingDialog = false;
+
+  // Compatibility getter/setter for any external references
+  static bool get isShowingForceDialog => isShowingDialog;
+  static set isShowingForceDialog(bool val) => isShowingDialog = val;
 
   static void start(BuildContext context, {GlobalKey<NavigatorState>? key}) {
     if (key != null) navigatorKey = key;
@@ -334,151 +429,50 @@ class VersionCheckEngine {
     _hasChecked = true;
 
     // Perform silent background check
-    VersionCheckService.checkVersion().then((result) {
+    checkAndPrompt(context: context);
+  }
+
+  static Future<void> checkAndPrompt({BuildContext? context}) async {
+    if (isShowingDialog) return;
+
+    try {
+      final isSnoozed = await VersionCheckService.isSnoozedToday();
+      if (isSnoozed) return;
+
+      final result = await VersionCheckService.checkVersion();
       if (result.isUpdateAvailable) {
-        if (result.shouldForce) {
-          showForceUpdateDialog(result);
-        } else if (result.isOptionalUpdate) {
-          final targetContext = navigatorKey?.currentContext;
-          if (targetContext != null) {
-            _showOptionalUpdateDialog(targetContext, result);
-          }
+        final targetContext = navigatorKey?.currentContext ?? context;
+        if (targetContext != null && targetContext.mounted) {
+          showUpdateDialog(result, targetContext);
         }
       }
-    }).catchError((e) {
+    } catch (e) {
       debugPrint('VersionCheckEngine error: $e');
-    });
+    }
+  }
+
+  static void showUpdateDialog(VersionCheckResult result, BuildContext context) async {
+    if (isShowingDialog) return;
+    final isSnoozed = await VersionCheckService.isSnoozedToday();
+    if (isSnoozed || !context.mounted) return;
+
+    isShowingDialog = true;
+
+    try {
+      await showDialog(
+        context: context,
+        barrierDismissible: true,
+        builder: (_) => UpdatePromptDialog(result: result),
+      );
+    } finally {
+      isShowingDialog = false;
+    }
   }
 
   static void showForceUpdateDialog(VersionCheckResult result, [BuildContext? context]) {
-    if (isShowingForceDialog) return;
     final targetContext = navigatorKey?.currentContext ?? context;
-    if (targetContext == null) return;
-    isShowingForceDialog = true;
-
-    Navigator.of(targetContext, rootNavigator: true).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => ForceUpdateScreen(result: result)),
-      (route) => false,
-    );
-  }
-
-  static void _showOptionalUpdateDialog(BuildContext context, VersionCheckResult result) {
-    showDialog(
-      context: context,
-      barrierDismissible: true,
-      builder: (context) {
-        return AlertDialog(
-          backgroundColor: AppTheme.cardBackground,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: const BoxDecoration(
-                  color: AppTheme.primaryLight,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.system_update_rounded, color: AppTheme.primary, size: 22),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'Update Available',
-                  style: GoogleFonts.inter(
-                    fontWeight: FontWeight.bold,
-                    color: AppTheme.textPrimary,
-                    fontSize: 17,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'A new version (v${result.latestVersion}) of GymOS is ready. Would you like to update?',
-                style: GoogleFonts.inter(
-                  color: AppTheme.textSecondary,
-                  fontSize: 13,
-                  height: 1.4,
-                ),
-              ),
-              if (result.releaseNotes.isNotEmpty) ...[
-                const SizedBox(height: 14),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppTheme.surfaceGray,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: AppTheme.border),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        "What's New:",
-                        style: GoogleFonts.inter(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 11,
-                          color: AppTheme.textPrimary,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        result.releaseNotes,
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          color: AppTheme.textSecondary,
-                          height: 1.4,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ],
-          ),
-          actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(
-                'Later',
-                style: GoogleFonts.inter(color: AppTheme.textMuted, fontWeight: FontWeight.w600),
-              ),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pop(context);
-                _launchStoreUrl(result.downloadUrl);
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.primary,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                elevation: 0,
-              ),
-              child: Text(
-                'Update Now',
-                style: GoogleFonts.inter(fontWeight: FontWeight.bold),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  static Future<void> _launchStoreUrl(String url) async {
-    if (url.isEmpty) return;
-    final uri = Uri.tryParse(url);
-    if (uri != null) {
-      try {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      } catch (_) {}
+    if (targetContext != null) {
+      showUpdateDialog(result, targetContext);
     }
   }
 }

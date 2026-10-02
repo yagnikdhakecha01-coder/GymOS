@@ -9,6 +9,7 @@ import '../../../core/models/member.dart';
 import '../../../core/models/staff.dart';
 import '../../../core/services/supabase_service.dart';
 import '../../authentication/auth_viewmodel.dart';
+import '../../../core/widgets/app_cached_avatar.dart';
 
 class ClientDetailsScreen extends StatefulWidget {
   final Member member;
@@ -218,10 +219,6 @@ class _ClientDetailsScreenState extends State<ClientDetailsScreen> {
       );
     }
 
-    final avatarUrl = _currentMember.avatar.isNotEmpty
-        ? _currentMember.avatar
-        : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=150';
-
     return DefaultTabController(
       length: 5,
       child: Scaffold(
@@ -246,7 +243,11 @@ class _ClientDetailsScreenState extends State<ClientDetailsScreen> {
               padding: const EdgeInsets.only(bottom: 16, left: 16, right: 16),
               child: Row(
                 children: [
-                  CircleAvatar(radius: 28, backgroundImage: NetworkImage(avatarUrl)),
+                  AppCachedAvatar(
+                    imageUrl: _currentMember.avatar,
+                    name: _currentMember.name,
+                    size: 56,
+                  ),
                   const SizedBox(width: 14),
                   Expanded(
                     child: Column(

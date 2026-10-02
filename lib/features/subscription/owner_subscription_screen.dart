@@ -260,9 +260,12 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
       try {
         if (SupabaseService.isInitialized) {
           try {
-            await SupabaseService.client.rpc('cancel_autopay_subscription', params: {
+            final res = await SupabaseService.client.rpc('cancel_autopay_subscription', params: {
               'p_gym_id': gymId,
             });
+            if (res is Map && res['success'] == false) {
+              throw Exception(res['message'] ?? 'Failed to cancel AutoPay');
+            }
           } catch (e) {
             await SupabaseService.client.from('subscriptions').update({
               'auto_pay': false,
@@ -271,13 +274,15 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
               'updated_at': DateTime.now().toIso8601String(),
             }).eq('gym_id', gymId);
             
-            await SupabaseService.client.from('subscription_history').insert({
-              'gym_id': gymId,
-              'owner_id': ownerId,
-              'event': 'autopay_cancelled',
-              'details': 'User cancelled AutoPay subscription via app.',
-              'created_at': DateTime.now().toIso8601String(),
-            });
+            try {
+              await SupabaseService.client.from('subscription_history').insert({
+                'gym_id': gymId,
+                'action': 'Subscription Cancelled',
+                'changed_by': ownerId,
+                'notes': 'User cancelled AutoPay subscription via app.',
+                'created_at': DateTime.now().toIso8601String(),
+              });
+            } catch (_) {}
           }
 
           await authVm.fetchSubscriptionStatus();

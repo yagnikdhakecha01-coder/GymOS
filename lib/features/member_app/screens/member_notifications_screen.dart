@@ -69,6 +69,27 @@ class _MemberNotificationsScreenState extends State<MemberNotificationsScreen> {
       final authUid = authVm.currentUser?.id;
       final memberId = memberVm.memberId.isNotEmpty ? memberVm.memberId : prefs.getString('member_id');
 
+      // Determine member's join date to filter out historical notifications/announcements
+      DateTime? memberJoinDate;
+      final rawJoin = memberVm.joinDate.isNotEmpty 
+          ? memberVm.joinDate 
+          : (prefs.getString('member_cached_join_date') ?? prefs.getString('member_join_date'));
+      if (rawJoin != null && rawJoin.trim().isNotEmpty) {
+        final trimmed = rawJoin.trim();
+        final iso = DateTime.tryParse(trimmed);
+        if (iso != null) {
+          memberJoinDate = DateTime(iso.year, iso.month, iso.day);
+        } else {
+          for (final fmt in ['dd MMM yyyy', 'dd-MM-yyyy', 'yyyy-MM-dd', 'dd/MM/yyyy', 'd MMM yyyy']) {
+            try {
+              final d = DateFormat(fmt).parse(trimmed);
+              memberJoinDate = DateTime(d.year, d.month, d.day);
+              break;
+            } catch (_) {}
+          }
+        }
+      }
+
       // 1. Fetch personal member notifications from DB
       if (gymId != null && SupabaseService.isInitialized) {
         try {
@@ -91,11 +112,17 @@ class _MemberNotificationsScreenState extends State<MemberNotificationsScreen> {
               if (!matches) continue;
             }
 
+            final created = DateTime.tryParse(row['created_at']?.toString() ?? '') ?? DateTime.now();
+
+            // Strictly filter out notifications created before member joined
+            if (memberJoinDate != null && created.isBefore(memberJoinDate)) {
+              continue;
+            }
+
             final id = row['id']?.toString() ?? '';
             final title = row['title']?.toString() ?? 'Notification';
             final body = row['body']?.toString() ?? row['message']?.toString() ?? '';
             final type = row['type']?.toString() ?? 'general';
-            final created = DateTime.tryParse(row['created_at']?.toString() ?? '') ?? DateTime.now();
             final isRead = row['is_read'] == true;
 
             combined.add(MemberNotificationItem(
@@ -112,12 +139,15 @@ class _MemberNotificationsScreenState extends State<MemberNotificationsScreen> {
         }
       }
 
-      // 2. Fetch Sent Announcements
+      // 2. Fetch Sent Announcements (filtered by join date)
       try {
-        final annList = await AnnouncementsService.getAnnouncements();
+        final annList = await AnnouncementsService.getAnnouncements(gymId: gymId, filterJoinDate: memberJoinDate);
         final sent = annList.where((e) => e.status == 'Sent').toList();
         for (var ann in sent) {
           final created = DateTime.tryParse(ann.date) ?? DateTime.now();
+          if (memberJoinDate != null && created.isBefore(memberJoinDate)) {
+            continue;
+          }
           combined.add(MemberNotificationItem(
             id: ann.id,
             title: ann.title,

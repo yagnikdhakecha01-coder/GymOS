@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 class AppRouter {
+  static final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
+
   static Route<T> slideRoute<T>(Widget page, {bool slideUp = false}) {
     return PageRouteBuilder<T>(
       pageBuilder: (context, animation, secondaryAnimation) => page,

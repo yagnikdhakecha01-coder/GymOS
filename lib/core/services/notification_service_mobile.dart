@@ -1,6 +1,11 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:permission_handler/permission_handler.dart';
+import '../navigation/app_router.dart';
+import 'supabase_service.dart';
+import '../../features/dashboard/support_chat_screen.dart';
+import '../../features/dashboard/support_tickets_screen.dart';
 
 class NotificationService {
   static final FlutterLocalNotificationsPlugin _localNotificationsPlugin =
@@ -34,8 +39,24 @@ class NotificationService {
 
       await _localNotificationsPlugin.initialize(
         settings: initializationSettings,
-        onDidReceiveNotificationResponse: (response) {},
+        onDidReceiveNotificationResponse: (NotificationResponse response) {
+          final payload = response.payload;
+          if (payload != null && payload.isNotEmpty) {
+            handleNotificationTapPayload(payload);
+          }
+        },
       );
+
+      // Check if app was launched via notification click
+      final launchDetails = await _localNotificationsPlugin.getNotificationAppLaunchDetails();
+      if (launchDetails?.didNotificationLaunchApp == true) {
+        final payload = launchDetails?.notificationResponse?.payload;
+        if (payload != null && payload.isNotEmpty) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            handleNotificationTapPayload(payload);
+          });
+        }
+      }
 
       // Create high priority notification channel for Android with GymOS branding
       final androidImplementation = _localNotificationsPlugin.resolvePlatformSpecificImplementation<
@@ -57,6 +78,49 @@ class NotificationService {
       _initialized = true;
     } catch (e) {
       print('NotificationService initialize error: $e');
+    }
+  }
+
+  static Future<void> handleNotificationTapPayload(String payload) async {
+    try {
+      final Map<String, dynamic> data = jsonDecode(payload);
+      final String type = data['type']?.toString() ?? '';
+      final String ticketId = data['ticket_id']?.toString() ?? '';
+
+      if (type == 'support_ticket' && ticketId.isNotEmpty) {
+        WidgetsBinding.instance.addPostFrameCallback((_) async {
+          final navState = AppRouter.rootNavigatorKey.currentState;
+          if (navState == null) return;
+
+          Map<String, dynamic>? ticketData;
+          if (SupabaseService.isInitialized) {
+            try {
+              final res = await SupabaseService.client
+                  .from('support_tickets')
+                  .select()
+                  .eq('id', ticketId)
+                  .maybeSingle();
+              if (res != null) {
+                ticketData = Map<String, dynamic>.from(res);
+              }
+            } catch (e) {
+              debugPrint('Error fetching ticket for notification deep link: $e');
+            }
+          }
+
+          if (ticketData != null) {
+            navState.push(
+              AppRouter.slideRoute(SupportChatScreen(ticket: ticketData)),
+            );
+          } else {
+            navState.push(
+              AppRouter.slideRoute(const SupportTicketsScreen()),
+            );
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint('NotificationService handleNotificationTapPayload error: $e');
     }
   }
 
@@ -91,6 +155,7 @@ class NotificationService {
     required int id,
     required String title,
     required String body,
+    String? payload,
     bool force = false,
   }) async {
     // If the user is currently using the app and force is false,
@@ -155,6 +220,7 @@ class NotificationService {
         title: title,
         body: body,
         notificationDetails: notificationDetails,
+        payload: payload,
       );
     } catch (e) {
       print('NotificationService showNotification error: $e');

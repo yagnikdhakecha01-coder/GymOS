@@ -411,13 +411,13 @@ class _MainNavigationHolderState extends State<MainNavigationHolder> {
               children: [
                 ListTile(
                   leading: const Icon(Icons.phone, color: Color(0xFF6C4EFF)),
-                  title: const Text('+91 99999 99999'),
+                  title: const Text('+91 8160490013'),
                   subtitle: const Text('Call Support'),
                   onTap: () {},
                 ),
                 ListTile(
                   leading: const Icon(Icons.email, color: Color(0xFF6C4EFF)),
-                  title: const Text('support@gymos.com'),
+                  title: const Text('support@gymos.tech'),
                   subtitle: const Text('Email Support'),
                   onTap: () {},
                 ),
@@ -639,7 +639,7 @@ class _MainNavigationHolderState extends State<MainNavigationHolder> {
               const Icon(Icons.email_outlined, color: Color(0xFF64748B), size: 18),
               const SizedBox(width: 10),
               Text(
-                'support@gymos.com',
+                'support@gymos.tech',
                 style: GoogleFonts.inter(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,

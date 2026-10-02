@@ -50,7 +50,19 @@ class AnnouncementsService {
   static String _getKey(String? gymId) =>
       (gymId != null && gymId.isNotEmpty) ? 'gymos_announcements_$gymId' : 'gymos_announcements';
 
-  static Future<List<Announcement>> getAnnouncements({String? gymId}) async {
+  static List<Announcement> _filterByDate(List<Announcement> list, DateTime minDate) {
+    final startOfDay = DateTime(minDate.year, minDate.month, minDate.day);
+    return list.where((a) {
+      if (a.date.isEmpty) return true;
+      final d = DateTime.tryParse(a.date);
+      if (d != null) {
+        return !d.isBefore(startOfDay);
+      }
+      return true;
+    }).toList();
+  }
+
+  static Future<List<Announcement>> getAnnouncements({String? gymId, DateTime? filterJoinDate}) async {
     List<Announcement> announcements = [];
     final cacheKey = _getKey(gymId);
 
@@ -71,6 +83,9 @@ class AnnouncementsService {
           announcements = dbRes.map((e) => Announcement.fromJson(e)).toList();
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString(cacheKey, jsonEncode(announcements.map((e) => e.toJson()).toList()));
+          if (filterJoinDate != null) {
+            return _filterByDate(announcements, filterJoinDate);
+          }
           return announcements;
         }
       } catch (e) {
@@ -82,7 +97,11 @@ class AnnouncementsService {
     final raw = prefs.getString(cacheKey);
     if (raw != null) {
       final List decoded = jsonDecode(raw);
-      return decoded.map((e) => Announcement.fromJson(e)).toList();
+      final list = decoded.map((e) => Announcement.fromJson(e)).toList();
+      if (filterJoinDate != null) {
+        return _filterByDate(list, filterJoinDate);
+      }
+      return list;
     }
 
     return [];

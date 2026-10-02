@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GymOS — Owner Master Portal</title>
+  <link rel="icon" type="image/png" href="https://img.icons8.com/color/48/dumbbell.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
+  
+  <link rel="stylesheet" href="/css/main.css">
+  <link rel="stylesheet" href="/css/dashboard.css">
+
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+<div class="dashboard-layout">
+  
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-brand-icon">
+        <i data-lucide="dumbbell"></i>
+      </div>
+      <div>
+        <div class="sidebar-brand-name">GymOS</div>
+        <div class="sidebar-brand-role">Owner Portal</div>
+      </div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <div class="nav-section-title">Main Navigation</div>
+      <a class="nav-link active" onclick="switchTab('overview', this)">
+        <i data-lucide="layout-dashboard"></i>
+        <span>Overview</span>
+      </a>
+      <a class="nav-link" onclick="switchTab('members', this)">
+        <i data-lucide="users"></i>
+        <span>Members</span>
+      </a>
+      <a class="nav-link" onclick="switchTab('finance', this)">
+        <i data-lucide="wallet"></i>
+        <span>Finance & Fees</span>
+      </a>
+      <a class="nav-link" onclick="switchTab('staff', this)">
+        <i data-lucide="user-check"></i>
+        <span>Staff & Payroll</span>
+      </a>
+      
+      <div class="nav-section-title" style="margin-top: 16px;">Management</div>
+      <a class="nav-link" onclick="switchTab('biometrics', this)">
+        <i data-lucide="fingerprint"></i>
+        <span>Biometric Devices</span>
+      </a>
+      <a class="nav-link" onclick="switchTab('subscription', this)">
+        <i data-lucide="sparkles"></i>
+        <span>GymOS Subscription</span>
+      </a>
+      <a class="nav-link" onclick="switchTab('settings', this)">
+        <i data-lucide="settings"></i>
+        <span>Settings</span>
+      </a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="user-snippet">
+        <div class="user-avatar" id="owner-avatar">O</div>
+        <div class="user-meta">
+          <div class="user-name" id="owner-name">Gym Owner</div>
+          <div class="user-sub">Administrator</div>
+        </div>
+        <button class="btn-logout" title="Sign Out" onclick="logoutSession()">
+          <i data-lucide="log-out" style="width: 18px; height: 18px;"></i>
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main Content Wrapper -->
+  <div class="main-wrapper">
+    
+    <!-- Top Header -->
+    <header class="top-header">
+      <div class="header-left">
+        <div class="gym-badge">
+          <span class="gym-badge-indicator"></span>
+          <span id="header-gym-name">GymOS Elite Club</span>
+        </div>
+      </div>
+      <div class="header-right">
+        <button class="btn btn-primary" onclick="openNewAdmissionModal()">
+          <i data-lucide="user-plus" style="width: 16px; height: 16px;"></i>
+          New Admission
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="content-area">
+
+      <!-- ── SECTION 1: OVERVIEW ── -->
+      <section id="tab-overview" class="view-section active">
+        <div class="page-header">
+          <div class="page-header-text">
+            <h2>Welcome back, <span id="welcome-name">Owner</span> 👋</h2>
+            <p>Here is what's happening at your gym today.</p>
+          </div>
+        </div>
+
+        <!-- KPI Metrics Grid -->
+        <div class="metrics-grid">
+          <div class="metric-card">
+            <div class="metric-info">
+              <h5>Active Members</h5>
+              <div class="value" id="kpi-active-members">0</div>
+              <div class="subtext">Registered Gym Members</div>
+            </div>
+            <div class="metric-icon-box" style="background: var(--primary-light); color: var(--primary);">
+              <i data-lucide="users"></i>
+            </div>
+          </div>
+
+          <div class="metric-card">
+            <div class="metric-info">
+              <h5>Today's Attendance</h5>
+              <div class="value" id="kpi-today-attendance">0</div>
+              <div class="subtext">Checked In Today</div>
+            </div>
+            <div class="metric-icon-box" style="background: var(--info-light); color: var(--info);">
+              <i data-lucide="user-check"></i>
+            </div>
+          </div>
+
+          <div class="metric-card">
+            <div class="metric-info">
+              <h5>Expiring Soon (7d)</h5>
+              <div class="value" id="kpi-expiring-soon" style="color: var(--warning);">0</div>
+              <div class="subtext">Needs Renewal Followup</div>
+            </div>
+            <div class="metric-icon-box" style="background: var(--warning-light); color: var(--warning);">
+              <i data-lucide="clock"></i>
+            </div>
+          </div>
+
+          <div class="metric-card">
+            <div class="metric-info">
+              <h5>Monthly Revenue</h5>
+              <div class="value" id="kpi-month-revenue" style="color: var(--success);">₹0</div>
+              <div class="subtext">Current Month (IST)</div>
+            </div>
+            <div class="metric-icon-box" style="background: var(--success-light); color: var(--success);">
+              <i data-lucide="indian-rupee"></i>
+            </div>
+          </div>
+        </div>
+
+        <!-- Attendance & Revenue Trends Row -->
+        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 24px; margin-bottom: 32px;">
+          <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+              <h3 style="font-size: 16px;">Today's Hourly Attendance Rush</h3>
+              <span class="badge badge-primary">Peak Times</span>
+            </div>
+            <div style="height: 250px;">
+              <canvas id="chart-attendance"></canvas>
+            </div>
+          </div>
+
+          <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+              <h3 style="font-size: 16px;">Biometric Machine Status</h3>
+              <span class="badge badge-success" id="bio-live-badge">Online</span>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 16px;">
+              <div style="display: flex; justify-content: space-between; font-size: 13px;">
+                <span style="color: var(--text-secondary);">Device:</span>
+                <strong id="bio-device-name">eSSL / ZKTeco SilkBio</strong>
+              </div>
+              <div style="display: flex; justify-content: space-between; font-size: 13px;">
+                <span style="color: var(--text-secondary);">Last Punch:</span>
+                <span id="bio-last-punch" style="font-weight: 600;">Active Today</span>
+              </div>
+              <div style="display: flex; justify-content: space-between; font-size: 13px;">
+                <span style="color: var(--text-secondary);">Sync Protocol:</span>
+                <span class="badge badge-info">Direct TCP Bridge</span>
+              </div>
+            </div>
+            <div style="margin-top: 24px;">
+              <button class="btn btn-outline" style="width: 100%; font-size: 13px;" onclick="switchTab('biometrics')">
+                View Biometric Logs
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recent Activity Feed -->
+        <div class="table-card">
+          <div class="table-header-tools">
+            <h3 style="font-size: 16px;">Recent Member Check-Ins</h3>
+            <button class="btn btn-secondary" style="font-size: 12px; padding: 6px 12px;" onclick="fetchDashboardData()">
+              <i data-lucide="refresh-cw" style="width: 14px; height: 14px;"></i> Refresh
+            </button>
+          </div>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Member Name</th>
+                <th>Phone</th>
+                <th>Check-In Time</th>
+                <th>Shift</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="table-recent-attendance">
+              <tr>
+                <td colspan="5" style="text-align: center; color: var(--text-muted);">Loading live attendance...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ── SECTION 2: MEMBERS DIRECTORY ── -->
+      <section id="tab-members" class="view-section">
+        <div class="page-header">
+          <div class="page-header-text">
+            <h2>Member Directory</h2>
+            <p>Manage all gym admissions, active memberships, and renewals.</p>
+          </div>
+          <button class="btn btn-primary" onclick="openNewAdmissionModal()">
+            <i data-lucide="user-plus" style="width: 16px; height: 16px;"></i> New Admission
+          </button>
+        </div>
+
+        <div class="table-card">
+          <div class="table-header-tools">
+            <div class="search-input-wrap">
+              <i data-lucide="search"></i>
+              <input type="text" id="member-search" placeholder="Search by name, phone..." oninput="filterMembers()">
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <button class="btn btn-secondary" style="font-size: 13px; padding: 8px 14px;" onclick="exportMembersCSV()">
+                <i data-lucide="download" style="width: 15px; height: 15px;"></i> Export CSV
+              </button>
+            </div>
+          </div>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Member</th>
+                <th>Phone</th>
+                <th>Admission Date</th>
+                <th>Membership Plan</th>
+                <th>End Date</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="table-members-body">
+              <tr>
+                <td colspan="7" style="text-align: center; color: var(--text-muted);">Loading members...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ── SECTION 3: FINANCE & FEES ── -->
+      <section id="tab-finance" class="view-section">
+        <div class="page-header">
+          <div class="page-header-text">
+            <h2>Financial Overview & Accounting</h2>
+            <p>Track cash collections, UPI receipts, expenses, and pending fees.</p>
+          </div>
+          <button class="btn btn-primary" onclick="openAddExpenseModal()">
+            <i data-lucide="plus" style="width: 16px; height: 16px;"></i> Add Expense
+          </button>
+        </div>
+
+        <div class="metrics-grid">
+          <div class="metric-card">
+            <div class="metric-info">
+              <h5>Total Inflow (Month)</h5>
+              <div class="value" id="fin-inflow" style="color: var(--success);">₹0</div>
+              <div class="subtext">Fees & Collections</div>
+            </div>
+            <div class="metric-icon-box" style="background: var(--success-light); color: var(--success);">
+              <i data-lucide="arrow-down-left"></i>
+            </div>
+          </div>
+
+          <div class="metric-card">
+            <div class="metric-info">
+              <h5>Total Outflow (Month)</h5>
+              <div class="value" id="fin-outflow" style="color: var(--danger);">₹0</div>
+              <div class="subtext">Rent, Salaries & Expenses</div>
+            </div>
+            <div class="metric-icon-box" style="background: var(--danger-light); color: var(--danger);">
+              <i data-lucide="arrow-up-right"></i>
+            </div>
+          </div>
+
+          <div class="metric-card">
+            <div class="metric-info">
+              <h5>Net Balance</h5>
+              <div class="value" id="fin-net" style="color: var(--primary);">₹0</div>
+              <div class="subtext">Current Profit/Balance</div>
+            </div>
+            <div class="metric-icon-box" style="background: var(--primary-light); color: var(--primary);">
+              <i data-lucide="wallet"></i>
+            </div>
+          </div>
+        </div>
+
+        <div class="table-card">
+          <div class="table-header-tools">
+            <h3 style="font-size: 16px;">Recent Transactions</h3>
+          </div>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Type</th>
+                <th>Description</th>
+                <th>Category</th>
+                <th>Amount</th>
+              </tr>
+            </thead>
+            <tbody id="table-transactions-body">
+              <tr>
+                <td colspan="5" style="text-align: center; color: var(--text-muted);">Loading transactions...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ── SECTION 4: STAFF & PAYROLL ── -->
+      <section id="tab-staff" class="view-section">
+        <div class="page-header">
+          <div class="page-header-text">
+            <h2>Staff Directory & Payroll</h2>
+            <p>Manage trainers, front desk receptionists, shifts, and salary disbursements.</p>
+          </div>
+          <button class="btn btn-primary" onclick="openAddStaffModal()">
+            <i data-lucide="user-plus" style="width: 16px; height: 16px;"></i> Add New Staff
+          </button>
+        </div>
+
+        <div class="table-card">
+          <div class="table-header-tools">
+            <h3 style="font-size: 16px;">Active Gym Staff</h3>
+          </div>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Staff Name</th>
+                <th>Role</th>
+                <th>Phone</th>
+                <th>Monthly Salary</th>
+                <th>Shift Time</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="table-staff-body">
+              <tr>
+                <td colspan="6" style="text-align: center; color: var(--text-muted);">Loading staff...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ── SECTION 5: BIOMETRIC DEVICES ── -->
+      <section id="tab-biometrics" class="view-section">
+        <div class="page-header">
+          <div class="page-header-text">
+            <h2>Biometric Machine Control & Sync</h2>
+            <p>Direct integration with ZKTeco & eSSL devices over GymOS Biometric Bridge.</p>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom: 24px;">
+          <h3 style="font-size: 16px; margin-bottom: 12px;">Biometric Device Health</h3>
+          <p style="font-size: 14px; margin-bottom: 20px;">
+            The GymOS Biometric Bridge syncs all fingerprint & face punches with Supabase in real-time.
+          </p>
+          <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+            <div style="background: var(--bg-surface); padding: 16px; border-radius: 12px; min-width: 200px;">
+              <span style="font-size: 12px; color: var(--text-secondary);">Device Status:</span>
+              <div style="font-size: 16px; font-weight: 700; color: var(--success); margin-top: 4px;">Connected & Active</div>
+            </div>
+            <div style="background: var(--bg-surface); padding: 16px; border-radius: 12px; min-width: 200px;">
+              <span style="font-size: 12px; color: var(--text-secondary);">Queue Status:</span>
+              <div style="font-size: 16px; font-weight: 700; color: var(--primary); margin-top: 4px;">0 Pending Syncs</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── SECTION 6: GYMOS SUBSCRIPTION ── -->
+      <section id="tab-subscription" class="view-section">
+        <div class="page-header">
+          <div class="page-header-text">
+            <h2>GymOS Software Subscription</h2>
+            <p>Manage your GymOS SaaS plan. Renew directly on web with 0% app store commission.</p>
+          </div>
+        </div>
+
+        <div class="card" style="border: 2px solid var(--primary); background: linear-gradient(180deg, #FAF8FF 0%, #FFFFFF 100%);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <div>
+              <span class="badge badge-primary">Current Plan</span>
+              <h3 style="font-size: 24px; margin-top: 6px;">GymOS Pro Plan</h3>
+            </div>
+            <div style="text-align: right;">
+              <div style="font-size: 28px; font-weight: 800; color: var(--primary);">₹1,499<span style="font-size: 14px; font-weight: 500; color: var(--text-secondary);">/month</span></div>
+            </div>
+          </div>
+          <p style="font-size: 14px; color: var(--text-secondary); margin-bottom: 24px;">
+            Includes unlimited members, multi-shift staff attendance, biometric device sync, and WhatsApp fee reminders.
+          </p>
+          <div style="display: flex; gap: 12px;">
+            <button class="btn btn-primary" onclick="alert('Redirecting to Razorpay direct web payment (0% Store Cut)...')">
+              Renew Subscription
+            </button>
+            <button class="btn btn-secondary" onclick="alert('Viewing invoices...')">
+              Download Invoices
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── SECTION 7: SETTINGS ── -->
+      <section id="tab-settings" class="view-section">
+        <div class="page-header">
+          <div class="page-header-text">
+            <h2>Gym Profile & Rules</h2>
+            <p>Configure gym contact info, shifts, late-time marks, and gym rules.</p>
+          </div>
+        </div>
+
+        <div class="card" style="max-width: 640px;">
+          <form onsubmit="saveGymSettings(event)">
+            <div class="form-group">
+              <label class="form-label">Gym Business Name</label>
+              <input type="text" id="setting-gym-name" class="form-input" value="GymOS Elite Fitness">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Contact Phone</label>
+              <input type="text" id="setting-gym-phone" class="form-input" value="+91 98765 43210">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Late Attendance Mark Time</label>
+              <input type="text" id="setting-gym-late" class="form-input" value="09:05 AM">
+            </div>
+            <button type="submit" class="btn btn-primary" style="margin-top: 12px;">Save Settings</button>
+          </form>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<!-- Modal: New Admission -->
+<div id="modal-admission" class="modal-backdrop">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h3 style="font-size: 18px;">Register New Member</h3>
+      <button onclick="closeNewAdmissionModal()" style="background: none; border: none; cursor: pointer; color: var(--text-muted);">
+        <i data-lucide="x" style="width: 20px; height: 20px;"></i>
+      </button>
+    </div>
+    <form onsubmit="handleNewAdmission(event)">
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">Full Name *</label>
+          <input type="text" id="adm-name" class="form-input" required placeholder="e.g. Rahul Sharma">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Phone Number *</label>
+          <input type="tel" id="adm-phone" class="form-input" required placeholder="e.g. 9876543210">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Membership Plan *</label>
+          <select id="adm-plan" class="form-input" required>
+            <option value="1_month">1 Month Standard (₹1,500)</option>
+            <option value="3_month">3 Months Quarterly (₹4,000)</option>
+            <option value="6_month">6 Months Half-Yearly (₹7,500)</option>
+            <option value="12_month">1 Year Annual (₹13,000)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Amount Paid (₹) *</label>
+          <input type="number" id="adm-amount" class="form-input" required value="1500">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Payment Method</label>
+          <select id="adm-method" class="form-input">
+            <option value="UPI">UPI (GPay / PhonePe / Paytm)</option>
+            <option value="Cash">Cash</option>
+            <option value="Card">Card</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeNewAdmissionModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="btn-submit-admission">Save Member</button>
+      </div>
+    </form>
+  </div>
+<!-- Modal: Add Expense -->
+<div id="modal-expense" class="modal-backdrop">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h3 style="font-size: 18px;">Record New Gym Expense</h3>
+      <button onclick="closeAddExpenseModal()" style="background: none; border: none; cursor: pointer; color: var(--text-muted);">
+        <i data-lucide="x" style="width: 20px; height: 20px;"></i>
+      </button>
+    </div>
+    <form onsubmit="handleAddExpense(event)">
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">Expense Description *</label>
+          <input type="text" id="exp-title" class="form-input" required placeholder="e.g. Monthly Electricity Bill">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Category *</label>
+          <select id="exp-category" class="form-input">
+            <option value="Electricity">Electricity & Utilities</option>
+            <option value="Rent">Gym Rent</option>
+            <option value="Maintenance">Equipment Maintenance</option>
+            <option value="Salary">Staff Advance / Salary</option>
+            <option value="Supplements">Stock / Supplements</option>
+            <option value="Other">Other Miscellaneous</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Amount (₹) *</label>
+          <input type="number" id="exp-amount" class="form-input" required placeholder="5000">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Paid Via</label>
+          <select id="exp-method" class="form-input">
+            <option value="UPI">UPI (Online)</option>
+            <option value="Cash">Cash Drawer</option>
+            <option value="Bank Transfer">Bank NEFT/IMPS</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeAddExpenseModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Expense to DB</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Add Staff -->
+<div id="modal-staff" class="modal-backdrop">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h3 style="font-size: 18px;">Register New Staff Member</h3>
+      <button onclick="closeAddStaffModal()" style="background: none; border: none; cursor: pointer; color: var(--text-muted);">
+        <i data-lucide="x" style="width: 20px; height: 20px;"></i>
+      </button>
+    </div>
+    <form onsubmit="handleAddStaff(event)">
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">Full Name *</label>
+          <input type="text" id="stf-name" class="form-input" required placeholder="e.g. Ramesh Kumar">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Phone Number *</label>
+          <input type="tel" id="stf-phone" class="form-input" required placeholder="10 Digit Number">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Role *</label>
+          <select id="stf-role" class="form-input">
+            <option value="Trainer">Personal Trainer</option>
+            <option value="Floor Trainer">Floor Trainer</option>
+            <option value="Receptionist">Receptionist (Front Desk)</option>
+            <option value="Manager">Manager</option>
+            <option value="Housekeeping">Housekeeping</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Monthly Salary (₹) *</label>
+          <input type="number" id="stf-salary" class="form-input" required value="20000">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Assigned Shift</label>
+          <select id="stf-shift" class="form-input">
+            <option value="06:00 AM - 02:00 PM">Morning Shift (06:00 AM - 02:00 PM)</option>
+            <option value="02:00 PM - 10:00 PM">Evening Shift (02:00 PM - 10:00 PM)</option>
+            <option value="Full Day">Full Day (Flexible)</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeAddStaffModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Staff to DB</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="/js/config.js"></script>
+<script src="/dashboard/owner/owner.js"></script>
+<script>
+  lucide.createIcons();
+</script>
+</body>
+</html>

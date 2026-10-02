@@ -13,6 +13,7 @@ import '../../core/models/association_model.dart';
 import 'auth_viewmodel.dart';
 import 'role_selection_screen.dart';
 import '../dashboard/main_navigation_holder.dart';
+import '../../core/widgets/app_cached_avatar.dart';
 
 class FirstTimeSetupScreen extends StatefulWidget {
   final bool isAddingAdditionalGym;
@@ -367,7 +368,7 @@ class _FirstTimeSetupScreenState extends State<FirstTimeSetupScreen> with Single
           ownerFullName: _ownerFullNameController.text,
           ownerPhone: _ownerPhoneController.text,
           ownerEmail: _ownerEmailController.text,
-          ownerPhoto: _profilePhotoUrl.isEmpty ? 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80' : _profilePhotoUrl,
+          ownerPhoto: _profilePhotoUrl,
           ownerDob: _ownerDobController.text,
           ownerExperience: _selectedExperience,
         );
@@ -1206,18 +1207,10 @@ class _FirstTimeSetupScreenState extends State<FirstTimeSetupScreen> with Single
             children: [
               Row(
                 children: [
-                  Container(
-                    width: 50,
-                    height: 50,
-                    decoration: const BoxDecoration(shape: BoxShape.circle),
-                    child: ClipOval(
-                      child: Image.network(
-                        _profilePhotoUrl.isNotEmpty
-                            ? _profilePhotoUrl
-                            : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80',
-                        fit: BoxFit.cover,
-                      ),
-                    ),
+                  AppCachedAvatar(
+                    imageUrl: _profilePhotoUrl,
+                    name: _ownerFullNameController.text,
+                    size: 50,
                   ),
                   const SizedBox(width: 12),
                   Expanded(

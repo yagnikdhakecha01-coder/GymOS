@@ -5,7 +5,6 @@ import '../../core/theme/theme.dart';
 import 'role_selection_screen.dart';
 import '../../core/navigation/app_router.dart';
 import '../../core/services/supabase_service.dart';
-import '../../core/services/auth_service.dart';
 import '../../core/models/user_profile.dart';
 import '../dashboard/main_navigation_holder.dart';
 import '../staff/portal/staff_shell.dart';
@@ -15,11 +14,8 @@ import '../error/configuration_error_screen.dart';
 import 'auth_viewmodel.dart';
 import 'first_time_setup_screen.dart';
 import 'gym_role_selector_screen.dart';
-import '../member_app/screens/member_code_screen.dart';
-import 'data_sync_screen.dart';
 import 'biometric_lock_screen.dart';
 import '../../core/services/biometric_service.dart';
-import '../../core/services/version_check_service.dart';
 
 import '../../core/widgets/app_branding_header.dart';
 
@@ -46,22 +42,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
 
-      // 1. Critical Startup Gate: Immediate Force Update Check
-      try {
-        final versionResult = await VersionCheckService.checkVersion();
-        if (versionResult.isUpdateAvailable && versionResult.shouldForce) {
-          if (mounted) {
-            VersionCheckEngine.isShowingForceDialog = true;
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (_) => ForceUpdateScreen(result: versionResult)),
-            );
-            return;
-          }
-        }
-      } catch (e) {
-        debugPrint('Splash force update check warning: $e');
-      }
+      // Note: Version update dialog is handled gracefully by VersionCheckEngine without blocking app startup.
 
       if (!mounted) return;
       final authVm = Provider.of<AuthViewModel>(context, listen: false);

@@ -375,7 +375,7 @@ class _AddTrialMemberScreenState extends State<AddTrialMemberScreen> {
         gymId: gymId,
         name: name,
         phone: phone,
-        avatar: _avatarUrl.isNotEmpty ? _avatarUrl : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
+        avatar: _avatarUrl,
         trialType: _selectedTrialType,
         trialDays: days,
         startDate: DateFormat('yyyy-MM-dd').format(_startDate),

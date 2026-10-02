@@ -516,9 +516,7 @@ class _AddStaffScreenState extends State<AddStaffScreen> {
       membersTrained: 0,
       salary: salaryVal,
       salaryDue: salaryVal,
-      avatar: _profilePhotoUrl.isEmpty
-          ? 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200'
-          : _profilePhotoUrl,
+      avatar: _profilePhotoUrl,
       gender: _selectedGender,
       dob: _dobController.text.trim(),
       aadhaar: _aadhaarController.text.trim(),

@@ -9,26 +9,42 @@ import '../../core/models/diet_plan.dart';
 import '../../core/models/attendance.dart';
 import 'package:intl/intl.dart';
 
+enum MemberSortOption {
+  pendingFeesFirst, // Default: Jiska jitna baki hai vo top me ate hai
+  expiringSoon,     // Expired & expiring soonest on top
+  recentlyJoined,   // Newest members first
+  alphabetical,     // A to Z
+}
+
 class MembersViewModel extends ChangeNotifier {
   final GymRepository _repository;
 
   String _searchQuery = '';
-  String _selectedFilter = 'All'; // All, Active, Inactive, PT Only, Pending Payment
+  String _selectedFilter = 'All'; // All, Active, Inactive, Trial, PT Only, Pending Payment
+  MemberSortOption _sortOption = MemberSortOption.pendingFeesFirst;
+
+  List<Member>? _cachedFilteredMembers;
 
   MembersViewModel(this._repository) {
     fetchMembers();
-    _repository.addListener(notifyListeners);
+    _repository.addListener(_onRepositoryChanged);
+  }
+
+  void _onRepositoryChanged() {
+    _cachedFilteredMembers = null;
+    notifyListeners();
   }
 
   @override
   void dispose() {
-    _repository.removeListener(notifyListeners);
+    _repository.removeListener(_onRepositoryChanged);
     super.dispose();
   }
 
   Future<void> fetchMembers() async {
     await _repository.fetchMembersFromSupabase();
     await _repository.fetchTransactionsFromSupabase();
+    _cachedFilteredMembers = null;
     notifyListeners();
   }
 
@@ -40,27 +56,43 @@ class MembersViewModel extends ChangeNotifier {
   void clearAllData() {
     _searchQuery = '';
     _selectedFilter = 'All';
+    _sortOption = MemberSortOption.pendingFeesFirst;
+    _cachedFilteredMembers = null;
     notifyListeners();
   }
 
   // Getters
   String get searchQuery => _searchQuery;
   String get selectedFilter => _selectedFilter;
+  MemberSortOption get sortOption => _sortOption;
 
   List<Member> get allMembers => _repository.getMembers();
 
-  // Filtered members list
+  int get activeMembersCount => allMembers.where((m) => m.status == 'Active').length;
+  int get inactiveMembersCount => allMembers.where((m) => m.status == 'Inactive').length;
+  double get totalPendingAmount => allMembers.fold<double>(0, (sum, m) => sum + m.pendingAmount);
+
+  // Fast memoized filtered members list
   List<Member> get filteredMembers {
+    if (_cachedFilteredMembers != null) {
+      return _cachedFilteredMembers!;
+    }
+    _cachedFilteredMembers = _computeFilteredMembers();
+    return _cachedFilteredMembers!;
+  }
+
+  List<Member> _computeFilteredMembers() {
     final query = _searchQuery.trim().toLowerCase();
-    final filtered = _repository.getMembers().where((member) {
-      // Apply Search Query
-      final matchesSearch = member.name.toLowerCase().contains(query) ||
-          member.email.toLowerCase().contains(query) ||
-          member.phone.contains(query);
+    final list = _repository.getMembers().where((member) {
+      // 1. Search Query Match
+      if (query.isNotEmpty) {
+        final matches = member.name.toLowerCase().contains(query) ||
+            member.email.toLowerCase().contains(query) ||
+            member.phone.contains(query);
+        if (!matches) return false;
+      }
 
-      if (!matchesSearch) return false;
-
-      // Apply Filter Category
+      // 2. Filter Category Match
       switch (_selectedFilter) {
         case 'Active':
           return member.status == 'Active';
@@ -77,31 +109,96 @@ class MembersViewModel extends ChangeNotifier {
       }
     }).toList();
 
-    // Sort: Members with pending fees at the TOP (highest pending amount first), then by status
-    filtered.sort((a, b) {
-      final aPending = a.pendingAmount > 0;
-      final bPending = b.pendingAmount > 0;
-      if (aPending && !bPending) return -1;
-      if (!aPending && bPending) return 1;
-      if (aPending && bPending) {
-        return b.pendingAmount.compareTo(a.pendingAmount);
-      }
-      // If both don't have pending, sort active first, then trial, then inactive
-      if (a.status == 'Active' && b.status != 'Active') return -1;
-      if (a.status != 'Active' && b.status == 'Active') return 1;
-      return 0;
-    });
+    // 3. Dynamic Sort based on selected sortOption
+    switch (_sortOption) {
+      case MemberSortOption.pendingFeesFirst:
+        // Highest pending amount first, then active status, then name
+        list.sort((a, b) {
+          final aPending = a.pendingAmount > 0;
+          final bPending = b.pendingAmount > 0;
+          if (aPending && !bPending) return -1;
+          if (!aPending && bPending) return 1;
+          if (aPending && bPending) {
+            final cmp = b.pendingAmount.compareTo(a.pendingAmount);
+            if (cmp != 0) return cmp;
+          }
+          if (a.status == 'Active' && b.status != 'Active') return -1;
+          if (a.status != 'Active' && b.status == 'Active') return 1;
+          return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+        });
+        break;
 
-    return filtered;
+      case MemberSortOption.expiringSoon:
+        // Expired members first, then closest upcoming expiry dates, then members without expiry
+        list.sort((a, b) {
+          final aExp = a.parsedExpiryDate;
+          final bExp = b.parsedExpiryDate;
+          if (aExp != null && bExp == null) return -1;
+          if (aExp == null && bExp != null) return 1;
+          if (aExp == null && bExp == null) {
+            return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+          }
+
+          final now = DateTime.now();
+          final today = DateTime(now.year, now.month, now.day);
+          final aIsExpired = aExp!.isBefore(today);
+          final bIsExpired = bExp!.isBefore(today);
+
+          // Both expired -> most recently expired first
+          if (aIsExpired && bIsExpired) {
+            return bExp.compareTo(aExp);
+          }
+          // Expired comes before non-expired
+          if (aIsExpired && !bIsExpired) return -1;
+          if (!aIsExpired && bIsExpired) return 1;
+
+          // Both active -> closest expiry date first
+          return aExp.compareTo(bExp);
+        });
+        break;
+
+      case MemberSortOption.recentlyJoined:
+        // Newest join date / created_at first
+        list.sort((a, b) {
+          final aJoin = a.parsedJoinDate ?? (a.createdAt != null ? DateTime.tryParse(a.createdAt!) : null);
+          final bJoin = b.parsedJoinDate ?? (b.createdAt != null ? DateTime.tryParse(b.createdAt!) : null);
+          if (aJoin != null && bJoin == null) return -1;
+          if (aJoin == null && bJoin != null) return 1;
+          if (aJoin != null && bJoin != null) {
+            final cmp = bJoin.compareTo(aJoin);
+            if (cmp != 0) return cmp;
+          }
+          return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+        });
+        break;
+
+      case MemberSortOption.alphabetical:
+        // Name A to Z
+        list.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+        break;
+    }
+
+    return list;
   }
 
   void setSearchQuery(String query) {
+    if (_searchQuery == query) return;
     _searchQuery = query;
+    _cachedFilteredMembers = null;
     notifyListeners();
   }
 
   void setFilter(String filter) {
+    if (_selectedFilter == filter) return;
     _selectedFilter = filter;
+    _cachedFilteredMembers = null;
+    notifyListeners();
+  }
+
+  void setSortOption(MemberSortOption option) {
+    if (_sortOption == option) return;
+    _sortOption = option;
+    _cachedFilteredMembers = null;
     notifyListeners();
   }
 
@@ -343,7 +440,7 @@ class MembersViewModel extends ChangeNotifier {
 
   List<FinanceTransaction> getMemberTransactions(String memberId) {
     final member = allMembers.cast<Member?>().firstWhere((m) => m?.id == memberId, orElse: () => null);
-    final memberName = member?.name?.trim() ?? '';
+    final memberName = member?.name.trim() ?? '';
 
     final results = _repository.getTransactions().where((tx) {
       // 1. Exclude all Gym Operational Expenses

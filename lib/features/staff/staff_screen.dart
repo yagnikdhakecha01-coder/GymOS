@@ -29,15 +29,14 @@ class StaffScreen extends StatefulWidget {
 
 class _StaffScreenState extends State<StaffScreen> {
   late ScrollController _scrollController;
-  double _scrollOffset = 0.0;
   List<Map<String, dynamic>> _staffCardsRpc = [];
+  Map<String, Map<String, dynamic>> _staffRpcMap = {};
   bool _cardsLoading = true;
 
   @override
   void initState() {
     super.initState();
     _scrollController = ScrollController();
-    _scrollController.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadStaffPayrollData());
   }
 
@@ -59,8 +58,16 @@ class _StaffScreenState extends State<StaffScreen> {
           'p_date': DateFormat('yyyy-MM-dd').format(DateTime.now()),
         });
         if (mounted && response is List) {
+          final map = <String, Map<String, dynamic>>{};
+          for (final row in response) {
+            final sid = row['staff_id']?.toString();
+            if (sid != null) {
+              map[sid] = Map<String, dynamic>.from(row);
+            }
+          }
           setState(() {
             _staffCardsRpc = List<Map<String, dynamic>>.from(response);
+            _staffRpcMap = map;
             _cardsLoading = false;
           });
           return;
@@ -75,17 +82,8 @@ class _StaffScreenState extends State<StaffScreen> {
 
   @override
   void dispose() {
-    _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     super.dispose();
-  }
-
-  void _onScroll() {
-    if (_scrollController.hasClients) {
-      setState(() {
-        _scrollOffset = _scrollController.offset;
-      });
-    }
   }
 
   void _showAddStaffSheet(BuildContext context) {
@@ -102,20 +100,12 @@ class _StaffScreenState extends State<StaffScreen> {
     final totalStaff = staffVm.allStaff.length;
     final presentToday = staffVm.allStaff.where((s) => s.status == 'Active').length;
     final onLeave = staffVm.allStaff.where((s) => s.status == 'On Leave').length;
-
-    // Calculate dynamic cards opacity based on scroll offset (fades out at 150px)
-    final double cardsOpacity = (1.0 - (_scrollOffset / 150.0)).clamp(0.0, 1.0);
-
     final String currentMonthStr = DateFormat('MMMM yyyy').format(DateTime.now());
+
+    // Pre-calculate total salary due using O(1) hash map lookup
     double totalSalaryDue = 0.0;
     for (final s in staffVm.allStaff) {
-      Map<String, dynamic>? rpc;
-      for (final row in _staffCardsRpc) {
-        if (row['staff_id']?.toString() == s.id.toString()) {
-          rpc = row;
-          break;
-        }
-      }
+      final rpc = _staffRpcMap[s.id.toString()];
       final bool isPaid = (rpc?['is_salary_paid'] == true) || staffVm.isSalaryPaid(s.id, currentMonthStr);
       if (!isPaid) {
         final double rpcPending = (rpc?['salary_pending'] as num?)?.toDouble() ?? s.salary;
@@ -130,14 +120,13 @@ class _StaffScreenState extends State<StaffScreen> {
       body: SafeArea(
         child: CustomScrollView(
           controller: _scrollController,
+          physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
           slivers: [
-            // 1. Collapsing Title & Stats Grid (Scrolls away & fades out)
+            // 1. Collapsing Title & Stats Grid (Scrolls away smoothly without GPU offscreen rasterization)
             SliverToBoxAdapter(
-              child: Opacity(
-                opacity: cardsOpacity,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                     // Header Section
                     Padding(
                       padding: const EdgeInsets.fromLTRB(AppTheme.pagePadding, 16, AppTheme.pagePadding, 8),
@@ -213,7 +202,6 @@ class _StaffScreenState extends State<StaffScreen> {
                   ],
                 ),
               ),
-            ),
 
             // 2. Pinned Search Bar & Section Title (Locks at the top)
             SliverPersistentHeader(
@@ -282,89 +270,91 @@ class _StaffScreenState extends State<StaffScreen> {
               child: SizedBox(height: 8),
             ),
 
-            // 4. Staff List (Sorted: Pending salary staff at TOP)
+            // 4. Staff List (Sorted: Pending salary staff at TOP, pure O(1) indexed render)
             SliverPadding(
               padding: const EdgeInsets.symmetric(horizontal: AppTheme.pagePadding),
-              sliver: SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) {
-                    final sortedStaff = List<Staff>.from(allStaff);
-                    sortedStaff.sort((a, b) {
-                      Map<String, dynamic>? aRpc;
-                      Map<String, dynamic>? bRpc;
-                      for (final row in _staffCardsRpc) {
-                        if (row['staff_id']?.toString() == a.id.toString()) aRpc = row;
-                        if (row['staff_id']?.toString() == b.id.toString()) bRpc = row;
-                      }
-                      final bool aPaid = (aRpc?['is_salary_paid'] == true) || staffVm.isSalaryPaid(a.id, currentMonthStr);
-                      final bool bPaid = (bRpc?['is_salary_paid'] == true) || staffVm.isSalaryPaid(b.id, currentMonthStr);
-                      if (!aPaid && bPaid) return -1;
-                      if (aPaid && !bPaid) return 1;
-                      return 0;
-                    });
+              sliver: Builder(
+                builder: (context) {
+                  final sortedStaff = List<Staff>.from(allStaff);
+                  sortedStaff.sort((a, b) {
+                    final aRpc = _staffRpcMap[a.id.toString()];
+                    final bRpc = _staffRpcMap[b.id.toString()];
+                    final bool aPaid = (aRpc?['is_salary_paid'] == true) || staffVm.isSalaryPaid(a.id, currentMonthStr);
+                    final bool bPaid = (bRpc?['is_salary_paid'] == true) || staffVm.isSalaryPaid(b.id, currentMonthStr);
+                    if (!aPaid && bPaid) return -1;
+                    if (aPaid && !bPaid) return 1;
+                    return a.name.compareTo(b.name);
+                  });
 
-                    final staff = sortedStaff[index];
-                    Map<String, dynamic>? rpcMatch;
-                    for (final row in _staffCardsRpc) {
-                      if (row['staff_id']?.toString() == staff.id.toString()) {
-                        rpcMatch = Map<String, dynamic>.from(row);
-                        break;
-                      }
-                    }
+                  final draftsList = staffVm.getDraftsForMonth(currentMonthStr);
+                  final draftsMap = <String, Map<String, dynamic>>{};
+                  for (final d in draftsList) {
+                    final sid = d['staff_id']?.toString();
+                    if (sid != null) draftsMap[sid] = d;
+                  }
 
-                    final bool rpcPaid = rpcMatch?['is_salary_paid'] == true;
-                    final bool vmPaid = staffVm.isSalaryPaid(staff.id, currentMonthStr);
-                    final bool isPaid = rpcPaid || vmPaid;
-                    final double cachedPayable = staffVm.getStaffCachedPayable(staff.id);
-                    final double rpcPayable = (rpcMatch?['salary_pending'] as num?)?.toDouble() ?? staff.salary;
-                    final double effectivePayable = isPaid 
-                        ? 0.0 
-                        : (cachedPayable > 0 ? cachedPayable : (rpcMatch != null ? rpcPayable : staff.salary));
+                  return SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) {
+                        final staff = sortedStaff[index];
+                        final rpcMatch = _staffRpcMap[staff.id.toString()];
 
-                    final staffData = rpcMatch ?? {
-                      'staff_id': staff.id,
-                      'name': staff.name,
-                      'role': staff.role,
-                      'avatar': staff.avatar,
-                      'status': staff.status,
-                      'present_days': 0,
-                      'leave_days': 0,
-                      'early_exit_count': 0,
-                      'last_check_in': 'N/A',
-                      'is_checked_in': staff.status == 'Active',
-                      'current_date_str': DateFormat('dd MMM yyyy').format(DateTime.now()),
-                    };
+                        final bool rpcPaid = rpcMatch?['is_salary_paid'] == true;
+                        final bool vmPaid = staffVm.isSalaryPaid(staff.id, currentMonthStr);
+                        final bool isPaid = rpcPaid || vmPaid;
+                        final double cachedPayable = staffVm.getStaffCachedPayable(staff.id);
+                        final double rpcPayable = (rpcMatch?['salary_pending'] as num?)?.toDouble() ?? staff.salary;
+                        final double effectivePayable = isPaid 
+                            ? 0.0 
+                            : (cachedPayable > 0 ? cachedPayable : (rpcMatch != null ? rpcPayable : staff.salary));
 
-                    staffData['salary_pending'] = effectivePayable;
-                    staffData['is_salary_paid'] = isPaid;
-                    if (isPaid) {
-                      final num? rpcPaid = rpcMatch?['paid_amount'] as num?;
-                      final paidDraft = staffVm.getDraftsForMonth(currentMonthStr).cast<Map<String, dynamic>?>().firstWhere(
-                        (d) => d?['staff_id']?.toString() == staff.id,
-                        orElse: () => null,
-                      );
-                      final num? draftGross = paidDraft?['gross_salary'] as num?;
-                      final num? draftNet = paidDraft?['net_salary'] as num?;
-                      final num? draftAdvance = paidDraft?['advance_deduction'] as num?;
-                      final double draftTotal = (draftGross != null && draftGross > 0)
-                          ? draftGross.toDouble()
-                          : ((draftNet != null && draftNet > 0) ? (draftNet.toDouble() + (draftAdvance?.toDouble() ?? 0.0)) : 0.0);
+                        final staffData = rpcMatch != null ? Map<String, dynamic>.from(rpcMatch) : {
+                          'staff_id': staff.id,
+                          'name': staff.name,
+                          'role': staff.role,
+                          'avatar': staff.avatar,
+                          'status': staff.status,
+                          'present_days': 0,
+                          'leave_days': 0,
+                          'early_exit_count': 0,
+                          'last_check_in': 'N/A',
+                          'is_checked_in': staff.status == 'Active',
+                          'current_date_str': DateFormat('dd MMM yyyy').format(DateTime.now()),
+                        };
 
-                      staffData['paid_amount'] = (rpcPaid != null && rpcPaid > 0)
-                          ? rpcPaid.toDouble()
-                          : (draftTotal > 0 ? draftTotal : staff.salary);
-                    }
+                        staffData['salary_pending'] = effectivePayable;
+                        staffData['is_salary_paid'] = isPaid;
+                        if (isPaid) {
+                          final num? rpcPaid = rpcMatch?['paid_amount'] as num?;
+                          final paidDraft = draftsMap[staff.id.toString()];
+                          final num? draftGross = paidDraft?['gross_salary'] as num?;
+                          final num? draftNet = paidDraft?['net_salary'] as num?;
+                          final num? draftAdvance = paidDraft?['advance_deduction'] as num?;
+                          final double draftTotal = (draftGross != null && draftGross > 0)
+                              ? draftGross.toDouble()
+                              : ((draftNet != null && draftNet > 0) ? (draftNet.toDouble() + (draftAdvance?.toDouble() ?? 0.0)) : 0.0);
 
-                    return OwnerStaffCard(
-                      staffData: staffData,
-                      onTap: () async {
-                        await Navigator.push(context, AppRouter.slideRoute(StaffProfileScreen(staff: staff)));
-                        if (context.mounted) _loadStaffPayrollData();
+                          staffData['paid_amount'] = (rpcPaid != null && rpcPaid > 0)
+                              ? rpcPaid.toDouble()
+                              : (draftTotal > 0 ? draftTotal : staff.salary);
+                        }
+
+                        return RepaintBoundary(
+                          child: OwnerStaffCard(
+                            staffData: staffData,
+                            onTap: () async {
+                              await Navigator.push(context, AppRouter.slideRoute(StaffProfileScreen(staff: staff)));
+                              if (context.mounted) _loadStaffPayrollData();
+                            },
+                          ),
+                        );
                       },
-                    );
-                  },
-                  childCount: allStaff.length,
-                ),
+                      childCount: sortedStaff.length,
+                      addRepaintBoundaries: true,
+                      addAutomaticKeepAlives: true,
+                    ),
+                  );
+                },
               ),
             ),
           ],
@@ -567,7 +557,7 @@ class _AddStaffSheetState extends State<AddStaffSheet> {
                   role: _selectedRole,
                   department: _selectedRole == 'Trainer' ? 'Training' : 'Administration',
                   status: 'Active',
-                  avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
+                  avatar: '',
                   joinDate: '16 Jul 2026',
                   shift: _gymShiftMode == 'Single Shift' ? 'Single Shift' : 'Morning Shift',
                   experience: 'N/A',

@@ -10,6 +10,7 @@ import '../../../core/services/supabase_service.dart';
 import 'client_details_screen.dart';
 import '../../../core/models/member.dart';
 import '../../../core/models/staff.dart';
+import '../../../core/widgets/app_cached_avatar.dart';
 
 class StaffClientsScreen extends StatefulWidget {
   const StaffClientsScreen({super.key});
@@ -102,7 +103,7 @@ class _StaffClientsScreenState extends State<StaffClientsScreen> {
             'program': item['program'] ?? 'PT Client',
             'status': item['assignment_status'] ?? 'Active',
             'name': member.name,
-            'image': member.avatar.isNotEmpty ? member.avatar : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=150',
+            'image': member.avatar,
             'phone': member.phone,
           });
 
@@ -147,7 +148,7 @@ class _StaffClientsScreenState extends State<StaffClientsScreen> {
           'program': item['program'] as String,
           'status': item['status'] as String,
           'name': member.name,
-          'image': member.avatar.isNotEmpty ? member.avatar : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=150',
+          'image': member.avatar,
           'phone': member.phone,
         });
       }
@@ -286,9 +287,10 @@ class _StaffClientsScreenState extends State<StaffClientsScreen> {
                             },
                             child: Row(
                               children: [
-                                CircleAvatar(
-                                  radius: 20,
-                                  backgroundImage: NetworkImage(client['image']!),
+                                AppCachedAvatar(
+                                  imageUrl: client['image'],
+                                  name: client['name']!,
+                                  size: 40,
                                 ),
                                 const SizedBox(width: 12),
                                 Expanded(

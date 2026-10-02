@@ -38,6 +38,7 @@ class MemberAppViewModel extends ChangeNotifier {
   List<dynamic>? _customRulesData;
   int _currentRulesVersion = 1;
   String _memberAvatar = 'assets/images/member/avatar_default.png';
+  String _joinDate = '';
   int _notificationCount = 0;
 
   // Body Stats & Fitness Goals (remain blank until entered)
@@ -141,7 +142,7 @@ class MemberAppViewModel extends ChangeNotifier {
     _currentQuote = _quotes[Random().nextInt(_quotes.length)];
     _loadPersistedState();
     if (SupabaseService.isInitialized) {
-      _authStateSubscription = SupabaseService.client.auth.onAuthStateChange.listen((data) {
+      _authStateSubscription = SupabaseService.client.auth.onAuthStateChange.listen((data) async {
         final event = data.event;
         final session = data.session;
         if (event == AuthChangeEvent.signedOut) {
@@ -150,7 +151,12 @@ class MemberAppViewModel extends ChangeNotifier {
                     event == AuthChangeEvent.tokenRefreshed ||
                     event == AuthChangeEvent.initialSession) &&
                    session != null) {
-          loadMemberDataFromSupabase();
+          final prefs = await SharedPreferences.getInstance();
+          final activeRole = prefs.getString('gymos_user_role');
+          // CRITICAL: Never automatically hijack session or reload member data if user is an active Owner or Staff!
+          if (activeRole == 'member') {
+            loadMemberDataFromSupabase();
+          }
         }
       });
     }
@@ -181,6 +187,7 @@ class MemberAppViewModel extends ChangeNotifier {
   List<dynamic>? get customRulesData => _customRulesData;
   int get currentRulesVersion => _currentRulesVersion;
   String get memberAvatar => _memberAvatar;
+  String get joinDate => _joinDate;
   int get notificationCount => _notificationCount;
 
   String get weight => _weight;
@@ -414,6 +421,7 @@ class MemberAppViewModel extends ChangeNotifier {
     _gymName = prefs.getString('member_cached_gym_name') ?? _gymName;
     _gymLogoUrl = prefs.getString('member_cached_gym_logo') ?? _gymLogoUrl;
     _gymId = prefs.getString('member_cached_gym_id') ?? _gymId;
+    _joinDate = prefs.getString('member_cached_join_date') ?? _joinDate;
 
     // Instantly restore cached rules agreement state on startup
     bool localAgreed = false;
@@ -676,6 +684,11 @@ class MemberAppViewModel extends ChangeNotifier {
         _memberAvatar = (memberData['avatar'] != null && memberData['avatar'].toString().isNotEmpty) 
             ? memberData['avatar'] 
             : _memberAvatar;
+        final rawJoin = memberData['join_date']?.toString() ?? memberData['created_at']?.toString() ?? '';
+        if (rawJoin.isNotEmpty) {
+          _joinDate = rawJoin;
+          await prefs.setString('member_cached_join_date', rawJoin);
+        }
         _membershipStatus = memberData['status'] ?? _membershipStatus;
         _assignedWorkoutId = memberData['assigned_workout_id'] ?? '';
         _assignedDietId = memberData['assigned_diet_id'] ?? '';
@@ -817,12 +830,17 @@ class MemberAppViewModel extends ChangeNotifier {
         }
 
         // Keep local storage synchronized for roles and gym ID so GymRepository works correctly
-        await prefs.setString('gymos_user_role', 'member');
-        if (gymId != null) {
-          await prefs.setString('gymos_gym_info', jsonEncode({
-            'id': gymId,
-            'name': _gymName,
-          }));
+        // CRITICAL: Only set gymos_user_role and gymos_gym_info if active role is explicitly member or empty.
+        // NEVER overwrite an active owner or staff session!
+        final currentRole = prefs.getString('gymos_user_role');
+        if (currentRole == null || currentRole.isEmpty || currentRole == 'member') {
+          await prefs.setString('gymos_user_role', 'member');
+          if (gymId.isNotEmpty) {
+            await prefs.setString('gymos_gym_info', jsonEncode({
+              'id': gymId,
+              'name': _gymName,
+            }));
+          }
         }
 
         // Fetch latest active membership from member_memberships

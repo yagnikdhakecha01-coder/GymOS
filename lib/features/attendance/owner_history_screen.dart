@@ -6,6 +6,7 @@ import '../../core/theme/theme.dart';
 import '../../core/services/staff_shift_attendance_engine.dart';
 import 'attendance_viewmodel.dart';
 import '../staff/staff_viewmodel.dart';
+import '../../core/widgets/app_cached_avatar.dart';
 
 class OwnerAttendanceHistoryScreen extends StatefulWidget {
   final String userTypeFilter; // 'Staff', 'Member', or 'All'
@@ -160,7 +161,7 @@ class _OwnerAttendanceHistoryScreenState extends State<OwnerAttendanceHistoryScr
                 'checkOut': log.checkOutTime != null && log.checkOutTime!.isNotEmpty ? log.checkOutTime : '--',
                 'hours': log.workingHours != null ? '${log.workingHours!.toStringAsFixed(1)}h' : '--',
                 'status': computedStatus,
-                'avatar': staff.avatar.isNotEmpty ? staff.avatar : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=150',
+                'avatar': staff.avatar,
               });
             }
           } else {
@@ -171,7 +172,7 @@ class _OwnerAttendanceHistoryScreenState extends State<OwnerAttendanceHistoryScr
               'checkOut': '--',
               'hours': '--',
               'status': computedStatus,
-              'avatar': staff.avatar.isNotEmpty ? staff.avatar : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=150',
+              'avatar': staff.avatar,
             });
           }
         }
@@ -187,7 +188,7 @@ class _OwnerAttendanceHistoryScreenState extends State<OwnerAttendanceHistoryScr
             'checkOut': log.checkOutTime != null && log.checkOutTime!.isNotEmpty ? log.checkOutTime : '--',
             'hours': log.workingHours != null ? '${log.workingHours!.toStringAsFixed(1)}h' : '--',
             'status': log.status,
-            'avatar': staff?.avatar != null && staff!.avatar.isNotEmpty ? staff.avatar : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=150',
+            'avatar': staff?.avatar ?? '',
           });
         }
       }
@@ -203,7 +204,7 @@ class _OwnerAttendanceHistoryScreenState extends State<OwnerAttendanceHistoryScr
           'checkOut': log.checkOutTime != null && log.checkOutTime!.isNotEmpty ? log.checkOutTime : '--',
           'hours': log.workingHours != null ? '${log.workingHours!.toStringAsFixed(1)}h' : '--',
           'status': log.status,
-          'avatar': 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=150',
+          'avatar': '',
         });
       }
     } else {
@@ -219,7 +220,7 @@ class _OwnerAttendanceHistoryScreenState extends State<OwnerAttendanceHistoryScr
           'checkOut': log.checkOutTime != null && log.checkOutTime!.isNotEmpty ? log.checkOutTime : '--',
           'hours': log.workingHours != null ? '${log.workingHours!.toStringAsFixed(1)}h' : '--',
           'status': log.status,
-          'avatar': 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=150',
+          'avatar': '',
         });
       }
     }
@@ -452,10 +453,10 @@ class _AttendanceCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          // Avatar
-          CircleAvatar(
-            radius: 20,
-            backgroundImage: NetworkImage(data['avatar']),
+          AppCachedAvatar(
+            imageUrl: data['avatar'] as String?,
+            name: data['name'] as String? ?? 'User',
+            size: 40,
           ),
           const SizedBox(width: 12),
 

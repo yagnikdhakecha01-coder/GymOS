@@ -8,6 +8,7 @@ class UserGymAssociation {
   final bool setupCompleted;
   final String? gymName;
   final String? gymCode;
+  final String? createdAt;
 
   UserGymAssociation({
     required this.id,
@@ -17,6 +18,7 @@ class UserGymAssociation {
     required this.setupCompleted,
     this.gymName,
     this.gymCode,
+    this.createdAt,
   });
 
   factory UserGymAssociation.fromJson(Map<String, dynamic> json) {
@@ -28,6 +30,7 @@ class UserGymAssociation {
       setupCompleted: json['setup_completed'] as bool? ?? false,
       gymName: json['gyms']?['name'] as String?,
       gymCode: json['gyms']?['gym_code'] as String?,
+      createdAt: (json['created_at'] ?? json['createdAt']) as String?,
     );
   }
 
