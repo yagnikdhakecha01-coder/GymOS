@@ -277,7 +277,7 @@ def main():
                 last_push_time = current_time
                 
             # Sync two-way commands (member expiry/renewal from mobile app)
-            if current_time - last_cmd_time >= config.get("sync_commands_interval_seconds", 30):
+            if current_time - last_cmd_time >= config.get("sync_commands_interval_seconds", 180):
                 if device_secret and device_secret != "YOUR_GYM_DEVICE_SECRET_HERE":
                     sync_member_commands_from_cloud(supabase_url, device_secret, devices)
                 last_cmd_time = current_time

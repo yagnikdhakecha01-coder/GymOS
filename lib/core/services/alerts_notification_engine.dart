@@ -76,57 +76,74 @@ class AlertsNotificationEngine {
     // ── 1. REALTIME LISTENER FOR INSTANT SUPPORT MESSAGES & ALERTS ──
     _subscribeRealtime(context);
 
-    // ── 2. PERIODIC POLL LOOP (every 30 seconds) ──
-    _timer = Timer.periodic(const Duration(seconds: 30), (timer) async {
-      try {
-        // Periodic check for app update (respects daily snooze)
-        if (!VersionCheckEngine.isShowingDialog) {
-          try {
-            final isSnoozed = await VersionCheckService.isSnoozedToday();
-            if (!isSnoozed) {
-              final verResult = await VersionCheckService.checkVersion();
-              if (verResult.isUpdateAvailable) {
-                final targetContext = VersionCheckEngine.navigatorKey?.currentContext;
-                if (targetContext != null && targetContext.mounted) {
-                  VersionCheckEngine.showUpdateDialog(verResult, targetContext);
-                  return;
-                } else if (context.mounted) {
-                  VersionCheckEngine.showUpdateDialog(verResult, context);
-                  return;
-                }
-              }
-            }
-          } catch (_) {}
-        }
+    // Initial run on startup
+    _checkAppUpdate(context);
+    _runPeriodicChecks(context);
 
-        final authVm = Provider.of<AuthViewModel>(context, listen: false);
-        final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
-        final role = (authVm.selectedRole ?? authVm.storage.getUserRole() ?? '').toLowerCase();
-        final bool isOwner = role == 'owner' || role == 'superadmin' || role == 'admin';
-        final bool isStaff = role == 'staff' || role == 'receptionist' || role == 'trainer';
-        final bool isMember = role == 'member';
-        final staffId = authVm.staffRecord?.id;
-        final authUid = authVm.currentUser?.id;
-        final memberId = storage.getString('member_id');
-        final userStartDate = _getUserStartDate(
-          isOwner: isOwner,
-          isStaff: isStaff,
-          isMember: isMember,
-          authVm: authVm,
-          storage: storage,
-        );
-        
-        if (gymId != null && SupabaseService.isInitialized) {
-          // A. Run membership expiring alerts (Owner only)
-          if (isOwner) {
+    // ── 2. PERIODIC POLL LOOP (every 5 minutes instead of 30 seconds) ──
+    _timer = Timer.periodic(const Duration(minutes: 5), (timer) async {
+      await _runPeriodicChecks(context);
+    });
+  }
+
+  static Future<void> _checkAppUpdate(BuildContext context) async {
+    if (VersionCheckEngine.isShowingDialog) return;
+    try {
+      final isSnoozed = await VersionCheckService.isSnoozedToday();
+      if (!isSnoozed) {
+        final verResult = await VersionCheckService.checkVersion();
+        if (verResult.isUpdateAvailable) {
+          final targetContext = VersionCheckEngine.navigatorKey?.currentContext;
+          if (targetContext != null && targetContext.mounted) {
+            VersionCheckEngine.showUpdateDialog(verResult, targetContext);
+            return;
+          } else if (context.mounted) {
+            VersionCheckEngine.showUpdateDialog(verResult, context);
+            return;
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  static Future<void> _runPeriodicChecks(BuildContext context) async {
+    try {
+      final gymRepo = Provider.of<GymRepository>(context, listen: false);
+      final storage = gymRepo.storage;
+      final authVm = Provider.of<AuthViewModel>(context, listen: false);
+      final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
+      final role = (authVm.selectedRole ?? authVm.storage.getUserRole() ?? '').toLowerCase();
+      final bool isOwner = role == 'owner' || role == 'superadmin' || role == 'admin';
+      final bool isStaff = role == 'staff' || role == 'receptionist' || role == 'trainer';
+      final bool isMember = role == 'member';
+      final staffId = authVm.staffRecord?.id;
+      final authUid = authVm.currentUser?.id;
+      final memberId = storage.getString('member_id');
+      final userStartDate = _getUserStartDate(
+        isOwner: isOwner,
+        isStaff: isStaff,
+        isMember: isMember,
+        authVm: authVm,
+        storage: storage,
+      );
+      
+      if (gymId != null && SupabaseService.isInitialized) {
+        // A. Run membership expiring alerts (Owner only, once per day per gym)
+        if (isOwner) {
+          final todayStr = DateTime.now().toIso8601String().substring(0, 10);
+          final lastChecked = storage.getString('last_expiring_alerts_check_$gymId');
+          if (lastChecked != todayStr) {
             try {
               await SupabaseService.client.rpc('check_membership_expiring_alerts', params: {'p_gym_id': gymId});
+              await storage.setString('last_expiring_alerts_check_$gymId', todayStr);
             } catch (_) {
               try {
                 await SupabaseService.client.rpc('check_membership_expiring_15_days', params: {'p_gym_id': gymId});
+                await storage.setString('last_expiring_alerts_check_$gymId', todayStr);
               } catch (_) {}
             }
           }
+        }
 
           // B. Fetch notifications for this gym and filter strictly by active role, user & join date
           try {
@@ -261,8 +278,7 @@ class AlertsNotificationEngine {
       } catch (e) {
         debugPrint('AlertsNotificationEngine error: $e');
       }
-    });
-  }
+    }
 
   static void _subscribeRealtime(BuildContext context) {
     if (!SupabaseService.isInitialized) return;

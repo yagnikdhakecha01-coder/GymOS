@@ -237,7 +237,7 @@ async function main() {
   log("Bridge service is running in background. Press Ctrl+C to stop.");
 
   const pushInterval = (config.push_interval_seconds || 10) * 1000;
-  const cmdInterval = (config.sync_commands_interval_seconds || 30) * 1000;
+  const cmdInterval = (config.sync_commands_interval_seconds || 180) * 1000;
 
   const anonKey = config.supabase_anon_key || SUPABASE_ANON_KEY;
 

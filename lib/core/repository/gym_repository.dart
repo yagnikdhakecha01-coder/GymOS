@@ -253,7 +253,7 @@ class GymRepository extends ChangeNotifier {
 
   void _startSyncTimer() {
     _syncTimer?.cancel();
-    _syncTimer = Timer.periodic(const Duration(seconds: 30), (timer) async {
+    _syncTimer = Timer.periodic(const Duration(minutes: 2), (timer) async {
       await triggerBackgroundSync();
     });
   }
@@ -271,6 +271,14 @@ class GymRepository extends ChangeNotifier {
             callback: (payload) {
               final tableName = payload.table;
               print('Supabase Realtime Event Received: ${payload.eventType} on table: $tableName');
+
+              // Verify gym_id matches if present in record to prevent multi-gym bleed
+              final newRec = payload.newRecord;
+              final oldRec = payload.oldRecord;
+              final recordGymId = newRec['gym_id']?.toString() ?? oldRec['gym_id']?.toString();
+              if (recordGymId != null && recordGymId != gymId) {
+                return; // Event belongs to a different gym, ignore safely
+              }
               
               if (tableName == 'members') {
                 fetchMembersFromSupabase();
@@ -295,9 +303,8 @@ class GymRepository extends ChangeNotifier {
                 fetchAttendanceSettingsFromSupabase();
               } else if (tableName == 'display_sessions') {
                 fetchDisplaySessionsFromSupabase();
-              } else {
-                syncAllFromSupabase();
               }
+              // Optimization: Unhandled tables are ignored instead of running avalanche syncAllFromSupabase()
 
               // Update stats for live screen dashboard counters only for relevant changes
               if (tableName == 'members' || tableName == 'attendance_logs' || tableName == 'transactions' || tableName == 'finance_transactions') {
@@ -661,8 +668,17 @@ class GymRepository extends ChangeNotifier {
     }
   }
 
+  bool get hasPendingOfflineOperations =>
+      _crudQueue.isNotEmpty ||
+      _attendanceQueue.isNotEmpty ||
+      _manualAttendanceQueue.isNotEmpty;
+
   Future<void> triggerBackgroundSync({bool forceRetry = false}) async {
     if (_isSyncing) return;
+    // Optimization: Skip network ping if there are no pending operations in offline queue
+    if (!forceRetry && !hasPendingOfflineOperations) {
+      return;
+    }
     _isSyncing = true;
     try {
       final reachable = await isSupabaseReachable();

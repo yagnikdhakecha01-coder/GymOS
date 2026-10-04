@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../theme/admin_theme.dart';
@@ -558,17 +559,40 @@ class _AdminNotificationBellState extends State<_AdminNotificationBell> {
   List<AdminNotificationItem> _notifications = [];
   int _unreadCount = 0;
   Timer? _timer;
+  RealtimeChannel? _channel;
 
   @override
   void initState() {
     super.initState();
     _loadData();
-    _timer = Timer.periodic(const Duration(seconds: 10), (_) => _loadData());
+    _subscribeRealtime();
+    // Gentle 5-minute fallback instead of aggressive 10-second polling
+    _timer = Timer.periodic(const Duration(minutes: 5), (_) => _loadData());
+  }
+
+  void _subscribeRealtime() {
+    try {
+      final client = AdminNotificationService.client;
+      if (client != null) {
+        _channel = client
+            .channel('public_admin_notifications_realtime')
+            .onPostgresChanges(
+              event: PostgresChangeEvent.all,
+              schema: 'public',
+              table: 'admin_notifications',
+              callback: (_) {
+                if (mounted) _loadData();
+              },
+            )
+            .subscribe();
+      }
+    } catch (_) {}
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _channel?.unsubscribe();
     super.dispose();
   }
 

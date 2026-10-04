@@ -22,7 +22,7 @@ class MainNavigationHolder extends StatefulWidget {
   State<MainNavigationHolder> createState() => _MainNavigationHolderState();
 }
 
-class _MainNavigationHolderState extends State<MainNavigationHolder> {
+class _MainNavigationHolderState extends State<MainNavigationHolder> with WidgetsBindingObserver {
   int _currentIndex = 0;
   Timer? _statusCheckTimer;
   bool _isCheckingStatus = false;
@@ -46,6 +46,7 @@ class _MainNavigationHolderState extends State<MainNavigationHolder> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkGymStatus();
     });
@@ -54,7 +55,15 @@ class _MainNavigationHolderState extends State<MainNavigationHolder> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkGymStatus();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _statusCheckTimer?.cancel();
     _titleController.dispose();
     _descController.dispose();
@@ -107,8 +116,9 @@ class _MainNavigationHolderState extends State<MainNavigationHolder> {
   }
 
   void _startStatusCheckTimer() {
-    // Check gym status every 10 seconds in background
-    _statusCheckTimer = Timer.periodic(const Duration(seconds: 10), (timer) async {
+    // Check gym status periodically (every 15 minutes) as gentle fallback
+    _statusCheckTimer?.cancel();
+    _statusCheckTimer = Timer.periodic(const Duration(minutes: 15), (timer) async {
       await _checkGymStatus();
     });
   }

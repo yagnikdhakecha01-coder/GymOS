@@ -7,6 +7,7 @@ import 'local_storage.dart';
 class GymLogoCacheService {
   static final Map<String, String> _memoryCache = {};
   static final Set<String> _pendingDownloads = {};
+  static final ValueNotifier<int> cacheNotifier = ValueNotifier<int>(0);
 
   /// Get cached base64 logo string instantly from memory or local storage
   static String? getCachedLogoBase64(LocalStorageService? storage, String? gymId, String? logoUrl) {
@@ -66,6 +67,7 @@ class GymLogoCacheService {
           await effectiveStorage.setCachedImage('gym_logo_$gymId', base64Str);
         }
         await effectiveStorage.setCachedImage('custom_gym_logo', base64Str);
+        cacheNotifier.value++;
       }
     } catch (e) {
       // Ignore background network errors gracefully
@@ -83,5 +85,6 @@ class GymLogoCacheService {
       await effectiveStorage.setCachedImage('gym_logo_$gymId', base64Data);
     }
     await effectiveStorage.setCachedImage('custom_gym_logo', base64Data);
+    cacheNotifier.value++;
   }
 }

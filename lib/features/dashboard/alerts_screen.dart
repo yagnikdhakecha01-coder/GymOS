@@ -33,8 +33,8 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
     _tabController = TabController(length: 3, vsync: this);
     _fetchAlerts();
     
-    // Periodically fetch from DB every 20 seconds for updates in the UI
-    _refreshTimer = Timer.periodic(const Duration(seconds: 20), (timer) {
+    // Periodically fetch from DB every 2 minutes for updates in the UI
+    _refreshTimer = Timer.periodic(const Duration(minutes: 2), (timer) {
       _fetchAlertsQuietly();
     });
   }

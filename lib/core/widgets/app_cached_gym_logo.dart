@@ -28,63 +28,61 @@ class AppCachedGymLogo extends StatelessWidget {
     final storage = LocalStorageService.instance;
     final cleanLogo = logoUrl?.trim() ?? '';
     
-    // 1. Check instant in-memory or local base64 cache
-    final cachedBase64 = GymLogoCacheService.getCachedLogoBase64(storage, gymId, cleanLogo);
-    Uint8List? imageBytes;
-    if (cachedBase64 != null && cachedBase64.isNotEmpty) {
-      try {
-        imageBytes = base64Decode(cachedBase64);
-      } catch (_) {}
-    }
+    return ValueListenableBuilder<int>(
+      valueListenable: GymLogoCacheService.cacheNotifier,
+      builder: (context, _, _) {
+        // 1. Check instant in-memory or local base64 cache
+        final cachedBase64 = GymLogoCacheService.getCachedLogoBase64(storage, gymId, cleanLogo);
+        Uint8List? imageBytes;
+        if (cachedBase64 != null && cachedBase64.isNotEmpty) {
+          try {
+            imageBytes = base64Decode(cachedBase64);
+          } catch (_) {}
+        }
 
-    Widget content;
-    if (imageBytes != null && imageBytes.isNotEmpty) {
-      content = ClipRRect(
-        borderRadius: radius,
-        child: Image.memory(
-          imageBytes,
+        Widget content;
+        if (imageBytes != null && imageBytes.isNotEmpty) {
+          content = ClipRRect(
+            borderRadius: radius,
+            child: Image.memory(
+              imageBytes,
+              width: size,
+              height: size,
+              fit: BoxFit.cover,
+              gaplessPlayback: true,
+              errorBuilder: (_, _, _) => _buildStaticFallback(radius),
+            ),
+          );
+        } else if (cleanLogo.startsWith('http')) {
+          content = ClipRRect(
+            borderRadius: radius,
+            child: Image.network(
+              cleanLogo,
+              width: size,
+              height: size,
+              fit: BoxFit.cover,
+              gaplessPlayback: true,
+              errorBuilder: (_, _, _) => _buildStaticFallback(radius),
+              loadingBuilder: (context, child, progress) {
+                if (progress == null) return child;
+                return _buildStaticFallback(radius);
+              },
+            ),
+          );
+        } else {
+          content = _buildStaticFallback(radius);
+        }
+
+        return Container(
           width: size,
           height: size,
-          fit: BoxFit.cover,
-          gaplessPlayback: true,
-          errorBuilder: (_, __, ___) => _buildStaticFallback(radius),
-        ),
-      );
-    } else if (cleanLogo.startsWith('http')) {
-      content = ClipRRect(
-        borderRadius: radius,
-        child: Image.network(
-          cleanLogo,
-          width: size,
-          height: size,
-          fit: BoxFit.cover,
-          gaplessPlayback: true,
-          errorBuilder: (_, __, ___) => _buildStaticFallback(radius),
-          loadingBuilder: (context, child, progress) {
-            if (progress == null) return child;
-            return _buildStaticFallback(radius);
-          },
-        ),
-      );
-    } else {
-      content = _buildStaticFallback(radius);
-    }
-
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: AppTheme.primary,
-        borderRadius: radius,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.06),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+          decoration: BoxDecoration(
+            borderRadius: radius,
+            color: AppTheme.cardBackground,
           ),
-        ],
-      ),
-      child: content,
+          child: content,
+        );
+      },
     );
   }
 

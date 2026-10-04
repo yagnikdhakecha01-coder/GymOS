@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
@@ -24,17 +25,43 @@ class _SupportChatScreenState extends State<SupportChatScreen> {
   bool _loading = true;
   bool _sending = false;
   Timer? _refreshTimer;
+  RealtimeChannel? _chatChannel;
 
   @override
   void initState() {
     super.initState();
     _fetchMessages();
-    _refreshTimer = Timer.periodic(const Duration(seconds: 4), (_) => _fetchMessagesQuietly());
+    _subscribeChatRealtime();
+    _refreshTimer = Timer.periodic(const Duration(seconds: 15), (_) => _fetchMessagesQuietly());
+  }
+
+  void _subscribeChatRealtime() {
+    if (!SupabaseService.isInitialized) return;
+    try {
+      final ticketId = widget.ticket['id'];
+      _chatChannel = SupabaseService.client
+          .channel('public_support_messages_$ticketId')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'support_messages',
+            filter: PostgresChangeFilter(
+              type: PostgresChangeFilterType.eq,
+              column: 'ticket_id',
+              value: ticketId,
+            ),
+            callback: (_) {
+              if (mounted) _fetchMessagesQuietly();
+            },
+          )
+          .subscribe();
+    } catch (_) {}
   }
 
   @override
   void dispose() {
     _refreshTimer?.cancel();
+    _chatChannel?.unsubscribe();
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();

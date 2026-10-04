@@ -11,6 +11,7 @@ import '../../core/services/gym_logo_cache_service.dart';
 import '../../core/widgets/sparkline.dart';
 import '../../core/widgets/sparkline_chart.dart';
 import '../../core/widgets/app_cached_avatar.dart';
+import '../../core/widgets/app_cached_gym_logo.dart';
 import '../authentication/auth_viewmodel.dart';
 import '../authentication/role_selection_screen.dart';
 import '../subscription/owner_subscription_screen.dart';
@@ -435,48 +436,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       builder: (context) {
                         final gymLogo = authVm.gymInfo?['logo'] ?? authVm.gymInfo?['logo_url'] ?? '';
                         final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id']?.toString();
-                        final cachedBase64 = GymLogoCacheService.getCachedLogoBase64(authVm.storage, gymId, gymLogo);
+                        final gymName = authVm.gymInfo?['name']?.toString() ?? 'Gym';
 
-                        if (cachedBase64 != null && cachedBase64.isNotEmpty) {
-                          return ClipRRect(
-                            borderRadius: BorderRadius.circular(18),
-                            child: Image.memory(
-                              base64Decode(cachedBase64),
-                              width: 36,
-                              height: 36,
-                              fit: BoxFit.cover,
-                              gaplessPlayback: true,
-                              errorBuilder: (_, __, ___) => _buildDefaultGymLogo(),
-                            ),
-                          );
-                        } else if (gymLogo.isNotEmpty && (gymLogo.startsWith('http') || gymLogo.startsWith('https'))) {
-                          return ClipRRect(
-                            borderRadius: BorderRadius.circular(18),
-                            child: Image.network(
-                              gymLogo,
-                              width: 36,
-                              height: 36,
-                              fit: BoxFit.cover,
-                              gaplessPlayback: true,
-                              errorBuilder: (_, __, ___) => _buildDefaultGymLogo(),
-                            ),
-                          );
-                        } else if (gymLogo.isNotEmpty) {
-                          return Container(
-                            width: 36, height: 36,
-                            decoration: BoxDecoration(
-                              color: AppTheme.primaryLight,
-                              shape: BoxShape.circle,
-                            ),
-                            child: Center(
-                              child: Text(
-                                gymLogo.length > 2 ? gymLogo.substring(0, 2).toUpperCase() : gymLogo,
-                                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.primary),
-                              ),
-                            ),
-                          );
-                        }
-                        return _buildDefaultGymLogo();
+                        return AppCachedGymLogo(
+                          gymId: gymId,
+                          logoUrl: gymLogo,
+                          gymName: gymName,
+                          size: 36,
+                          borderRadius: BorderRadius.circular(18),
+                        );
                       },
                     ),
                   ),

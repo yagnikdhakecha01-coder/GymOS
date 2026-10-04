@@ -38,6 +38,7 @@ class AdminNotificationItem {
 }
 
 class AdminNotificationService {
+  static SupabaseClient? get client => _client;
   static SupabaseClient? get _client {
     try {
       return AdminSupabaseService.isInitialized ? AdminSupabaseService.client : null;
