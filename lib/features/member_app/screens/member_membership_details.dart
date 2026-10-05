@@ -78,12 +78,6 @@ class _MemberMembershipDetailsState extends State<MemberMembershipDetails>
             color: AppTheme.textPrimary,
           ),
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.more_vert_rounded, size: 22),
-            onPressed: () {},
-          ),
-        ],
       ),
       body: FadeTransition(
         opacity: _fadeAnim,

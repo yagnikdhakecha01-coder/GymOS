@@ -1437,8 +1437,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (_isBannerDismissed) return const SizedBox.shrink();
 
     final text = daysLeft == 0 
-        ? "Your trial ends today. If you want to continue using Gym OS, please purchase a plan."
-        : "Your trial ends in $daysLeft days. If you want to continue using Gym OS after $daysLeft days, please purchase a plan.";
+        ? "Your trial ends today. Gym OS plan tiers are managed by your account administrator."
+        : "Your trial ends in $daysLeft days. Gym OS plan tiers are managed by your account administrator.";
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),

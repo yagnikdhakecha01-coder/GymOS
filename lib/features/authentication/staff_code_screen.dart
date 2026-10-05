@@ -220,7 +220,25 @@ class _StaffCodeScreenState extends State<StaffCodeScreen>
                         style: GoogleFonts.inter(fontSize: 13, color: AppTheme.textMuted),
                       ),
                       GestureDetector(
-                        onTap: () {},
+                        onTap: () {
+                          showDialog(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                              title: Text('Staff Invitation Code', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+                              content: Text(
+                                'Please contact your Gym Owner or Manager. They can generate your unique staff invitation code from their GymOS dashboard.',
+                                style: GoogleFonts.inter(fontSize: 13.5, color: AppTheme.textSecondary),
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(ctx),
+                                  child: Text('Got it', style: GoogleFonts.inter(color: AppTheme.primary, fontWeight: FontWeight.bold)),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
                         child: Text(
                           'Contact Admin',
                           style: GoogleFonts.inter(

@@ -1,0 +1,5 @@
+steps:
+  - echo: Navigate to Finance Overview
+  - launch: com.jenishvora.gymosv1
+  - await:
+      idle: true

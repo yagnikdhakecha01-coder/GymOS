@@ -242,9 +242,8 @@ class _FinanceScreenState extends State<FinanceScreen> {
                           ? (analytics['pending_dues_change']!.toString().startsWith('-') 
                               ? '↓ ${analytics['pending_dues_change']!.toString().replaceAll('-', '')}' 
                               : '↑ ${analytics['pending_dues_change']!.toString().replaceAll('+', '')}')
-                          : 'View >',
+                          : (pendingPayments > 0 ? 'Pending' : 'Settled'),
                       trendColor: AppTheme.warning,
-                      onTap: () {},
                     ),
                   ],
                 ),

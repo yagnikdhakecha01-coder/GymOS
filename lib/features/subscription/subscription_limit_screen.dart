@@ -87,7 +87,7 @@ class SubscriptionLimitScreen extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                'Please upgrade your plan to unlock higher limits and manage more ${isMember ? 'members' : 'staff'}.',
+                'Gym OS plan tiers and capacity limits are managed by your account administrator.',
                 textAlign: TextAlign.center,
                 style: GoogleFonts.inter(
                   fontSize: 13,

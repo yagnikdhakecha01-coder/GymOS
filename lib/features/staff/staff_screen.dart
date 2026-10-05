@@ -93,6 +93,53 @@ class _StaffScreenState extends State<StaffScreen> {
     );
   }
 
+  void _showFilterSheet(BuildContext context, StaffViewModel staffVm) {
+    final filters = ['All', 'Active', 'On Leave', 'Trainer', 'Admin'];
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                child: Text(
+                  'Filter Staff',
+                  style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                ),
+              ),
+              const Divider(),
+              ...filters.map((f) {
+                final isSelected = staffVm.selectedFilter == f;
+                return ListTile(
+                  title: Text(
+                    f,
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                      color: isSelected ? AppTheme.primary : AppTheme.textPrimary,
+                    ),
+                  ),
+                  trailing: isSelected ? const Icon(Icons.check_rounded, color: AppTheme.primary) : null,
+                  onTap: () {
+                    staffVm.setFilter(f);
+                    Navigator.pop(ctx);
+                  },
+                );
+              }),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final staffVm = Provider.of<StaffViewModel>(context);
@@ -243,8 +290,12 @@ class _StaffScreenState extends State<StaffScreen> {
                                 color: Colors.white,
                               ),
                               child: IconButton(
-                                icon: const Icon(Icons.filter_list_rounded, color: AppTheme.textSecondary, size: 20),
-                                onPressed: () {},
+                                icon: Icon(
+                                  Icons.filter_list_rounded,
+                                  color: staffVm.selectedFilter != 'All' ? AppTheme.primary : AppTheme.textSecondary,
+                                  size: 20,
+                                ),
+                                onPressed: () => _showFilterSheet(context, staffVm),
                               ),
                             ),
                           ],

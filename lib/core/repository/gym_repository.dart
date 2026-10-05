@@ -2232,7 +2232,7 @@ class GymRepository extends ChangeNotifier {
         final plan = res['subscription_plans'] as Map<String, dynamic>?;
 
         if (status == 'expired' || status == 'cancelled' || status == 'failed_payment') {
-          throw Exception('limit_reached:Your subscription status is ${status.toUpperCase()}. Please renew or upgrade to continue.');
+          throw Exception('limit_reached:Your subscription status is ${status.toUpperCase()}. Plan tiers are managed by your account administrator.');
         }
 
         if (plan != null) {
@@ -2242,7 +2242,7 @@ class GymRepository extends ChangeNotifier {
             if (maxMembers != null && maxMembers > 0) {
               final currentMembers = _members.length;
               if (currentMembers >= maxMembers) {
-                throw Exception('limit_reached:Your plan allows a maximum of $maxMembers members. Please upgrade your plan to add more members.');
+                throw Exception('limit_reached:Your plan allows a maximum of $maxMembers members. Plan capacity is managed by your account administrator.');
               }
             }
           } else if (type == 'staff') {
@@ -2251,7 +2251,7 @@ class GymRepository extends ChangeNotifier {
             if (maxStaff != null && maxStaff > 0) {
               final currentStaff = _staff.length;
               if (currentStaff >= maxStaff) {
-                throw Exception('limit_reached:Your plan allows a maximum of $maxStaff staff members. Please upgrade your plan to add more staff.');
+                throw Exception('limit_reached:Your plan allows a maximum of $maxStaff staff members. Plan capacity is managed by your account administrator.');
               }
             }
           }

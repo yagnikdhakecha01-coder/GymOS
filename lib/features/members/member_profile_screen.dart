@@ -3539,10 +3539,6 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
     final items = [
       {'title': 'Attendance', 'icon': Icons.co_present_rounded, 'action': 'attendance'},
       {'title': 'Body Measurements', 'icon': Icons.scale_rounded, 'action': 'measurements'},
-      {'title': 'Progress Photos', 'icon': Icons.photo_library_rounded, 'action': 'photos'},
-      {'title': 'Documents', 'icon': Icons.folder_shared_rounded, 'action': 'docs'},
-      {'title': 'Medical History', 'icon': Icons.medical_services_rounded, 'action': 'medical'},
-      {'title': 'Activity Log', 'icon': Icons.history_edu_rounded, 'action': 'logs'},
     ];
 
     return Column(
@@ -3566,24 +3562,18 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
                         : (isAttendance ? () => _showMemberAttendanceSheet(context, member) : null),
                     leading: Icon(item['icon'] as IconData, color: AppTheme.primary),
                     title: Text(item['title'] as String, style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 13)),
-                    trailing: (isMeasurements || isAttendance)
-                        ? Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(color: AppTheme.primary.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(isAttendance ? 'View Logs' : 'Edit / View', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.primary)),
-                                const SizedBox(width: 4),
-                                const Icon(Icons.chevron_right, size: 14, color: AppTheme.primary),
-                              ],
-                            ),
-                          )
-                        : Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(color: AppTheme.surfaceGray, borderRadius: BorderRadius.circular(8)),
-                            child: Text('Coming Soon', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.bold, color: AppTheme.textSecondary)),
-                          ),
+                    trailing: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(color: AppTheme.primary.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(isAttendance ? 'View Logs' : 'Edit / View', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.primary)),
+                          const SizedBox(width: 4),
+                          const Icon(Icons.chevron_right, size: 14, color: AppTheme.primary),
+                        ],
+                      ),
+                    ),
                   ),
                   if (idx < items.length - 1) const Divider(height: 1),
                 ],

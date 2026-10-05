@@ -1,0 +1,5 @@
+steps:
+  - echo: Navigate to Member Dashboard
+  - launch: com.jenishvora.gymosv1
+  - await:
+      idle: true

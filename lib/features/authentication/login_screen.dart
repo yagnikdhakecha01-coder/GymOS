@@ -87,7 +87,7 @@ class _LoginScreenState extends State<LoginScreen> {
         String errorMsg = e.toString().replaceAll('AuthException:', '').replaceAll('Exception:', '').trim();
         if (errorMsg.contains('Invalid login credentials')) {
           if (!kIsWeb && Platform.isIOS) {
-            errorMsg = 'Invalid credentials. If your account was registered with Google on Android/Web, please tap "Forgot Password?" below to set an iOS password, or login at gymos.tech.';
+            errorMsg = 'Invalid credentials. If your account was registered on our Web Portal, please tap "Forgot Password?" below to set your mobile password.';
           } else {
             errorMsg = 'Invalid login credentials. If you registered using Google, please login with Google.';
           }
@@ -296,15 +296,58 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 28),
 
-                // Social Login (Active on Android & Web; on iOS app uses standard Email/Password until Apple Developer account is connected)
-                if (kIsWeb || !Platform.isIOS) ...[
+                // Social Login (Google & Apple)
+                OutlinedButton(
+                  onPressed: () async {
+                    setState(() => _isLoading = true);
+                    try {
+                      final authVm = Provider.of<AuthViewModel>(context, listen: false);
+                      await _applySelectedRole(authVm);
+                      final signedIn = await authVm.signInWithGoogle();
+                      if (!signedIn || !mounted) return;
+
+                      if (!kIsWeb) {
+                        await _navigateToRoleDashboard(authVm);
+                      }
+                    } catch (e) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            backgroundColor: Colors.redAccent,
+                            behavior: SnackBarBehavior.floating,
+                            content: Text('Google Sign-in failed: $e'),
+                          ),
+                        );
+                      }
+                    } finally {
+                      if (mounted) {
+                        setState(() => _isLoading = false);
+                      }
+                    }
+                  },
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: AppTheme.border),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusInput)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text('G', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
+                      const SizedBox(width: 10),
+                      Text('Continue with Google', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w500, color: AppTheme.textPrimary)),
+                    ],
+                  ),
+                ),
+                if (kIsWeb || Platform.isIOS || Platform.isMacOS) ...[
+                  const SizedBox(height: 12),
                   OutlinedButton(
                     onPressed: () async {
                       setState(() => _isLoading = true);
                       try {
                         final authVm = Provider.of<AuthViewModel>(context, listen: false);
                         await _applySelectedRole(authVm);
-                        final signedIn = await authVm.signInWithGoogle();
+                        final signedIn = await authVm.signInWithApple();
                         if (!signedIn || !mounted) return;
 
                         if (!kIsWeb) {
@@ -316,7 +359,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             SnackBar(
                               backgroundColor: Colors.redAccent,
                               behavior: SnackBarBehavior.floating,
-                              content: Text('Google Sign-in failed: $e'),
+                              content: Text('Apple Sign-in failed: $e'),
                             ),
                           );
                         }
@@ -327,32 +370,34 @@ class _LoginScreenState extends State<LoginScreen> {
                       }
                     },
                     style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: AppTheme.border),
+                      backgroundColor: Colors.white,
+                      foregroundColor: Colors.black,
+                      side: const BorderSide(color: Colors.white),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusInput)),
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Text('G', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
-                        const SizedBox(width: 10),
-                        Text('Continue with Google', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w500, color: AppTheme.textPrimary)),
+                        const Icon(Icons.apple, size: 22, color: Colors.black),
+                        const SizedBox(width: 8),
+                        Text('Continue with Apple', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.black)),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 20),
-                  Row(
-                    children: [
-                      const Expanded(child: Divider(color: AppTheme.border)),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Text('OR', style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textMuted)),
-                      ),
-                      const Expanded(child: Divider(color: AppTheme.border)),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
                 ],
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    const Expanded(child: Divider(color: AppTheme.border)),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Text('OR', style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textMuted)),
+                    ),
+                    const Expanded(child: Divider(color: AppTheme.border)),
+                  ],
+                ),
+                const SizedBox(height: 20),
 
                 // Email field
                 Align(
@@ -436,7 +481,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   Padding(
                     padding: const EdgeInsets.only(bottom: 8),
                     child: Text(
-                      'Tip: If you registered via Google on Android or Web, tap "Forgot Password?" to set your password for iPhone.',
+                      'Tip: If your account was registered on the Web Portal, tap "Forgot Password?" to set your mobile password.',
                       style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textMuted),
                     ),
                   ),

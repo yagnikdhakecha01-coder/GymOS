@@ -1,0 +1,5 @@
+steps:
+  - echo: Navigate to Members Directory
+  - launch: com.jenishvora.gymosv1
+  - await:
+      idle: true

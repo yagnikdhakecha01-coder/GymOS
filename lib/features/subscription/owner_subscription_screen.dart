@@ -232,7 +232,7 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
             ),
             const SizedBox(height: 12),
             Text(
-              'Google Play Policy Compliant: You will not be charged again unless you manually renew your plan.',
+              'Cancellation Policy: You will not be charged again unless you manually renew your plan.',
               style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF64748B), fontStyle: FontStyle.italic),
             ),
           ],
@@ -335,7 +335,7 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Gym OS subscription upgrades, renewals, and billing invoices are managed through our secure web management portal.',
+              'Gym OS subscription plans, capacity quotas, and billing invoices are managed through your organization\'s administrative dashboard.',
               style: GoogleFonts.inter(fontSize: 14, color: AppTheme.textSecondary, height: 1.5),
             ),
             const SizedBox(height: 14),
@@ -348,11 +348,11 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.language_rounded, color: Color(0xFF6C4EFF), size: 20),
+                  const Icon(Icons.business_center_rounded, color: Color(0xFF6C4EFF), size: 20),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Portal: gymos.tech',
+                      'Account Management: Organization Portal',
                       style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: const Color(0xFF1E293B)),
                     ),
                   ),
@@ -361,7 +361,7 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
             ),
             const SizedBox(height: 12),
             Text(
-              'Please visit gymos.tech on your web browser to manage your subscription tier.',
+              'Please contact your organization administrator or account manager to adjust subscription tiers.',
               style: GoogleFonts.inter(fontSize: 13, color: AppTheme.textMuted),
             ),
           ],
@@ -636,7 +636,7 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'To upgrade your tier, renew your plan, or view tax invoices, please visit the Gym OS Web Portal on your computer at gymos.tech.',
+                          'Tier changes, capacity upgrades, and organizational invoices are managed by your gym account administrator.',
                           style: GoogleFonts.inter(
                             fontSize: 12.5,
                             color: const Color(0xFF64748B),

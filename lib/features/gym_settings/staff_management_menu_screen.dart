@@ -50,40 +50,6 @@ class StaffManagementMenuScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildLockTile({
-    required IconData icon,
-    required Color color,
-    required String title,
-    required String subtitle,
-  }) {
-    return ListTile(
-      leading: Container(
-        width: AppTheme.iconContainerSize,
-        height: AppTheme.iconContainerSize,
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(AppTheme.radiusIconContainer),
-        ),
-        child: Icon(icon, color: color, size: 20),
-      ),
-      title: Text(
-        title,
-        style: GoogleFonts.inter(
-          fontWeight: FontWeight.w600,
-          fontSize: 14,
-          color: AppTheme.textPrimary,
-        ),
-      ),
-      subtitle: Text(
-        subtitle,
-        style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary),
-      ),
-      trailing: const Icon(Icons.lock_outline_rounded, color: AppTheme.textMuted, size: 18),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      onTap: () {},
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -129,13 +95,6 @@ class StaffManagementMenuScreen extends StatelessWidget {
                     title: 'Staff Roles',
                     subtitle: 'Manage staff roles for your gym',
                     targetScreen: const StaffRolesScreen(),
-                  ),
-                  const Divider(height: 1),
-                  _buildLockTile(
-                    icon: Icons.security_outlined,
-                    color: AppTheme.textMuted,
-                    title: 'Permissions (Coming Soon)',
-                    subtitle: 'Manage role based permissions',
                   ),
                 ],
               ),

@@ -14,6 +14,7 @@ import '../more/more_screen.dart';
 import '../subscription/owner_subscription_screen.dart';
 import 'support_chat_screen.dart';
 import 'support_tickets_screen.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class MainNavigationHolder extends StatefulWidget {
   const MainNavigationHolder({Key? key}) : super(key: key);
@@ -335,7 +336,7 @@ class _MainNavigationHolderState extends State<MainNavigationHolder> with Widget
                             ? 'Cannot verify subscription.\nPlease check your connection and retry.'
                             : (isLockedByAdmin
                                 ? 'Your gym account access has been locked by the administrator.\nPlease contact support to resolve.'
-                                : 'Your free trial has ended.\nSubscribe to continue using Gym OS.'),
+                                : 'Your free trial has ended.\nGym OS plan tiers are managed by your account administrator.'),
                         textAlign: TextAlign.center,
                         style: GoogleFonts.inter(
                           fontSize: 15,
@@ -423,13 +424,25 @@ class _MainNavigationHolderState extends State<MainNavigationHolder> with Widget
                   leading: const Icon(Icons.phone, color: Color(0xFF6C4EFF)),
                   title: const Text('+91 8160490013'),
                   subtitle: const Text('Call Support'),
-                  onTap: () {},
+                  onTap: () async {
+                    Navigator.pop(ctx);
+                    final uri = Uri.parse('tel:+918160490013');
+                    if (await canLaunchUrl(uri)) {
+                      await launchUrl(uri, mode: LaunchMode.externalApplication);
+                    }
+                  },
                 ),
                 ListTile(
                   leading: const Icon(Icons.email, color: Color(0xFF6C4EFF)),
                   title: const Text('support@gymos.tech'),
                   subtitle: const Text('Email Support'),
-                  onTap: () {},
+                  onTap: () async {
+                    Navigator.pop(ctx);
+                    final uri = Uri.parse('mailto:support@gymos.tech');
+                    if (await canLaunchUrl(uri)) {
+                      await launchUrl(uri, mode: LaunchMode.externalApplication);
+                    }
+                  },
                 ),
               ],
             ),

@@ -411,7 +411,31 @@ class _StaffRolesScreenState extends State<StaffRolesScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.info_outline_rounded, size: 20),
-            onPressed: () {},
+            onPressed: () {
+              showDialog(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  title: Row(
+                    children: [
+                      const Icon(Icons.info_outline_rounded, color: AppTheme.primary, size: 22),
+                      const SizedBox(width: 8),
+                      Text('Staff Roles', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 16)),
+                    ],
+                  ),
+                  content: Text(
+                    'Staff roles define the permissions and responsibilities of your gym staff. Default roles (Trainer, Receptionist, Manager) cannot be deleted, but you can create custom roles tailored to your gym operations.',
+                    style: GoogleFonts.inter(fontSize: 13, color: AppTheme.textSecondary, height: 1.4),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: Text('Got It', style: GoogleFonts.inter(color: AppTheme.primary, fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
+              );
+            },
           ),
         ],
       ),

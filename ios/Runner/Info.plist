@@ -77,6 +77,10 @@
 			</array>
 		</dict>
 	</array>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>whatsapp</string>
+	</array>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Gym OS requires access to your photo library to select gym logos, member avatars, and workout progress images.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>

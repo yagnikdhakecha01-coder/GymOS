@@ -10,6 +10,8 @@ import '../../core/models/staff.dart';
 import '../../core/models/association_model.dart';
 import '../../core/repository/gym_repository.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 
@@ -635,16 +637,50 @@ class AuthViewModel extends ChangeNotifier {
         return true;
       }
 
-      await SupabaseService.client.auth.signInWithOAuth(
-        OAuthProvider.apple,
-        redirectTo: 'gymos://login-callback/',
-      );
+      // Pure Native In-App Sign in with Apple for iOS
+      try {
+        final rawNonce = SupabaseService.client.auth.generateRawNonce();
+        final hashedNonce = sha256.convert(utf8.encode(rawNonce)).toString();
 
-      await loadCurrentProfile();
-      return SupabaseService.client.auth.currentSession != null || _authService.currentUser != null;
+        final credential = await SignInWithApple.getAppleIDCredential(
+          scopes: [
+            AppleIDAuthorizationScopes.email,
+            AppleIDAuthorizationScopes.fullName,
+          ],
+          nonce: hashedNonce,
+        );
+
+        final idToken = credential.identityToken;
+        if (idToken == null) {
+          throw Exception('Apple Sign-In failed: No identity token returned');
+        }
+
+        await SupabaseService.client.auth.signInWithIdToken(
+          provider: OAuthProvider.apple,
+          idToken: idToken,
+          nonce: rawNonce,
+        );
+
+        await loadCurrentProfile();
+        return SupabaseService.client.auth.currentSession != null || _authService.currentUser != null;
+      } on SignInWithAppleAuthorizationException catch (e) {
+        if (e.code == AuthorizationErrorCode.canceled) {
+          return false;
+        }
+        throw Exception('Apple Sign-in failed: ${e.message}');
+      } catch (nativeErr) {
+        final errStr = nativeErr.toString();
+        if (errStr.contains('canceled') || errStr.contains('cancelled')) {
+          return false;
+        }
+        rethrow;
+      }
+    } on AuthException catch (ae) {
+      print('signInWithApple AuthException: $ae');
+      throw Exception('Apple Sign-in failed (400): ${ae.message}');
     } catch (e) {
-      debugPrint('signInWithApple error: $e');
-      return false;
+      print('signInWithApple error: $e');
+      rethrow;
     } finally {
       _setLoading(false);
     }

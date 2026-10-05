@@ -486,7 +486,17 @@ class _StaffProfileScreenState extends State<StaffProfileScreen> {
                   if (_currentTabIndex == 1)
                     IconButton(
                       icon: const Icon(Icons.calendar_month_outlined, color: AppTheme.textPrimary),
-                      onPressed: () {},
+                      onPressed: () async {
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: _attendanceMonth,
+                          firstDate: DateTime(2020),
+                          lastDate: DateTime.now().add(const Duration(days: 365)),
+                        );
+                        if (picked != null && mounted) {
+                          setState(() => _attendanceMonth = DateTime(picked.year, picked.month));
+                        }
+                      },
                     )
                   else
                     PopupMenuButton<String>(

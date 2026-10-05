@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../core/theme/theme.dart';
 
 class MemberShareStreak extends StatefulWidget {
@@ -44,6 +46,27 @@ class _MemberShareStreakState extends State<MemberShareStreak>
   void dispose() {
     _controller.dispose();
     super.dispose();
+  }
+
+  String _buildShareText() {
+    final name = widget.memberName.trim().isNotEmpty ? widget.memberName : 'I';
+    return '🔥 $name completed a ${widget.streakDays}-day workout streak on GymOS! Crushing ${widget.muscleGroup} today! 💪';
+  }
+
+  Future<void> _shareViaWhatsApp() async {
+    final text = Uri.encodeComponent(_buildShareText());
+    final uri = Uri.parse('whatsapp://send?text=$text');
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri);
+        return;
+      }
+    } catch (_) {}
+    _shareGeneral();
+  }
+
+  void _shareGeneral() {
+    Share.share(_buildShareText(), subject: 'GymOS Workout Streak!');
   }
 
   static void show(BuildContext context, {
@@ -259,28 +282,28 @@ class _MemberShareStreakState extends State<MemberShareStreak>
                       label: 'Instagram',
                       color: const Color(0xFFE1306C),
                       bgColor: const Color(0xFFFCE4EC),
-                      onTap: () {},
+                      onTap: _shareGeneral,
                     ),
                     _shareButton(
                       icon: Icons.chat_rounded,
                       label: 'WhatsApp',
                       color: const Color(0xFF25D366),
                       bgColor: const Color(0xFFE8F5E9),
-                      onTap: () {},
+                      onTap: _shareViaWhatsApp,
                     ),
                     _shareButton(
                       icon: Icons.facebook_rounded,
                       label: 'Facebook',
                       color: const Color(0xFF1877F2),
                       bgColor: const Color(0xFFE3F2FD),
-                      onTap: () {},
+                      onTap: _shareGeneral,
                     ),
                     _shareButton(
                       icon: Icons.more_horiz_rounded,
                       label: 'More',
                       color: AppTheme.textSecondary,
                       bgColor: AppTheme.surfaceGray,
-                      onTap: () {},
+                      onTap: _shareGeneral,
                     ),
                   ],
                 ),

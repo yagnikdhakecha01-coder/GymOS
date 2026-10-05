@@ -104,12 +104,6 @@ class _ExpiringMembershipsScreenState extends State<ExpiringMembershipsScreen> w
           'Expiring Memberships',
           style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.tune_outlined, color: AppTheme.textPrimary),
-            onPressed: () {},
-          ),
-        ],
       ),
       body: Column(
         children: [

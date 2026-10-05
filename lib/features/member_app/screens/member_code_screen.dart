@@ -275,7 +275,25 @@ class _MemberCodeScreenState extends State<MemberCodeScreen>
                         style: GoogleFonts.inter(fontSize: 13, color: AppTheme.textMuted),
                       ),
                       GestureDetector(
-                        onTap: () {},
+                        onTap: () {
+                          showDialog(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                              title: Text('Member Invitation Code', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+                              content: Text(
+                                'Ask your Gym Receptionist or Trainer for your 6-digit invitation code registered with your gym.',
+                                style: GoogleFonts.inter(fontSize: 13.5, color: AppTheme.textSecondary),
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(ctx),
+                                  child: Text('Got it', style: GoogleFonts.inter(color: AppTheme.primary, fontWeight: FontWeight.bold)),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
                         child: Text(
                           'Contact Support',
                           style: GoogleFonts.inter(

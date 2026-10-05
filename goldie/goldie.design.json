@@ -1,0 +1,10 @@
+{
+  "background": "linear-gradient(160deg, #0F172A 0%, #1E293B 45%, #0A0F1D 100%)",
+  "frames": {
+    "iphone-6.9": "17-pro-blue"
+  },
+  "fontFamily": "-apple-system, \"SF Pro Display\", system-ui, sans-serif",
+  "template": "editorial",
+  "layout": "classic",
+  "screenOnly": false
+}

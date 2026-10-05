@@ -1,0 +1,5 @@
+steps:
+  - echo: Navigate to Trainer & Staff Dashboard
+  - launch: com.jenishvora.gymosv1
+  - await:
+      idle: true

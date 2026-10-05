@@ -58,6 +58,9 @@ key.properties
 *.aab
 *.zip
 *.jks.old
+goldie/out/
+app-store-audit-skill/
+studio_test.png
 *.db
 *.db-*
 scratch/
