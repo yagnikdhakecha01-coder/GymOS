@@ -193,35 +193,12 @@ function initSmoothScroll() {
   });
 }
 
-/* ── Play Store Release Notice Modal ── */
+/* ── Play Store Direct Redirect ── */
 function showPlayStoreNotice(e) {
-  if (e) e.preventDefault();
-  let modal = document.getElementById('playStoreModal');
-  if (!modal) {
-    modal = document.createElement('div');
-    modal.id = 'playStoreModal';
-    modal.innerHTML = `
-      <div class="modal-backdrop" onclick="closePlayStoreModal()"></div>
-      <div class="modal-dialog">
-        <div class="modal-icon">
-          <svg viewBox="0 0 24 24" width="36" height="36" fill="currentColor"><path d="M3.609 1.814L13.793 12 3.61 22.186c-.347-.291-.56-.723-.56-1.22V3.034c0-.497.213-.929.56-1.22zm10.89 10.89l2.257 2.258-10.74 6.202 8.483-8.46zm0-1.408L6.016 2.836l10.74 6.202-2.257 2.258zm1.409.704l3.197 1.846c.642.37.642.977 0 1.348l-3.197 1.846-1.89-1.89 1.89-1.85z"/></svg>
-        </div>
-        <h3 class="modal-title">App Not Released Yet</h3>
-        <p class="modal-desc">GymOS is currently under review by the Google Play Store team and will be released very soon! Please check back shortly to install it on your Android device.</p>
-        <button class="modal-btn" onclick="closePlayStoreModal()">Got it</button>
-      </div>
-    `;
-    document.body.appendChild(modal);
-  }
-  modal.classList.add('active');
-  document.body.style.overflow = 'hidden';
+  if (e && e.preventDefault) e.preventDefault();
+  window.open('https://play.google.com/store/apps/details?id=com.gymos.fitness.app.v1', '_blank');
 }
-
-function closePlayStoreModal() {
-  const modal = document.getElementById('playStoreModal');
-  if (modal) modal.classList.remove('active');
-  document.body.style.overflow = '';
-}
+function closePlayStoreModal() {}
 
 window.showPlayStoreNotice = showPlayStoreNotice;
 window.closePlayStoreModal = closePlayStoreModal;

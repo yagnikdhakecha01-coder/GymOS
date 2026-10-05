@@ -1,0 +1,3 @@
+steps:
+  - echo: Member Profile & Details Screen
+  - wait: 1000

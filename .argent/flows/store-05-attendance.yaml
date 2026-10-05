@@ -1,0 +1,3 @@
+steps:
+  - echo: Attendance & Check-in Screen
+  - wait: 1000

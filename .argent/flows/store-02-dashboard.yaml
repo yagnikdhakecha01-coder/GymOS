@@ -1,0 +1,3 @@
+steps:
+  - echo: Owner Dashboard view
+  - wait: 1000

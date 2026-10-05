@@ -1,0 +1,3 @@
+steps:
+  - echo: Membership Plans & Packages Screen
+  - wait: 1000

@@ -65,4 +65,5 @@ scratch/
 supabase/.temp/
 netlify_super_admin_deploy/
 
-
+# Goldie outputs
+out/

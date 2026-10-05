@@ -1,0 +1,3 @@
+steps:
+  - echo: Finance & Revenue Overview Screen
+  - wait: 1000

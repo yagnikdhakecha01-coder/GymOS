@@ -29,7 +29,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _smtpPortController = TextEditingController(text: '587');
   final _smtpUserController = TextEditingController(text: 'noreply@gymos.com');
   final _appStoreController = TextEditingController(text: 'https://apps.apple.com/gymos');
-  final _playStoreController = TextEditingController(text: 'https://play.google.com/store/apps/gymos');
+  final _playStoreController = TextEditingController(text: 'https://play.google.com/store/apps/details?id=com.gymos.fitness.app.v1');
 
   // Free Trial Platform Settings
   final _trialDurationController = TextEditingController(text: '30');

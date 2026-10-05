@@ -1,0 +1,3 @@
+steps:
+  - echo: Staff & Trainer Management Screen
+  - wait: 1000

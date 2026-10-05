@@ -1879,7 +1879,7 @@ button {
         <a href="#portals" class="navbar__link">Portals</a>
         <a href="#pricing" class="navbar__link">Pricing</a>
         <a href="#faq" class="navbar__link">FAQ</a>
-        <a href="#" onclick="showPlayStoreNotice(event)" class="navbar__cta">
+        <a href="https://play.google.com/store/apps/details?id=com.gymos.fitness.app.v1" target="_blank" rel="noopener" class="navbar__cta">
           <svg style="width:14px;height:14px;margin-right:6px;vertical-align:-2px;" viewBox="0 0 24 24" fill="currentColor"><path d="M3.609 1.814L13.793 12 3.61 22.186c-.347-.291-.56-.723-.56-1.22V3.034c0-.497.213-.929.56-1.22zm10.89 10.89l2.257 2.258-10.74 6.202 8.483-8.46zm0-1.408L6.016 2.836l10.74 6.202-2.257 2.258zm1.409.704l3.197 1.846c.642.37.642.977 0 1.348l-3.197 1.846-1.89-1.89 1.89-1.85z"/></svg>
           Google Play
         </a>
@@ -1921,7 +1921,7 @@ button {
         </p>
 
         <div class="hero__actions" style="display:flex;flex-wrap:wrap;gap:12px;">
-          <a href="#" onclick="showPlayStoreNotice(event)" class="btn btn--primary">
+          <a href="https://play.google.com/store/apps/details?id=com.gymos.fitness.app.v1" target="_blank" rel="noopener" class="btn btn--primary">
             <svg style="width:18px;height:18px;margin-right:8px;vertical-align:-3px;" viewBox="0 0 24 24" fill="currentColor"><path d="M3.609 1.814L13.793 12 3.61 22.186c-.347-.291-.56-.723-.56-1.22V3.034c0-.497.213-.929.56-1.22zm10.89 10.89l2.257 2.258-10.74 6.202 8.483-8.46zm0-1.408L6.016 2.836l10.74 6.202-2.257 2.258zm1.409.704l3.197 1.846c.642.37.642.977 0 1.348l-3.197 1.846-1.89-1.89 1.89-1.85z"/></svg>
             Google Play
           </a>
@@ -2403,7 +2403,7 @@ button {
         <h2 class="cta-section__title">Ready to Transform Your Gym?</h2>
         <p class="cta-section__subtitle">Join 500+ gyms already using GymOS. Start your 45-day free trial today — no credit card required.</p>
         <div class="cta-section__actions" style="display:flex;flex-wrap:wrap;justify-content:center;gap:12px;">
-          <a href="#" onclick="showPlayStoreNotice(event)" class="btn btn--white">
+          <a href="https://play.google.com/store/apps/details?id=com.gymos.fitness.app.v1" target="_blank" rel="noopener" class="btn btn--white">
             <svg style="width:18px;height:18px;margin-right:8px;vertical-align:-3px;" viewBox="0 0 24 24" fill="currentColor"><path d="M3.609 1.814L13.793 12 3.61 22.186c-.347-.291-.56-.723-.56-1.22V3.034c0-.497.213-.929.56-1.22zm10.89 10.89l2.257 2.258-10.74 6.202 8.483-8.46zm0-1.408L6.016 2.836l10.74 6.202-2.257 2.258zm1.409.704l3.197 1.846c.642.37.642.977 0 1.348l-3.197 1.846-1.89-1.89 1.89-1.85z"/></svg>
             Google Play
           </a>
@@ -2702,37 +2702,11 @@ function initSmoothScroll() {
   });
 }
 
-/* ── Play Store Release Notice Modal ── */
+/* ── Play Store Direct Redirect ── */
 function showPlayStoreNotice(e) {
   if (e && e.preventDefault) e.preventDefault();
-  let modal = document.getElementById('playStoreModal');
-  if (!modal) {
-    modal = document.createElement('div');
-    modal.id = 'playStoreModal';
-    modal.innerHTML = `
-      <div class="modal-backdrop" onclick="closePlayStoreModal()"></div>
-      <div class="modal-dialog">
-        <div class="modal-icon">
-          <svg viewBox="0 0 24 24" width="36" height="36" fill="currentColor"><path d="M3.609 1.814L13.793 12 3.61 22.186c-.347-.291-.56-.723-.56-1.22V3.034c0-.497.213-.929.56-1.22zm10.89 10.89l2.257 2.258-10.74 6.202 8.483-8.46zm0-1.408L6.016 2.836l10.74 6.202-2.257 2.258zm1.409.704l3.197 1.846c.642.37.642.977 0 1.348l-3.197 1.846-1.89-1.89 1.89-1.85z"/></svg>
-        </div>
-        <h3 class="modal-title">App Not Released Yet</h3>
-        <p class="modal-desc">GymOS is currently under review by the Google Play Store team and will be released very soon! Please check back shortly to install it on your Android device.</p>
-        <button class="modal-btn" onclick="closePlayStoreModal()">Got it</button>
-      </div>
-    `;
-    document.body.appendChild(modal);
-  }
-  modal.classList.add('active');
-  document.body.style.overflow = 'hidden';
+  window.open('https://play.google.com/store/apps/details?id=com.gymos.fitness.app.v1', '_blank');
 }
-
-function closePlayStoreModal() {
-  const modal = document.getElementById('playStoreModal');
-  if (modal) modal.classList.remove('active');
-  document.body.style.overflow = '';
-}
-
-window.showPlayStoreNotice = showPlayStoreNotice;
 window.closePlayStoreModal = closePlayStoreModal;
 
 /* ── App Store Release Notice Modal ── */

@@ -1,0 +1,7 @@
+steps:
+  - echo: Launch Gym OS
+  - launch: com.gymos.fitness.app.v1
+  - wait: 2000
+  - tap:
+      text: OK
+  - wait: 2000

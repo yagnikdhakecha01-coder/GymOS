@@ -1,0 +1,3 @@
+steps:
+  - echo: Reports & Business Analytics Screen
+  - wait: 1000

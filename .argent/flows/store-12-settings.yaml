@@ -1,0 +1,3 @@
+steps:
+  - echo: Settings Screen
+  - wait: 1000
