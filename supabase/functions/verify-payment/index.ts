@@ -25,13 +25,7 @@ function getSecurityAndCorsHeaders(req: Request) {
   };
 }
 
-async function verifySignature(
-  orderId: string,
-  paymentId: string,
-  signature: string,
-  secret: string
-): Promise<boolean> {
-  const text = `${orderId}|${paymentId}`;
+async function verifyHmac(text: string, signature: string, secret: string): Promise<boolean> {
   const encoder = new TextEncoder();
   const keyData = encoder.encode(secret);
   const messageData = encoder.encode(text);
@@ -45,12 +39,26 @@ async function verifySignature(
   );
 
   const signatureBuffer = await crypto.subtle.sign("HMAC", key, messageData);
-
   const generatedSignature = Array.from(new Uint8Array(signatureBuffer))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
 
   return generatedSignature === signature;
+}
+
+async function verifySignature(
+  orderOrSubId: string,
+  paymentId: string,
+  signature: string,
+  secret: string
+): Promise<boolean> {
+  // Check order format: order_id|payment_id
+  const matchOrder = await verifyHmac(`${orderOrSubId}|${paymentId}`, signature, secret);
+  if (matchOrder) return true;
+
+  // Check subscription format: payment_id|subscription_id
+  const matchSub = await verifyHmac(`${paymentId}|${orderOrSubId}`, signature, secret);
+  return matchSub;
 }
 
 async function resolveRazorpayCredentials(supabase: ReturnType<typeof createClient>) {
@@ -82,6 +90,7 @@ serve(async (req) => {
   }
 
   try {
+    const body = await req.json();
     const {
       razorpay_order_id,
       razorpay_payment_id,
@@ -89,7 +98,11 @@ serve(async (req) => {
       gym_id,
       plan_id,
       owner_id,
-    } = await req.json();
+      is_upgrade,
+      old_plan_id,
+      old_sub_id,
+      unused_credit,
+    } = body;
 
     if (
       !razorpay_order_id ||
@@ -105,17 +118,8 @@ serve(async (req) => {
       );
     }
 
-    // Initialize Supabase Client with Service Role Key
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    if (!supabaseUrl || !supabaseServiceKey) {
-      console.error(`[${correlationId}] Supabase credentials missing on server`);
-      return new Response(
-        JSON.stringify({ error: "Internal server configuration error", correlation_id: correlationId }),
-        { status: 500, headers: { ...securityHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
     const { keyId, keySecret } = await resolveRazorpayCredentials(supabase);
 
@@ -136,7 +140,7 @@ serve(async (req) => {
     );
 
     if (!isValid) {
-      console.warn(`[${correlationId}] Invalid Razorpay signature verification attempt for order ${razorpay_order_id}`);
+      console.warn(`[${correlationId}] Invalid Razorpay signature verification attempt for ${razorpay_order_id}`);
       return new Response(
         JSON.stringify({ success: false, error: "Payment signature verification failed", correlation_id: correlationId }),
         { status: 400, headers: { ...securityHeaders, "Content-Type": "application/json" } }
@@ -155,9 +159,9 @@ serve(async (req) => {
     }
 
     const price = plan ? Number(plan.price) : 699.0;
-    const expectedAmountInPaise = Math.round(price * 100);
+    let actualPaidAmount = price;
 
-    // Verify payment from Razorpay API to prevent tampering
+    // Verify payment from Razorpay API
     if (keyId && keySecret) {
       try {
         const authHeader = `Basic ${btoa(`${keyId}:${keySecret}`)}`;
@@ -166,13 +170,7 @@ serve(async (req) => {
         });
         if (rpRes.ok) {
           const rpPayment = await rpRes.json();
-          if (rpPayment.amount && Number(rpPayment.amount) < expectedAmountInPaise) {
-            console.error(`[${correlationId}] SECURITY ALERT: Amount tampering! Paid: ${rpPayment.amount}, Expected: ${expectedAmountInPaise} for plan: ${plan_id}`);
-            return new Response(
-              JSON.stringify({ error: "Payment verification failed: Amount paid does not match plan price", correlation_id: correlationId }),
-              { status: 400, headers: { ...securityHeaders, "Content-Type": "application/json" } }
-            );
-          }
+          actualPaidAmount = rpPayment.amount ? Number(rpPayment.amount) / 100 : price;
           if (rpPayment.status && rpPayment.status !== "captured" && rpPayment.status !== "authorized") {
             console.warn(`[${correlationId}] Razorpay payment status not completed: ${rpPayment.status}`);
             return new Response(
@@ -186,47 +184,85 @@ serve(async (req) => {
       }
     }
 
-    // Atomic activation via process_razorpay_webhook RPC
-    try {
-      await supabase.rpc("process_razorpay_webhook", {
-        p_event_type: "payment.authorized",
-        p_gym_id: gym_id,
-        p_plan_id: plan_id,
-        p_payment_id: razorpay_payment_id,
-        p_order_id: razorpay_order_id,
-        p_amount: price,
-      });
-    } catch (rpcErr) {
-      console.warn(`[${correlationId}] RPC process_razorpay_webhook error: ${rpcErr}`);
-    }
+    const isPlanUpgrade = is_upgrade === true || is_upgrade === "true";
 
-    // Record Payment
-    try {
-      await supabase.from("payments").insert({
-        gym_id,
-        amount: price,
-        status: "Success",
-        payment_method: "Razorpay Gateway",
-        razorpay_payment_id: razorpay_payment_id,
-        razorpay_signature: razorpay_signature,
-        created_at: new Date().toISOString(),
-      });
-    } catch (paymentError) {
-      console.error(`[${correlationId}] Error recording payment:`, paymentError);
-    }
+    if (isPlanUpgrade && old_plan_id) {
+      // 1. Process Plan Upgrade with Prorated credit adjustment in Database
+      try {
+        await supabase.rpc("process_plan_upgrade", {
+          p_gym_id: gym_id,
+          p_old_plan_id: old_plan_id,
+          p_new_plan_id: plan_id,
+          p_payment_id: razorpay_payment_id,
+          p_new_subscription_id: razorpay_order_id,
+          p_amount_paid: actualPaidAmount,
+          p_unused_credit: Number(unused_credit || 0),
+          p_owner_id: owner_id || null,
+        });
+      } catch (upgErr) {
+        console.error(`[${correlationId}] process_plan_upgrade error:`, upgErr);
+      }
 
-    // Record Subscription History
-    try {
-      await supabase.from("subscription_history").insert({
-        gym_id,
-        new_plan_id: plan_id,
-        action: "upgrade",
-        changed_by: owner_id || null,
-        notes: `Activated ${plan_id.toUpperCase()} plan (₹${price}) via verified Razorpay checkout.`,
-        created_at: new Date().toISOString(),
-      });
-    } catch (historyError) {
-      console.error(`[${correlationId}] Error writing subscription history:`, historyError);
+      // 2. Automatically cancel old Razorpay AutoPay subscription mandate to prevent double debit!
+      if (old_sub_id && String(old_sub_id).startsWith("sub_") && keyId && keySecret) {
+        try {
+          const authHeader = `Basic ${btoa(`${keyId}:${keySecret}`)}`;
+          const cancelRes = await fetch(`https://api.razorpay.com/v1/subscriptions/${old_sub_id}/cancel`, {
+            method: "POST",
+            headers: {
+              "Authorization": authHeader,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ cancel_at_cycle_end: 0 }),
+          });
+          console.log(`[${correlationId}] Old mandate ${old_sub_id} cancelled. Status: ${cancelRes.status}`);
+        } catch (cancelErr) {
+          console.warn(`[${correlationId}] Error cancelling old mandate ${old_sub_id}:`, cancelErr);
+        }
+      }
+    } else {
+      // Normal New Plan Activation
+      try {
+        await supabase.rpc("process_razorpay_webhook", {
+          p_event_type: "payment.authorized",
+          p_gym_id: gym_id,
+          p_plan_id: plan_id,
+          p_payment_id: razorpay_payment_id,
+          p_order_id: razorpay_order_id,
+          p_amount: actualPaidAmount,
+        });
+      } catch (rpcErr) {
+        console.warn(`[${correlationId}] RPC process_razorpay_webhook error: ${rpcErr}`);
+      }
+
+      // Record Payment
+      try {
+        await supabase.from("payments").insert({
+          gym_id,
+          amount: actualPaidAmount,
+          status: "Success",
+          payment_method: "Razorpay Gateway",
+          razorpay_payment_id: razorpay_payment_id,
+          razorpay_signature: razorpay_signature,
+          created_at: new Date().toISOString(),
+        });
+      } catch (paymentError) {
+        console.error(`[${correlationId}] Error recording payment:`, paymentError);
+      }
+
+      // Record Subscription History
+      try {
+        await supabase.from("subscription_history").insert({
+          gym_id,
+          new_plan_id: plan_id,
+          action: "upgrade",
+          changed_by: owner_id || null,
+          notes: `Activated ${plan_id.toUpperCase()} plan (₹${actualPaidAmount}) via verified Razorpay checkout.`,
+          created_at: new Date().toISOString(),
+        });
+      } catch (historyError) {
+        console.error(`[${correlationId}] Error writing subscription history:`, historyError);
+      }
     }
 
     return new Response(

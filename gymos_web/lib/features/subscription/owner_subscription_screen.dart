@@ -443,6 +443,420 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
     }
   }
 
+  Future<void> _handlePlanUpgrade(SubscriptionPlanModel plan) async {
+    if (_processingPlanId != null) return;
+
+    final authVm = Provider.of<AuthViewModel>(context, listen: false);
+    final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
+    final ownerId = authVm.currentUser?.id;
+
+    if (gymId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Gym details not found. Please log in again to proceed.'),
+          backgroundColor: AppTheme.danger,
+        ),
+      );
+      return;
+    }
+
+    // Show loading indicator dialog while fetching proration preview
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 22),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 16)],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2.5, color: Color(0xFF6C4EFF)),
+              ),
+              const SizedBox(width: 16),
+              Text(
+                'Calculating Prorated Upgrade...',
+                style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 14, color: const Color(0xFF1E293B)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    final preview = await WebRazorpayService.getUpgradePreview(
+      gymId: gymId,
+      newPlanId: plan.id,
+      ownerId: ownerId,
+    );
+
+    if (mounted) Navigator.pop(context); // Close loading dialog
+
+    if (!preview.success || preview.subscriptionId == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(preview.errorMessage ?? 'Could not calculate upgrade preview.'),
+            backgroundColor: AppTheme.danger,
+          ),
+        );
+      }
+      return;
+    }
+
+    // Show Upgrade Confirmation Dialog with transparent credit calculation
+    if (!mounted) return;
+    final bool? proceed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => _buildUpgradeConfirmationDialog(ctx, plan, preview),
+    );
+
+    if (proceed != true) return;
+
+    // Proceed to open Razorpay modal for upgrade
+    setState(() => _processingPlanId = plan.id);
+
+    try {
+      final customerName = authVm.currentProfile?.fullName ?? authVm.currentUser?.userMetadata?['name']?.toString() ?? authVm.gymInfo?['name']?.toString() ?? 'Gym Owner';
+      final customerEmail = authVm.currentUser?.email ?? authVm.currentProfile?.email ?? authVm.gymInfo?['email']?.toString() ?? '';
+      final customerPhone = authVm.gymInfo?['phone_number']?.toString() ?? authVm.currentProfile?.phoneNumber ?? authVm.currentUser?.phone ?? '';
+
+      final result = await WebRazorpayService.openCheckout(
+        amount: preview.payableAmount,
+        planName: plan.name,
+        gymId: gymId,
+        planId: plan.id,
+        ownerId: ownerId,
+        customerName: customerName,
+        customerEmail: customerEmail,
+        customerPhone: customerPhone,
+        customSubscriptionId: preview.subscriptionId,
+        isUpgrade: true,
+        oldPlanId: preview.oldPlanId,
+        oldSubId: preview.oldSubId,
+        unusedCredit: preview.unusedCredit,
+      );
+
+      if (result.dismissed) {
+        if (mounted) {
+          setState(() => _processingPlanId = null);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Razorpay upgrade window closed.'), duration: Duration(seconds: 2)),
+          );
+        }
+        return;
+      }
+
+      if (!result.success || result.paymentId == null) {
+        if (mounted) {
+          setState(() => _processingPlanId = null);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(result.errorMessage ?? 'Upgrade transaction was not completed.'),
+              backgroundColor: AppTheme.danger,
+            ),
+          );
+        }
+        return;
+      }
+
+      // Verify payment with is_upgrade flag and trigger atomic DB upgrade & old mandate cancel
+      await SupabaseService.client.functions.invoke(
+        'verify-payment',
+        body: {
+          'razorpay_order_id': result.orderId ?? preview.subscriptionId,
+          'razorpay_payment_id': result.paymentId,
+          'razorpay_signature': result.signature,
+          'gym_id': gymId,
+          'plan_id': plan.id,
+          'owner_id': ownerId,
+          'is_upgrade': true,
+          'old_plan_id': preview.oldPlanId,
+          'old_sub_id': preview.oldSubId,
+          'unused_credit': preview.unusedCredit,
+        },
+      );
+
+      await authVm.fetchSubscriptionStatus();
+      await _loadTrialSettings();
+
+      if (mounted) {
+        setState(() => _processingPlanId = null);
+        _showUpgradeSuccessDialog(plan, preview, result.paymentId!);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _processingPlanId = null);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error completing plan upgrade: $e'),
+            backgroundColor: AppTheme.danger,
+          ),
+        );
+      }
+    }
+  }
+
+  Widget _buildUpgradeConfirmationDialog(
+    BuildContext ctx,
+    SubscriptionPlanModel plan,
+    PlanUpgradePreviewResult preview,
+  ) {
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF5F3FF),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(Icons.upgrade_rounded, color: Color(0xFF6C4EFF), size: 26),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Upgrade to ${plan.name}',
+              style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 18, color: const Color(0xFF1E293B)),
+            ),
+          ),
+        ],
+      ),
+      content: SizedBox(
+        width: 440,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Switch immediately to the ${plan.name} plan. Unused days from your active plan are credited today.',
+              style: GoogleFonts.inter(fontSize: 13, color: const Color(0xFF64748B), height: 1.4),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Current Plan:', style: GoogleFonts.inter(fontSize: 12.5, color: const Color(0xFF64748B))),
+                      Text(
+                        '${preview.oldPlanId?.toUpperCase() ?? "ACTIVE"} (${preview.remainingDays} days left)',
+                        style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.w600, color: const Color(0xFF1E293B)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Unused Days Credit:', style: GoogleFonts.inter(fontSize: 12.5, color: const Color(0xFF64748B))),
+                      Text(
+                        '-₹${preview.unusedCredit.toStringAsFixed(0)}',
+                        style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.bold, color: const Color(0xFF16A34A)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('New Plan Full Price:', style: GoogleFonts.inter(fontSize: 12.5, color: const Color(0xFF64748B))),
+                      Text(
+                        '₹${preview.newPlanPrice.toInt()}/mo',
+                        style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.w600, color: const Color(0xFF1E293B)),
+                      ),
+                    ],
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Divider(color: Color(0xFFE2E8F0)),
+                  ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Payable Today:', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: const Color(0xFF1E293B))),
+                      Text(
+                        '₹${preview.payableAmount.toInt()}',
+                        style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w800, color: const Color(0xFF6C4EFF)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Next Recurring AutoPay:', style: GoogleFonts.inter(fontSize: 11.5, color: const Color(0xFF64748B))),
+                      Text(
+                        '₹${preview.newPlanPrice.toInt()} / month',
+                        style: GoogleFonts.inter(fontSize: 11.5, fontWeight: FontWeight.w600, color: const Color(0xFF475569)),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEFF6FF),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFBFDBFE)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.shield_outlined, color: Color(0xFF2563EB), size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Your previous AutoPay mandate will be safely cancelled. Your new ₹${preview.newPlanPrice.toInt()} mandate starts in 30 days.',
+                      style: GoogleFonts.inter(fontSize: 11.5, color: const Color(0xFF1E40AF), height: 1.35),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: Text('Cancel', style: GoogleFonts.inter(color: Colors.grey[700], fontWeight: FontWeight.w600)),
+        ),
+        ElevatedButton(
+          onPressed: () => Navigator.pop(ctx, true),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF6C4EFF),
+            elevation: 0,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+          ),
+          child: Text(
+            'Confirm Upgrade & Pay ₹${preview.payableAmount.toInt()}',
+            style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.bold),
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _showUpgradeSuccessDialog(
+    SubscriptionPlanModel plan,
+    PlanUpgradePreviewResult preview,
+    String paymentId,
+  ) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        contentPadding: const EdgeInsets.all(28),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 64,
+              height: 64,
+              decoration: const BoxDecoration(
+                color: Color(0xFFDCFCE7),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.check_circle_rounded, color: Color(0xFF16A34A), size: 40),
+            ),
+            const SizedBox(height: 18),
+            Text(
+              'Plan Upgraded Successfully!',
+              style: GoogleFonts.inter(fontSize: 22, fontWeight: FontWeight.w800, color: const Color(0xFF1E293B)),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'You are now on the ${plan.name} plan!\nAll features and higher limits are active immediately.',
+              style: GoogleFonts.inter(fontSize: 13.5, color: const Color(0xFF64748B), height: 1.4),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 18),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('New Active Plan:', style: GoogleFonts.inter(fontSize: 12.5, color: const Color(0xFF64748B))),
+                      Text(plan.name, style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.bold, color: const Color(0xFF1E293B))),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Amount Paid Today:', style: GoogleFonts.inter(fontSize: 12.5, color: const Color(0xFF64748B))),
+                      Text('₹${preview.payableAmount.toInt()}', style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.bold, color: const Color(0xFF16A34A))),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Unused Credit Adjusted:', style: GoogleFonts.inter(fontSize: 12.5, color: const Color(0xFF64748B))),
+                      Text('-₹${preview.unusedCredit.toStringAsFixed(0)}', style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.bold, color: const Color(0xFF2563EB))),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('AutoPay Mandate Status:', style: GoogleFonts.inter(fontSize: 12.5, color: const Color(0xFF64748B))),
+                      Text('Active (Migrated)', style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.bold, color: const Color(0xFF15803D))),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              height: 46,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(ctx),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF1E293B),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  elevation: 0,
+                ),
+                child: Text('Done', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _showPaymentSuccessDialog(SubscriptionPlanModel plan, String paymentId) {
     showDialog(
       context: context,
@@ -969,6 +1383,9 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
         _currentPurchasedPlanId!.toLowerCase() == planId.toLowerCase();
     final bool isPro = planId.toLowerCase() == 'pro';
     final bool isProcessing = _processingPlanId == planId;
+    final bool canUpgrade = _currentPurchasedPlanId != null &&
+        _currentPurchasedPlanId != 'free_trial' &&
+        !isPurchased;
 
     return Container(
       decoration: BoxDecoration(
@@ -1148,7 +1565,9 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
               width: double.infinity,
               height: 48,
               child: ElevatedButton(
-                onPressed: _processingPlanId != null ? null : () => _buyPlan(plan),
+                onPressed: _processingPlanId != null
+                    ? null
+                    : (canUpgrade ? () => _handlePlanUpgrade(plan) : () => _buyPlan(plan)),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: isPro
                       ? const Color(0xFF6C4EFF)
@@ -1170,7 +1589,7 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
                           ),
                           const SizedBox(width: 10),
                           Text(
-                            'Opening Razorpay...',
+                            canUpgrade ? 'Calculating Upgrade...' : 'Opening Razorpay...',
                             style: GoogleFonts.inter(
                               fontSize: 13,
                               fontWeight: FontWeight.w600,
@@ -1183,13 +1602,17 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Icon(
-                            isPro ? Icons.bolt_rounded : Icons.lock_outline_rounded,
+                            canUpgrade
+                                ? Icons.upgrade_rounded
+                                : (isPro ? Icons.bolt_rounded : Icons.lock_outline_rounded),
                             size: 17,
                             color: Colors.white,
                           ),
                           const SizedBox(width: 8),
                           Text(
-                            _currentPurchasedPlanId != null ? 'Upgrade to $title ($price)' : 'Buy $title ($price)',
+                            canUpgrade
+                                ? 'Upgrade to $title'
+                                : (_currentPurchasedPlanId != null ? 'Switch to $title ($price)' : 'Buy $title ($price)'),
                             style: GoogleFonts.inter(
                               fontSize: 13.5,
                               fontWeight: FontWeight.w700,
