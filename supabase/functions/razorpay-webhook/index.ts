@@ -182,11 +182,12 @@ serve(async (req) => {
           .eq("id", plan_id)
           .maybeSingle();
 
-        const paidAmountInPaise = Number(paymentEntity.amount || subEntity.paid_count || 100);
+        const isRealPayment = typeof paymentEntity?.id === "string" && paymentEntity.id.startsWith("pay_");
+        const paidAmountInPaise = Number(paymentEntity?.amount || 100);
         const price = plan ? Number(plan.price) : (paidAmountInPaise / 100);
 
-        const paymentId = paymentEntity.id || `PAY_${Date.now()}`;
-        const subscriptionOrOrderId = subEntity.id || paymentEntity.subscription_id || paymentEntity.order_id || `SUB_${Date.now()}`;
+        const paymentId = isRealPayment ? paymentEntity.id : `AUTH_${Date.now()}`;
+        const subscriptionOrOrderId = subEntity.id || paymentEntity?.subscription_id || paymentEntity?.order_id || `SUB_${Date.now()}`;
 
         // Atomic activation via DB RPC
         try {
@@ -203,55 +204,57 @@ serve(async (req) => {
           console.error(`[${correlationId}] RPC error in webhook:`, rpcErr);
         }
 
-        // Record Payment if not already present
-        const { data: existingPayment } = await supabase
-          .from("payments")
-          .select("id")
-          .eq("razorpay_payment_id", paymentId)
-          .maybeSingle();
-
-        if (!existingPayment) {
-          const invoiceNumber = `INV-RP-${Date.now()}`;
-          const { data: invoice } = await supabase
-            .from("invoices")
-            .insert({
-              gym_id,
-              invoice_number: invoiceNumber,
-              amount: price,
-              status: "paid",
-              billing_date: new Date().toISOString(),
-              due_date: new Date().toISOString(),
-            })
-            .select()
+        // Record into payments table ONLY if this is a real monetary payment (starts with pay_)
+        // Subscription authentication events (sub_...) are mandate registrations, NOT debit transactions!
+        if (isRealPayment) {
+          const { data: existingPayment } = await supabase
+            .from("payments")
+            .select("id")
+            .eq("razorpay_payment_id", paymentEntity.id)
             .maybeSingle();
 
-          await supabase.from("payments").insert({
-            gym_id,
-            invoice_id: invoice?.id,
-            amount: price,
-            status: "Success",
-            payment_method: paymentEntity.method || "Razorpay AutoPay",
-            razorpay_payment_id: paymentId,
-            created_at: new Date().toISOString(),
-          });
+          if (!existingPayment) {
+            const invoiceNumber = `INV-RP-${Date.now()}`;
+            const { data: invoice } = await supabase
+              .from("invoices")
+              .insert({
+                gym_id,
+                invoice_number: invoiceNumber,
+                amount: price,
+                status: "paid",
+                billing_date: new Date().toISOString(),
+                due_date: new Date().toISOString(),
+              })
+              .select()
+              .maybeSingle();
 
-          await supabase.from("subscription_history").insert({
-            gym_id,
-            new_plan_id: plan_id,
-            action: eventType === "subscription.charged" ? "renewal" : "upgrade",
-            changed_by: owner_id || null,
-            notes: `Payment verified via Razorpay webhook [${eventType}] (${paymentId}).`,
-          });
+            await supabase.from("payments").insert({
+              gym_id,
+              invoice_id: invoice?.id,
+              amount: price,
+              status: "Success",
+              payment_method: paymentEntity.method || "Razorpay AutoPay",
+              razorpay_payment_id: paymentEntity.id,
+              created_at: new Date().toISOString(),
+            });
+
+            await supabase.from("subscription_history").insert({
+              gym_id,
+              new_plan_id: plan_id,
+              action: eventType === "subscription.charged" ? "renewal" : "upgrade",
+              changed_by: owner_id || null,
+              notes: `Payment verified via Razorpay webhook [${eventType}] (${paymentEntity.id}).`,
+            });
+          }
         }
       } else {
         console.warn(`[${correlationId}] Webhook received but could not resolve gym_id`);
       }
     } else if (
-      eventType === "payment.failed" ||
       eventType === "subscription.halted" ||
       eventType === "subscription.pending"
     ) {
-      // Payment failure or AutoPay debit failure -> lock gym atomically
+      // AutoPay recurring debit failure -> lock gym atomically
       const paymentEntity = event.payload.payment
         ? event.payload.payment.entity
         : (event.payload.subscription ? event.payload.subscription.entity : {});
@@ -266,15 +269,6 @@ serve(async (req) => {
           p_payment_id: paymentEntity.id || `FAIL_${Date.now()}`,
           p_order_id: paymentEntity.order_id || "",
           p_amount: Number(paymentEntity.amount || 0) / 100,
-        });
-
-        await supabase.from("payments").insert({
-          gym_id,
-          amount: Number(paymentEntity.amount || 0) / 100,
-          status: "Failed",
-          payment_method: paymentEntity.method || "Razorpay AutoPay",
-          razorpay_payment_id: paymentEntity.id || `FAIL_${Date.now()}`,
-          created_at: new Date().toISOString(),
         });
       }
     }
