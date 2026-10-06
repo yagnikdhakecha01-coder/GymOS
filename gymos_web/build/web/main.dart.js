@@ -34848,14 +34848,14 @@ aSH:function aSH(a){this.a=a},
 ceA(){var s="rzp_live_TkaAcBNqI1IitC"
 return s},
 aT8(a,b,c,d,e,f,g,h){return A.ceB(a,b,c,d,e,f,g,h)},
-ceB(a6,a7,a8,a9,b0,b1,b2,b3){var s=0,r=A.q(t.YV),q,p=2,o=[],n,m,l,k,j,i,h,g,f,e,d,c,b,a,a0,a1,a2,a3,a4,a5
-var $async$aT8=A.m(function(b5,b6){if(b5===1){o.push(b6)
-s=p}for(;;)switch(s){case 0:a0={}
-a1=new A.bh(new A.aE($.aU,t.Vi),t.hb)
-a2=A.ceA()
-a3=a2
-a4=B.m.aa(a6*100)
-a0.a=null
+ceB(a7,a8,a9,b0,b1,b2,b3,b4){var s=0,r=A.q(t.YV),q,p=2,o=[],n,m,l,k,j,i,h,g,f,e,d,c,b,a,a0,a1,a2,a3,a4,a5,a6
+var $async$aT8=A.m(function(b6,b7){if(b6===1){o.push(b7)
+s=p}for(;;)switch(s){case 0:a1={}
+a2=new A.bh(new A.aE($.aU,t.Vi),t.hb)
+a3=A.ceA()
+a4=a3
+a5=B.m.aa(a7*100)
+a1.a=a1.b=null
 p=4
 c=$.R
 s=c!=null?7:8
@@ -34863,58 +34863,62 @@ break
 case 7:c=c.ax
 c===$&&A.d()
 n=A.S(t.N,t.T)
-J.bu(n,"gym_id",b0)
-J.bu(n,"plan_id",b2)
-m=b1!=null?"owner_id":b1
+J.bu(n,"gym_id",b1)
+J.bu(n,"plan_id",b3)
+m=b2!=null?"owner_id":b2
 if(m!=null)J.bu(n,m,null)
 n=n
 J.bPp(n,new A.aT9())
 s=9
 return A.e(c.rl("create-subscription",n),$async$aT8)
-case 9:l=b6
+case 9:l=b7
 if(l.b===200&&l.a!=null){n=t.f
 k=n.b(l.a)?n.a(l.a):B.E.bt(J.y(l.a),null)
-if(J.B(k,"order_id")!=null)a0.a=J.y(J.B(k,"order_id"))
-if(J.B(k,"key_id")!=null&&J.y(J.B(k,"key_id")).length!==0)a3=J.y(J.B(k,"key_id"))
-if(J.B(k,"amount")!=null)a4=B.m.bh(A.e9(J.B(k,"amount")))}case 8:p=2
+if(J.B(k,"subscription_id")!=null)a1.a=J.y(J.B(k,"subscription_id"))
+if(J.B(k,"order_id")!=null)a1.b=J.y(J.B(k,"order_id"))
+if(J.B(k,"key_id")!=null&&J.y(J.B(k,"key_id")).length!==0)a4=J.y(J.B(k,"key_id"))
+if(J.B(k,"amount")!=null)a5=B.m.bh(A.e9(J.B(k,"amount")))}case 8:p=2
 s=6
 break
 case 4:p=3
-a5=o.pop()
-j=A.N(a5)
+a6=o.pop()
+j=A.N(a6)
 A.cV().$1("create-subscription function invocation error: "+A.i(j))
 s=6
 break
 case 3:s=2
 break
 case 6:n=t.N
-m=A.S(n,t.K)
-m.p(0,"key",a3)
-c=a0.a
-if(c!=null&&c.length!==0)m.p(0,"order_id",c)
-m.p(0,"amount",a4)
+m=A.S(n,t.z)
+m.p(0,"key",a4)
+c=a1.a
+a=c!=null
+if(a&&c.length!==0)m.p(0,"subscription_id",c)
+else{a0=a1.b
+if(a0!=null&&a0.length!==0)m.p(0,"order_id",a0)}if(!a||c.length===0)m.p(0,"amount",a5)
 m.p(0,"currency","INR")
 m.p(0,"name","GymOS")
-m.p(0,"description",b3+" Plan Subscription")
+m.p(0,"description",b4+" Plan AutoPay Subscription")
+m.p(0,"recurring",!0)
 c=A.S(n,n)
-c.p(0,"name",a8)
-if(a7.length!==0)c.p(0,"email",a7)
-if(a9.length!==0)c.p(0,"contact",a9)
+c.p(0,"name",a9)
+if(a8.length!==0)c.p(0,"email",a8)
+if(b0.length!==0)c.p(0,"contact",b0)
 m.p(0,"prefill",c)
 c=A.S(n,n)
-c.p(0,"gym_id",b0)
-c.p(0,"plan_id",b2)
-a=b1!=null?A.G(["owner_id",b1],n,n):null
+c.p(0,"gym_id",b1)
+c.p(0,"plan_id",b3)
+a=b2!=null?A.G(["owner_id",b2],n,n):null
 if(a!=null)c.A(0,a)
 m.p(0,"notes",c)
 m.p(0,"theme",A.G(["color","#6C4EFF"],n,n))
 i=m
 try{h=B.E.aF(i,null)
-g=A.fp(new A.aTa(a0,a1))
-f=A.fp(new A.aTb(a1))
-e=A.bSD(new A.aTc(a1))
-v.G.openRazorpayModal(h,g,f,e)}catch(b4){d=A.N(b4)
-if((a1.a.a&30)===0)a1.cR(new A.p8(!1,null,null,null,"Could not launch Razorpay checkout modal: "+A.i(d),!1))}q=a1.a
+g=A.fp(new A.aTa(a1,a2))
+f=A.fp(new A.aTb(a2))
+e=A.bSD(new A.aTc(a2))
+v.G.openRazorpayModal(h,g,f,e)}catch(b5){d=A.N(b5)
+if((a2.a.a&30)===0)a2.cR(new A.p8(!1,null,null,null,"Could not launch Razorpay checkout modal: "+A.i(d),!1))}q=a2.a
 s=1
 break
 case 1:return A.o(q,r)
@@ -130748,12 +130752,14 @@ try{s=B.E.bt(k,l)
 r=m.b
 if((r.a.a&30)===0){q=J.B(s,"razorpay_payment_id")
 q=q==null?l:J.y(q)
-p=J.B(s,"razorpay_order_id")
+p=J.B(s,"razorpay_subscription_id")
 p=p==null?l:J.y(p)
-if(p==null)p=m.a.a
+if(p==null){p=J.B(s,"razorpay_order_id")
+p=p==null?l:J.y(p)}if(p==null)p=m.a.a
+if(p==null)p=m.a.b
 o=J.B(s,"razorpay_signature")
 r.cR(new A.p8(!0,q,p,o==null?l:J.y(o),l,!1))}}catch(n){r=m.b
-if((r.a.a&30)===0)r.cR(new A.p8(!0,k,m.a.a,l,l,!1))}},
+if((r.a.a&30)===0)r.cR(new A.p8(!0,k,m.a.b,l,l,!1))}},
 $S:173}
 A.aTb.prototype={
 $1(a){var s=this.a

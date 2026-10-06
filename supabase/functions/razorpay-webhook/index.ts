@@ -49,22 +49,34 @@ serve(async (req) => {
 
   try {
     const signature = req.headers.get("x-razorpay-signature") || "";
-    const webhookSecret = Deno.env.get("RAZORPAY_WEBHOOK_SECRET") || "";
+    const rawBody = await req.text();
 
-    if (!signature || !webhookSecret) {
-      console.warn(`[${correlationId}] Webhook rejected: Missing signature or server webhook secret`);
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 400,
+    // Initialize Supabase Client
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // Securely retrieve Webhook Secret from Vault or Environment
+    let webhookSecret = Deno.env.get("RAZORPAY_WEBHOOK_SECRET");
+    if (!webhookSecret) {
+      try {
+        const { data: vSecret } = await supabase.rpc("get_internal_secret", { p_name: "RAZORPAY_WEBHOOK_SECRET" });
+        if (vSecret) webhookSecret = vSecret;
+      } catch (_) {}
+    }
+
+    if (!webhookSecret) {
+      console.warn(`[${correlationId}] Webhook Secret not configured`);
+      return new Response(JSON.stringify({ error: "Server webhook secret not configured" }), {
+        status: 500,
         headers: SECURITY_HEADERS,
       });
     }
 
-    const rawBody = await req.text();
-
-    // Verify webhook signature cryptographically
+    // Verify webhook signature cryptographically to prevent payment bypass
     const isValid = await verifyWebhookSignature(rawBody, signature, webhookSecret);
     if (!isValid) {
-      console.warn(`[${correlationId}] Invalid webhook signature received`);
+      console.warn(`[${correlationId}] SECURITY ALERT: Invalid webhook signature received!`);
       return new Response(JSON.stringify({ error: "Invalid signature" }), {
         status: 401,
         headers: SECURITY_HEADERS,
@@ -74,19 +86,23 @@ serve(async (req) => {
     const event = JSON.parse(rawBody);
     const eventType = event.event;
 
-    // Initialize Supabase Client
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    // Handle Successful Payment / AutoPay Debit
+    if (
+      eventType === "payment.captured" ||
+      eventType === "payment.authorized" ||
+      eventType === "order.paid" ||
+      eventType === "subscription.charged"
+    ) {
+      const paymentEntity = event.payload.payment
+        ? event.payload.payment.entity
+        : (event.payload.order ? event.payload.order.entity : (event.payload.subscription ? event.payload.subscription.entity : {}));
 
-    if (eventType === "payment.captured" || eventType === "payment.authorized" || eventType === "order.paid") {
-      const paymentEntity = event.payload.payment ? event.payload.payment.entity : (event.payload.order ? event.payload.order.entity : {});
       const notes = paymentEntity.notes || {};
       let gym_id = notes.gym_id;
-      const plan_id = notes.plan_id || 'pro';
+      const plan_id = notes.plan_id || "pro";
       let owner_id = notes.owner_id;
 
-      // Fallback: If gym_id not in notes, securely lookup gym with sanitized inputs
+      // Fallback: If gym_id not in notes, lookup gym by email/phone
       if (!gym_id) {
         const rawEmail = paymentEntity.email;
         const rawContact = paymentEntity.contact;
@@ -127,12 +143,12 @@ serve(async (req) => {
           .eq("id", plan_id)
           .maybeSingle();
 
-        // Strict Server-Side Amount Verification (Prevent Price Tampering)
-        if (plan) {
+        // Server-Side Amount Verification (Prevent Price Tampering)
+        if (plan && eventType !== "subscription.charged") {
           const expectedAmountInPaise = Math.round(Number(plan.price) * 100);
           const paidAmountInPaise = Number(paymentEntity.amount);
           if (paidAmountInPaise < expectedAmountInPaise) {
-            console.error(`[${correlationId}] SECURITY ALERT: Amount mismatch! Paid: ${paidAmountInPaise}, Expected: ${expectedAmountInPaise} for plan: ${plan_id}`);
+            console.error(`[${correlationId}] SECURITY ALERT: Amount mismatch! Paid: ${paidAmountInPaise}, Expected: ${expectedAmountInPaise}`);
             return new Response(JSON.stringify({ error: "Amount tampering detected" }), {
               status: 400,
               headers: SECURITY_HEADERS,
@@ -142,40 +158,26 @@ serve(async (req) => {
 
         const price = plan ? Number(plan.price) : Number(paymentEntity.amount) / 100;
 
-        // 1. Update/Upsert Subscription status
-        const { data: sub } = await supabase
-          .from("subscriptions")
-          .upsert(
-            {
-              gym_id,
-              ...(owner_id ? { owner_id } : {}),
-              plan_id,
-              status: "active",
-              start_date: new Date().toISOString(),
-              end_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-              trial_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-              razorpay_subscription_id: paymentEntity.id || paymentEntity.order_id,
-              auto_pay: true,
-              updated_at: new Date().toISOString(),
-            },
-            { onConflict: "gym_id" }
-          )
-          .select()
-          .maybeSingle();
+        // Atomic activation via DB RPC
+        try {
+          await supabase.rpc("process_razorpay_webhook", {
+            p_event_type: eventType,
+            p_gym_id: gym_id,
+            p_plan_id: plan_id,
+            p_payment_id: paymentEntity.id || `PAY_${Date.now()}`,
+            p_order_id: paymentEntity.order_id || `ORD_${Date.now()}`,
+            p_amount: price,
+          });
+        } catch (rpcErr) {
+          console.warn(`[${correlationId}] RPC error in webhook: ${rpcErr}`);
+        }
 
-        // 2. Update Gyms table directly
-        await supabase.from("gyms").update({
-          plan: plan_id,
-          status: "active",
-          expiry_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-          is_locked: false,
-        }).eq("id", gym_id);
-
-        // 3. Check if payment already exists in DB
+        // Record Payment if not already present
+        const paymentId = paymentEntity.id || `PAY_${Date.now()}`;
         const { data: existingPayment } = await supabase
           .from("payments")
           .select("id")
-          .eq("razorpay_payment_id", paymentEntity.id)
+          .eq("razorpay_payment_id", paymentId)
           .maybeSingle();
 
         if (!existingPayment) {
@@ -184,7 +186,6 @@ serve(async (req) => {
             .from("invoices")
             .insert({
               gym_id,
-              subscription_id: sub?.id,
               invoice_number: invoiceNumber,
               amount: price,
               status: "paid",
@@ -196,38 +197,51 @@ serve(async (req) => {
 
           await supabase.from("payments").insert({
             gym_id,
-            subscription_id: sub?.id,
             invoice_id: invoice?.id,
             amount: price,
             status: "Success",
-            payment_method: paymentEntity.method || "Razorpay Gateway",
-            razorpay_payment_id: paymentEntity.id,
+            payment_method: paymentEntity.method || "Razorpay AutoPay",
+            razorpay_payment_id: paymentId,
             created_at: new Date().toISOString(),
           });
 
           await supabase.from("subscription_history").insert({
             gym_id,
-            old_plan_id: null,
             new_plan_id: plan_id,
-            action: "upgrade",
-            changed_by: owner_id,
-            notes: `Upgraded to ${plan_id.toUpperCase()} plan via verified Razorpay webhook (${paymentEntity.id}).`,
+            action: eventType === "subscription.charged" ? "renewal" : "upgrade",
+            changed_by: owner_id || null,
+            notes: `Payment verified via Razorpay webhook [${eventType}] (${paymentId}).`,
           });
         }
       }
-    } else if (eventType === "payment.failed") {
-      const paymentEntity = event.payload.payment.entity;
+    } else if (
+      eventType === "payment.failed" ||
+      eventType === "subscription.halted" ||
+      eventType === "subscription.pending"
+    ) {
+      // Payment failure or AutoPay debit failure -> lock gym atomically
+      const paymentEntity = event.payload.payment
+        ? event.payload.payment.entity
+        : (event.payload.subscription ? event.payload.subscription.entity : {});
       const notes = paymentEntity.notes || {};
       const gym_id = notes.gym_id;
 
       if (gym_id) {
-        // Record Failed Payment
+        await supabase.rpc("process_razorpay_webhook", {
+          p_event_type: eventType,
+          p_gym_id: gym_id,
+          p_plan_id: notes.plan_id || "starter",
+          p_payment_id: paymentEntity.id || `FAIL_${Date.now()}`,
+          p_order_id: paymentEntity.order_id || "",
+          p_amount: Number(paymentEntity.amount || 0) / 100,
+        });
+
         await supabase.from("payments").insert({
           gym_id,
-          amount: Number(paymentEntity.amount) / 100,
+          amount: Number(paymentEntity.amount || 0) / 100,
           status: "Failed",
-          payment_method: paymentEntity.method || "Razorpay Webhook",
-          razorpay_payment_id: paymentEntity.id,
+          payment_method: paymentEntity.method || "Razorpay AutoPay",
+          razorpay_payment_id: paymentEntity.id || `FAIL_${Date.now()}`,
           created_at: new Date().toISOString(),
         });
       }

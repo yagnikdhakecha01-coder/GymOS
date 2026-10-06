@@ -58,8 +58,9 @@ class WebRazorpayService {
     String finalKey = (keyId != null && keyId.isNotEmpty) ? keyId : activeKeyId;
     int finalAmountInPaise = (amount * 100).round();
     String? createdOrderId;
+    String? createdSubscriptionId;
 
-    // 1. Create order on server side via Supabase Edge Function to get valid order_id
+    // 1. Create recurring AutoPay subscription on server side via Supabase Edge Function
     try {
       if (SupabaseService.isInitialized) {
         final fnRes = await SupabaseService.client.functions.invoke(
@@ -75,6 +76,9 @@ class WebRazorpayService {
           final data = fnRes.data is Map 
               ? (fnRes.data as Map) 
               : jsonDecode(fnRes.data.toString());
+          if (data['subscription_id'] != null) {
+            createdSubscriptionId = data['subscription_id'].toString();
+          }
           if (data['order_id'] != null) {
             createdOrderId = data['order_id'].toString();
           }
@@ -90,13 +94,18 @@ class WebRazorpayService {
       debugPrint('create-subscription function invocation error: $e');
     }
 
-    final options = {
+    final options = <String, dynamic>{
       'key': finalKey,
-      if (createdOrderId != null && createdOrderId.isNotEmpty) 'order_id': createdOrderId,
-      'amount': finalAmountInPaise,
+      if (createdSubscriptionId != null && createdSubscriptionId.isNotEmpty)
+        'subscription_id': createdSubscriptionId
+      else if (createdOrderId != null && createdOrderId.isNotEmpty)
+        'order_id': createdOrderId,
+      if (createdSubscriptionId == null || createdSubscriptionId.isEmpty)
+        'amount': finalAmountInPaise,
       'currency': 'INR',
       'name': 'GymOS',
-      'description': '$planName Plan Subscription',
+      'description': '$planName Plan AutoPay Subscription',
+      'recurring': true,
       'prefill': {
         'name': customerName ?? 'Gym Owner',
         if (customerEmail != null && customerEmail.isNotEmpty) 'email': customerEmail,
@@ -123,7 +132,7 @@ class WebRazorpayService {
             completer.complete(RazorpayPaymentResult(
               success: true,
               paymentId: data['razorpay_payment_id']?.toString(),
-              orderId: data['razorpay_order_id']?.toString() ?? createdOrderId,
+              orderId: data['razorpay_subscription_id']?.toString() ?? data['razorpay_order_id']?.toString() ?? createdSubscriptionId ?? createdOrderId,
               signature: data['razorpay_signature']?.toString(),
             ));
           }

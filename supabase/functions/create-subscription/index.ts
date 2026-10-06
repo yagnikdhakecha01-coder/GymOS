@@ -122,47 +122,89 @@ serve(async (req) => {
       );
     }
 
-    // Call Razorpay Order Creation API
     const authHeader = `Basic ${btoa(`${keyId}:${keySecret}`)}`;
-    const razorpayResponse = await fetch("https://api.razorpay.com/v1/orders", {
-      method: "POST",
-      headers: {
-        "Authorization": authHeader,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        amount: amountInPaise,
-        currency: "INR",
-        receipt: gym_id.substring(0, 40),
-        notes: {
-          gym_id,
-          plan_id,
-          owner_id: owner_id || "",
-        },
-      }),
-    });
+    const rzpPlanId = plan.razorpay_plan_id;
+    let subscriptionId: string | null = null;
+    let orderId: string | null = null;
 
-    if (!razorpayResponse.ok) {
-      const errorText = await razorpayResponse.text();
-      console.error(`[${correlationId}] Razorpay Order creation failed:`, errorText);
-      return new Response(
-        JSON.stringify({
-          error: "Failed to initiate payment transaction with gateway",
-          correlation_id: correlationId,
-        }),
-        { status: 500, headers: { ...securityHeaders, "Content-Type": "application/json" } }
-      );
+    // 1. Prioritize AutoPay Recurring Subscription Creation
+    if (rzpPlanId) {
+      try {
+        const subResponse = await fetch("https://api.razorpay.com/v1/subscriptions", {
+          method: "POST",
+          headers: {
+            "Authorization": authHeader,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            plan_id: rzpPlanId,
+            total_count: 60, // 60 recurring monthly billing cycles for AutoPay
+            quantity: 1,
+            customer_notify: 1,
+            notes: {
+              gym_id,
+              plan_id,
+              owner_id: owner_id || "",
+            },
+          }),
+        });
+
+        if (subResponse.ok) {
+          const subData = await subResponse.json();
+          subscriptionId = subData.id;
+        } else {
+          const errText = await subResponse.text();
+          console.warn(`[${correlationId}] Subscriptions API fallback to Order:`, errText);
+        }
+      } catch (subErr) {
+        console.warn(`[${correlationId}] Error creating recurring subscription:`, subErr);
+      }
     }
 
-    const order = await razorpayResponse.json();
+    // 2. Fallback to Order Creation if subscription could not be created
+    if (!subscriptionId) {
+      const razorpayResponse = await fetch("https://api.razorpay.com/v1/orders", {
+        method: "POST",
+        headers: {
+          "Authorization": authHeader,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          amount: amountInPaise,
+          currency: "INR",
+          receipt: gym_id.substring(0, 40),
+          notes: {
+            gym_id,
+            plan_id,
+            owner_id: owner_id || "",
+          },
+        }),
+      });
 
-    // STRICT SECURITY: Only public order details and public key_id returned. Secret is NEVER exposed!
+      if (!razorpayResponse.ok) {
+        const errorText = await razorpayResponse.text();
+        console.error(`[${correlationId}] Razorpay Order creation failed:`, errorText);
+        return new Response(
+          JSON.stringify({
+            error: "Failed to initiate payment transaction with gateway",
+            correlation_id: correlationId,
+          }),
+          { status: 500, headers: { ...securityHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const order = await razorpayResponse.json();
+      orderId = order.id;
+    }
+
+    // Return AutoPay subscription_id and public key_id. Secret is NEVER exposed!
     return new Response(
       JSON.stringify({
         success: true,
-        order_id: order.id,
-        amount: order.amount,
-        currency: order.currency,
+        subscription_id: subscriptionId,
+        order_id: orderId || subscriptionId,
+        amount: amountInPaise,
+        currency: "INR",
         key_id: keyId,
       }),
       { status: 200, headers: { ...securityHeaders, "Content-Type": "application/json" } }
