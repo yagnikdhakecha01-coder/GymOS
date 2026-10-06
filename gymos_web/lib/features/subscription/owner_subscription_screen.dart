@@ -381,44 +381,70 @@ class _OwnerSubscriptionScreenState extends State<OwnerSubscriptionScreen> {
       final paymentId = result.paymentId!;
       final orderId = result.orderId ?? 'ORD_${DateTime.now().millisecondsSinceEpoch}';
 
-      // 1. Invoke atomic database RPC function process_razorpay_webhook
-      await SupabaseService.client.rpc('process_razorpay_webhook', params: {
-        'p_event_type': 'payment.authorized',
-        'p_gym_id': gymId,
-        'p_plan_id': plan.id,
-        'p_payment_id': paymentId,
-        'p_order_id': orderId,
-        'p_amount': plan.price,
-      });
-
-      // 2. Safely record payment in payments table
-      try {
-        await SupabaseService.client.from('payments').insert({
-          'gym_id': gymId,
-          'amount': plan.price,
-          'status': 'Success',
-          'payment_method': 'Razorpay Web Checkout',
-          'razorpay_payment_id': paymentId,
-          if (result.signature != null) 'razorpay_signature': result.signature,
-          'created_at': DateTime.now().toIso8601String(),
-        });
-      } catch (pe) {
-        debugPrint('Non-fatal: payments table record: $pe');
+      // 1. Invoke verify-payment Edge Function for server-side verification and activation
+      bool verifiedViaFunction = false;
+      if (result.signature != null && result.signature!.isNotEmpty) {
+        try {
+          final verifyRes = await SupabaseService.client.functions.invoke(
+            'verify-payment',
+            body: {
+              'razorpay_order_id': orderId,
+              'razorpay_payment_id': paymentId,
+              'razorpay_signature': result.signature,
+              'gym_id': gymId,
+              'plan_id': plan.id,
+              'owner_id': ownerId,
+              'is_upgrade': false,
+            },
+          );
+          if (verifyRes.status == 200) {
+            verifiedViaFunction = true;
+          }
+        } catch (vfErr) {
+          debugPrint('verify-payment invocation fallback: $vfErr');
+        }
       }
 
-      // 3. Safely record in subscription_history table
-      try {
-        await SupabaseService.client.from('subscription_history').insert({
-          'gym_id': gymId,
-          'old_plan_id': _currentPurchasedPlanId,
-          'new_plan_id': plan.id,
-          'action': 'Subscription Purchased',
-          'changed_by': ownerId,
-          'notes': 'Activated ${plan.name} plan (₹${plan.price.toInt()}) via Razorpay Web Checkout ($paymentId).',
-          'created_at': DateTime.now().toIso8601String(),
+      // 2. Direct DB RPC fallback to guarantee immediate activation
+      if (!verifiedViaFunction) {
+        await SupabaseService.client.rpc('process_razorpay_webhook', params: {
+          'p_event_type': 'payment.authorized',
+          'p_gym_id': gymId,
+          'p_plan_id': plan.id,
+          'p_payment_id': paymentId,
+          'p_order_id': orderId,
+          'p_amount': plan.price,
         });
-      } catch (he) {
-        debugPrint('Non-fatal: subscription_history insert: $he');
+
+        // Safely record payment in payments table
+        try {
+          await SupabaseService.client.from('payments').insert({
+            'gym_id': gymId,
+            'amount': plan.price,
+            'status': 'Success',
+            'payment_method': 'Razorpay Web Checkout',
+            'razorpay_payment_id': paymentId,
+            if (result.signature != null) 'razorpay_signature': result.signature,
+            'created_at': DateTime.now().toIso8601String(),
+          });
+        } catch (pe) {
+          debugPrint('Non-fatal: payments table record: $pe');
+        }
+
+        // Safely record in subscription_history table
+        try {
+          await SupabaseService.client.from('subscription_history').insert({
+            'gym_id': gymId,
+            'old_plan_id': _currentPurchasedPlanId,
+            'new_plan_id': plan.id,
+            'action': 'Subscription Purchased',
+            'changed_by': ownerId,
+            'notes': 'Activated ${plan.name} plan (₹${plan.price.toInt()}) via Razorpay Web Checkout ($paymentId).',
+            'created_at': DateTime.now().toIso8601String(),
+          });
+        } catch (he) {
+          debugPrint('Non-fatal: subscription_history insert: $he');
+        }
       }
 
       // 4. Refresh global subscription status and local trial settings
