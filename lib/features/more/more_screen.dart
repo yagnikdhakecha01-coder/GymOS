@@ -27,6 +27,7 @@ import '../receptionist/portal/receptionist_activity_log_screen.dart';
 import '../dashboard/gym_switcher_bottom_sheet.dart';
 
 import '../subscription/owner_subscription_screen.dart';
+import 'linked_devices_screen.dart';
 
 class MoreScreen extends StatefulWidget {
   const MoreScreen({super.key});
@@ -245,6 +246,19 @@ class _MoreScreenState extends State<MoreScreen> {
                     subtitle: 'Switch role or gym profile context',
                     onTap: () {
                       GymSwitcherBottomSheet.show(context);
+                    },
+                  ),
+                  const Divider(height: 1),
+
+                  // Linked Devices (WhatsApp Web-style)
+                  _buildSettingTile(
+                    context,
+                    icon: Icons.devices_rounded,
+                    color: const Color(0xFF6366F1),
+                    title: 'Linked Devices',
+                    subtitle: 'Use GymOS on Web browser, manage sessions',
+                    onTap: () {
+                      Navigator.push(context, AppRouter.slideRoute(const LinkedDevicesScreen()));
                     },
                   ),
                   const Divider(height: 1),

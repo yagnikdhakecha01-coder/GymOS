@@ -10,6 +10,7 @@ import '../../core/widgets/custom_button.dart';
 import '../../core/repository/gym_repository.dart';
 import '../authentication/auth_viewmodel.dart';
 import '../../core/services/supabase_service.dart';
+import '../../core/services/web_qr_approval_helper.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/models/attendance.dart';
 import '../../core/utils/staff_day_attendance_status.dart';
@@ -704,6 +705,19 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
                 if (barcodes.isNotEmpty) {
                   final String? codeValue = barcodes.first.rawValue;
                   if (codeValue != null && codeValue.isNotEmpty) {
+                    if (WebQrApprovalHelper.isWebLoginQr(codeValue)) {
+                      _scanCompletedSync = true;
+                      final approved = await WebQrApprovalHelper.handleScan(context, codeValue);
+                      if (mounted) {
+                        if (approved) {
+                          Navigator.pop(context);
+                        } else {
+                          _scanCompletedSync = false;
+                        }
+                      }
+                      return;
+                    }
+
                     _scanCompletedSync = true;
                     setState(() {
                       _isScanCompleted = true;

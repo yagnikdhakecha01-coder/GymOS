@@ -53,6 +53,26 @@ async function verifySignature(
   return generatedSignature === signature;
 }
 
+async function resolveRazorpayCredentials(supabase: ReturnType<typeof createClient>) {
+  let keyId = Deno.env.get("RAZORPAY_KEY_ID");
+  let keySecret = Deno.env.get("RAZORPAY_KEY_SECRET");
+
+  if (!keyId || keyId.startsWith("rzp_test")) {
+    try {
+      const { data: vKey } = await supabase.rpc("get_internal_secret", { p_name: "RAZORPAY_KEY_ID" });
+      if (vKey) keyId = vKey;
+    } catch (_) {}
+  }
+  if (!keySecret || keyId?.startsWith("rzp_live")) {
+    try {
+      const { data: vSecret } = await supabase.rpc("get_internal_secret", { p_name: "RAZORPAY_KEY_SECRET" });
+      if (vSecret) keySecret = vSecret;
+    } catch (_) {}
+  }
+
+  return { keyId, keySecret };
+}
+
 serve(async (req) => {
   const securityHeaders = getSecurityAndCorsHeaders(req);
   const correlationId = crypto.randomUUID();
@@ -76,37 +96,11 @@ serve(async (req) => {
       !razorpay_payment_id ||
       !razorpay_signature ||
       !gym_id ||
-      !plan_id ||
-      !owner_id
+      !plan_id
     ) {
       console.warn(`[${correlationId}] Bad Request: Missing verification parameters`);
       return new Response(
         JSON.stringify({ error: "Missing required parameters", correlation_id: correlationId }),
-        { status: 400, headers: { ...securityHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const secret = Deno.env.get("RAZORPAY_KEY_SECRET");
-    if (!secret) {
-      console.error(`[${correlationId}] Razorpay Key Secret is not configured in Supabase`);
-      return new Response(
-        JSON.stringify({ error: "Payment verification service is unavailable", correlation_id: correlationId }),
-        { status: 500, headers: { ...securityHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // Verify signature
-    const isValid = await verifySignature(
-      razorpay_order_id,
-      razorpay_payment_id,
-      razorpay_signature,
-      secret
-    );
-
-    if (!isValid) {
-      console.warn(`[${correlationId}] Invalid Razorpay signature verification attempt for order ${razorpay_order_id}`);
-      return new Response(
-        JSON.stringify({ success: false, error: "Payment signature verification failed", correlation_id: correlationId }),
         { status: 400, headers: { ...securityHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -123,6 +117,31 @@ serve(async (req) => {
     }
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    const { keyId, keySecret } = await resolveRazorpayCredentials(supabase);
+
+    if (!keySecret) {
+      console.error(`[${correlationId}] Razorpay Key Secret is not configured in Supabase`);
+      return new Response(
+        JSON.stringify({ error: "Payment verification service is unavailable", correlation_id: correlationId }),
+        { status: 500, headers: { ...securityHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Verify HMAC-SHA256 signature
+    const isValid = await verifySignature(
+      razorpay_order_id,
+      razorpay_payment_id,
+      razorpay_signature,
+      keySecret
+    );
+
+    if (!isValid) {
+      console.warn(`[${correlationId}] Invalid Razorpay signature verification attempt for order ${razorpay_order_id}`);
+      return new Response(
+        JSON.stringify({ success: false, error: "Payment signature verification failed", correlation_id: correlationId }),
+        { status: 400, headers: { ...securityHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     // Fetch Plan details
     const { data: plan, error: planError } = await supabase
@@ -138,11 +157,10 @@ serve(async (req) => {
     const price = plan ? Number(plan.price) : 699.0;
     const expectedAmountInPaise = Math.round(price * 100);
 
-    // Verify actual payment details and amount from Razorpay API to prevent amount tampering
-    const razorpayKeyId = Deno.env.get("RAZORPAY_KEY_ID");
-    if (razorpayKeyId && secret) {
+    // Verify payment from Razorpay API to prevent tampering
+    if (keyId && keySecret) {
       try {
-        const authHeader = `Basic ${btoa(`${razorpayKeyId}:${secret}`)}`;
+        const authHeader = `Basic ${btoa(`${keyId}:${keySecret}`)}`;
         const rpRes = await fetch(`https://api.razorpay.com/v1/payments/${razorpay_payment_id}`, {
           headers: { "Authorization": authHeader },
         });
@@ -168,91 +186,46 @@ serve(async (req) => {
       }
     }
 
-    // 1. Update/Upsert Subscriptions table
-    const { data: sub, error: subError } = await supabase
-      .from("subscriptions")
-      .upsert(
-        {
-          gym_id,
-          owner_id,
-          plan_id,
-          status: "active",
-          start_date: new Date().toISOString(),
-          end_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-          razorpay_subscription_id: razorpay_order_id,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "gym_id" }
-      )
-      .select()
-      .single();
-
-    if (subError) {
-      console.error(`[${correlationId}] Database error updating subscription:`, subError);
-      return new Response(
-        JSON.stringify({ error: "Unable to update subscription records", correlation_id: correlationId }),
-        { status: 500, headers: { ...securityHeaders, "Content-Type": "application/json" } }
-      );
+    // Atomic activation via process_razorpay_webhook RPC
+    try {
+      await supabase.rpc("process_razorpay_webhook", {
+        p_event_type: "payment.authorized",
+        p_gym_id: gym_id,
+        p_plan_id: plan_id,
+        p_payment_id: razorpay_payment_id,
+        p_order_id: razorpay_order_id,
+        p_amount: price,
+      });
+    } catch (rpcErr) {
+      console.warn(`[${correlationId}] RPC process_razorpay_webhook error: ${rpcErr}`);
     }
 
-    // 1b. Update Gyms table directly
-    const { error: gymError } = await supabase.from("gyms").update({
-      plan: plan_id,
-      status: "active",
-      expiry_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-      is_locked: false,
-    }).eq("id", gym_id);
-
-    if (gymError) {
-      console.error(`[${correlationId}] Error updating gym record:`, gymError);
-    }
-
-    // 2. Insert Invoice
-    const invoiceNumber = `INV-${Date.now()}`;
-    const { data: invoice, error: invoiceError } = await supabase
-      .from("invoices")
-      .insert({
+    // Record Payment
+    try {
+      await supabase.from("payments").insert({
         gym_id,
-        subscription_id: sub.id,
-        invoice_number: invoiceNumber,
         amount: price,
-        status: "paid",
-        billing_date: new Date().toISOString(),
-        due_date: new Date().toISOString(),
-      })
-      .select()
-      .single();
-
-    if (invoiceError) {
-      console.error(`[${correlationId}] Error recording invoice:`, invoiceError);
-    }
-
-    // 3. Insert Payment
-    const { error: paymentError } = await supabase.from("payments").insert({
-      gym_id,
-      subscription_id: sub.id,
-      invoice_id: invoice?.id,
-      amount: price,
-      status: "Success",
-      payment_method: "Razorpay Gateway",
-      razorpay_payment_id: razorpay_payment_id,
-    });
-
-    if (paymentError) {
+        status: "Success",
+        payment_method: "Razorpay Gateway",
+        razorpay_payment_id: razorpay_payment_id,
+        razorpay_signature: razorpay_signature,
+        created_at: new Date().toISOString(),
+      });
+    } catch (paymentError) {
       console.error(`[${correlationId}] Error recording payment:`, paymentError);
     }
 
-    // 4. Record Subscription History
-    const { error: historyError } = await supabase.from("subscription_history").insert({
-      gym_id,
-      old_plan_id: null,
-      new_plan_id: plan_id,
-      action: "upgrade",
-      changed_by: owner_id,
-      notes: `Upgraded/Renewed to ${plan_id.toUpperCase()} plan via verified Razorpay checkout.`,
-    });
-
-    if (historyError) {
+    // Record Subscription History
+    try {
+      await supabase.from("subscription_history").insert({
+        gym_id,
+        new_plan_id: plan_id,
+        action: "upgrade",
+        changed_by: owner_id || null,
+        notes: `Activated ${plan_id.toUpperCase()} plan (₹${price}) via verified Razorpay checkout.`,
+        created_at: new Date().toISOString(),
+      });
+    } catch (historyError) {
       console.error(`[${correlationId}] Error writing subscription history:`, historyError);
     }
 

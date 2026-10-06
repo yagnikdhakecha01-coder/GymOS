@@ -15,6 +15,9 @@ import '../subscription/owner_subscription_screen.dart';
 import 'support_chat_screen.dart';
 import 'support_tickets_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter/services.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../attendance/owner_scanner_screen.dart';
 
 class MainNavigationHolder extends StatefulWidget {
   const MainNavigationHolder({Key? key}) : super(key: key);
@@ -27,6 +30,7 @@ class _MainNavigationHolderState extends State<MainNavigationHolder> with Widget
   int _currentIndex = 0;
   Timer? _statusCheckTimer;
   bool _isCheckingStatus = false;
+  RealtimeChannel? _subRealtimeChannel;
 
   // Support Tickets State
   final _titleController = TextEditingController();
@@ -50,9 +54,46 @@ class _MainNavigationHolderState extends State<MainNavigationHolder> with Widget
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkGymStatus();
+      _subscribeToSubscriptionRealtime();
     });
     _startStatusCheckTimer();
     _fetchTickets();
+  }
+
+  void _subscribeToSubscriptionRealtime() {
+    try {
+      final authVm = Provider.of<AuthViewModel>(context, listen: false);
+      final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
+      if (gymId == null || !SupabaseService.isInitialized) return;
+
+      _subRealtimeChannel = SupabaseService.client
+          .channel('gym_sub_sync_$gymId')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'gyms',
+            filter: PostgresChangeFilter(
+              type: PostgresChangeFilterType.eq,
+              column: 'id',
+              value: gymId,
+            ),
+            callback: (_) => _checkGymStatus(),
+          )
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'subscriptions',
+            filter: PostgresChangeFilter(
+              type: PostgresChangeFilterType.eq,
+              column: 'gym_id',
+              value: gymId,
+            ),
+            callback: (_) => _checkGymStatus(),
+          )
+          .subscribe();
+    } catch (e) {
+      debugPrint('Error setting up Realtime subscription listener: $e');
+    }
   }
 
   @override
@@ -66,6 +107,11 @@ class _MainNavigationHolderState extends State<MainNavigationHolder> with Widget
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _statusCheckTimer?.cancel();
+    if (_subRealtimeChannel != null) {
+      try {
+        SupabaseService.client.removeChannel(_subRealtimeChannel!);
+      } catch (_) {}
+    }
     _titleController.dispose();
     _descController.dispose();
     super.dispose();
@@ -321,10 +367,10 @@ class _MainNavigationHolderState extends State<MainNavigationHolder> with Widget
                       Text(
                         authVm.isOffline
                             ? 'No Internet Connection'
-                            : (isLockedByAdmin ? 'Gym Locked by Admin' : 'Gym Locked'),
+                            : (isLockedByAdmin ? 'Gym Locked by Admin' : 'Gym Access Locked'),
                         textAlign: TextAlign.center,
                         style: GoogleFonts.inter(
-                          fontSize: 28,
+                          fontSize: 26,
                           fontWeight: FontWeight.w800,
                           color: Colors.white,
                           letterSpacing: -0.5,
@@ -336,21 +382,21 @@ class _MainNavigationHolderState extends State<MainNavigationHolder> with Widget
                             ? 'Cannot verify subscription.\nPlease check your connection and retry.'
                             : (isLockedByAdmin
                                 ? 'Your gym account access has been locked by the administrator.\nPlease contact support to resolve.'
-                                : 'Your free trial has ended.\nGym OS plan tiers are managed by your account administrator.'),
+                                : 'Your plan or free trial has expired.\nAll subscriptions are managed exclusively through the GymOS Web Portal: gymos.tech/portal'),
                         textAlign: TextAlign.center,
                         style: GoogleFonts.inter(
-                          fontSize: 15,
+                          fontSize: 14,
                           height: 1.5,
-                          color: Colors.white.withOpacity(0.8),
+                          color: Colors.white.withOpacity(0.85),
                           fontWeight: FontWeight.w500,
                         ),
                       ),
-                      const SizedBox(height: 36),
+                      const SizedBox(height: 32),
                       authVm.isOffline
                           ? _buildOfflineRetryButton(authVm)
                           : (isLockedByAdmin
                               ? _buildContactSupportButton(context)
-                              : _buildUnlockButton(context)),
+                              : _buildUnlockActions(context, authVm)),
                     ],
                   ),
                 ),
@@ -362,50 +408,103 @@ class _MainNavigationHolderState extends State<MainNavigationHolder> with Widget
     );
   }
 
-  Widget _buildUnlockButton(BuildContext context) {
-    return ScaleButton(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => const OwnerSubscriptionScreen(),
-          ),
-        );
-      },
-      child: Container(
-        height: 52,
-        width: 190,
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [Color(0xFF8B5CF6), Color(0xFF6C4EFF)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          borderRadius: BorderRadius.circular(18),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF6C4EFF).withOpacity(0.35),
-              blurRadius: 16,
-              offset: const Offset(0, 6),
+  Widget _buildUnlockActions(BuildContext context, AuthViewModel authVm) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // 1. Primary Action: Scan Web Portal QR Code
+        ScaleButton(
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const OwnerQRScannerScreen(isCheckIn: false),
+              ),
+            );
+          },
+          child: Container(
+            height: 52,
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF8B5CF6), Color(0xFF6C4EFF)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF6C4EFF).withOpacity(0.4),
+                  blurRadius: 16,
+                  offset: const Offset(0, 6),
+                ),
+              ],
             ),
-          ],
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.qr_code_scanner_rounded, color: Colors.white, size: 22),
+                const SizedBox(width: 10),
+                Text(
+                  'Scan Web Portal QR Code',
+                  style: GoogleFonts.inter(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
-        child: Row(
+        const SizedBox(height: 14),
+
+        // 2. Secondary Actions: Copy Portal Link & Refresh Status
+        Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.lock_open_rounded, color: Colors.white, size: 20),
+            TextButton.icon(
+              onPressed: () {
+                Clipboard.setData(const ClipboardData(text: 'https://gymos.tech/portal'));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: const Text('Copied https://gymos.tech/portal to clipboard!'),
+                    backgroundColor: const Color(0xFF6C4EFF),
+                    behavior: SnackBarBehavior.floating,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.copy_rounded, color: Colors.white70, size: 16),
+              label: Text(
+                'Copy Portal Link',
+                style: GoogleFonts.inter(
+                  color: Colors.white70,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
             const SizedBox(width: 8),
-            Text(
-              'Unlock Gym',
-              style: GoogleFonts.inter(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
-                fontSize: 16,
+            TextButton.icon(
+              onPressed: () async {
+                await authVm.fetchSubscriptionStatus();
+                if (mounted) setState(() {});
+              },
+              icon: const Icon(Icons.refresh_rounded, color: Colors.white70, size: 16),
+              label: Text(
+                'Check Status',
+                style: GoogleFonts.inter(
+                  color: Colors.white70,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ],
         ),
-      ),
+      ],
     );
   }
 

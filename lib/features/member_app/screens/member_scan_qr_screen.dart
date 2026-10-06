@@ -8,6 +8,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'member_check_in_success.dart';
 import 'member_check_in_failure.dart';
 import '../../../core/repository/gym_repository.dart';
+import '../../../core/services/web_qr_approval_helper.dart';
 
 class MemberScanQRScreen extends StatefulWidget {
   const MemberScanQRScreen({super.key});
@@ -122,6 +123,19 @@ class _MemberScanQRScreenState extends State<MemberScanQRScreen>
                         if (barcodes.isNotEmpty) {
                           final String? codeValue = barcodes.first.rawValue;
                           if (codeValue != null) {
+                            if (WebQrApprovalHelper.isWebLoginQr(codeValue)) {
+                              _scanCompletedSync = true;
+                              final approved = await WebQrApprovalHelper.handleScan(context, codeValue);
+                              if (mounted) {
+                                if (approved) {
+                                  Navigator.pop(context);
+                                } else {
+                                  _scanCompletedSync = false;
+                                }
+                              }
+                              return;
+                            }
+
                             _scanCompletedSync = true;
                             setState(() {
                               _isScanCompleted = true;

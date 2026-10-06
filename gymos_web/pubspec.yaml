@@ -1,0 +1,46 @@
+name: gymos_web
+description: "GymOS Web Portal - Multi-Role Dashboard with WhatsApp-style QR Login"
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+  provider: ^6.1.5+1
+  shared_preferences: ^2.5.5
+  google_fonts: ^8.2.0
+  intl: ^0.20.3
+  supabase_flutter: ^2.8.0
+  url_launcher: ^6.2.5
+  image_picker: ^1.1.2
+  share_plus: ^13.3.0
+  crypto: ^3.0.7
+  qr_flutter: ^4.1.0
+  mobile_scanner: ^5.1.1
+  permission_handler: ^12.0.3
+  local_auth: ^2.3.0
+  google_sign_in: ^6.2.1
+  sign_in_with_apple: ^6.1.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/logo.png
+    - assets/images/app_icon_master.png
+    - assets/images/app_icon_background.png
+    - assets/images/member/
+    - assets/images/role/
+    - assets/data/
+    - .env

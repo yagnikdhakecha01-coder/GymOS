@@ -25,6 +25,27 @@ function getSecurityAndCorsHeaders(req: Request) {
   };
 }
 
+async function resolveRazorpayCredentials(supabase: ReturnType<typeof createClient>) {
+  let keyId = Deno.env.get("RAZORPAY_KEY_ID");
+  let keySecret = Deno.env.get("RAZORPAY_KEY_SECRET");
+
+  // Fetch live credentials from encrypted Supabase Vault if env has old test key or is missing
+  if (!keyId || keyId.startsWith("rzp_test")) {
+    try {
+      const { data: vKey } = await supabase.rpc("get_internal_secret", { p_name: "RAZORPAY_KEY_ID" });
+      if (vKey) keyId = vKey;
+    } catch (_) {}
+  }
+  if (!keySecret || keyId?.startsWith("rzp_live")) {
+    try {
+      const { data: vSecret } = await supabase.rpc("get_internal_secret", { p_name: "RAZORPAY_KEY_SECRET" });
+      if (vSecret) keySecret = vSecret;
+    } catch (_) {}
+  }
+
+  return { keyId, keySecret };
+}
+
 serve(async (req) => {
   const securityHeaders = getSecurityAndCorsHeaders(req);
   const correlationId = crypto.randomUUID();
@@ -35,13 +56,14 @@ serve(async (req) => {
   }
 
   try {
-    const { gym_id, plan_id, owner_id } = await req.json();
+    const body = await req.json();
+    const { gym_id, plan_id, owner_id } = body;
 
-    if (!gym_id || !plan_id || !owner_id) {
-      console.warn(`[${correlationId}] Bad Request: Missing required parameters`);
+    if (!gym_id || !plan_id) {
+      console.warn(`[${correlationId}] Bad Request: Missing gym_id or plan_id`);
       return new Response(
         JSON.stringify({
-          error: "Missing required parameters",
+          error: "Missing required parameters: gym_id, plan_id",
           correlation_id: correlationId,
         }),
         { status: 400, headers: { ...securityHeaders, "Content-Type": "application/json" } }
@@ -65,7 +87,7 @@ serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Fetch Plan Details
+    // Fetch Plan Details from database
     const { data: plan, error: planError } = await supabase
       .from("subscription_plans")
       .select("*")
@@ -86,14 +108,14 @@ serve(async (req) => {
     const price = Number(plan.price);
     const amountInPaise = Math.round(price * 100);
 
-    const razorpayKeyId = Deno.env.get("RAZORPAY_KEY_ID");
-    const razorpayKeySecret = Deno.env.get("RAZORPAY_KEY_SECRET");
+    // Securely retrieve Razorpay credentials
+    const { keyId, keySecret } = await resolveRazorpayCredentials(supabase);
 
-    if (!razorpayKeyId || !razorpayKeySecret) {
+    if (!keyId || !keySecret) {
       console.error(`[${correlationId}] Razorpay configuration credentials missing`);
       return new Response(
         JSON.stringify({
-          error: "Payment gateway service is unavailable",
+          error: "Payment gateway credentials are not configured",
           correlation_id: correlationId,
         }),
         { status: 500, headers: { ...securityHeaders, "Content-Type": "application/json" } }
@@ -101,7 +123,7 @@ serve(async (req) => {
     }
 
     // Call Razorpay Order Creation API
-    const authHeader = `Basic ${btoa(`${razorpayKeyId}:${razorpayKeySecret}`)}`;
+    const authHeader = `Basic ${btoa(`${keyId}:${keySecret}`)}`;
     const razorpayResponse = await fetch("https://api.razorpay.com/v1/orders", {
       method: "POST",
       headers: {
@@ -111,11 +133,11 @@ serve(async (req) => {
       body: JSON.stringify({
         amount: amountInPaise,
         currency: "INR",
-        receipt: gym_id,
+        receipt: gym_id.substring(0, 40),
         notes: {
           gym_id,
           plan_id,
-          owner_id,
+          owner_id: owner_id || "",
         },
       }),
     });
@@ -134,13 +156,14 @@ serve(async (req) => {
 
     const order = await razorpayResponse.json();
 
+    // STRICT SECURITY: Only public order details and public key_id returned. Secret is NEVER exposed!
     return new Response(
       JSON.stringify({
         success: true,
         order_id: order.id,
         amount: order.amount,
         currency: order.currency,
-        key_id: razorpayKeyId,
+        key_id: keyId,
       }),
       { status: 200, headers: { ...securityHeaders, "Content-Type": "application/json" } }
     );

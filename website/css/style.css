@@ -342,6 +342,12 @@ button {
   box-shadow: 0 6px 25px var(--primary-glow);
 }
 
+.navbar__cta--portal:hover {
+  background: linear-gradient(135deg, #8B5CF6, #6366F1) !important;
+  box-shadow: 0 6px 25px rgba(124, 58, 237, 0.6) !important;
+  transform: translateY(-2px);
+}
+
 /* Mobile hamburger */
 .navbar__toggle {
   display: none;

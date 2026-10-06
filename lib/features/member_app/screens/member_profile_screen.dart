@@ -10,6 +10,7 @@ import 'member_notifications_screen.dart';
 import '../../more/help_support_screen.dart';
 import '../../more/settings_screen.dart';
 import '../../dashboard/gym_switcher_bottom_sheet.dart';
+import '../../more/linked_devices_screen.dart';
 import '../widgets/member_rules_agreement_dialog.dart';
 
 class MemberProfileScreen extends StatelessWidget {
@@ -278,6 +279,13 @@ class MemberProfileScreen extends StatelessWidget {
                         _divider(),
                         _buildMenuItem(Icons.swap_horiz_rounded, 'Switch Profile', () {
                           GymSwitcherBottomSheet.show(context);
+                        }),
+                        _divider(),
+                        _buildMenuItem(Icons.devices_rounded, 'Linked Devices', () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const LinkedDevicesScreen()),
+                          );
                         }),
                         _divider(),
                         _buildMenuItem(Icons.settings_outlined, 'Settings', () {

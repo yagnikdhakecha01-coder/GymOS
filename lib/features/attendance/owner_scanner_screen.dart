@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../core/theme/theme.dart';
+import '../../core/services/web_qr_approval_helper.dart';
 import 'attendance_viewmodel.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -82,6 +83,21 @@ class _OwnerQRScannerScreenState extends State<OwnerQRScannerScreen>
     print('[SCANNER DEBUG] Raw scanned value: "$code"');
     print('[SCANNER DEBUG] Trimmed value: "$trimmedCode"');
     print('[SCANNER DEBUG] Length: ${trimmedCode.length}');
+
+    // Check if it's a GymOS Web Login QR code
+    if (WebQrApprovalHelper.isWebLoginQr(trimmedCode)) {
+      final approved = await WebQrApprovalHelper.handleScan(context, trimmedCode);
+      if (mounted) {
+        if (approved) {
+          Navigator.pop(context);
+        } else {
+          setState(() {
+            _isScanCompleted = false;
+          });
+        }
+      }
+      return;
+    }
 
     // Check if it's a display verification token (64-char hex string)
     final isVerificationToken = RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(trimmedCode);

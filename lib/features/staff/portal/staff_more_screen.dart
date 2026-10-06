@@ -11,6 +11,7 @@ import '../staff_profile_screen.dart';
 import 'staff_salary_screen.dart';
 import '../../more/help_support_screen.dart';
 import '../../more/settings_screen.dart';
+import '../../more/linked_devices_screen.dart';
 import '../../../core/models/staff.dart';
 import '../../../core/repository/gym_repository.dart';
 import '../../dashboard/gym_switcher_bottom_sheet.dart';
@@ -276,6 +277,14 @@ class StaffMoreScreen extends StatelessWidget {
                     label: 'Switch Profile',
                     onTap: () {
                       GymSwitcherBottomSheet.show(context);
+                    },
+                  ),
+                  const Divider(height: 1, color: Color(0xFFF3F4F6), indent: 16, endIndent: 16),
+                  _buildMenuItem(
+                    icon: Icons.devices_rounded,
+                    label: 'Linked Devices',
+                    onTap: () {
+                      Navigator.push(context, AppRouter.slideRoute(const LinkedDevicesScreen()));
                     },
                   ),
                   const Divider(height: 1, color: Color(0xFFF3F4F6), indent: 16, endIndent: 16),
