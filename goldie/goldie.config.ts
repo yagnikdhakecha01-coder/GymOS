@@ -48,8 +48,8 @@ const config = {
     {
       kind: "screenshot",
       id: "login",
-      headline: { "en-US": "Welcome to GymOS: Fast & Secure Access" },
-      subhead: { "en-US": "Seamless role-based sign in with Google or Email for owners, staff, and members." },
+      headline: { "en-US": "Tailored for Owners, Staff & Members" },
+      subhead: { "en-US": "Choose your experience — dedicated portals for gym owners, trainers, and fitness members." },
       layout: "hero",
     },
     {
