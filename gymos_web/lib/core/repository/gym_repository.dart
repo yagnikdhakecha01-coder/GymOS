@@ -4779,7 +4779,7 @@ class GymRepository extends ChangeNotifier {
         if (res['success'] == true) {
           final publicId = res['display_public_id'] as String;
           await fetchDisplaySessionsFromSupabase();
-          return "http://localhost:8080/attendance_display_website/index.html?display_id=$publicId";
+          return "https://gymos.tech/attendance?display_id=$publicId";
         }
       } catch (e) {
         _handleNetworkError('getOrGenerateDisplayLink', e);

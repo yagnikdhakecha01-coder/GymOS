@@ -1,2 +1,8 @@
 # Cloudflare Pages SPA Routing for GymOS Web Portal
-/portal/*    /portal/index.html    200
+/portal/*        /portal/index.html        200
+
+# GymOS Live Attendance Display Routing
+/attendance      /attendance/index.html    200
+/attendance/*    /attendance/index.html    200
+/attenadce       /attendance/index.html    301
+/attenadce/*     /attendance/index.html    301

@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="dark">
+    <title>GymOS - Live Attendance Display</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Supabase JS -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- QRCode.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Outfit', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            50: '#f5f3ff',
+                            100: '#ede9fe',
+                            400: '#a78bfa',
+                            500: '#6C3AED',
+                            600: '#5b21b6',
+                            900: '#1e1b4b',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #090812;
+            color: #FFFFFF;
+            overflow-x: hidden;
+            user-select: none;
+        }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.02);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+        @keyframes float {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-8px); }
+            100% { transform: translateY(0px); }
+        }
+        .float-anim {
+            animation: float 6s ease-in-out infinite;
+        }
+        
+        #attendance-qrcode img, #verification-qrcode img {
+            display: block;
+            margin: 0 auto;
+        }
+
+        /* Prevent Dark Reader or Force Dark Mode color inversion on QR Card & Elements */
+        .force-white-bg {
+            background-color: #ffffff !important;
+            background: #ffffff !important;
+            color: #000000 !important;
+            color-scheme: only light !important;
+            filter: none !important;
+            -webkit-filter: none !important;
+        }
+        .force-white-qrcode,
+        .force-white-qrcode * {
+            background-color: #ffffff !important;
+            background: #ffffff !important;
+            color: #000000 !important;
+            color-scheme: only light !important;
+            filter: none !important;
+            -webkit-filter: none !important;
+        }
+    </style>
+</head>
+<body class="min-h-screen w-screen flex flex-col justify-between p-6 md:p-8 relative">
+    
+    <!-- Premium Gym Background Photo (Subtle, blurred, dark overlays) -->
+    <div class="fixed inset-0 z-0 bg-cover bg-center bg-no-repeat pointer-events-none filter blur-[10px] scale-[1.05]" 
+         style="background-image: url('https://images.unsplash.com/photo-1540497077202-7c8a3999166f?auto=format&fit=crop&q=80&w=1920'); opacity: 0.08;"></div>
+    
+    <!-- Luxury Deep Overlay -->
+    <div class="fixed inset-0 bg-gradient-to-b from-[#090812] via-[#090812]/98 to-[#0b0a16] z-0 pointer-events-none"></div>
+
+    <!-- Soft Ambient Glows -->
+    <div class="fixed top-[-20%] left-[-10%] w-[60%] h-[60%] bg-indigo-600/[0.04] rounded-full blur-[140px] pointer-events-none z-0"></div>
+    <div class="fixed bottom-[-20%] right-[-10%] w-[60%] h-[60%] bg-purple-600/[0.04] rounded-full blur-[140px] pointer-events-none z-0"></div>
+
+    <!-- Grid dot matrix pattern -->
+    <div class="fixed bottom-6 right-6 opacity-[0.03] z-0 pointer-events-none">
+        <svg width="100" height="100" viewBox="0 0 100 100" fill="currentColor" class="text-white">
+            <circle cx="10" cy="10" r="2"/><circle cx="30" cy="10" r="2"/><circle cx="50" cy="10" r="2"/><circle cx="70" cy="10" r="2"/><circle cx="90" cy="10" r="2"/>
+            <circle cx="10" cy="30" r="2"/><circle cx="30" cy="30" r="2"/><circle cx="50" cy="30" r="2"/><circle cx="70" cy="30" r="2"/><circle cx="90" cy="30" r="2"/>
+            <circle cx="10" cy="50" r="2"/><circle cx="30" cy="50" r="2"/><circle cx="50" cy="50" r="2"/><circle cx="70" cy="50" r="2"/><circle cx="90" cy="50" r="2"/>
+            <circle cx="10" cy="70" r="2"/><circle cx="30" cy="70" r="2"/><circle cx="50" cy="70" r="2"/><circle cx="70" cy="70" r="2"/><circle cx="90" cy="70" r="2"/>
+            <circle cx="10" cy="90" r="2"/><circle cx="30" cy="90" r="2"/><circle cx="50" cy="90" r="2"/><circle cx="70" cy="90" r="2"/><circle cx="90" cy="90" r="2"/>
+        </svg>
+    </div>
+
+    <!-- Header -->
+    <header class="flex justify-between items-center z-10 w-full max-w-7xl mx-auto">
+        <!-- Brand Logo -->
+        <a href="../" class="flex items-center gap-3 transition-opacity hover:opacity-90">
+            <div class="bg-indigo-500/10 p-2.5 rounded-xl border border-indigo-500/20 text-indigo-400">
+                <i data-lucide="dumbbell" class="w-6 h-6"></i>
+            </div>
+            <div>
+                <h1 class="text-xl font-black tracking-tight text-white flex items-center gap-2">
+                    GymOS <span class="text-indigo-400 text-xs font-bold uppercase tracking-[0.2em] px-2 py-0.5 rounded bg-indigo-500/10">ATTENDANCE</span>
+                </h1>
+                <p id="gym-name-header" class="text-xs text-slate-400">Smart Front-Desk Display</p>
+            </div>
+        </a>
+
+        <!-- Connection Status & Live Clock -->
+        <div class="flex items-center gap-6">
+            <!-- Active Status Badge -->
+            <div class="glass-card px-4 py-2 rounded-full flex items-center gap-2.5 text-[10px] font-bold uppercase tracking-wider bg-white/[0.01]">
+                <span class="relative flex h-2 w-2">
+                    <span id="status-pulse" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span id="status-dot" class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                <span id="status-text" class="text-slate-300">STANDBY</span>
+            </div>
+
+            <!-- Vertical Divider -->
+            <div class="h-8 w-[1px] bg-white/10 hidden md:block"></div>
+
+            <!-- Time & Date Display -->
+            <div class="text-right hidden md:block">
+                <div id="live-time" class="font-mono text-white font-extrabold text-xl tracking-wide leading-none">12:00:00 PM</div>
+                <div id="live-date" class="text-[9px] text-indigo-300 font-bold tracking-wider uppercase mt-1">Today</div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-4 items-center gap-8 px-4 my-8 z-10">
+        
+        <!-- Left Side Cards (Hidden on mobile/tablet portrait) -->
+        <div class="hidden lg:flex flex-col gap-6 col-span-1">
+            <!-- Card 1: Secure -->
+            <div class="glass-card p-6 rounded-2xl flex gap-4 items-start transition-all duration-300 hover:border-white/10">
+                <div class="p-3 bg-indigo-500/10 rounded-xl border border-indigo-500/20 text-indigo-400">
+                    <i data-lucide="shield-check" class="w-5 h-5"></i>
+                </div>
+                <div>
+                    <h3 class="font-bold text-white text-xs uppercase tracking-wider mb-1">SECURE</h3>
+                    <p class="text-xs text-slate-400 leading-relaxed">Encrypted real-time attendance tokens prevent proxy check-ins.</p>
+                </div>
+            </div>
+            <!-- Card 2: Fast -->
+            <div class="glass-card p-6 rounded-2xl flex gap-4 items-start transition-all duration-300 hover:border-white/10">
+                <div class="p-3 bg-indigo-500/10 rounded-xl border border-indigo-500/20 text-indigo-400">
+                    <i data-lucide="zap" class="w-5 h-5"></i>
+                </div>
+                <div>
+                    <h3 class="font-bold text-white text-xs uppercase tracking-wider mb-1">LIGHTNING FAST</h3>
+                    <p class="text-xs text-slate-400 leading-relaxed">Instant 1-second check-in using GymOS Member app scanner.</p>
+                </div>
+            </div>
+            <!-- Card 3: Dynamic QR -->
+            <div class="glass-card p-6 rounded-2xl flex gap-4 items-start transition-all duration-300 hover:border-white/10">
+                <div class="p-3 bg-indigo-500/10 rounded-xl border border-indigo-500/20 text-indigo-400">
+                    <i data-lucide="refresh-cw" class="w-5 h-5"></i>
+                </div>
+                <div>
+                    <h3 class="font-bold text-white text-xs uppercase tracking-wider mb-1">DYNAMIC SYNC</h3>
+                    <p class="text-xs text-slate-400 leading-relaxed">Self-rotating dynamic security tokens keep your gym verified.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Center Column (Takes up 2 columns on large screens) -->
+        <div class="col-span-1 lg:col-span-2 flex flex-col items-center justify-center">
+            
+            <!-- 0. Setup Screen (When no display_id in query and none saved) -->
+            <div id="screen-setup" class="hidden w-full flex flex-col items-center text-center gap-6 max-w-md mx-auto">
+                <div class="w-16 h-16 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl flex items-center justify-center text-indigo-400 shadow-xl">
+                    <i data-lucide="monitor" class="w-8 h-8"></i>
+                </div>
+                <div>
+                    <span class="text-xs font-bold tracking-[0.25em] text-indigo-400 uppercase bg-indigo-500/10 px-3.5 py-1.5 rounded-full border border-indigo-500/20">RECEPTION DISPLAY</span>
+                    <h2 class="text-3xl md:text-4xl font-black text-white mt-4 tracking-tight">Connect Gym Display</h2>
+                    <p class="text-slate-400 text-sm mt-3 leading-relaxed">Enter your Gym Display Public ID or paste the link generated from the GymOS Owner App.</p>
+                </div>
+
+                <div class="w-full glass-card p-6 rounded-2xl border border-white/10 flex flex-col gap-4 text-left">
+                    <label class="text-xs font-semibold uppercase tracking-wider text-slate-300">Display ID or Link</label>
+                    <div class="relative">
+                        <input id="setup-display-input" type="text" placeholder="e.g. gym-disp-XXXXXX or paste link" 
+                               class="w-full bg-[#121124] border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono tracking-wide" />
+                    </div>
+                    <button id="setup-connect-btn" class="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold py-3 px-4 rounded-xl text-sm transition-all shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2">
+                        <span>Launch Display</span>
+                        <i data-lucide="arrow-right" class="w-4 h-4"></i>
+                    </button>
+                </div>
+
+                <div class="text-left w-full text-xs text-slate-400 space-y-2 bg-white/[0.01] border border-white/5 p-4 rounded-xl">
+                    <div class="font-semibold text-slate-300 flex items-center gap-1.5">
+                        <i data-lucide="help-circle" class="w-4 h-4 text-indigo-400"></i>
+                        Where to find your Display ID?
+                    </div>
+                    <ol class="list-decimal list-inside space-y-1 text-slate-400 pl-1 leading-relaxed">
+                        <li>Open <span class="text-white font-medium">GymOS Owner App</span> or Web Portal.</li>
+                        <li>Go to <span class="text-white font-medium">Settings &gt; Attendance Display</span>.</li>
+                        <li>Tap <span class="text-white font-medium">"Copy Display URL"</span> or view your Device ID.</li>
+                    </ol>
+                </div>
+            </div>
+
+            <!-- 1. Waiting for Verification Screen -->
+            <div id="screen-unverified" class="hidden w-full flex flex-col items-center text-center gap-6">
+                <!-- Outer Title -->
+                <div class="mb-2">
+                    <span class="text-xs font-bold tracking-[0.25em] text-amber-400 uppercase bg-amber-500/10 px-3.5 py-1.5 rounded-full border border-amber-500/20">DEVICE SETUP</span>
+                    <h2 class="text-3xl md:text-4xl font-black text-white mt-4 tracking-tight leading-none">VERIFICATION REQUIRED</h2>
+                    <p class="text-slate-400 text-sm mt-3 max-w-sm mx-auto">Please scan or verify this display using the GymOS Owner App to start.</p>
+                </div>
+                
+                <!-- Premium Floating QR Card -->
+                <div class="relative group float-anim">
+                    <!-- Subtle Glow in background -->
+                    <div class="absolute -inset-1.5 bg-gradient-to-r from-amber-500 to-indigo-600 rounded-3xl blur opacity-20 group-hover:opacity-40 transition duration-1000"></div>
+                    
+                    <div class="relative bg-white p-8 rounded-3xl shadow-[0_35px_60px_-15px_rgba(0,0,0,0.6)] flex flex-col items-center gap-4 transition-transform duration-500 hover:scale-[1.02] force-white-bg" data-darkreader-ignore>
+                        <!-- Corner brackets -->
+                        <div class="absolute top-4 left-4 w-6 h-6 border-t-4 border-l-4 border-amber-500 rounded-tl-lg"></div>
+                        <div class="absolute top-4 right-4 w-6 h-6 border-t-4 border-r-4 border-amber-500 rounded-tr-lg"></div>
+                        <div class="absolute bottom-4 left-4 w-6 h-6 border-b-4 border-l-4 border-amber-500 rounded-bl-lg"></div>
+                        <div class="absolute bottom-4 right-4 w-6 h-6 border-b-4 border-r-4 border-amber-500 rounded-br-lg"></div>
+                        
+                        <!-- QR Target Container (Forced white background) -->
+                        <div class="p-2 bg-white force-white-bg" data-darkreader-ignore>
+                            <div id="verification-qrcode" class="w-[160px] h-[160px] force-white-qrcode"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Info Display Box -->
+                <div class="w-full max-w-xs bg-white/[0.02] border border-white/5 rounded-2xl p-4 flex flex-col gap-1 text-center shadow-lg backdrop-blur-md">
+                    <span class="text-[9px] text-slate-500 uppercase tracking-widest block font-bold">Display Public ID</span>
+                    <code id="display-id-text" class="text-amber-400 font-mono text-sm tracking-wider font-semibold">Generating ID...</code>
+                </div>
+            </div>
+
+            <!-- 2. Active Display Screen (Verified Status View) -->
+            <div id="screen-verified" class="hidden w-full flex flex-col items-center text-center gap-6">
+                <!-- Outer Title -->
+                <div class="mb-2">
+                    <div class="flex justify-center mb-4">
+                        <div class="bg-indigo-500/10 p-2.5 rounded-full border border-indigo-500/20 text-indigo-400">
+                            <i data-lucide="qr-code" class="w-6 h-6"></i>
+                        </div>
+                    </div>
+                    <span class="text-xs font-bold tracking-[0.25em] text-indigo-400 uppercase bg-indigo-500/10 px-3.5 py-1.5 rounded-full border border-indigo-500/20">SCAN TO</span>
+                    <h2 class="text-4xl md:text-5xl font-black text-white mt-4 tracking-tight leading-none">MARK <span class="text-indigo-400">ATTENDANCE</span></h2>
+                    <p class="text-slate-400 text-sm mt-3">Scan this QR Code using the GymOS Member App</p>
+                </div>
+
+                <!-- Premium Floating QR Card -->
+                <div class="relative group float-anim">
+                    <!-- Subtle Glow in background -->
+                    <div class="absolute -inset-1.5 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-3xl blur opacity-25 group-hover:opacity-40 transition duration-1000"></div>
+
+                    <div class="relative bg-white p-8 rounded-3xl shadow-[0_35px_60px_-15px_rgba(0,0,0,0.6)] flex flex-col items-center gap-4 transition-transform duration-500 hover:scale-[1.02] force-white-bg" data-darkreader-ignore>
+                        <!-- Corner brackets -->
+                        <div class="absolute top-4 left-4 w-6 h-6 border-t-4 border-l-4 border-indigo-500 rounded-tl-lg"></div>
+                        <div class="absolute top-4 right-4 w-6 h-6 border-t-4 border-r-4 border-indigo-500 rounded-tr-lg"></div>
+                        <div class="absolute bottom-4 left-4 w-6 h-6 border-b-4 border-l-4 border-indigo-500 rounded-bl-lg"></div>
+                        <div class="absolute bottom-4 right-4 w-6 h-6 border-b-4 border-r-4 border-indigo-500 rounded-br-lg"></div>
+
+                        <!-- QR Target Container (Forced white background) -->
+                        <div class="p-2 bg-white force-white-bg" data-darkreader-ignore>
+                            <div id="attendance-qrcode" class="w-[200px] h-[200px] force-white-qrcode"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Dynamic Timer Display -->
+                <div id="dynamic-timer-container" class="hidden text-xs font-semibold flex items-center justify-center gap-2 mt-2 bg-white/[0.03] border border-white/5 px-4 py-2 rounded-full backdrop-blur-md">
+                    <i data-lucide="timer" class="w-4 h-4 text-indigo-400"></i>
+                    <span class="text-slate-400">Refreshing in</span>
+                    <span id="dynamic-timer-text" class="text-indigo-400 text-sm font-bold font-mono">--</span>s
+                </div>
+
+                <!-- Status details card -->
+                <div class="w-full max-w-sm bg-white/[0.02] border border-white/5 rounded-2xl p-4 space-y-2.5 text-left shadow-lg backdrop-blur-md">
+                    <div class="flex justify-between items-center text-xs">
+                        <span class="text-slate-500">Gym Location</span>
+                        <span id="gym-name-title" class="font-bold text-slate-300">Loading Gym...</span>
+                    </div>
+                    <div class="h-[1px] bg-white/5"></div>
+                    <div class="flex justify-between items-center text-xs">
+                        <span class="text-slate-500">Display Public ID</span>
+                        <span id="display-id-verified" class="font-mono text-slate-300"></span>
+                    </div>
+                </div>
+            </div>
+            
+        </div>
+
+        <!-- Right Side Quote/Motivation (Hidden on mobile/tablet portrait) -->
+        <div class="hidden lg:flex flex-col gap-6 col-span-1">
+            <div class="glass-card p-8 rounded-2xl border border-white/5 bg-white/[0.02] backdrop-blur-md shadow-2xl relative overflow-hidden flex flex-col justify-center min-h-[220px]">
+                <!-- Large double quotes in background -->
+                <div class="absolute -top-4 -left-4 text-indigo-500/[0.03] text-9xl font-serif pointer-events-none">“</div>
+                <div class="relative z-10">
+                    <i data-lucide="quote" class="w-8 h-8 text-indigo-400/20 mb-4"></i>
+                    <h3 class="font-black text-2xl text-white tracking-tight mb-2">Stay Committed</h3>
+                    <h3 class="font-black text-2xl text-indigo-400 tracking-tight mb-4">Stay Fit</h3>
+                    <p class="text-xs text-slate-400 leading-relaxed">Your fitness journey starts with consistency. Scan to begin today's session.</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="flex flex-col sm:flex-row justify-between items-center text-[10px] text-slate-500 border-t border-white/5 pt-4 z-10 w-full max-w-7xl mx-auto gap-2">
+        <div>Powered by <a href="../" class="text-white font-medium hover:underline">GymOS Enterprise</a></div>
+        <div class="flex items-center gap-4">
+            <button id="switch-display-btn" class="text-slate-400 hover:text-white transition-colors underline cursor-pointer hidden">
+                Switch Display ID
+            </button>
+            <div class="flex items-center gap-1.5">
+                <span class="relative flex h-1.5 w-1.5">
+                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                </span>
+                <span class="text-slate-400 font-semibold tracking-wide uppercase">Trusted Display Platform</span>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // Live date updater inside index.html
+        function updateDate() {
+            const dateEl = document.getElementById('live-date');
+            if (dateEl) {
+                const options = { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' };
+                const now = new Date();
+                dateEl.textContent = now.toLocaleDateString('en-US', options);
+            }
+        }
+        updateDate();
+        setInterval(updateDate, 60000);
+    </script>
+    <script src="app.js?v=13"></script>
+</body>
+</html>
