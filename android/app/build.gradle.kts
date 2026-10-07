@@ -72,7 +72,20 @@ flutter {
     source = "../.."
 }
 
+configurations.all {
+    resolutionStrategy {
+        force("androidx.camera:camera-core:1.4.1")
+        force("androidx.camera:camera-camera2:1.4.1")
+        force("androidx.camera:camera-lifecycle:1.4.1")
+        force("com.google.android.gms:play-services-mlkit-barcode-scanning:18.3.1")
+    }
+}
+
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
     implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.camera:camera-core:1.4.1")
+    implementation("androidx.camera:camera-camera2:1.4.1")
+    implementation("androidx.camera:camera-lifecycle:1.4.1")
+    implementation("com.google.android.gms:play-services-mlkit-barcode-scanning:18.3.1")
 }
