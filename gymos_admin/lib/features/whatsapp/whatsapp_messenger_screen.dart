@@ -151,7 +151,12 @@ class _WhatsAppMessengerScreenState extends State<WhatsAppMessengerScreen> {
       _loadConversations(silent: true);
     } catch (e) {
       if (mounted) {
-        setState(() => _isSending = false);
+        final errStr = e.toString();
+        String actionableHint = '';
+        if (errStr.contains('131030') || errStr.contains('allowed list')) {
+          actionableHint = '\n\n💡 Reason & Fix:\nYou are currently sending from Meta\'s Sandbox Test Number (+1 555).\nMeta only allows sending to numbers added in the Test List.\n\nTo Fix:\n• Go to Meta Developer Console > WhatsApp > API Setup > Click "To" dropdown > "Manage phone number list" and add $targetPhone.\n• Or register your Real Gym Phone Number in Meta to message all contacts without restriction.';
+        }
+
         showDialog(
           context: context,
           builder: (ctx) => AlertDialog(
@@ -163,7 +168,7 @@ class _WhatsAppMessengerScreenState extends State<WhatsAppMessengerScreen> {
               ],
             ),
             content: Text(
-              'Could not send message to $targetPhone:\n\n$e',
+              'Could not deliver message to $targetPhone:\n\n$errStr$actionableHint',
               style: GoogleFonts.inter(fontSize: 13),
             ),
             actions: [
@@ -768,6 +773,31 @@ class _WhatsAppMessengerScreenState extends State<WhatsAppMessengerScreen> {
                 style: GoogleFonts.inter(fontSize: 14, color: textColor),
               ),
             ),
+            if (isOutbound && msg.status == 'failed') ...[
+              const SizedBox(height: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AdminTheme.danger.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.error_outline_rounded, size: 12, color: AdminTheme.danger),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        msg.errorMessage != null && msg.errorMessage!.isNotEmpty
+                            ? msg.errorMessage!
+                            : 'Failed: Recipient not in allowed list / sandbox restriction',
+                        style: GoogleFonts.inter(fontSize: 10, color: AdminTheme.danger, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 4),
             Row(
               mainAxisSize: MainAxisSize.min,

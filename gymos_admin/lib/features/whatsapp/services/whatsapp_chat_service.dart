@@ -12,6 +12,7 @@ class WhatsAppMessageModel {
   final String messageType; // 'text' | 'image' | etc.
   final String messageBody;
   final String status; // 'sent' | 'delivered' | 'read' | 'failed' | 'received'
+  final String? errorMessage;
   final DateTime createdAt;
 
   WhatsAppMessageModel({
@@ -23,6 +24,7 @@ class WhatsAppMessageModel {
     required this.messageType,
     required this.messageBody,
     required this.status,
+    this.errorMessage,
     required this.createdAt,
   });
 
@@ -39,6 +41,7 @@ class WhatsAppMessageModel {
       messageType: map['message_type']?.toString() ?? 'text',
       messageBody: map['message_body']?.toString() ?? '',
       status: map['status']?.toString() ?? 'sent',
+      errorMessage: map['error_message']?.toString(),
       createdAt: DateTime.tryParse(map['created_at']?.toString() ?? '') ?? DateTime.now(),
     );
   }

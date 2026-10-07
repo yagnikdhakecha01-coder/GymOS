@@ -299,12 +299,18 @@ serve(async (req: Request) => {
         for (const st of statuses) {
           const statusId = st.id;
           const statusVal = st.status; // 'sent' | 'delivered' | 'read' | 'failed'
+          const errDetail = st.errors?.[0];
+          const errorMsg = errDetail ? `[Meta #${errDetail.code || 'Error'}] ${errDetail.message || errDetail.title || 'Message failed to deliver'}` : null;
+
           if (statusId && statusVal) {
+            const updateData: Record<string, any> = { status: statusVal };
+            if (errorMsg) updateData.error_message = errorMsg;
+
             await supabase
               .from("whatsapp_messages")
-              .update({ status: statusVal })
+              .update(updateData)
               .eq("wamid", statusId);
-            console.log(`[${correlationId}] Updated message ${statusId} status to ${statusVal}`);
+            console.log(`[${correlationId}] Updated message ${statusId} status to ${statusVal} ${errorMsg || ''}`);
           }
         }
       }
