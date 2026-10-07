@@ -2,20 +2,17 @@ const APP_ROOT = process.cwd();
 
 const config = {
   appRoot: APP_ROOT,
-  appPath: `${APP_ROOT}/GYMOS.apk`,
-  bundleId: "com.gymos.fitness.app.v1",
-  android: {
-    appPath: `${APP_ROOT}/GYMOS.apk`,
-    applicationId: "com.gymos.fitness.app.v1",
-  },
+  appPath: `${APP_ROOT}/build/ios/iphonesimulator/Runner.app`,
+  bundleId: "com.jenishvora.gymosv1",
 
-  devices: ["pixel-10-pro"],
+  devices: ["iphone-6.9", "ipad-13"],
   locales: ["en-US"],
   appearance: "light",
 
   frame: {
     variant: {
       "iphone-6.9": "17-pro-blue",
+      "ipad-13": "ipad-pro-13-space-gray",
     },
   },
 
@@ -26,7 +23,6 @@ const config = {
     fontFamily: '-apple-system, "SF Pro Display", system-ui, sans-serif',
     copyHeightRatio: 0.22,
     deviceWidthRatio: 0.86,
-    template: "editorial",
     layout: "classic",
   },
 
@@ -92,30 +88,6 @@ const config = {
       id: "member-attendance",
       headline: { "en-US": "Attendance & Check-In History" },
       subhead: { "en-US": "Interactive calendar with present, absent, and holiday logs plus monthly streak summary." },
-    },
-    {
-      kind: "screenshot",
-      id: "packages-plans",
-      headline: { "en-US": "Flexible Membership Packages" },
-      subhead: { "en-US": "Customise monthly, quarterly, and annual tiers with instant admission setup." },
-    },
-    {
-      kind: "screenshot",
-      id: "expenses-ledger",
-      headline: { "en-US": "Expenses & Transactions Ledger" },
-      subhead: { "en-US": "Log gym expenses, maintenance costs, and incoming membership payments in real-time." },
-    },
-    {
-      kind: "screenshot",
-      id: "reports-analytics",
-      headline: { "en-US": "Business Analytics & Growth Reports" },
-      subhead: { "en-US": "Comprehensive revenue trends, attendance patterns, and membership growth insights." },
-    },
-    {
-      kind: "screenshot",
-      id: "gym-settings",
-      headline: { "en-US": "Complete Gym Customization" },
-      subhead: { "en-US": "Tailor profile settings, WhatsApp templates, biometric gates, and billing rules." },
     },
   ],
 };

@@ -20,14 +20,15 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../attendance/owner_scanner_screen.dart';
 
 class MainNavigationHolder extends StatefulWidget {
-  const MainNavigationHolder({Key? key}) : super(key: key);
+  final int initialIndex;
+  const MainNavigationHolder({Key? key, this.initialIndex = 0}) : super(key: key);
 
   @override
   State<MainNavigationHolder> createState() => _MainNavigationHolderState();
 }
 
 class _MainNavigationHolderState extends State<MainNavigationHolder> with WidgetsBindingObserver {
-  int _currentIndex = 0;
+  late int _currentIndex;
   Timer? _statusCheckTimer;
   bool _isCheckingStatus = false;
   RealtimeChannel? _subRealtimeChannel;
@@ -51,6 +52,7 @@ class _MainNavigationHolderState extends State<MainNavigationHolder> with Widget
   @override
   void initState() {
     super.initState();
+    _currentIndex = widget.initialIndex;
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkGymStatus();

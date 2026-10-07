@@ -1,5 +1,9 @@
 {
   "background": "linear-gradient(160deg, #E8F1FF 0%, #F7FAFF 55%, #FFFFFF 100%)",
+  "frames": {
+    "iphone-6.9": "17-pro-blue",
+    "ipad-13": "ipad-pro-13-space-gray"
+  },
   "fontFamily": "-apple-system, \"SF Pro Display\", system-ui, sans-serif",
   "copy": {
     "owner-members": {

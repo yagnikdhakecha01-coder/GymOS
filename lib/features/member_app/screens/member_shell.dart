@@ -15,14 +15,15 @@ import '../widgets/member_rules_agreement_dialog.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class MemberShell extends StatefulWidget {
-  const MemberShell({super.key});
+  final int initialIndex;
+  const MemberShell({super.key, this.initialIndex = 0});
 
   @override
   State<MemberShell> createState() => _MemberShellState();
 }
 
 class _MemberShellState extends State<MemberShell> with WidgetsBindingObserver {
-  int _currentIndex = 0;
+  late int _currentIndex;
   Timer? _syncTimer;
   bool _isRedirecting = false;
   bool _isAgreementModalShowing = false;
@@ -30,6 +31,7 @@ class _MemberShellState extends State<MemberShell> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    _currentIndex = widget.initialIndex;
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkUnlinkedStatus();
