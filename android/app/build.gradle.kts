@@ -41,10 +41,17 @@ android {
         }
     }
 
+    packaging {
+        jniLibs {
+            useLegacyPackaging = false
+        }
+    }
+
     buildTypes {
         release {
-            // Signing with debug key for direct APK distribution so SHA-1 matches Google Cloud Console registration
             signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = true
+            isShrinkResources = true
 
             // Keep MLKit & CameraX classes for mobile_scanner in release builds
             proguardFiles(
@@ -67,4 +74,5 @@ flutter {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+    implementation("androidx.core:core-ktx:1.13.1")
 }

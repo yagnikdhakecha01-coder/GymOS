@@ -629,11 +629,34 @@ class _OwnerQrSettingsScreenState extends State<OwnerQrSettingsScreen> {
                                             ),
                                             const SizedBox(width: 8),
                                             Expanded(
-                                              child: Text(
-                                                '• Public ID: ${session.displayPublicId}',
-                                                style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted),
-                                                overflow: TextOverflow.ellipsis,
-                                                maxLines: 1,
+                                              child: InkWell(
+                                                onTap: () {
+                                                  final deviceUrl = 'https://gymos.tech/attendance?display_id=' + session.displayPublicId;
+                                                  Clipboard.setData(ClipboardData(text: deviceUrl));
+                                                  ScaffoldMessenger.of(context).showSnackBar(
+                                                    SnackBar(
+                                                      content: Text('Display link copied: ' + deviceUrl),
+                                                      backgroundColor: AppTheme.success,
+                                                      duration: const Duration(seconds: 2),
+                                                    ),
+                                                  );
+                                                },
+                                                borderRadius: BorderRadius.circular(4),
+                                                child: Row(
+                                                  mainAxisSize: MainAxisSize.min,
+                                                  children: [
+                                                    Flexible(
+                                                      child: Text(
+                                                        '• Public ID: ' + session.displayPublicId,
+                                                        style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted),
+                                                        overflow: TextOverflow.ellipsis,
+                                                        maxLines: 1,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 4),
+                                                    const Icon(Icons.copy_rounded, size: 11, color: AppTheme.primary),
+                                                  ],
+                                                ),
                                               ),
                                             ),
                                           ],
@@ -644,7 +667,21 @@ class _OwnerQrSettingsScreenState extends State<OwnerQrSettingsScreen> {
                                   PopupMenuButton<String>(
                                     icon: const Icon(Icons.more_vert_rounded, color: AppTheme.textMuted),
                                     onSelected: (action) async {
-                                      if (action == 'RENAME') {
+                                      if (action == 'COPY_LINK') {
+                                         final deviceUrl = 'https://gymos.tech/attendance?display_id=' + session.displayPublicId;
+                                         Clipboard.setData(ClipboardData(text: deviceUrl));
+                                         if (!context.mounted) return;
+                                         ScaffoldMessenger.of(context).showSnackBar(
+                                           SnackBar(
+                                             content: Text('Display link copied: ' + deviceUrl),
+                                             backgroundColor: AppTheme.success,
+                                             duration: const Duration(seconds: 2),
+                                           ),
+                                         );
+                                       } else if (action == 'OPEN_LINK') {
+                                         final deviceUrl = 'https://gymos.tech/attendance?display_id=' + session.displayPublicId;
+                                         launchUrl(Uri.parse(deviceUrl), mode: LaunchMode.externalApplication);
+                                       } else if (action == 'RENAME') {
                                         _showRenameDialog(context, vm, session.id, session.deviceName ?? '');
                                       } else if (action == 'TOGGLE_STATUS') {
                                         await vm.manageDisplayDevice(session.id, 'TOGGLE_STATUS');
@@ -655,6 +692,27 @@ class _OwnerQrSettingsScreenState extends State<OwnerQrSettingsScreen> {
                                       }
                                     },
                                     itemBuilder: (ctx) => [
+                                      PopupMenuItem(
+                                        value: 'COPY_LINK',
+                                        child: Row(
+                                          children: const [
+                                            Icon(Icons.copy_rounded, size: 16, color: AppTheme.primary),
+                                            SizedBox(width: 8),
+                                            Text('Copy Display Link'),
+                                          ],
+                                        ),
+                                      ),
+                                      PopupMenuItem(
+                                        value: 'OPEN_LINK',
+                                        child: Row(
+                                          children: const [
+                                            Icon(Icons.open_in_new_rounded, size: 16, color: AppTheme.primary),
+                                            SizedBox(width: 8),
+                                            Text('Open in Browser'),
+                                          ],
+                                        ),
+                                      ),
+                                      const PopupMenuDivider(),
                                       const PopupMenuItem(value: 'RENAME', child: Text('Rename Display')),
                                       PopupMenuItem(
                                         value: 'TOGGLE_STATUS', 

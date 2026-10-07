@@ -17,3 +17,12 @@
 # General Flutter rules
 -keep class io.flutter.** { *; }
 -dontwarn io.flutter.embedding.**
+
+# Razorpay SDK
+-keep class com.razorpay.** { *; }
+-dontwarn com.razorpay.**
+
+# Preserve annotations and line numbers for crashlytics/debuggability
+-keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod
+-keepattributes SourceFile,LineNumberTable
+
