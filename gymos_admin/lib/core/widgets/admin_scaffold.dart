@@ -36,6 +36,7 @@ const List<SidebarMenuItem> sidebarMenuItems = [
   SidebarMenuItem(icon: Icons.notifications_outlined, activeIcon: Icons.notifications_rounded, label: 'Notifications'),
   SidebarMenuItem(icon: Icons.support_agent_outlined, activeIcon: Icons.support_agent_rounded, label: 'Support'),
   SidebarMenuItem(icon: Icons.chat_outlined, activeIcon: Icons.chat_rounded, label: 'WhatsApp'),
+  SidebarMenuItem(icon: Icons.article_outlined, activeIcon: Icons.article_rounded, label: 'WA Templates'),
   SidebarMenuItem(icon: Icons.content_copy_outlined, activeIcon: Icons.content_copy_rounded, label: 'Duplicates'),
   SidebarMenuItem(icon: Icons.analytics_outlined, activeIcon: Icons.analytics_rounded, label: 'Analytics'),
   SidebarMenuItem(icon: Icons.storage_outlined, activeIcon: Icons.storage_rounded, label: 'Database'),
@@ -155,7 +156,7 @@ class _AdminSidebar extends StatelessWidget {
               itemCount: sidebarMenuItems.length,
               itemBuilder: (ctx, i) {
                 // Add section dividers
-                if (i == 5 || i == 9 || i == 13) {
+                if (i == 5 || i == 10 || i == 14) {
                   return Column(
                     children: [
                       Padding(
@@ -493,9 +494,9 @@ class _AdminTopBar extends StatelessWidget {
               if (value == 'logout') {
                 authProvider.logout();
               } else if (value == 'profile') {
-                context.read<NavigationProvider>().setIndex(14);
+                context.read<NavigationProvider>().setIndex(16);
               } else if (value == 'settings') {
-                context.read<NavigationProvider>().setIndex(13);
+                context.read<NavigationProvider>().setIndex(15);
               }
             },
           ),

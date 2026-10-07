@@ -20,6 +20,7 @@ import 'features/feature_control/feature_control_screen.dart';
 import 'features/notifications/notifications_screen.dart';
 import 'features/support/support_screen.dart';
 import 'features/whatsapp/whatsapp_messenger_screen.dart';
+import 'features/whatsapp_templates/whatsapp_templates_screen.dart';
 import 'features/duplicate_detection/duplicate_detection_screen.dart';
 import 'features/analytics/analytics_screen.dart';
 import 'features/database/database_screen.dart';
@@ -88,6 +89,7 @@ class GymOSAdminApp extends StatelessWidget {
                 NotificationsScreen(),
                 SupportScreen(),
                 WhatsAppMessengerScreen(),
+                WhatsAppTemplatesScreen(),
                 DuplicateDetectionScreen(),
                 AnalyticsScreen(),
                 DatabaseScreen(),
