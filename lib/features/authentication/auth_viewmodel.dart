@@ -312,6 +312,38 @@ class AuthViewModel extends ChangeNotifier {
             _staffRecord = Staff.fromJson(res);
           }
         }
+        if (_staffRecord == null) {
+          final phone = _currentProfile?.phoneNumber ?? SupabaseService.client.auth.currentUser?.phone;
+          final email = _currentProfile?.email ?? SupabaseService.client.auth.currentUser?.email;
+          if (phone != null && phone.isNotEmpty) {
+            final resPhone = await SupabaseService.client
+                .from('staff')
+                .select()
+                .eq('gym_id', assoc.gymId)
+                .eq('phone', phone)
+                .maybeSingle();
+            if (resPhone != null) {
+              _staffRecord = Staff.fromJson(resPhone);
+              if (userId != null && (resPhone['user_id'] == null || resPhone['user_id'].toString().isEmpty)) {
+                await SupabaseService.client.from('staff').update({'user_id': userId}).eq('id', resPhone['id']);
+              }
+            }
+          }
+          if (_staffRecord == null && email != null && email.isNotEmpty) {
+            final resEmail = await SupabaseService.client
+                .from('staff')
+                .select()
+                .eq('gym_id', assoc.gymId)
+                .eq('email', email)
+                .maybeSingle();
+            if (resEmail != null) {
+              _staffRecord = Staff.fromJson(resEmail);
+              if (userId != null && (resEmail['user_id'] == null || resEmail['user_id'].toString().isEmpty)) {
+                await SupabaseService.client.from('staff').update({'user_id': userId}).eq('id', resEmail['id']);
+              }
+            }
+          }
+        }
       } catch (e) {
         print('Error loading staff record in selectAssociation: $e');
       }

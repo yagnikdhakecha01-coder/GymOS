@@ -116,6 +116,9 @@ class MemberAppViewModel extends ChangeNotifier {
     {'date': '13 May 2026', 'checkIn': '07:35 AM', 'checkOut': '09:00 AM', 'status': 'Present'},
   ];
 
+  String _attendanceMethod = 'Static QR';
+  bool _isAttendanceEnabled = true;
+
   // ── Motivational Quotes ──
   final List<String> _quotes = [
     'Consistency is what transforms average into excellence.',
@@ -205,6 +208,10 @@ class MemberAppViewModel extends ChangeNotifier {
   int get membershipDaysLeft => _membershipDaysLeft;
   double get pendingAmount => _pendingAmount;
   List<String> get declaredHolidays => _declaredHolidays;
+  String get attendanceMethod => _attendanceMethod;
+  bool get isAttendanceEnabled => _isAttendanceEnabled;
+  bool get isBiometricAttendanceOnly => _attendanceMethod == 'Biometric';
+  bool get hasBiometricAttendance => _attendanceMethod == 'Biometric' || _attendanceMethod == 'QR + Biometric';
 
   int get totalGymDays {
     final now = DateTime.now();
@@ -422,6 +429,8 @@ class MemberAppViewModel extends ChangeNotifier {
     _gymLogoUrl = prefs.getString('member_cached_gym_logo') ?? _gymLogoUrl;
     _gymId = prefs.getString('member_cached_gym_id') ?? _gymId;
     _joinDate = prefs.getString('member_cached_join_date') ?? _joinDate;
+    _attendanceMethod = prefs.getString('member_cached_attendance_method') ?? 'Static QR';
+    _isAttendanceEnabled = prefs.getBool('member_cached_attendance_enabled') ?? true;
 
     // Instantly restore cached rules agreement state on startup
     bool localAgreed = false;
@@ -768,6 +777,21 @@ class MemberAppViewModel extends ChangeNotifier {
                 _gymLogoUrl = gymData['logo_url'].toString();
                 await prefs.setString('member_cached_gym_logo', _gymLogoUrl);
               }
+            }
+          } catch (_) {}
+
+          // Fetch attendance settings for the gym (e.g. Biometric vs Static/Dynamic QR)
+          try {
+            final attSettings = await SupabaseService.client
+                .from('attendance_settings')
+                .select('method, is_enabled')
+                .eq('gym_id', memberGymId)
+                .maybeSingle();
+            if (attSettings != null) {
+              _attendanceMethod = attSettings['method']?.toString() ?? 'Static QR';
+              _isAttendanceEnabled = attSettings['is_enabled'] != false;
+              await prefs.setString('member_cached_attendance_method', _attendanceMethod);
+              await prefs.setBool('member_cached_attendance_enabled', _isAttendanceEnabled);
             }
           } catch (_) {}
 
@@ -1972,6 +1996,24 @@ class MemberAppViewModel extends ChangeNotifier {
     _checkInTime = '';
     _checkInDate = '';
     _checkedInToday = false;
+    _loadingMemberDataCompleter = null;
+
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.remove('member_cached_id');
+      prefs.remove('member_cached_name');
+      prefs.remove('member_cached_gym_id');
+      prefs.remove('member_cached_gym_name');
+      prefs.remove('member_cached_gym_logo');
+      prefs.remove('member_cached_join_date');
+      prefs.remove('member_cached_workout_title');
+      prefs.remove('member_cached_today_muscle');
+      prefs.remove('member_cached_today_splits');
+      prefs.remove('member_cached_diet_title');
+      prefs.remove('member_cached_diet_plan_json');
+      prefs.remove('member_cached_attendance_method');
+      prefs.remove('member_cached_attendance_enabled');
+    });
+
     // NOTE: _hasAgreedRules and _agreementRecord are NEVER cleared.
     // Once a member agrees to gym rules, it is permanent and irreversible.
     // Agreement persists across logout/login cycles.

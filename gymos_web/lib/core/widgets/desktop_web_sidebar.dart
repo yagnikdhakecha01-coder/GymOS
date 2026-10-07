@@ -11,6 +11,7 @@ import '../../features/diet/diet_plans_screen.dart';
 import '../../features/more/reports_screen.dart';
 import '../../features/subscription/owner_subscription_screen.dart';
 import '../../features/dashboard/gym_switcher_bottom_sheet.dart';
+import '../models/user_profile.dart';
 
 class DesktopWebSidebar extends StatelessWidget {
   final int currentIndex;
@@ -181,7 +182,11 @@ class DesktopWebSidebar extends StatelessWidget {
                                   ),
                                   const SizedBox(width: 6),
                                   Text(
-                                    'Owner',
+                                    authVm.activeAssociation?.role == UserRole.owner
+                                        ? 'Owner'
+                                        : authVm.activeAssociation?.role == UserRole.staff
+                                            ? 'Staff'
+                                            : 'Member',
                                     style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF94A3B8)),
                                   ),
                                 ],

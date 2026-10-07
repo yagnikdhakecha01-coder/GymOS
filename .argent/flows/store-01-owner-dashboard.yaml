@@ -1,5 +1,5 @@
 steps:
   - echo: Launch Gym OS and display Owner Dashboard
-  - launch: com.jenishvora.gymosv1
+  - launch: com.gymos.fitness.app.v1
   - await:
       idle: true

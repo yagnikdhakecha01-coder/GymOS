@@ -52,6 +52,12 @@ class AttendanceViewModel extends ChangeNotifier {
        settings!.method == 'QR + WiFi' ||
        settings!.method == 'Dynamic QR' ||
        settings!.method == 'Dynamic QR + WiFi');
+  bool get isBiometricEnabled => settings != null && 
+      (settings!.isEnabled) && 
+      (settings!.method == 'Biometric' || settings!.method == 'QR + Biometric');
+  bool get isBiometricOnly => settings != null && 
+      (settings!.isEnabled) && 
+      (settings!.method == 'Biometric');
   bool get isManualAttendanceEnabled => _isManualAttendanceEnabled;
   String get lateTimeSetting => settings?.lateTimeSetting ?? "09:05 AM";
   String get currentConnectedSSID => _currentConnectedSSID;

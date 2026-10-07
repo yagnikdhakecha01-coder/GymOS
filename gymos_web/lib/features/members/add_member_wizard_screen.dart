@@ -24,6 +24,7 @@ import '../subscription/owner_subscription_screen.dart';
 import '../../core/navigation/app_router.dart';
 import '../../core/repository/gym_repository.dart';
 import '../subscription/subscription_limit_screen.dart';
+import '../attendance/attendance_viewmodel.dart';
 
 class AddMemberWizardScreen extends StatefulWidget {
   final String? initialName;
@@ -80,6 +81,11 @@ class _AddMemberWizardScreenState extends State<AddMemberWizardScreen> {
       _joiningDate = DateTime.now();
     }
     _recalculateExpiry();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        Provider.of<AttendanceViewModel>(context, listen: false).refresh();
+      }
+    });
   }
 
   Future<void> _pickAndUploadPhoto(ImageSource source) async {
@@ -134,6 +140,7 @@ class _AddMemberWizardScreenState extends State<AddMemberWizardScreen> {
 
   // ── Step 1: Basic Information ──
   final _nameController = TextEditingController();
+  final _emailController = TextEditingController();
   final _phoneController = TextEditingController();
   final _altPhoneController = TextEditingController();
   final _addressController = TextEditingController();
@@ -184,6 +191,7 @@ class _AddMemberWizardScreenState extends State<AddMemberWizardScreen> {
   @override
   void dispose() {
     _nameController.dispose();
+    _emailController.dispose();
     _phoneController.dispose();
     _altPhoneController.dispose();
     _addressController.dispose();
@@ -632,6 +640,22 @@ class _AddMemberWizardScreenState extends State<AddMemberWizardScreen> {
           const SizedBox(height: 16),
         ],
 
+        // Email Address (Optional)
+        _fieldLabel('Email Address (Optional)'),
+        TextFormField(
+          controller: _emailController,
+          keyboardType: TextInputType.emailAddress,
+          decoration: InputDecoration(
+            hintText: 'Enter email address',
+            prefixIcon: const Icon(Icons.email_outlined, size: 20, color: AppTheme.textMuted),
+            suffixIcon: _emailController.text.isNotEmpty
+                ? const Icon(Icons.check_circle, size: 20, color: AppTheme.success)
+                : null,
+          ),
+          onChanged: (_) => setState(() {}),
+        ),
+        const SizedBox(height: 16),
+
         // Address
         _fieldLabel('Address', required: true),
         TextFormField(
@@ -683,17 +707,31 @@ class _AddMemberWizardScreenState extends State<AddMemberWizardScreen> {
         _readOnlyField(_calculatedAge > 0 ? '$_calculatedAge years' : 'Auto calculated'),
         const SizedBox(height: 16),
 
-        // Biometric Machine PIN / User ID
-        _fieldLabel('Biometric Machine User ID / PIN (Optional)'),
-        TextFormField(
-          controller: _biometricPinController,
-          keyboardType: TextInputType.number,
-          decoration: InputDecoration(
-            hintText: 'e.g. 101, 1024',
-            prefixIcon: const Icon(Icons.fingerprint_rounded, color: AppTheme.primary),
-            helperText: 'Enroll this same ID number on the fingerprint/face machine',
-            helperStyle: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary),
-          ),
+        // Biometric Machine PIN / User ID (Only if gym attendance method is Biometric)
+        Builder(
+          builder: (context) {
+            final attVm = Provider.of<AttendanceViewModel>(context);
+            final isBiometricGym = (attVm.settings?.isEnabled ?? true) &&
+                (attVm.settings?.method == 'Biometric' || attVm.settings?.method == 'QR + Biometric');
+            if (!isBiometricGym) return const SizedBox.shrink();
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _fieldLabel('Biometric Machine User ID / PIN (Optional)'),
+                TextFormField(
+                  controller: _biometricPinController,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    hintText: 'e.g. 101, 1024',
+                    prefixIcon: const Icon(Icons.fingerprint_rounded, color: AppTheme.primary),
+                    helperText: 'Enroll this same ID number on the fingerprint/face machine',
+                    helperStyle: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary),
+                  ),
+                ),
+              ],
+            );
+          },
         ),
       ],
     );
@@ -1426,6 +1464,11 @@ class _AddMemberWizardScreenState extends State<AddMemberWizardScreen> {
           iconColor: AppTheme.primary,
           title: 'Basic Information',
           summary: _nameController.text.isEmpty ? 'Not filled' : _nameController.text,
+          details: [
+            if (_phoneController.text.isNotEmpty) '• Phone: ${_phoneController.text}',
+            if (_emailController.text.isNotEmpty) '• Email: ${_emailController.text}',
+            if (_addressController.text.isNotEmpty) '• Address: ${_addressController.text}',
+          ],
           onEdit: () => setState(() => _currentStep = 1),
         ),
 
@@ -1697,6 +1740,7 @@ class _AddMemberWizardScreenState extends State<AddMemberWizardScreen> {
 
     final Map<String, dynamic> extra = {
       'goal': _selectedGoal ?? 'General Fitness',
+      'email': _emailController.text.trim(),
       'altPhone': _altPhoneController.text.trim(),
       'address': _addressController.text.trim(),
       'gender': _selectedGender,
@@ -1736,10 +1780,14 @@ class _AddMemberWizardScreenState extends State<AddMemberWizardScreen> {
       customCreatedAt = widget.trialStartTime;
     }
 
+    final attVm = Provider.of<AttendanceViewModel>(context, listen: false);
+    final isBiometricGym = (attVm.settings?.isEnabled ?? true) &&
+        (attVm.settings?.method == 'Biometric' || attVm.settings?.method == 'QR + Biometric');
+
     final newMember = Member(
       id: id,
       name: _nameController.text.trim(),
-      email: '',
+      email: _emailController.text.trim(),
       phone: _phoneController.text.trim(),
       avatar: _avatarUrl,
       joinDate: _joiningDate != null ? DateFormat('dd MMM yyyy').format(_joiningDate!) : DateFormat('dd MMM yyyy').format(DateTime.now()),
@@ -1757,7 +1805,7 @@ class _AddMemberWizardScreenState extends State<AddMemberWizardScreen> {
       paymentStatus: (double.tryParse(_remainingController.text) ?? 0.0) <= 0 ? 'Paid' : 'Partial',
       extraFields: extra,
       createdAt: customCreatedAt,
-      biometricPin: int.tryParse(_biometricPinController.text.trim()),
+      biometricPin: isBiometricGym ? int.tryParse(_biometricPinController.text.trim()) : null,
     );
 
     final vm = Provider.of<MembersViewModel>(context, listen: false);

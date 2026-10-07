@@ -33,6 +33,12 @@ class _MemberAttendanceScreenState extends State<MemberAttendanceScreen> {
             backgroundColor: Colors.white,
             elevation: 0,
             scrolledUnderElevation: 0,
+            leading: Navigator.canPop(context)
+                ? IconButton(
+                    icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppTheme.textPrimary),
+                    onPressed: () => Navigator.pop(context),
+                  )
+                : null,
             automaticallyImplyLeading: false,
             title: Text('Attendance', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
           ),

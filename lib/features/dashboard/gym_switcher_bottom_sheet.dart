@@ -19,6 +19,9 @@ import '../staff/portal/staff_shell.dart';
 import '../receptionist/portal/receptionist_shell.dart';
 import '../member_app/screens/member_shell.dart';
 import '../member_app/member_app_viewmodel.dart';
+import '../members/trial_members_viewmodel.dart';
+import '../../core/repository/gym_repository.dart';
+import 'package:intl/intl.dart';
 import 'main_navigation_holder.dart';
 
 class GymSwitcherBottomSheet extends StatelessWidget {
@@ -36,34 +39,74 @@ class GymSwitcherBottomSheet extends StatelessWidget {
     );
   }
 
-  Future<void> _reloadAllGymData(BuildContext context, UserRole role) async {
+  Future<void> _reloadAllGymData(BuildContext navContext, UserGymAssociation assoc) async {
+    final role = assoc.role;
+    final gymId = assoc.gymId;
+
     // 0. Reset all viewmodel states first to clear any stale cache
-    final membersVm = Provider.of<MembersViewModel>(context, listen: false);
-    final staffVm = Provider.of<StaffViewModel>(context, listen: false);
-    final financeVm = Provider.of<FinanceViewModel>(context, listen: false);
-    final membershipVm = Provider.of<MembershipViewModel>(context, listen: false);
-    final memberAppVm = Provider.of<MemberAppViewModel>(context, listen: false);
-    final workoutVm = Provider.of<WorkoutViewModel>(context, listen: false);
-    final dietVm = Provider.of<DietViewModel>(context, listen: false);
-    final attendanceVm = Provider.of<AttendanceViewModel>(context, listen: false);
+    final membersVm = Provider.of<MembersViewModel>(navContext, listen: false);
+    final trialMembersVm = Provider.of<TrialMembersViewModel>(navContext, listen: false);
+    final staffVm = Provider.of<StaffViewModel>(navContext, listen: false);
+    final financeVm = Provider.of<FinanceViewModel>(navContext, listen: false);
+    final membershipVm = Provider.of<MembershipViewModel>(navContext, listen: false);
+    final memberAppVm = Provider.of<MemberAppViewModel>(navContext, listen: false);
+    final workoutVm = Provider.of<WorkoutViewModel>(navContext, listen: false);
+    final dietVm = Provider.of<DietViewModel>(navContext, listen: false);
+    final attendanceVm = Provider.of<AttendanceViewModel>(navContext, listen: false);
+    final repo = Provider.of<GymRepository>(navContext, listen: false);
 
     membersVm.clearAllData();
     staffVm.clearAllData();
     memberAppVm.clearAllDataInMemory();
+    repo.clearAllData();
+
+    await repo.reloadForActiveGym();
 
     if (role == UserRole.member) {
       await memberAppVm.loadMemberDataFromSupabase();
-    } else {
-      // 1. Members & Transactions
+      await repo.fetchAttendanceLogsFromSupabase();
+    } else if (role == UserRole.owner) {
+      // 1. Members & Trials
       await membersVm.fetchMembers();
+      await trialMembersVm.fetchTrialMembers();
       // 2. Staff
       await staffVm.fetchStaff();
-      // 3. Finance
+      // 3. Finance & Plans
       await financeVm.fetchTransactions();
-      // 4. Membership
       await membershipVm.loadPlans();
       
-      // 5. Workouts, Diets, and Attendance just notify their listeners
+      // 4. Dashboard Stats & Analytics for the new gym
+      final todayStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
+      await repo.fetchDashboardStatsFromSupabase(gymId, todayStr);
+      await repo.fetchReportsAnalyticsFromSupabase(gymId, todayStr);
+      await repo.fetchOwnerDashboardStats(gymId);
+      await repo.fetchRecentActivitiesFromSupabase();
+      await repo.fetchAttendanceSettingsFromSupabase();
+      await repo.fetchAttendanceLogsFromSupabase();
+      
+      // 5. Workouts, Diets, and Attendance
+      workoutVm.refresh();
+      dietVm.refresh();
+      attendanceVm.refresh();
+    } else if (role == UserRole.staff) {
+      // 1. Staff, Members & Trials
+      await staffVm.fetchStaff();
+      await membersVm.fetchMembers();
+      await trialMembersVm.fetchTrialMembers();
+
+      // 2. Finance & Plans (Receptionist dashboard)
+      await financeVm.fetchTransactions();
+      await membershipVm.loadPlans();
+
+      // 3. Dashboard Stats, Attendance & Analytics
+      final todayStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
+      await repo.fetchDashboardStatsFromSupabase(gymId, todayStr);
+      await repo.fetchAttendanceSettingsFromSupabase();
+      await repo.fetchAttendanceLogsFromSupabase();
+      await repo.fetchRecentActivitiesFromSupabase();
+      await repo.fetchOwnerDashboardStats(gymId);
+
+      // 4. Workouts, Diets, and Attendance
       workoutVm.refresh();
       dietVm.refresh();
       attendanceVm.refresh();
@@ -167,41 +210,100 @@ class GymSwitcherBottomSheet extends StatelessWidget {
                         onPressed: () async {
                           Navigator.pop(sheetContext); // Close confirmation
                           Navigator.pop(context); // Close switcher sheet
-                          
-                          // Switch gym/profile context
-                          await authVm.selectAssociation(assoc);
-                          
-                          if (context.mounted) {
+
+                          final rootNavState = AppRouter.rootNavigatorKey.currentState;
+                          final rootCtx = AppRouter.rootNavigatorKey.currentContext;
+                          if (rootCtx == null || rootNavState == null) return;
+
+                          // Show non-dismissible loading overlay
+                          showDialog(
+                            context: rootCtx,
+                            barrierDismissible: false,
+                            builder: (dialogCtx) => PopScope(
+                              canPop: false,
+                              child: Center(
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(16),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withOpacity(0.12),
+                                        blurRadius: 20,
+                                        offset: const Offset(0, 10),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const SizedBox(
+                                        width: 36,
+                                        height: 36,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 3,
+                                          valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primary),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 16),
+                                      Text(
+                                        'Switching profile...',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w600,
+                                          color: AppTheme.textPrimary,
+                                          decoration: TextDecoration.none,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+
+                          try {
+                            // Switch gym/profile context
+                            await authVm.selectAssociation(assoc);
+
+                            // Reload all background data for the newly active gym
+                            final activeContext = AppRouter.rootNavigatorKey.currentContext;
+                            if (activeContext != null) {
+                              await _reloadAllGymData(activeContext, assoc);
+                            }
+
                             Widget targetScreen;
                             switch (assoc.role) {
                               case UserRole.owner:
                                 if (assoc.setupCompleted) {
-                                  targetScreen = const MainNavigationHolder();
+                                  targetScreen = MainNavigationHolder(key: UniqueKey());
                                 } else {
                                   targetScreen = const FirstTimeSetupScreen();
                                 }
-                                await _reloadAllGymData(context, assoc.role);
                                 break;
                               case UserRole.staff:
                                 final staffRole = authVm.staffRecord?.role.toLowerCase() ?? '';
                                 if (staffRole.contains('reception')) {
-                                  targetScreen = const ReceptionistShell();
+                                  targetScreen = ReceptionistShell(key: UniqueKey());
                                 } else {
-                                  targetScreen = const StaffShell();
+                                  targetScreen = StaffShell(key: UniqueKey());
                                 }
-                                await _reloadAllGymData(context, assoc.role);
                                 break;
                               case UserRole.member:
-                                targetScreen = const MemberShell();
-                                await _reloadAllGymData(context, assoc.role);
+                                targetScreen = MemberShell(key: UniqueKey());
                                 break;
                             }
-                            
-                            Navigator.pushAndRemoveUntil(
-                              context,
+
+                            rootNavState.pushAndRemoveUntil(
                               AppRouter.scaleRoute(targetScreen),
                               (route) => false,
                             );
+                          } catch (e) {
+                            debugPrint('Error switching association: $e');
+                            if (rootNavState.canPop()) {
+                              rootNavState.pop();
+                            }
                           }
                         },
                         style: ElevatedButton.styleFrom(

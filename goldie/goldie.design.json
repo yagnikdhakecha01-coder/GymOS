@@ -1,10 +1,14 @@
 {
-  "background": "linear-gradient(160deg, #0F172A 0%, #1E293B 45%, #0A0F1D 100%)",
-  "frames": {
-    "iphone-6.9": "17-pro-blue"
-  },
+  "background": "linear-gradient(160deg, #FFE8D6 0%, #FFF7F0 55%, #FFFFFF 100%)",
   "fontFamily": "-apple-system, \"SF Pro Display\", system-ui, sans-serif",
-  "template": "editorial",
+  "copy": {
+    "owner-members": {
+      "headline": {
+        "en-US": "1500+ Member Directory & Profiles"
+      }
+    }
+  },
+  "template": "showcase",
   "layout": "classic",
   "screenOnly": false
 }

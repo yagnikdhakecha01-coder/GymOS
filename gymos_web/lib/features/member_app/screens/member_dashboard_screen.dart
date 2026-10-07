@@ -11,6 +11,7 @@ import 'member_training_screen.dart';
 import 'member_diet_screen.dart';
 import 'member_body_stats_screen.dart';
 import 'member_scan_qr_screen.dart';
+import 'member_attendance_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'member_notifications_screen.dart';
 import '../../dashboard/gym_switcher_bottom_sheet.dart';
@@ -966,9 +967,14 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen>
                         _buildQuickAction(Icons.fitness_center_rounded, 'Training', AppTheme.primary, () {
                           Navigator.push(context, MaterialPageRoute(builder: (_) => const MemberTrainingScreen()));
                         }),
-                        _buildQuickAction(Icons.qr_code_scanner_rounded, 'Scan QR', const Color(0xFF3B82F6), () {
-                          Navigator.push(context, MaterialPageRoute(builder: (_) => const MemberScanQRScreen()));
-                        }),
+                        if (vm.isBiometricAttendanceOnly)
+                          _buildQuickAction(Icons.calendar_month_rounded, 'Attendance', const Color(0xFF3B82F6), () {
+                            Navigator.push(context, MaterialPageRoute(builder: (_) => const MemberAttendanceScreen()));
+                          })
+                        else
+                          _buildQuickAction(Icons.qr_code_scanner_rounded, 'Scan QR', const Color(0xFF3B82F6), () {
+                            Navigator.push(context, MaterialPageRoute(builder: (_) => const MemberScanQRScreen()));
+                          }),
                         _buildQuickAction(Icons.share_rounded, 'Share', const Color(0xFFF59E0B), () {
                           _showShareSheet(context, vm);
                         }),
