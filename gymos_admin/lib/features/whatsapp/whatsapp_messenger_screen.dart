@@ -6,6 +6,8 @@ import 'package:intl/intl.dart';
 
 import '../../core/theme/admin_theme.dart';
 import '../../core/theme/responsive.dart';
+import '../whatsapp_templates/services/template_service.dart';
+import '../whatsapp_templates/whatsapp_templates_screen.dart';
 import 'services/whatsapp_chat_service.dart';
 
 class WhatsAppMessengerScreen extends StatefulWidget {
@@ -155,6 +157,8 @@ class _WhatsAppMessengerScreenState extends State<WhatsAppMessengerScreen> {
         String actionableHint = '';
         if (errStr.contains('131030') || errStr.contains('allowed list')) {
           actionableHint = '\n\n💡 Reason & Fix:\nYou are currently sending from Meta\'s Sandbox Test Number (+1 555).\nMeta only allows sending to numbers added in the Test List.\n\nTo Fix:\n• Go to Meta Developer Console > WhatsApp > API Setup > Click "To" dropdown > "Manage phone number list" and add $targetPhone.\n• Or register your Real Gym Phone Number in Meta to message all contacts without restriction.';
+        } else if (errStr.contains('131047') || errStr.contains('24 hours') || errStr.contains('Re-engagement')) {
+          actionableHint = '\n\n💡 Reason & Fix:\nOutside the 24-hour customer window, Meta requires businesses to initiate or re-engage conversations using an Approved Meta Template.\n\nTo Fix:\n• Click "Send Meta Template" to send an approved template like "hello_world" to start the conversation.';
         }
 
         showDialog(
@@ -178,6 +182,24 @@ class _WhatsAppMessengerScreenState extends State<WhatsAppMessengerScreen> {
         );
       }
     }
+  }
+
+  void _openSendTemplateForChat([String? targetPhone, String? targetName]) {
+    final phone = targetPhone ?? _activeConversation?.phoneNumber;
+    final name = targetName ?? _activeConversation?.senderName;
+    showDialog(
+      context: context,
+      builder: (ctx) => _TemplateSelectorDialog(
+        targetPhone: phone,
+        targetName: name,
+        onTemplateSent: () {
+          if (phone != null) {
+            _loadMessages(phone);
+            _loadConversations(silent: true);
+          }
+        },
+      ),
+    );
   }
 
   void _showNewChatDialog() {
@@ -259,6 +281,22 @@ class _WhatsAppMessengerScreenState extends State<WhatsAppMessengerScreen> {
           TextButton(
             onPressed: () => Navigator.pop(ctx),
             child: Text('Cancel', style: GoogleFonts.inter(color: AdminTheme.secondaryTextColor(context))),
+          ),
+          OutlinedButton.icon(
+            onPressed: () {
+              final rawPhone = phoneCtrl.text.trim();
+              final clean = WhatsAppChatService.normalizePhoneNumber(rawPhone);
+              Navigator.pop(ctx);
+              _openSendTemplateForChat(
+                clean.isNotEmpty ? clean : null,
+                nameCtrl.text.trim().isNotEmpty ? nameCtrl.text.trim() : null,
+              );
+            },
+            icon: const Icon(Icons.verified_rounded, size: 16, color: Color(0xFF25D366)),
+            label: Text('Use Meta Template',
+                style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF25D366))),
           ),
           ElevatedButton.icon(
             onPressed: () async {
@@ -615,6 +653,26 @@ class _WhatsAppMessengerScreenState extends State<WhatsAppMessengerScreen> {
                   ],
                 ),
               ),
+              Tooltip(
+                message: 'Send Meta Approved Template to this contact',
+                child: ElevatedButton.icon(
+                  icon: const Icon(Icons.verified_rounded, size: 14),
+                  label: Text('Send Meta Template',
+                      style: GoogleFonts.inter(
+                          fontSize: 12, fontWeight: FontWeight.w600)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF25D366),
+                    foregroundColor: Colors.white,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    minimumSize: const Size(0, 34),
+                    elevation: 0,
+                  ),
+                  onPressed: () => _openSendTemplateForChat(
+                      convo.phoneNumber, convo.senderName),
+                ),
+              ),
+              const SizedBox(width: 8),
               IconButton(
                 tooltip: 'Copy Number',
                 icon: const Icon(Icons.copy_rounded, size: 18),
@@ -640,9 +698,61 @@ class _WhatsAppMessengerScreenState extends State<WhatsAppMessengerScreen> {
               ? const Center(child: CircularProgressIndicator())
               : _activeMessages.isEmpty
                   ? Center(
-                      child: Text(
-                        'No messages in this chat yet. Type a message below to start.',
-                        style: GoogleFonts.inter(fontSize: 13, color: AdminTheme.secondaryTextColor(context)),
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF25D366)
+                                    .withValues(alpha: 0.12),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.mark_email_read_outlined,
+                                  size: 36, color: Color(0xFF25D366)),
+                            ),
+                            const SizedBox(height: 14),
+                            Text(
+                              'Start Conversation via Meta Template',
+                              style: GoogleFonts.inter(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: AdminTheme.textColor(context),
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Container(
+                              constraints: const BoxConstraints(maxWidth: 420),
+                              child: Text(
+                                'Meta WhatsApp Rule: To message a customer for the first time or outside the 24-hour window, you must send an approved template.',
+                                textAlign: TextAlign.center,
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  color: AdminTheme.secondaryTextColor(context),
+                                  height: 1.4,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 18),
+                            ElevatedButton.icon(
+                              onPressed: () => _openSendTemplateForChat(
+                                  convo.phoneNumber, convo.senderName),
+                              icon: const Icon(Icons.send_rounded, size: 14),
+                              label: Text('Send Approved Meta Template',
+                                  style: GoogleFonts.inter(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 13)),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF25D366),
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 20, vertical: 12),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     )
                   : ListView.builder(
@@ -688,6 +798,12 @@ class _WhatsAppMessengerScreenState extends State<WhatsAppMessengerScreen> {
           ),
           child: Row(
             children: [
+              IconButton(
+                tooltip: 'Send Approved Meta Template',
+                icon: const Icon(Icons.verified_rounded, color: Color(0xFF25D366), size: 24),
+                onPressed: () => _openSendTemplateForChat(convo.phoneNumber, convo.senderName),
+              ),
+              const SizedBox(width: 8),
               Expanded(
                 child: TextField(
                   controller: _messageController,
@@ -766,6 +882,35 @@ class _WhatsAppMessengerScreenState extends State<WhatsAppMessengerScreen> {
           crossAxisAlignment: CrossAxisAlignment.end,
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (msg.messageType == 'template') ...[
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.black26 : Colors.white70,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.verified_rounded,
+                          size: 11, color: Color(0xFF25D366)),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Meta Template',
+                        style: GoogleFonts.inter(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF25D366)),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
             Align(
               alignment: Alignment.centerLeft,
               child: Text(
@@ -849,3 +994,305 @@ class _WhatsAppMessengerScreenState extends State<WhatsAppMessengerScreen> {
     }
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// TEMPLATE SELECTOR DIALOG FOR MESSENGER
+// ═══════════════════════════════════════════════════════════════════
+
+class _TemplateSelectorDialog extends StatefulWidget {
+  final String? targetPhone;
+  final String? targetName;
+  final VoidCallback? onTemplateSent;
+
+  const _TemplateSelectorDialog({
+    this.targetPhone,
+    this.targetName,
+    this.onTemplateSent,
+  });
+
+  @override
+  State<_TemplateSelectorDialog> createState() => _TemplateSelectorDialogState();
+}
+
+class _TemplateSelectorDialogState extends State<_TemplateSelectorDialog> {
+  bool _loading = true;
+  String? _error;
+  List<WhatsAppTemplate> _approvedTemplates = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTemplates();
+  }
+
+  Future<void> _loadTemplates() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final list = await WhatsAppTemplateService.instance.fetchTemplates();
+      final approved =
+          list.where((t) => t.status.toUpperCase() == 'APPROVED').toList();
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _approvedTemplates = approved;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = e.toString().replaceFirst('Exception: ', '');
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = AdminTheme.isDark(context);
+
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      child: Container(
+        width: 560,
+        constraints: const BoxConstraints(maxHeight: 650),
+        decoration: BoxDecoration(
+          color: isDark ? AdminTheme.darkCard : Colors.white,
+          borderRadius: BorderRadius.circular(AdminTheme.radiusCard),
+          border: Border.all(
+            color: isDark ? AdminTheme.darkBorder : AdminTheme.lightBorder,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: isDark ? 0.4 : 0.12),
+              blurRadius: 24,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Column(
+          children: [
+            // Header
+            Padding(
+              padding: const EdgeInsets.all(18),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF25D366).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.verified_rounded,
+                        color: Color(0xFF25D366), size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Select Approved Meta Template',
+                          style: GoogleFonts.inter(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: AdminTheme.textColor(context),
+                          ),
+                        ),
+                        Text(
+                          widget.targetPhone != null
+                              ? 'Recipient: +${widget.targetPhone}'
+                              : 'Choose an official template approved by Meta',
+                          style: GoogleFonts.inter(
+                              fontSize: 12,
+                              color: AdminTheme.secondaryTextColor(context)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+
+            // Body
+            Expanded(
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _error != null
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(20),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.error_outline_rounded,
+                                    color: AdminTheme.danger, size: 36),
+                                const SizedBox(height: 10),
+                                Text('Failed to load templates from Meta',
+                                    style: GoogleFonts.inter(
+                                        fontWeight: FontWeight.w600)),
+                                const SizedBox(height: 6),
+                                Text(_error!,
+                                    style: GoogleFonts.inter(
+                                        fontSize: 12,
+                                        color: AdminTheme.danger),
+                                    textAlign: TextAlign.center),
+                                const SizedBox(height: 12),
+                                ElevatedButton(
+                                    onPressed: _loadTemplates,
+                                    child: const Text('Retry')),
+                              ],
+                            ),
+                          ),
+                        )
+                      : _approvedTemplates.isEmpty
+                          ? Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(24),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.article_outlined,
+                                        size: 40, color: AdminTheme.warning),
+                                    const SizedBox(height: 12),
+                                    Text('No Approved Templates Found in Meta',
+                                        style: GoogleFonts.inter(
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w700)),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                        'Go to WA Templates in the sidebar to create and submit templates for Meta approval.',
+                                        textAlign: TextAlign.center,
+                                        style: GoogleFonts.inter(
+                                            fontSize: 12,
+                                            color:
+                                                AdminTheme.secondaryTextColor(
+                                                    context))),
+                                  ],
+                                ),
+                              ),
+                            )
+                          : ListView.separated(
+                              padding: const EdgeInsets.all(16),
+                              itemCount: _approvedTemplates.length,
+                              separatorBuilder: (_, _) =>
+                                  const SizedBox(height: 10),
+                              itemBuilder: (ctx, i) {
+                                final t = _approvedTemplates[i];
+                                return Container(
+                                  padding: const EdgeInsets.all(14),
+                                  decoration: BoxDecoration(
+                                    color: isDark
+                                        ? AdminTheme.darkSurface
+                                        : AdminTheme.lightSurface,
+                                    borderRadius: BorderRadius.circular(
+                                        AdminTheme.radiusSm),
+                                    border: Border.all(
+                                        color: const Color(0xFF25D366)
+                                            .withValues(alpha: 0.2)),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 8, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFF25D366)
+                                                  .withValues(alpha: 0.15),
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                            ),
+                                            child: Text('APPROVED',
+                                                style: GoogleFonts.inter(
+                                                    fontSize: 10,
+                                                    fontWeight: FontWeight.w700,
+                                                    color: const Color(
+                                                        0xFF25D366))),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Text(t.name,
+                                              style: GoogleFonts.inter(
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: AdminTheme.textColor(
+                                                      context))),
+                                          const Spacer(),
+                                          Text(t.language,
+                                              style: GoogleFonts.inter(
+                                                  fontSize: 11,
+                                                  color:
+                                                      AdminTheme.mutedTextColor(
+                                                          context))),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        t.bodyText,
+                                        style: GoogleFonts.inter(
+                                            fontSize: 12,
+                                            color:
+                                                AdminTheme.secondaryTextColor(
+                                                    context)),
+                                        maxLines: 3,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: 10),
+                                      Align(
+                                        alignment: Alignment.centerRight,
+                                        child: ElevatedButton.icon(
+                                          onPressed: () {
+                                            Navigator.pop(context);
+                                            showDialog(
+                                              context: context,
+                                              barrierDismissible: false,
+                                              builder: (ctx) =>
+                                                  SendTemplateDialog(
+                                                template: t,
+                                                initialPhone:
+                                                    widget.targetPhone,
+                                                initialName: widget.targetName,
+                                                onSent: widget.onTemplateSent,
+                                              ),
+                                            );
+                                          },
+                                          icon: const Icon(Icons.send_rounded,
+                                              size: 14),
+                                          label: Text('Use This Template',
+                                              style: GoogleFonts.inter(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w600)),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor:
+                                                const Color(0xFF25D366),
+                                            foregroundColor: Colors.white,
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 14, vertical: 6),
+                                            minimumSize: const Size(0, 32),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+

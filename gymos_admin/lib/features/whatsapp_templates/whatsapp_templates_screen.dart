@@ -241,6 +241,24 @@ class _WhatsAppTemplatesScreenState extends State<WhatsAppTemplatesScreen>
     );
   }
 
+  void _showSendTemplateDialog(WhatsAppTemplate template) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => SendTemplateDialog(
+        template: template,
+        onSent: () {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Template "${template.name}" sent successfully via WhatsApp!'),
+              backgroundColor: AdminTheme.success,
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = AdminTheme.isDark(context);
@@ -632,7 +650,7 @@ class _WhatsAppTemplatesScreenState extends State<WhatsAppTemplatesScreen>
           crossAxisCount: crossAxisCount,
           crossAxisSpacing: 16,
           mainAxisSpacing: 16,
-          childAspectRatio: isMobile ? 2.0 : 1.3,
+          childAspectRatio: isMobile ? 1.55 : 1.15,
         ),
         itemCount: templates.length,
         itemBuilder: (ctx, i) => _buildTemplateCard(templates[i]),
@@ -783,25 +801,52 @@ class _WhatsAppTemplatesScreenState extends State<WhatsAppTemplatesScreen>
                   ),
                 ),
               ),
-              const SizedBox(height: 8),
-              // Footer: last updated
-              if (template.lastUpdated != null)
-                Row(
-                  children: [
-                    Icon(Icons.access_time_rounded,
-                        size: 12,
-                        color: AdminTheme.mutedTextColor(context)),
-                    const SizedBox(width: 4),
-                    Text(
-                      DateFormat('dd MMM yyyy, hh:mm a')
-                          .format(template.lastUpdated!.toLocal()),
-                      style: GoogleFonts.inter(
-                        fontSize: 11,
-                        color: AdminTheme.mutedTextColor(context),
+              const SizedBox(height: 10),
+              // Footer: last updated + Send Template button
+              Row(
+                children: [
+                  if (template.lastUpdated != null)
+                    Expanded(
+                      child: Row(
+                        children: [
+                          Icon(Icons.access_time_rounded,
+                              size: 12,
+                              color: AdminTheme.mutedTextColor(context)),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              DateFormat('dd MMM, hh:mm a')
+                                  .format(template.lastUpdated!.toLocal()),
+                              style: GoogleFonts.inter(
+                                fontSize: 10,
+                                color: AdminTheme.mutedTextColor(context),
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    const Spacer(),
+                  if (template.status.toUpperCase() == 'APPROVED')
+                    ElevatedButton.icon(
+                      onPressed: () => _showSendTemplateDialog(template),
+                      icon: const Icon(Icons.send_rounded, size: 12),
+                      label: Text('Send to Phone',
+                          style: GoogleFonts.inter(
+                              fontSize: 11, fontWeight: FontWeight.w600)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF25D366),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
+                        minimumSize: const Size(0, 30),
+                        elevation: 0,
                       ),
                     ),
-                  ],
-                ),
+                ],
+              ),
             ],
           ),
         ),
@@ -1782,6 +1827,33 @@ class _TemplateDetailDialog extends StatelessWidget {
                             .format(template.lastUpdated!.toLocal()),
                       ),
                     ],
+
+                    if (template.status.toUpperCase() == 'APPROVED') ...[
+                      const SizedBox(height: 24),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 44,
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            Navigator.pop(context);
+                            showDialog(
+                              context: context,
+                              barrierDismissible: false,
+                              builder: (ctx) =>
+                                  SendTemplateDialog(template: template),
+                            );
+                          },
+                          icon: const Icon(Icons.send_rounded, size: 16),
+                          label: Text('Send Template to Phone Number',
+                              style: GoogleFonts.inter(
+                                  fontWeight: FontWeight.w600, fontSize: 13)),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF25D366),
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -1861,3 +1933,593 @@ class _TemplateDetailDialog extends StatelessWidget {
     );
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// SEND TEMPLATE DIALOG
+// ═══════════════════════════════════════════════════════════════════
+
+class SendTemplateDialog extends StatefulWidget {
+  final WhatsAppTemplate template;
+  final String? initialPhone;
+  final String? initialName;
+  final VoidCallback? onSent;
+
+  const SendTemplateDialog({
+    super.key,
+    required this.template,
+    this.initialPhone,
+    this.initialName,
+    this.onSent,
+  });
+
+  @override
+  State<SendTemplateDialog> createState() => _SendTemplateDialogState();
+}
+
+class _SendTemplateDialogState extends State<SendTemplateDialog> {
+  final _phoneController = TextEditingController();
+  final _nameController = TextEditingController();
+  final Map<String, TextEditingController> _varControllers = {};
+
+  bool _isSending = false;
+  String? _errorMessage;
+  String? _successMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialPhone != null) {
+      _phoneController.text = widget.initialPhone!;
+    }
+    if (widget.initialName != null) {
+      _nameController.text = widget.initialName!;
+    }
+    for (final key in widget.template.bodyVariableKeys) {
+      final ctrl = TextEditingController();
+      ctrl.addListener(() => setState(() {}));
+      _varControllers[key] = ctrl;
+    }
+  }
+
+  @override
+  void dispose() {
+    _phoneController.dispose();
+    _nameController.dispose();
+    for (final ctrl in _varControllers.values) {
+      ctrl.dispose();
+    }
+    super.dispose();
+  }
+
+  String _renderPreviewBody() {
+    String text = widget.template.bodyText;
+    for (final entry in _varControllers.entries) {
+      final key = entry.key;
+      final val = entry.value.text.trim();
+      text = text.replaceAll('{{$key}}', val.isNotEmpty ? val : '{{$key}}');
+    }
+    return text;
+  }
+
+  Future<void> _handleSend() async {
+    final rawPhone = _phoneController.text.trim();
+    final cleanPhone = rawPhone.replaceAll(RegExp(r'[^0-9]'), '');
+    if (cleanPhone.isEmpty || cleanPhone.length < 10) {
+      setState(() {
+        _errorMessage =
+            'Please enter a valid phone number with country code (e.g., 919876543210).';
+      });
+      return;
+    }
+
+    final varValues = widget.template.bodyVariableKeys.map((k) {
+      final v = _varControllers[k]?.text.trim() ?? '';
+      return v.isNotEmpty ? v : ' ';
+    }).toList();
+
+    setState(() {
+      _isSending = true;
+      _errorMessage = null;
+      _successMessage = null;
+    });
+
+    try {
+      final res = await WhatsAppTemplateService.instance.sendTemplateMessage(
+        toPhoneNumber: cleanPhone,
+        templateName: widget.template.name,
+        languageCode: widget.template.language,
+        bodyVariables: varValues,
+        contactName: _nameController.text.trim().isNotEmpty
+            ? _nameController.text.trim()
+            : null,
+      );
+
+      final wamid = res['wamid']?.toString() ?? 'sent';
+      if (mounted) {
+        setState(() {
+          _isSending = false;
+          _successMessage = 'Message sent successfully! (ID: $wamid)';
+        });
+        widget.onSent?.call();
+        Future.delayed(const Duration(milliseconds: 1400), () {
+          if (mounted) Navigator.of(context).pop();
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isSending = false;
+          _errorMessage = e.toString().replaceFirst('Exception: ', '');
+        });
+      }
+    }
+  }
+
+  InputDecoration _inputDeco(bool isDark, {String? hint, Widget? prefixIcon}) {
+    return InputDecoration(
+      hintText: hint,
+      prefixIcon: prefixIcon,
+      hintStyle: GoogleFonts.inter(
+        fontSize: 13,
+        color: AdminTheme.mutedTextColor(context),
+      ),
+      filled: true,
+      fillColor: isDark ? AdminTheme.darkSurface : AdminTheme.lightSurface,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(AdminTheme.radiusSm),
+        borderSide: BorderSide(
+          color: isDark ? AdminTheme.darkBorder : AdminTheme.lightBorder,
+        ),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(AdminTheme.radiusSm),
+        borderSide: BorderSide(
+          color: isDark ? AdminTheme.darkBorder : AdminTheme.lightBorder,
+        ),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(AdminTheme.radiusSm),
+        borderSide: const BorderSide(color: Color(0xFF25D366), width: 1.5),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = AdminTheme.isDark(context);
+    final varKeys = widget.template.bodyVariableKeys;
+
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      child: Container(
+        width: 620,
+        constraints: const BoxConstraints(maxHeight: 780),
+        decoration: BoxDecoration(
+          color: isDark ? AdminTheme.darkCard : Colors.white,
+          borderRadius: BorderRadius.circular(AdminTheme.radiusCard),
+          border: Border.all(
+            color: isDark ? AdminTheme.darkBorder : AdminTheme.lightBorder,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: isDark ? 0.4 : 0.12),
+              blurRadius: 24,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Column(
+          children: [
+            // Modal Header
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(
+                    color:
+                        isDark ? AdminTheme.darkBorder : AdminTheme.lightBorder,
+                  ),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF25D366).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.send_rounded,
+                        color: Color(0xFF25D366), size: 22),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Send Approved Meta Template',
+                          style: GoogleFonts.inter(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            color: AdminTheme.textColor(context),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${widget.template.name} • ${widget.template.language} • ${widget.template.category}',
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            color: AdminTheme.mutedTextColor(context),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded),
+                    onPressed: _isSending ? null : () => Navigator.pop(context),
+                    color: AdminTheme.mutedTextColor(context),
+                  ),
+                ],
+              ),
+            ),
+
+            // Modal Body
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Meta Notice Banner
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color:
+                            const Color(0xFF25D366).withValues(alpha: 0.08),
+                        borderRadius:
+                            BorderRadius.circular(AdminTheme.radiusSm),
+                        border: Border.all(
+                          color:
+                              const Color(0xFF25D366).withValues(alpha: 0.25),
+                        ),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(Icons.verified_rounded,
+                              size: 18, color: Color(0xFF25D366)),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'This is an official Meta-approved template. WhatsApp requires businesses to use an approved template to initiate new conversations or message users outside the 24h window.',
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                color: AdminTheme.secondaryTextColor(context),
+                                height: 1.4,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+
+                    // Phone Number Input
+                    Text('Recipient WhatsApp Number *',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: AdminTheme.textColor(context),
+                        )),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: _phoneController,
+                      keyboardType: TextInputType.phone,
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        color: AdminTheme.textColor(context),
+                      ),
+                      decoration: _inputDeco(
+                        isDark,
+                        hint: '919876543210 (Country code + 10 digits)',
+                        prefixIcon: const Icon(Icons.phone_rounded,
+                            size: 18, color: Color(0xFF25D366)),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+
+                    // Recipient Name (Optional)
+                    Text('Recipient / Contact Name (Optional)',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: AdminTheme.textColor(context),
+                        )),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: _nameController,
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        color: AdminTheme.textColor(context),
+                      ),
+                      decoration: _inputDeco(
+                        isDark,
+                        hint: 'e.g. Rahul Sharma',
+                        prefixIcon: const Icon(Icons.person_outline_rounded,
+                            size: 18),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Variables section if any
+                    if (varKeys.isNotEmpty) ...[
+                      Text('Template Variables',
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: AdminTheme.textColor(context),
+                          )),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Provide the values to fill into the placeholders in the message.',
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          color: AdminTheme.mutedTextColor(context),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      ...varKeys.map((key) {
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 50,
+                                padding: const EdgeInsets.symmetric(
+                                    vertical: 10, horizontal: 8),
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF25D366)
+                                      .withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(
+                                      AdminTheme.radiusSm),
+                                ),
+                                child: Text('{{$key}}',
+                                    style: GoogleFonts.robotoMono(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      color: const Color(0xFF25D366),
+                                    )),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: TextField(
+                                  controller: _varControllers[key],
+                                  style: GoogleFonts.inter(
+                                    fontSize: 13,
+                                    color: AdminTheme.textColor(context),
+                                  ),
+                                  decoration: _inputDeco(
+                                    isDark,
+                                    hint:
+                                        'Value for {{$key}} (e.g. Member Name, Gym, Date...)',
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }),
+                      const SizedBox(height: 10),
+                    ],
+
+                    // Live WhatsApp Chat Bubble Preview
+                    Text('Live Message Preview',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: AdminTheme.textColor(context),
+                        )),
+                    const SizedBox(height: 8),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? const Color(0xFF0B141A)
+                            : const Color(0xFFEFEAE2),
+                        borderRadius:
+                            BorderRadius.circular(AdminTheme.radiusSm),
+                      ),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Container(
+                          constraints: const BoxConstraints(maxWidth: 420),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: isDark
+                                ? const Color(0xFF202C33)
+                                : Colors.white,
+                            borderRadius: BorderRadius.circular(10),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.08),
+                                blurRadius: 4,
+                                offset: const Offset(0, 1),
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (widget.template.headerText != null &&
+                                  widget.template.headerText!.isNotEmpty) ...[
+                                Text(
+                                  widget.template.headerText!,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: isDark
+                                        ? Colors.white
+                                        : const Color(0xFF111B21),
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                              ],
+                              Text(
+                                _renderPreviewBody(),
+                                style: GoogleFonts.inter(
+                                  fontSize: 13,
+                                  color: isDark
+                                      ? Colors.white
+                                      : const Color(0xFF111B21),
+                                  height: 1.45,
+                                ),
+                              ),
+                              if (widget.template.footerText != null &&
+                                  widget.template.footerText!.isNotEmpty) ...[
+                                const SizedBox(height: 6),
+                                Text(
+                                  widget.template.footerText!,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 11,
+                                    color: isDark
+                                        ? const Color(0xFF8696A0)
+                                        : const Color(0xFF667781),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    // Success Banner
+                    if (_successMessage != null) ...[
+                      const SizedBox(height: 14),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color:
+                              AdminTheme.successLight.withValues(alpha: 0.5),
+                          borderRadius:
+                              BorderRadius.circular(AdminTheme.radiusSm),
+                          border: Border.all(color: AdminTheme.success),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.check_circle_rounded,
+                                color: AdminTheme.success, size: 20),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                _successMessage!,
+                                style: GoogleFonts.inter(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: AdminTheme.success,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+
+                    // Error Banner
+                    if (_errorMessage != null) ...[
+                      const SizedBox(height: 14),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AdminTheme.dangerLight.withValues(alpha: 0.5),
+                          borderRadius:
+                              BorderRadius.circular(AdminTheme.radiusSm),
+                          border: Border.all(color: AdminTheme.danger),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(Icons.error_outline_rounded,
+                                color: AdminTheme.danger, size: 20),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: SelectableText(
+                                _errorMessage!,
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  color: AdminTheme.danger,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+
+            // Modal Actions
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                border: Border(
+                  top: BorderSide(
+                    color:
+                        isDark ? AdminTheme.darkBorder : AdminTheme.lightBorder,
+                  ),
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: _isSending ? null : () => Navigator.pop(context),
+                    child: Text('Cancel',
+                        style: GoogleFonts.inter(
+                          color: AdminTheme.secondaryTextColor(context),
+                        )),
+                  ),
+                  const SizedBox(width: 12),
+                  ElevatedButton.icon(
+                    onPressed: _isSending ? null : _handleSend,
+                    icon: _isSending
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.send_rounded, size: 16),
+                    label: Text(
+                      _isSending
+                          ? 'Sending to Meta...'
+                          : 'Send WhatsApp Message',
+                      style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF25D366),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+

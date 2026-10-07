@@ -63,6 +63,19 @@ class WhatsAppTemplate {
     return footer?.text;
   }
 
+  /// Get list of variable place-holders like ['1', '2'] from bodyText
+  List<String> get bodyVariableKeys {
+    final matches = RegExp(r'\{\{(\d+)\}\}').allMatches(bodyText);
+    final keys = <String>{};
+    for (final m in matches) {
+      final key = m.group(1);
+      if (key != null) keys.add(key);
+    }
+    final sorted = keys.toList();
+    sorted.sort((a, b) => (int.tryParse(a) ?? 0).compareTo(int.tryParse(b) ?? 0));
+    return sorted;
+  }
+
   /// Get button components
   List<TemplateComponent> get buttons =>
       components.where((c) => c.type == 'BUTTONS').toList();
@@ -143,16 +156,19 @@ class WhatsAppTemplateService {
 
     String token = '';
     String wabaId = '';
+    String phoneId = '';
 
     if (res != null && res['value'] != null) {
       final val = Map<String, dynamic>.from(res['value']);
       token = val['access_token']?.toString() ?? '';
       wabaId = val['business_account_id']?.toString() ?? '';
+      phoneId = val['phone_number_id']?.toString() ?? '';
     }
 
     _cachedCredentials = {
       'access_token': token.trim(),
       'waba_id': wabaId.trim(),
+      'phone_number_id': phoneId.trim(),
     };
     return _cachedCredentials!;
   }
@@ -338,4 +354,101 @@ class WhatsAppTemplateService {
       throw Exception(errMsg);
     }
   }
+
+  /// Send an approved template message to a phone number via Meta Cloud API
+  Future<Map<String, dynamic>> sendTemplateMessage({
+    required String toPhoneNumber,
+    required String templateName,
+    required String languageCode,
+    List<String> bodyVariables = const [],
+    String? contactName,
+  }) async {
+    final cleanPhone = toPhoneNumber.replaceAll(RegExp(r'[^0-9]'), '');
+    if (cleanPhone.isEmpty) {
+      throw Exception('Invalid phone number provided.');
+    }
+
+    final creds = await _getCredentials();
+    final token = creds['access_token'] ?? '';
+    final phoneId = creds['phone_number_id'] ?? '';
+
+    if (token.isEmpty || phoneId.isEmpty) {
+      throw Exception(
+          'WhatsApp API credentials or Phone Number ID not configured. Please check Settings > WhatsApp Configuration.');
+    }
+
+    final List<Map<String, dynamic>> components = [];
+    if (bodyVariables.isNotEmpty) {
+      components.add({
+        'type': 'body',
+        'parameters': bodyVariables
+            .map((val) => {'type': 'text', 'text': val.trim()})
+            .toList(),
+      });
+    }
+
+    final Map<String, dynamic> templateObj = {
+      'name': templateName,
+      'language': {'code': languageCode},
+    };
+    if (components.isNotEmpty) {
+      templateObj['components'] = components;
+    }
+
+    final payload = {
+      'messaging_product': 'whatsapp',
+      'recipient_type': 'individual',
+      'to': cleanPhone,
+      'type': 'template',
+      'template': templateObj,
+    };
+
+    final url = Uri.parse('https://graph.facebook.com/v20.0/$phoneId/messages');
+    final response = await http.post(
+      url,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode(payload),
+    );
+
+    final data = jsonDecode(response.body);
+
+    if (response.statusCode != 200 || data['error'] != null) {
+      final errMsg =
+          data['error']?['message'] ?? 'Meta API error: ${response.statusCode}';
+      final details = data['error']?['error_data']?['details'] ?? '';
+      final code = data['error']?['code']?.toString() ?? '';
+      throw Exception(
+          '$errMsg${details.isNotEmpty ? ' ($details)' : ''}${code.isNotEmpty ? ' [Error Code: $code]' : ''}');
+    }
+
+    final String? wamid = data['messages']?[0]?['id']?.toString();
+
+    // Store in whatsapp_messages table so it immediately shows in chat
+    try {
+      final client = AdminSupabaseService.client;
+      await client.from('whatsapp_messages').insert({
+        'wamid': wamid,
+        'phone_number': cleanPhone,
+        'sender_name': contactName ?? 'GymOS Admin',
+        'direction': 'outbound',
+        'message_type': 'template',
+        'message_body': '[Meta Template: $templateName]',
+        'status': 'sent',
+        'meta_payload': data,
+        'created_at': DateTime.now().toIso8601String(),
+      });
+    } catch (e) {
+      debugPrint('Warning: Could not save template message to database: $e');
+    }
+
+    return {
+      'success': true,
+      'wamid': wamid,
+      'data': data,
+    };
+  }
 }
+
