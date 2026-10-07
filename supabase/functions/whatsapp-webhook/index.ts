@@ -240,8 +240,76 @@ serve(async (req: Request) => {
         meta_message_id: metaMessageId,
       });
     } catch (dbErr) {
-      // Non-blocking error logging - never fail the Meta webhook intake
       console.error(`[${correlationId}] Failed to log webhook event:`, dbErr);
+    }
+
+    // Process incoming WhatsApp messages
+    try {
+      const messages = changeEntry?.value?.messages;
+      const contacts = changeEntry?.value?.contacts;
+      const contactName = contacts?.[0]?.profile?.name || null;
+
+      if (Array.isArray(messages) && messages.length > 0) {
+        for (const msg of messages) {
+          const fromPhone = msg.from;
+          const msgId = msg.id;
+          let body = "";
+
+          if (msg.type === "text") {
+            body = msg.text?.body || "";
+          } else if (msg.type === "image") {
+            body = msg.image?.caption || "📷 Image";
+          } else if (msg.type === "document") {
+            body = msg.document?.caption || "📄 Document";
+          } else if (msg.type === "audio") {
+            body = "🎵 Audio message";
+          } else if (msg.type === "video") {
+            body = "🎥 Video message";
+          } else if (msg.type === "button") {
+            body = msg.button?.text || "🔘 Button Response";
+          } else if (msg.type === "interactive") {
+            body = msg.interactive?.button_reply?.title || msg.interactive?.list_reply?.title || "🔘 Interactive Response";
+          } else {
+            body = `[${msg.type || "message"}]`;
+          }
+
+          if (fromPhone && body) {
+            await supabase.from("whatsapp_messages").upsert(
+              {
+                wamid: msgId,
+                phone_number: fromPhone,
+                sender_name: contactName,
+                direction: "inbound",
+                message_type: msg.type || "text",
+                message_body: body,
+                status: "received",
+                meta_payload: msg,
+                created_at: new Date().toISOString(),
+              },
+              { onConflict: "wamid" }
+            );
+            console.log(`[${correlationId}] Ingested inbound WhatsApp msg from ${fromPhone}: ${body.substring(0, 30)}`);
+          }
+        }
+      }
+
+      // Process message status receipts (delivered, read, sent, failed)
+      const statuses = changeEntry?.value?.statuses;
+      if (Array.isArray(statuses) && statuses.length > 0) {
+        for (const st of statuses) {
+          const statusId = st.id;
+          const statusVal = st.status; // 'sent' | 'delivered' | 'read' | 'failed'
+          if (statusId && statusVal) {
+            await supabase
+              .from("whatsapp_messages")
+              .update({ status: statusVal })
+              .eq("wamid", statusId);
+            console.log(`[${correlationId}] Updated message ${statusId} status to ${statusVal}`);
+          }
+        }
+      }
+    } catch (ingestErr) {
+      console.error(`[${correlationId}] Error processing messages/statuses into whatsapp_messages:`, ingestErr);
     }
 
     // Return HTTP 200 OK promptly as required by Meta Cloud API

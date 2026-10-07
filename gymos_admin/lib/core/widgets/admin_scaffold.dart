@@ -35,6 +35,7 @@ const List<SidebarMenuItem> sidebarMenuItems = [
   SidebarMenuItem(icon: Icons.toggle_on_outlined, activeIcon: Icons.toggle_on_rounded, label: 'Feature Control'),
   SidebarMenuItem(icon: Icons.notifications_outlined, activeIcon: Icons.notifications_rounded, label: 'Notifications'),
   SidebarMenuItem(icon: Icons.support_agent_outlined, activeIcon: Icons.support_agent_rounded, label: 'Support'),
+  SidebarMenuItem(icon: Icons.chat_outlined, activeIcon: Icons.chat_rounded, label: 'WhatsApp'),
   SidebarMenuItem(icon: Icons.content_copy_outlined, activeIcon: Icons.content_copy_rounded, label: 'Duplicates'),
   SidebarMenuItem(icon: Icons.analytics_outlined, activeIcon: Icons.analytics_rounded, label: 'Analytics'),
   SidebarMenuItem(icon: Icons.storage_outlined, activeIcon: Icons.storage_rounded, label: 'Database'),
