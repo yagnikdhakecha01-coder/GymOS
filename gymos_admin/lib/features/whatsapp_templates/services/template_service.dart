@@ -450,5 +450,103 @@ class WhatsAppTemplateService {
       'data': data,
     };
   }
+
+  /// Get current WhatsApp Invitation configuration from platform_settings
+  Future<Map<String, dynamic>> getInvitationSettings() async {
+    try {
+      final client = AdminSupabaseService.client;
+      final res = await client
+          .from('platform_settings')
+          .select('value')
+          .eq('key', 'whatsapp_invitation_settings')
+          .maybeSingle();
+
+      if (res != null && res['value'] != null) {
+        return Map<String, dynamic>.from(res['value']);
+      }
+    } catch (e) {
+      debugPrint('Error fetching whatsapp_invitation_settings: $e');
+    }
+    // Default safe configuration (auto_send_enabled: false)
+    return {
+      'auto_send_enabled': false,
+      'template_name': '',
+      'template_language': 'en_US',
+      'param_mapping': {
+        '1': 'gym_name',
+        '2': 'name',
+        '3': 'invitation_code',
+        '4': 'phone',
+      },
+    };
+  }
+
+  /// Save WhatsApp Invitation configuration to platform_settings
+  Future<void> saveInvitationSettings(Map<String, dynamic> settings) async {
+    final client = AdminSupabaseService.client;
+    await client.from('platform_settings').upsert({
+      'key': 'whatsapp_invitation_settings',
+      'value': settings,
+      'updated_at': DateTime.now().toIso8601String(),
+    });
+  }
+
+  /// Dispatches a mapped WhatsApp invitation template to a contact
+  Future<Map<String, dynamic>> sendInvitationTemplate({
+    required String toPhoneNumber,
+    required String gymName,
+    required String contactName,
+    required String invitationCode,
+    Map<String, dynamic>? customSettings,
+  }) async {
+    final settings = customSettings ?? await getInvitationSettings();
+    final templateName = settings['template_name']?.toString() ?? '';
+    final templateLanguage = settings['template_language']?.toString() ?? 'en_US';
+    final paramMapping = settings['param_mapping'] != null
+        ? Map<String, dynamic>.from(settings['param_mapping'])
+        : <String, dynamic>{};
+
+    if (templateName.isEmpty) {
+      throw Exception(
+          'WhatsApp invitation template is not configured. Please select a template in WA Templates > Invitation Settings.');
+    }
+
+    // Sort variable keys: 1, 2, 3...
+    final sortedKeys = paramMapping.keys.toList()
+      ..sort((a, b) => (int.tryParse(a) ?? 0).compareTo(int.tryParse(b) ?? 0));
+
+    final List<String> bodyVariables = [];
+    for (final k in sortedKeys) {
+      final field = paramMapping[k]?.toString() ?? '';
+      switch (field) {
+        case 'gym_name':
+          bodyVariables.add(gymName);
+          break;
+        case 'name':
+        case 'member_name':
+        case 'staff_name':
+          bodyVariables.add(contactName);
+          break;
+        case 'invitation_code':
+        case 'code':
+          bodyVariables.add(invitationCode);
+          break;
+        case 'phone':
+        case 'registered_mobile':
+          bodyVariables.add(toPhoneNumber);
+          break;
+        default:
+          bodyVariables.add(field.isNotEmpty ? field : '-');
+      }
+    }
+
+    return await sendTemplateMessage(
+      toPhoneNumber: toPhoneNumber,
+      templateName: templateName,
+      languageCode: templateLanguage,
+      bodyVariables: bodyVariables,
+      contactName: contactName,
+    );
+  }
 }
 

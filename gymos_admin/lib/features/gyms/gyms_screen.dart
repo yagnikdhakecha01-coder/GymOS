@@ -15,6 +15,7 @@ import '../../core/constants/app_constants.dart';
 import '../../core/services/supabase_service.dart';
 import '../../core/services/google_drive_service.dart';
 import 'admin_gym_dashboard_screen.dart';
+import 'widgets/bulk_send_invitations_dialog.dart';
 
 class GymsScreen extends StatefulWidget {
   const GymsScreen({super.key});
@@ -862,6 +863,7 @@ class _GymsScreenState extends State<GymsScreen> {
               : _popupItem(Icons.pause_circle_outlined, 'Suspend', 'suspend', color: AdminTheme.orange),
           _popupItem(Icons.block_rounded, 'Disable', 'disable', color: AdminTheme.danger),
           const PopupMenuDivider(),
+          _popupItem(Icons.mark_email_read_rounded, 'Send Invites to Pending', 'send_pending_invites', color: const Color(0xFF25D366)),
           _popupItem(Icons.notifications_outlined, 'Send Notification', 'notify'),
           _popupItem(Icons.payment_outlined, 'Manual Payment', 'payment'),
           _popupItem(Icons.history_rounded, 'Payment History', 'payment_history'),
@@ -898,6 +900,16 @@ class _GymsScreenState extends State<GymsScreen> {
           context,
           MaterialPageRoute(
             builder: (context) => AdminGymDashboardScreen(gym: gym),
+          ),
+        );
+        break;
+      case 'send_pending_invites':
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => BulkSendInvitationsDialog(
+            gymId: gymId?.toString() ?? '',
+            gymName: gymName,
           ),
         );
         break;

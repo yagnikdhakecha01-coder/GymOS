@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../../core/theme/admin_theme.dart';
 import '../../core/theme/responsive.dart';
 import 'services/template_service.dart';
+import 'widgets/invitation_settings_dialog.dart';
 
 class WhatsAppTemplatesScreen extends StatefulWidget {
   const WhatsAppTemplatesScreen({super.key});
@@ -241,6 +242,16 @@ class _WhatsAppTemplatesScreenState extends State<WhatsAppTemplatesScreen>
     );
   }
 
+  void _showInvitationSettingsDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => WhatsAppInvitationSettingsDialog(
+        templates: _templates,
+      ),
+    );
+  }
+
   void _showSendTemplateDialog(WhatsAppTemplate template) {
     showDialog(
       context: context,
@@ -342,6 +353,23 @@ class _WhatsAppTemplatesScreenState extends State<WhatsAppTemplatesScreen>
                 ),
                 const SizedBox(width: 10),
               ],
+              OutlinedButton.icon(
+                onPressed: _showInvitationSettingsDialog,
+                icon: const Icon(Icons.mark_email_read_rounded,
+                    size: 18, color: Color(0xFF25D366)),
+                label: Text(
+                  isMobile ? 'Invites' : 'Invitation Settings',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF25D366),
+                  ),
+                ),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Color(0xFF25D366)),
+                ),
+              ),
+              const SizedBox(width: 10),
               ElevatedButton.icon(
                 onPressed: _showCreateDialog,
                 icon: const Icon(Icons.add_rounded, size: 18),

@@ -10,6 +10,7 @@ import '../../core/theme/admin_theme.dart';
 import '../../core/services/supabase_service.dart';
 import '../../core/services/google_drive_service.dart';
 import '../../core/widgets/full_screen_image_viewer.dart';
+import 'widgets/bulk_send_invitations_dialog.dart';
 
 class AdminGymDashboardScreen extends StatefulWidget {
   final Map<String, dynamic> gym;
@@ -2188,6 +2189,17 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
     );
   }
 
+  void _showSendPendingInvitationsDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => BulkSendInvitationsDialog(
+        gymId: widget.gym['id']?.toString() ?? '',
+        gymName: widget.gym['name']?.toString() ?? 'Gym',
+      ),
+    );
+  }
+
   Widget _buildQuickActionBar() {
     return Container(
       color: AdminTheme.surfaceColor(context),
@@ -2196,6 +2208,8 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
         scrollDirection: Axis.horizontal,
         child: Row(
           children: [
+            _actionChip('Send Invites to Pending', Icons.send_rounded, const Color(0xFF25D366), _showSendPendingInvitationsDialog),
+            const SizedBox(width: 10),
             _actionChip(_isLocked ? 'Unlock Gym' : 'Lock Gym', _isLocked ? Icons.lock_open_rounded : Icons.lock_rounded, _isLocked ? Colors.orange : AdminTheme.primary, _toggleLock),
             const SizedBox(width: 10),
             _actionChip(_gymStatus == 'Active' ? 'Suspend Gym' : 'Activate Gym', _gymStatus == 'Active' ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded, _gymStatus == 'Active' ? AdminTheme.danger : AdminTheme.success, _toggleSuspend),
