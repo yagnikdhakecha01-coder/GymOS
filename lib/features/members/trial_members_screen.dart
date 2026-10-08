@@ -228,14 +228,16 @@ class _TrialMembersScreenState extends State<TrialMembersScreen> {
                   : ListView.builder(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                       itemCount: allTrials.length,
+                      addAutomaticKeepAlives: false,
                       itemBuilder: (context, index) {
                         final trial = allTrials[index];
                         final startText = DateFormat('dd MMM').format(DateTime.parse(trial.startDate));
                         final endText = DateFormat('dd MMM yyyy').format(DateTime.parse(trial.endDate));
                         final status = trial.calculatedStatus;
 
-                        return CustomCard(
-                          margin: const EdgeInsets.only(bottom: 12),
+                        return RepaintBoundary(
+                          child: CustomCard(
+                            margin: const EdgeInsets.only(bottom: 12),
                           onTap: () {
                             Navigator.push(
                               context,
@@ -358,8 +360,9 @@ class _TrialMembersScreenState extends State<TrialMembersScreen> {
                               ),
                             ],
                           ),
-                        );
-                      },
+                        ),
+                      );
+                    },
                     ),
             ),
           ],

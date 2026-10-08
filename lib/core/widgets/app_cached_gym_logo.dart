@@ -40,6 +40,9 @@ class AppCachedGymLogo extends StatelessWidget {
           } catch (_) {}
         }
 
+        final dpr = MediaQuery.maybeDevicePixelRatioOf(context) ?? 2.0;
+        final pixelSize = (size * dpr).round().clamp(64, 256);
+
         Widget content;
         if (imageBytes != null && imageBytes.isNotEmpty) {
           content = ClipRRect(
@@ -48,6 +51,8 @@ class AppCachedGymLogo extends StatelessWidget {
               imageBytes,
               width: size,
               height: size,
+              cacheWidth: pixelSize,
+              cacheHeight: pixelSize,
               fit: BoxFit.cover,
               gaplessPlayback: true,
               errorBuilder: (_, _, _) => _buildStaticFallback(radius),
@@ -60,6 +65,8 @@ class AppCachedGymLogo extends StatelessWidget {
               cleanLogo,
               width: size,
               height: size,
+              cacheWidth: pixelSize,
+              cacheHeight: pixelSize,
               fit: BoxFit.cover,
               gaplessPlayback: true,
               errorBuilder: (_, _, _) => _buildStaticFallback(radius),
@@ -73,14 +80,16 @@ class AppCachedGymLogo extends StatelessWidget {
           content = _buildStaticFallback(radius);
         }
 
-        return Container(
-          width: size,
-          height: size,
-          decoration: BoxDecoration(
-            borderRadius: radius,
-            color: AppTheme.cardBackground,
+        return RepaintBoundary(
+          child: Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              borderRadius: radius,
+              color: AppTheme.cardBackground,
+            ),
+            child: content,
           ),
-          child: content,
         );
       },
     );

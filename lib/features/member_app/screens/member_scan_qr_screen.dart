@@ -9,58 +9,131 @@ import 'member_check_in_success.dart';
 import 'member_check_in_failure.dart';
 import '../../../core/repository/gym_repository.dart';
 import '../../../core/services/web_qr_approval_helper.dart';
+import 'member_shell.dart';
 
 class MemberScanQRScreen extends StatefulWidget {
-  const MemberScanQRScreen({super.key});
+  final bool isActive;
+  const MemberScanQRScreen({super.key, this.isActive = true});
 
   @override
   State<MemberScanQRScreen> createState() => _MemberScanQRScreenState();
 }
 
 class _MemberScanQRScreenState extends State<MemberScanQRScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late AnimationController _scanLineController;
-  final MobileScannerController _scannerController = MobileScannerController();
+  final MobileScannerController _scannerController = MobileScannerController(
+    autoStart: false,
+  );
+  bool _isCameraRunning = false;
   bool _isScanCompleted = false;
   bool _scanCompletedSync = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    MemberShell.currentTabNotifier.addListener(_onTabNotifierChanged);
+    _scanLineController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    );
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         final vm = Provider.of<MemberAppViewModel>(context, listen: false);
         vm.validateTodayAttendanceDate();
+        if (MemberShell.currentTabNotifier.value == 2 && !vm.checkedInToday) {
+          _startScanner();
+        }
       }
     });
-    _scanLineController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 2),
-    )..repeat(reverse: true);
-    _requestCameraPermission();
   }
 
-  Future<void> _requestCameraPermission() async {
+  void _onTabNotifierChanged() {
+    final isNowActive = MemberShell.currentTabNotifier.value == 2;
+    if (isNowActive) {
+      final vm = Provider.of<MemberAppViewModel>(context, listen: false);
+      vm.validateTodayAttendanceDate();
+      if (!vm.checkedInToday) {
+        _startScanner();
+      }
+    } else {
+      _stopScanner();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant MemberScanQRScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isActive != widget.isActive) {
+      if (widget.isActive && MemberShell.currentTabNotifier.value == 2) {
+        final vm = Provider.of<MemberAppViewModel>(context, listen: false);
+        vm.validateTodayAttendanceDate();
+        if (!vm.checkedInToday) {
+          _startScanner();
+        }
+      } else {
+        _stopScanner();
+      }
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      if (MemberShell.currentTabNotifier.value == 2 && mounted) {
+        final vm = Provider.of<MemberAppViewModel>(context, listen: false);
+        if (!vm.checkedInToday) {
+          _startScanner();
+        }
+      }
+    } else if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused) {
+      _stopScanner();
+    }
+  }
+
+  Future<void> _startScanner() async {
+    if (_isCameraRunning || !mounted) return;
     try {
+      final vm = Provider.of<MemberAppViewModel>(context, listen: false);
+      if (vm.checkedInToday) return;
+
+      if (!_scanLineController.isAnimating) {
+        _scanLineController.repeat(reverse: true);
+      }
+
       var status = await Permission.camera.status;
       if (!status.isGranted) {
         status = await Permission.camera.request();
       }
-      if (status.isGranted) {
-        await Future.delayed(const Duration(milliseconds: 300));
-        try {
-          await _scannerController.start();
-        } catch (e) {
-          print('Scanner controller start error: $e');
-        }
+      if (status.isGranted && mounted && widget.isActive) {
+        await _scannerController.start();
+        _isCameraRunning = true;
       }
     } catch (e) {
-      print('Camera permission error: $e');
+      debugPrint('Scanner start error: $e');
+    }
+  }
+
+  Future<void> _stopScanner() async {
+    if (_scanLineController.isAnimating) {
+      _scanLineController.stop();
+    }
+    if (!_isCameraRunning) return;
+    try {
+      await _scannerController.stop();
+    } catch (e) {
+      debugPrint('Scanner stop error: $e');
+    } finally {
+      _isCameraRunning = false;
     }
   }
 
   @override
   void dispose() {
+    MemberShell.currentTabNotifier.removeListener(_onTabNotifierChanged);
+    WidgetsBinding.instance.removeObserver(this);
     _scanLineController.dispose();
     _scannerController.dispose();
     super.dispose();
@@ -69,12 +142,12 @@ class _MemberScanQRScreenState extends State<MemberScanQRScreen>
   @override
   Widget build(BuildContext context) {
     final vm = Provider.of<MemberAppViewModel>(context);
-    
-    // Automatically validate that checked-in state is still valid for today's date
-    vm.validateTodayAttendanceDate();
 
     // If already checked in today, show attendance summary instead of scanner
     if (vm.checkedInToday) {
+      if (_isCameraRunning) {
+        _stopScanner();
+      }
       return _buildAlreadyCheckedInScreen(vm);
     }
     

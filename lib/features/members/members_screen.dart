@@ -243,7 +243,7 @@ class _MembersScreenState extends State<MembersScreen> {
     final inactiveCount = membersVm.inactiveMembersCount;
     final trialCount = trialsVm.allTrials.length;
 
-    final checkInRecords = attendanceVm.attendanceHistory.where((r) => r.status == 'Present').length;
+    final checkInRecords = attendanceVm.todayRecords.where((r) => r.status == 'Present').length;
     final totalPending = membersVm.totalPendingAmount;
 
     return Scaffold(
@@ -449,6 +449,7 @@ class _MembersScreenState extends State<MembersScreen> {
               pinned: true,
               delegate: _MembersHeaderDelegate(
                 height: 56.0,
+                cacheKey: '${membersVm.selectedFilter}_${totalCount}_${activeCount}_${inactiveCount}_$trialCount',
                 child: SizedBox.expand(
                   child: Container(
                     color: AppTheme.background,
@@ -759,7 +760,7 @@ class _MembersScreenState extends State<MembersScreen> {
                     },
                     childCount: allMembers.length,
                     addRepaintBoundaries: true,
-                    addAutomaticKeepAlives: true,
+                    addAutomaticKeepAlives: false,
                   ),
                 ),
               ),
@@ -900,8 +901,9 @@ class _MembersScreenState extends State<MembersScreen> {
 class _MembersHeaderDelegate extends SliverPersistentHeaderDelegate {
   final double height;
   final Widget child;
+  final String cacheKey;
 
-  _MembersHeaderDelegate({required this.height, required this.child});
+  _MembersHeaderDelegate({required this.height, required this.child, required this.cacheKey});
 
   @override
   double get minExtent => height;
@@ -916,7 +918,7 @@ class _MembersHeaderDelegate extends SliverPersistentHeaderDelegate {
 
   @override
   bool shouldRebuild(covariant _MembersHeaderDelegate oldDelegate) {
-    return oldDelegate.height != height || oldDelegate.child != child;
+    return oldDelegate.height != height || oldDelegate.cacheKey != cacheKey;
   }
 }
 

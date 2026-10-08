@@ -2136,7 +2136,9 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
                 children: [
                   CircleAvatar(
                     radius: 40,
-                    backgroundImage: !AppCachedAvatar.isDummyUrl(member.avatar) ? NetworkImage(member.avatar) : null,
+                    backgroundImage: !AppCachedAvatar.isDummyUrl(member.avatar)
+                        ? ResizeImage(NetworkImage(member.avatar), width: 160, height: 160)
+                        : null,
                     backgroundColor: AppCachedAvatar.getColorPair(member.name).bg,
                     child: _isUploadingPhoto
                         ? const SizedBox(

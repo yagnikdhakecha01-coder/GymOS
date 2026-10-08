@@ -16,11 +16,13 @@ class MiniSparkline extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: width,
-      height: height,
-      child: CustomPaint(
-        painter: _SparklinePainter(data, color),
+    return RepaintBoundary(
+      child: SizedBox(
+        width: width,
+        height: height,
+        child: CustomPaint(
+          painter: _SparklinePainter(data, color),
+        ),
       ),
     );
   }
@@ -105,5 +107,11 @@ class _SparklinePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+  bool shouldRepaint(covariant _SparklinePainter oldDelegate) {
+    if (oldDelegate.color != color || oldDelegate.data.length != data.length) return true;
+    for (int i = 0; i < data.length; i++) {
+      if (oldDelegate.data[i] != data[i]) return true;
+    }
+    return false;
+  }
 }

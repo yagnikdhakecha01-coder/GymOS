@@ -79,17 +79,19 @@ class _SparklineChartState extends State<SparklineChart> {
                 _selectedIndex = null;
               });
             },
-            child: CustomPaint(
-              painter: _SparklineChartPainter(
-                data: widget.data,
-                labels: widget.labels,
-                lineColor: widget.lineColor,
-                maxVal: widget.maxVal,
-                customYValues: widget.customYValues,
-                yLabelFormatter: widget.yLabelFormatter,
-                tooltipIndex: activeTooltipIndex,
-                tooltipDate: activeTooltipDate,
-                tooltipValueFormatter: widget.tooltipValueFormatter,
+            child: RepaintBoundary(
+              child: CustomPaint(
+                painter: _SparklineChartPainter(
+                  data: widget.data,
+                  labels: widget.labels,
+                  lineColor: widget.lineColor,
+                  maxVal: widget.maxVal,
+                  customYValues: widget.customYValues,
+                  yLabelFormatter: widget.yLabelFormatter,
+                  tooltipIndex: activeTooltipIndex,
+                  tooltipDate: activeTooltipDate,
+                  tooltipValueFormatter: widget.tooltipValueFormatter,
+                ),
               ),
             ),
           );
@@ -354,5 +356,17 @@ class _SparklineChartPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+  bool shouldRepaint(covariant _SparklineChartPainter oldDelegate) {
+    if (oldDelegate.lineColor != lineColor ||
+        oldDelegate.tooltipIndex != tooltipIndex ||
+        oldDelegate.tooltipDate != tooltipDate ||
+        oldDelegate.data.length != data.length ||
+        oldDelegate.labels.length != labels.length) {
+      return true;
+    }
+    for (int i = 0; i < data.length; i++) {
+      if (oldDelegate.data[i] != data[i]) return true;
+    }
+    return false;
+  }
 }

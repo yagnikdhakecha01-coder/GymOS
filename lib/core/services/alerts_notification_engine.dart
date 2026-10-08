@@ -151,7 +151,8 @@ class AlertsNotificationEngine {
                 .from('notifications')
                 .select()
                 .eq('gym_id', gymId)
-                .order('created_at', ascending: false);
+                .order('created_at', ascending: false)
+                .limit(30);
 
             final matchingNotifs = allNotifs.where((n) {
               final targetRole = (n['target_role']?.toString() ?? '').toLowerCase();

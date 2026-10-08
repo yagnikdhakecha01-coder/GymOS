@@ -255,6 +255,7 @@ class _StaffScreenState extends State<StaffScreen> {
               pinned: true,
               delegate: _StaffHeaderDelegate(
                 height: 94.0,
+                cacheKey: '${staffVm.selectedFilter}_${staffVm.searchQuery}',
                 child: Container(
                   color: AppTheme.background,
                   padding: const EdgeInsets.only(top: 8),
@@ -402,7 +403,7 @@ class _StaffScreenState extends State<StaffScreen> {
                       },
                       childCount: sortedStaff.length,
                       addRepaintBoundaries: true,
-                      addAutomaticKeepAlives: true,
+                      addAutomaticKeepAlives: false,
                     ),
                   );
                 },
@@ -418,8 +419,9 @@ class _StaffScreenState extends State<StaffScreen> {
 class _StaffHeaderDelegate extends SliverPersistentHeaderDelegate {
   final Widget child;
   final double height;
+  final String cacheKey;
 
-  _StaffHeaderDelegate({required this.child, this.height = 92.0});
+  _StaffHeaderDelegate({required this.child, this.height = 92.0, required this.cacheKey});
 
   @override
   double get minExtent => height;
@@ -434,7 +436,7 @@ class _StaffHeaderDelegate extends SliverPersistentHeaderDelegate {
 
   @override
   bool shouldRebuild(covariant _StaffHeaderDelegate oldDelegate) {
-    return oldDelegate.child != child || oldDelegate.height != height;
+    return oldDelegate.height != height || oldDelegate.cacheKey != cacheKey;
   }
 }
 

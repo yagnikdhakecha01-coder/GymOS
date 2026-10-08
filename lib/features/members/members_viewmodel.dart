@@ -25,6 +25,11 @@ class MembersViewModel extends ChangeNotifier {
 
   List<Member>? _cachedFilteredMembers;
 
+  int _cachedActiveCount = 0;
+  int _cachedInactiveCount = 0;
+  double _cachedTotalPending = 0.0;
+  bool _countsDirty = true;
+
   MembersViewModel(this._repository) {
     fetchMembers();
     _repository.addListener(_onRepositoryChanged);
@@ -32,6 +37,7 @@ class MembersViewModel extends ChangeNotifier {
 
   void _onRepositoryChanged() {
     _cachedFilteredMembers = null;
+    _countsDirty = true;
     notifyListeners();
   }
 
@@ -45,6 +51,7 @@ class MembersViewModel extends ChangeNotifier {
     await _repository.fetchMembersFromSupabase();
     await _repository.fetchTransactionsFromSupabase();
     _cachedFilteredMembers = null;
+    _countsDirty = true;
     notifyListeners();
   }
 
@@ -58,6 +65,7 @@ class MembersViewModel extends ChangeNotifier {
     _selectedFilter = 'All';
     _sortOption = MemberSortOption.pendingFeesFirst;
     _cachedFilteredMembers = null;
+    _countsDirty = true;
     notifyListeners();
   }
 
@@ -68,9 +76,41 @@ class MembersViewModel extends ChangeNotifier {
 
   List<Member> get allMembers => _repository.getMembers();
 
-  int get activeMembersCount => allMembers.where((m) => m.status == 'Active').length;
-  int get inactiveMembersCount => allMembers.where((m) => m.status == 'Inactive').length;
-  double get totalPendingAmount => allMembers.fold<double>(0, (sum, m) => sum + m.pendingAmount);
+  void _recomputeCountsIfNeeded() {
+    if (!_countsDirty) return;
+    int active = 0;
+    int inactive = 0;
+    double pending = 0.0;
+    for (final m in allMembers) {
+      if (m.status == 'Active') {
+        active++;
+      } else if (m.status == 'Inactive') {
+        inactive++;
+      }
+      if (m.pendingAmount > 0) {
+        pending += m.pendingAmount;
+      }
+    }
+    _cachedActiveCount = active;
+    _cachedInactiveCount = inactive;
+    _cachedTotalPending = pending;
+    _countsDirty = false;
+  }
+
+  int get activeMembersCount {
+    _recomputeCountsIfNeeded();
+    return _cachedActiveCount;
+  }
+
+  int get inactiveMembersCount {
+    _recomputeCountsIfNeeded();
+    return _cachedInactiveCount;
+  }
+
+  double get totalPendingAmount {
+    _recomputeCountsIfNeeded();
+    return _cachedTotalPending;
+  }
 
   // Fast memoized filtered members list
   List<Member> get filteredMembers {

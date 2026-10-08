@@ -107,6 +107,7 @@ class MemberAppViewModel extends ChangeNotifier {
   int _absentDays = 0;
   int _lateDays = 0;
   List<int> _attendedDaysOfCurrentMonth = [];
+  Map<String, String> _attendanceMapByIsoDate = {};
 
   final List<Map<String, dynamic>> _attendanceHistory = [
     {'date': '17 May 2026', 'checkIn': '07:32 AM', 'checkOut': '09:00 AM', 'status': 'Present'},
@@ -272,6 +273,7 @@ class MemberAppViewModel extends ChangeNotifier {
   int get absentDays => _absentDays;
   int get lateDays => _lateDays;
   List<int> get attendedDaysOfCurrentMonth => _attendedDaysOfCurrentMonth;
+  Map<String, String> get attendanceMapByIsoDate => _attendanceMapByIsoDate;
   List<Map<String, dynamic>> get attendanceHistory => _attendanceHistory;
 
   String get currentQuote => _currentQuote;
@@ -522,14 +524,22 @@ class MemberAppViewModel extends ChangeNotifier {
         _attendanceHistory.addAll(decoded.map((e) => Map<String, dynamic>.from(e as Map)));
       } catch (_) {}
     }
-    _presentDays = prefs.getInt('member_cached_present_days') ?? 0;
-    _absentDays = prefs.getInt('member_cached_absent_days') ?? 0;
-    _lateDays = prefs.getInt('member_cached_late_days') ?? 0;
-    
+    final cachedAttMap = prefs.getString('member_cached_attendance_map');
+    if (cachedAttMap != null) {
+      try {
+        _attendanceMapByIsoDate = Map<String, String>.from(jsonDecode(cachedAttMap));
+      } catch (_) {}
+    }
+
     final cachedMonthDays = prefs.getStringList('member_cached_attended_days_curr_month');
     if (cachedMonthDays != null) {
       _attendedDaysOfCurrentMonth = cachedMonthDays.map((e) => int.parse(e)).toList();
     }
+    
+    // Present days is strictly the number of attended days in current month (never out-of-bounds)
+    _presentDays = _attendedDaysOfCurrentMonth.length;
+    _absentDays = prefs.getInt('member_cached_absent_days') ?? 0;
+    _lateDays = prefs.getInt('member_cached_late_days') ?? 0;
     
     // Calculate attendance percentage based on active present days
     final lastDay = DateTime(DateTime.now().year, DateTime.now().month + 1, 0).day;
@@ -648,20 +658,30 @@ class MemberAppViewModel extends ChangeNotifier {
 
   bool _isLoadingMemberData = false;
   Completer<void>? _loadingMemberDataCompleter;
+  DateTime? _lastMemberDataFetchTime;
 
-  Future<void> loadMemberDataFromSupabase() async {
+  Future<void> loadMemberDataFromSupabase({bool forceRefresh = false}) async {
+    if (!forceRefresh && _lastMemberDataFetchTime != null) {
+      final diff = DateTime.now().difference(_lastMemberDataFetchTime!);
+      if (diff < const Duration(seconds: 30)) {
+        return;
+      }
+    }
     if (_loadingMemberDataCompleter != null) {
       return _loadingMemberDataCompleter!.future;
     }
     _loadingMemberDataCompleter = Completer<void>();
     _isLoadingMemberData = true;
-    notifyListeners();
+    _lastMemberDataFetchTime = DateTime.now();
+
+    if (_memberName.isEmpty) {
+      notifyListeners();
+    }
     final prefs = await SharedPreferences.getInstance();
     try {
       if (!SupabaseService.isInitialized) return;
       final user = SupabaseService.client.auth.currentUser;
       if (user == null) return;
-
 
       final gymInfoStr = prefs.getString('gymos_gym_info');
       String? cachedGymId;
@@ -687,881 +707,847 @@ class MemberAppViewModel extends ChangeNotifier {
         _memberName = memberData['name'] ?? _memberName;
         _memberId = memberData['id'] ?? _memberId;
         _gymId = memberData['gym_id']?.toString() ?? cachedGymId ?? _gymId;
-        await prefs.setString('member_cached_id', _memberId);
-        await prefs.setString('member_cached_name', _memberName);
-        await prefs.setString('member_cached_gym_id', _gymId);
+        prefs.setString('member_cached_id', _memberId);
+        prefs.setString('member_cached_name', _memberName);
+        prefs.setString('member_cached_gym_id', _gymId);
         _memberAvatar = (memberData['avatar'] != null && memberData['avatar'].toString().isNotEmpty) 
             ? memberData['avatar'] 
             : _memberAvatar;
         final rawJoin = memberData['join_date']?.toString() ?? memberData['created_at']?.toString() ?? '';
         if (rawJoin.isNotEmpty) {
           _joinDate = rawJoin;
-          await prefs.setString('member_cached_join_date', rawJoin);
+          prefs.setString('member_cached_join_date', rawJoin);
         }
         _membershipStatus = memberData['status'] ?? _membershipStatus;
         _assignedWorkoutId = memberData['assigned_workout_id'] ?? '';
         _assignedDietId = memberData['assigned_diet_id'] ?? '';
+        _pendingAmount = (memberData['pending_amount'] as num?)?.toDouble() ?? 0.0;
 
-        if (_assignedWorkoutId.isNotEmpty) {
-          try {
-            final wData = await SupabaseService.client
-                .from('workout_plans')
-                .select('title, schedule')
-                .eq('id', _assignedWorkoutId)
-                .maybeSingle();
-            if (wData != null) {
-              _assignedWorkoutTitle = wData['title'] ?? '';
-              
-              // Determine today's muscle group/day type dynamically from schedule
-              dynamic rawSchedule = wData['schedule'];
-              if (rawSchedule is String && rawSchedule.isNotEmpty) {
-                try {
-                  rawSchedule = jsonDecode(rawSchedule);
-                } catch (_) {}
-              }
-              final todayName = DateFormat('EEEE').format(DateTime.now()); // e.g. 'Monday'
-              dynamic todayList;
-              if (rawSchedule is Map) {
-                todayList = rawSchedule[todayName];
-              }
-              if (todayList is List && todayList.isNotEmpty) {
-                final List<String> splits = [];
-                for (final item in todayList) {
-                  String splitTitle = '';
-                  if (item is Map) {
-                    splitTitle = item['title']?.toString() ?? '';
-                  } else if (item is String) {
-                    splitTitle = item;
-                  }
-                  if (splitTitle.trim().isNotEmpty) {
-                    splits.add(splitTitle.trim());
-                  }
-                }
-                _todaySplits = splits.isNotEmpty ? splits : ['Rest Day'];
-                _todayMuscleGroup = _todaySplits.join(' + ');
-              } else {
-                _todaySplits = ['Rest Day'];
-                _todayMuscleGroup = 'Rest Day';
-              }
-              await prefs.setString('member_cached_workout_title', _assignedWorkoutTitle);
-              await prefs.setString('member_cached_today_muscle', _todayMuscleGroup);
-              await prefs.setStringList('member_cached_today_splits', _todaySplits);
-            } else {
-              _assignedWorkoutTitle = '';
-              _todaySplits = ['Rest Day'];
-              _todayMuscleGroup = 'Rest Day';
-            }
-          } catch (_) {}
-        } else {
-          _assignedWorkoutTitle = '';
-          _todaySplits = ['Rest Day'];
-          _todayMuscleGroup = 'Rest Day';
-        }
-
-        final memberGymId = memberData['gym_id'];
-        if (memberGymId != null) {
-          _gymId = memberGymId.toString();
-          await prefs.setString('member_cached_gym_id', _gymId);
-          try {
-            final gymData = await SupabaseService.client
-                .from('gyms')
-                .select('name, logo_url')
-                .eq('id', memberGymId)
-                .maybeSingle();
-            if (gymData != null) {
-              if (gymData['name'] != null && gymData['name'].toString().isNotEmpty) {
-                _gymName = gymData['name'].toString();
-                await prefs.setString('member_cached_gym_name', _gymName);
-              }
-              if (gymData['logo_url'] != null && gymData['logo_url'].toString().isNotEmpty) {
-                _gymLogoUrl = gymData['logo_url'].toString();
-                await prefs.setString('member_cached_gym_logo', _gymLogoUrl);
-              }
-            }
-          } catch (_) {}
-
-          // Fetch attendance settings for the gym (e.g. Biometric vs Static/Dynamic QR)
-          try {
-            final attSettings = await SupabaseService.client
-                .from('attendance_settings')
-                .select('method, is_enabled')
-                .eq('gym_id', memberGymId)
-                .maybeSingle();
-            if (attSettings != null) {
-              _attendanceMethod = attSettings['method']?.toString() ?? 'Static QR';
-              _isAttendanceEnabled = attSettings['is_enabled'] != false;
-              await prefs.setString('member_cached_attendance_method', _attendanceMethod);
-              await prefs.setBool('member_cached_attendance_enabled', _isAttendanceEnabled);
-            }
-          } catch (_) {}
-
-          // Also check for owner's customized rules in gym_rules
-          try {
-            final rulesData = await SupabaseService.client
-                .from('gym_rules')
-                .select('version, rules_data, is_active')
-                .eq('gym_id', memberGymId)
-                .maybeSingle();
-            if (rulesData != null && rulesData['is_active'] == true) {
-              _currentRulesVersion = rulesData['version'] is int ? rulesData['version'] : 1;
-              if (rulesData['rules_data'] is List) {
-                _customRulesData = rulesData['rules_data'] as List<dynamic>;
-              } else if (rulesData['rules_data'] is String) {
-                try {
-                  _customRulesData = jsonDecode(rulesData['rules_data']);
-                } catch (_) {}
-              }
-            }
-          } catch (_) {}
-        }
-
-        if (_assignedDietId.isNotEmpty) {
-          try {
-            final dData = await SupabaseService.client
-                .from('diet_plans')
-                .select()
-                .eq('id', _assignedDietId)
-                .maybeSingle();
-            if (dData != null) {
-              _assignedDietPlan = DietPlan.fromJson(Map<String, dynamic>.from(dData));
-              _assignedDietTitle = _assignedDietPlan!.title;
-              await prefs.setString('member_cached_diet_plan_json', jsonEncode(dData));
-              await prefs.setString('member_cached_diet_title', _assignedDietTitle);
-            }
-          } catch (_) {}
-        }
-
-        // Fallback: If member does not have assigned diet or not found, fetch gym's default diet plan
-        if (_assignedDietPlan == null && gymId != null) {
-          try {
-            final List gymDiets = await SupabaseService.client
-                .from('diet_plans')
-                .select()
-                .eq('gym_id', gymId)
-                .limit(1);
-            if (gymDiets.isNotEmpty) {
-              final firstDiet = Map<String, dynamic>.from(gymDiets.first as Map);
-              _assignedDietPlan = DietPlan.fromJson(firstDiet);
-              _assignedDietTitle = _assignedDietPlan!.title;
-              await prefs.setString('member_cached_diet_plan_json', jsonEncode(firstDiet));
-              await prefs.setString('member_cached_diet_title', _assignedDietTitle);
-            }
-          } catch (_) {}
-        }
-
-        if (_assignedDietPlan == null) {
-          _assignedDietTitle = '';
-        }
-
-        // Keep local storage synchronized for roles and gym ID so GymRepository works correctly
-        // CRITICAL: Only set gymos_user_role and gymos_gym_info if active role is explicitly member or empty.
-        // NEVER overwrite an active owner or staff session!
         final currentRole = prefs.getString('gymos_user_role');
         if (currentRole == null || currentRole.isEmpty || currentRole == 'member') {
-          await prefs.setString('gymos_user_role', 'member');
-          if (gymId.isNotEmpty) {
-            await prefs.setString('gymos_gym_info', jsonEncode({
-              'id': gymId,
+          prefs.setString('gymos_user_role', 'member');
+          if (_gymId.isNotEmpty) {
+            prefs.setString('gymos_gym_info', jsonEncode({
+              'id': _gymId,
               'name': _gymName,
             }));
           }
         }
 
-        // Fetch latest active membership from member_memberships
-        try {
-          final membershipData = await SupabaseService.client
-              .from('member_memberships')
-              .select('*, membership_plans(title, duration_months)')
-              .eq('member_id', _memberId)
-              .order('end_date', ascending: false)
-              .limit(1)
-              .maybeSingle();
-
-          if (membershipData != null) {
-            final planData = membershipData['membership_plans'];
-            if (planData != null) {
-              _membershipPlan = planData['title'] ?? _membershipPlan;
-              final durationMonths = planData['duration_months'] ?? 1;
-              _planDuration = '$durationMonths Month${durationMonths > 1 ? 's' : ''}';
-            }
-            
+        // Subtask 1: Assigned Workout Plan
+        Future<void> fetchWorkoutPlanTask() async {
+          if (_assignedWorkoutId.isNotEmpty) {
             try {
-              final startDate = DateTime.parse(membershipData['start_date']);
-              _membershipStartDate = DateFormat('dd MMM yyyy').format(startDate);
-            } catch (_) {
-              _membershipStartDate = membershipData['start_date'] ?? _membershipStartDate;
-            }
-            
-            _membershipEndDate = membershipData['end_date'] ?? _membershipEndDate;
-            
-            final paidAmount = membershipData['paid_amount'] ?? 0;
-            _amountPaid = '₹$paidAmount';
-            
-            try {
-              final endDate = DateTime.parse(_membershipEndDate);
-              final today = DateTime.now();
-              final difference = DateTime(endDate.year, endDate.month, endDate.day)
-                  .difference(DateTime(today.year, today.month, today.day))
-                  .inDays;
-              _membershipDaysLeft = difference > 0 ? difference : 0;
-              await prefs.setInt('member_cached_days_left', _membershipDaysLeft);
-              await prefs.setString('member_cached_days_timestamp', DateTime.now().toIso8601String());
-            } catch (_) {
-              _membershipDaysLeft = 0;
-            }
-            
-            try {
-              final endDate = DateTime.parse(_membershipEndDate);
-              final nextDue = endDate.add(const Duration(days: 1));
-              _nextDue = DateFormat('dd MMM yyyy').format(nextDue);
-              _membershipEndDate = DateFormat('dd MMM yyyy').format(endDate);
-            } catch (_) {
-              _nextDue = _membershipEndDate;
-            }
-            
-            _membershipStatus = _membershipDaysLeft > 0 ? 'Active' : 'Expired';
-          } else {
-            // Fallback to legacy single plan configuration
-            final planId = memberData['membership_plan_id'];
-            if (planId != null && planId.toString().isNotEmpty) {
-              final planData = await SupabaseService.client
-                  .from('membership_plans')
-                  .select('title, price, duration_months')
-                  .eq('id', planId)
+              final wData = await SupabaseService.client
+                  .from('workout_plans')
+                  .select('title, schedule')
+                  .eq('id', _assignedWorkoutId)
                   .maybeSingle();
+              if (wData != null) {
+                _assignedWorkoutTitle = wData['title'] ?? '';
+                dynamic rawSchedule = wData['schedule'];
+                if (rawSchedule is String && rawSchedule.isNotEmpty) {
+                  try {
+                    rawSchedule = jsonDecode(rawSchedule);
+                  } catch (_) {}
+                }
+                final todayName = DateFormat('EEEE').format(DateTime.now());
+                dynamic todayList;
+                if (rawSchedule is Map) {
+                  todayList = rawSchedule[todayName];
+                }
+                if (todayList is List && todayList.isNotEmpty) {
+                  final List<String> splits = [];
+                  for (final item in todayList) {
+                    String splitTitle = '';
+                    if (item is Map) {
+                      splitTitle = item['title']?.toString() ?? '';
+                    } else if (item is String) {
+                      splitTitle = item;
+                    }
+                    if (splitTitle.trim().isNotEmpty) {
+                      splits.add(splitTitle.trim());
+                    }
+                  }
+                  _todaySplits = splits.isNotEmpty ? splits : ['Rest Day'];
+                  _todayMuscleGroup = _todaySplits.join(' + ');
+                } else {
+                  _todaySplits = ['Rest Day'];
+                  _todayMuscleGroup = 'Rest Day';
+                }
+                prefs.setString('member_cached_workout_title', _assignedWorkoutTitle);
+                prefs.setString('member_cached_today_muscle', _todayMuscleGroup);
+                prefs.setStringList('member_cached_today_splits', _todaySplits);
+              } else {
+                _assignedWorkoutTitle = '';
+                _todaySplits = ['Rest Day'];
+                _todayMuscleGroup = 'Rest Day';
+              }
+            } catch (_) {}
+          } else {
+            _assignedWorkoutTitle = '';
+            _todaySplits = ['Rest Day'];
+            _todayMuscleGroup = 'Rest Day';
+          }
+        }
+
+        // Subtask 2: Gym Details & Settings
+        Future<void> fetchGymDetailsTask() async {
+          final memberGymId = memberData['gym_id'];
+          if (memberGymId != null) {
+            _gymId = memberGymId.toString();
+            prefs.setString('member_cached_gym_id', _gymId);
+            try {
+              final gymData = await SupabaseService.client
+                  .from('gyms')
+                  .select('name, logo_url')
+                  .eq('id', memberGymId)
+                  .maybeSingle();
+              if (gymData != null) {
+                if (gymData['name'] != null && gymData['name'].toString().isNotEmpty) {
+                  _gymName = gymData['name'].toString();
+                  prefs.setString('member_cached_gym_name', _gymName);
+                }
+                if (gymData['logo_url'] != null && gymData['logo_url'].toString().isNotEmpty) {
+                  _gymLogoUrl = gymData['logo_url'].toString();
+                  prefs.setString('member_cached_gym_logo', _gymLogoUrl);
+                }
+              }
+            } catch (_) {}
+
+            try {
+              final attSettings = await SupabaseService.client
+                  .from('attendance_settings')
+                  .select('method, is_enabled')
+                  .eq('gym_id', memberGymId)
+                  .maybeSingle();
+              if (attSettings != null) {
+                _attendanceMethod = attSettings['method']?.toString() ?? 'Static QR';
+                _isAttendanceEnabled = attSettings['is_enabled'] != false;
+                prefs.setString('member_cached_attendance_method', _attendanceMethod);
+                prefs.setBool('member_cached_attendance_enabled', _isAttendanceEnabled);
+              }
+            } catch (_) {}
+
+            try {
+              final rulesData = await SupabaseService.client
+                  .from('gym_rules')
+                  .select('version, rules_data, is_active')
+                  .eq('gym_id', memberGymId)
+                  .maybeSingle();
+              if (rulesData != null && rulesData['is_active'] == true) {
+                _currentRulesVersion = rulesData['version'] is int ? rulesData['version'] : 1;
+                if (rulesData['rules_data'] is List) {
+                  _customRulesData = rulesData['rules_data'] as List<dynamic>;
+                } else if (rulesData['rules_data'] is String) {
+                  try {
+                    _customRulesData = jsonDecode(rulesData['rules_data']);
+                  } catch (_) {}
+                }
+              }
+            } catch (_) {}
+          }
+        }
+
+        // Subtask 3: Diet Plan
+        Future<void> fetchDietPlanTask() async {
+          if (_assignedDietId.isNotEmpty) {
+            try {
+              final dData = await SupabaseService.client
+                  .from('diet_plans')
+                  .select()
+                  .eq('id', _assignedDietId)
+                  .maybeSingle();
+              if (dData != null) {
+                _assignedDietPlan = DietPlan.fromJson(Map<String, dynamic>.from(dData));
+                _assignedDietTitle = _assignedDietPlan!.title;
+                prefs.setString('member_cached_diet_plan_json', jsonEncode(dData));
+                prefs.setString('member_cached_diet_title', _assignedDietTitle);
+              }
+            } catch (_) {}
+          }
+
+          final currentGymId = memberData['gym_id']?.toString() ?? cachedGymId;
+          if (_assignedDietPlan == null && currentGymId != null) {
+            try {
+              final List gymDiets = await SupabaseService.client
+                  .from('diet_plans')
+                  .select()
+                  .eq('gym_id', currentGymId)
+                  .limit(1);
+              if (gymDiets.isNotEmpty) {
+                final firstDiet = Map<String, dynamic>.from(gymDiets.first as Map);
+                _assignedDietPlan = DietPlan.fromJson(firstDiet);
+                _assignedDietTitle = _assignedDietPlan!.title;
+                prefs.setString('member_cached_diet_plan_json', jsonEncode(firstDiet));
+                prefs.setString('member_cached_diet_title', _assignedDietTitle);
+              }
+            } catch (_) {}
+          }
+
+          if (_assignedDietPlan == null) {
+            _assignedDietTitle = '';
+          }
+        }
+
+        // Subtask 4: Memberships & Payments
+        Future<void> fetchMembershipAndPaymentsTask() async {
+          try {
+            final membershipData = await SupabaseService.client
+                .from('member_memberships')
+                .select('*, membership_plans(title, duration_months)')
+                .eq('member_id', _memberId)
+                .order('end_date', ascending: false)
+                .limit(1)
+                .maybeSingle();
+
+            if (membershipData != null) {
+              final planData = membershipData['membership_plans'];
               if (planData != null) {
                 _membershipPlan = planData['title'] ?? _membershipPlan;
                 final durationMonths = planData['duration_months'] ?? 1;
                 _planDuration = '$durationMonths Month${durationMonths > 1 ? 's' : ''}';
-                final price = planData['price'] ?? 0;
-                _amountPaid = '₹$price';
               }
-            }
-          }
-        } catch (e) {
-          print('Error loading member_memberships: $e');
-        }
-
-        // Fetch real payment history from database (strictly deduplicated)
-        final Map<String, Map<String, dynamic>> dedupedPaymentsMap = {};
-        final Set<String> processedMembershipIds = {};
-
-        List<dynamic>? membershipsList;
-        try {
-          membershipsList = await SupabaseService.client
-              .from('member_memberships')
-              .select('id, start_date, total_amount, paid_amount, payment_status, membership_plans(title)')
-              .eq('member_id', _memberId)
-              .order('start_date', ascending: false);
-        } catch (e) {
-          print('Error loading member_memberships for payments: $e');
-        }
-
-        // 1. Fetch official revenue finance transactions for this member
-        try {
-          final financeData = await SupabaseService.client
-              .from('finance_transactions')
-              .select('id, amount, transaction_date, revenue_date, created_at, notes')
-              .eq('reference_id', _memberId)
-              .eq('type', 'Revenue')
-              .order('created_at', ascending: false);
-
-          if (financeData != null && financeData.isNotEmpty) {
-            for (var tx in financeData) {
-              final amtVal = tx['amount'];
-              if (amtVal == null || (amtVal is num && amtVal <= 0)) continue;
-              final rawDate = tx['revenue_date'] ?? tx['transaction_date'] ?? tx['created_at'];
-              final pDate = DateTime.tryParse(rawDate?.toString() ?? '') ?? DateTime.now();
-              final formattedDate = DateFormat('dd MMM yyyy').format(pDate);
-              final amtNum = (amtVal is num) ? amtVal.toDouble() : double.tryParse(amtVal.toString()) ?? 0.0;
-              final amtStr = '₹${amtNum.toStringAsFixed(0)}';
-              final txId = tx['id']?.toString() ?? '';
-              final shortCode = txId.replaceAll('-', '').substring(0, 4).toUpperCase();
-              final invoiceNum = 'INV-${pDate.year}-$shortCode';
-              final uniqueKey = '${pDate.year}-${pDate.month}-${pDate.day}_${amtNum.toStringAsFixed(0)}_$shortCode';
-
-              if (!dedupedPaymentsMap.containsKey(uniqueKey) && !dedupedPaymentsMap.containsKey(invoiceNum)) {
-                dedupedPaymentsMap[invoiceNum] = {
-                  'invoice': invoiceNum,
-                  'date': formattedDate,
-                  'amount': amtStr,
-                  'status': 'Paid',
-                  'raw_date': pDate,
-                  'tx_id': txId,
-                };
+              try {
+                final startDate = DateTime.parse(membershipData['start_date']);
+                _membershipStartDate = DateFormat('dd MMM yyyy').format(startDate);
+              } catch (_) {
+                _membershipStartDate = membershipData['start_date'] ?? _membershipStartDate;
               }
-            }
-          }
-        } catch (e) {
-          print('Error loading finance transactions for payments: $e');
-        }
-
-        // 2. Fetch explicit membership payments
-        if (membershipsList != null && membershipsList.isNotEmpty) {
-          final membershipIds = membershipsList.map((m) => m['id'].toString()).toList();
-          try {
-            final paymentsData = await SupabaseService.client
-                .from('membership_payments')
-                .select('id, amount, payment_date, member_membership_id')
-                .inFilter('member_membership_id', membershipIds)
-                .order('payment_date', ascending: false);
-
-            if (paymentsData != null && paymentsData.isNotEmpty) {
-              for (var pay in paymentsData) {
-                final mId = pay['member_membership_id']?.toString() ?? '';
-                processedMembershipIds.add(mId);
-                final amtVal = pay['amount'];
-                if (amtVal == null || (amtVal is num && amtVal <= 0)) continue;
-                final pDate = DateTime.tryParse(pay['payment_date'] ?? '') ?? DateTime.now();
-                final formattedDate = DateFormat('dd MMM yyyy').format(pDate);
-                final amtNum = (amtVal is num) ? amtVal.toDouble() : double.tryParse(amtVal.toString()) ?? 0.0;
-                final amtStr = '₹${amtNum.toStringAsFixed(0)}';
-                final payId = pay['id']?.toString() ?? '';
-                final shortCode = payId.replaceAll('-', '').substring(0, 4).toUpperCase();
-                final invoiceNum = 'INV-${pDate.year}-$shortCode';
-
-                // Skip if already captured from finance_transactions
-                bool alreadyInFinance = dedupedPaymentsMap.values.any((item) =>
-                    item['amount'] == amtStr && item['date'] == formattedDate);
-
-                if (!alreadyInFinance && !dedupedPaymentsMap.containsKey(invoiceNum)) {
-                  dedupedPaymentsMap[invoiceNum] = {
-                    'invoice': invoiceNum,
-                    'date': formattedDate,
-                    'amount': amtStr,
-                    'status': 'Paid',
-                    'raw_date': pDate,
-                    'tx_id': payId,
-                  };
+              _membershipEndDate = membershipData['end_date'] ?? _membershipEndDate;
+              final paidAmount = membershipData['paid_amount'] ?? 0;
+              _amountPaid = '₹$paidAmount';
+              try {
+                final endDate = DateTime.parse(_membershipEndDate);
+                final today = DateTime.now();
+                final difference = DateTime(endDate.year, endDate.month, endDate.day)
+                    .difference(DateTime(today.year, today.month, today.day))
+                    .inDays;
+                _membershipDaysLeft = difference > 0 ? difference : 0;
+                prefs.setInt('member_cached_days_left', _membershipDaysLeft);
+                prefs.setString('member_cached_days_timestamp', DateTime.now().toIso8601String());
+              } catch (_) {
+                _membershipDaysLeft = 0;
+              }
+              try {
+                final endDate = DateTime.parse(_membershipEndDate);
+                final nextDue = endDate.add(const Duration(days: 1));
+                _nextDue = DateFormat('dd MMM yyyy').format(nextDue);
+                _membershipEndDate = DateFormat('dd MMM yyyy').format(endDate);
+              } catch (_) {
+                _nextDue = _membershipEndDate;
+              }
+              _membershipStatus = _membershipDaysLeft > 0 ? 'Active' : 'Expired';
+            } else {
+              final planId = memberData['membership_plan_id'];
+              if (planId != null && planId.toString().isNotEmpty) {
+                final planData = await SupabaseService.client
+                    .from('membership_plans')
+                    .select('title, price, duration_months')
+                    .eq('id', planId)
+                    .maybeSingle();
+                if (planData != null) {
+                  _membershipPlan = planData['title'] ?? _membershipPlan;
+                  final durationMonths = planData['duration_months'] ?? 1;
+                  _planDuration = '$durationMonths Month${durationMonths > 1 ? 's' : ''}';
+                  final price = planData['price'] ?? 0;
+                  _amountPaid = '₹$price';
                 }
               }
             }
-          } catch (e) {
-            print('Error loading membership_payments: $e');
-          }
-        }
+          } catch (_) {}
 
-        // 3. Fallback for memberships that have paid_amount > 0 but no explicit payment records
-        if (membershipsList != null) {
-          for (var mship in membershipsList) {
-            final mId = mship['id'].toString();
-            final paidAmount = (mship['paid_amount'] as num?)?.toDouble() ?? 0.0;
-            
-            if (!processedMembershipIds.contains(mId) && paidAmount > 0) {
-              final pDate = DateTime.tryParse(mship['start_date'] ?? '') ?? DateTime.now();
-              final formattedDate = DateFormat('dd MMM yyyy').format(pDate);
-              final amtStr = '₹${paidAmount.toStringAsFixed(0)}';
-              final shortCode = mId.replaceAll('-', '').substring(0, 4).toUpperCase();
-              final invoiceNum = 'INV-${pDate.year}-$shortCode';
-
-              // Skip if already captured from finance_transactions or membership_payments
-              bool alreadyCaptured = dedupedPaymentsMap.values.any((item) =>
-                  item['amount'] == amtStr && item['date'] == formattedDate);
-
-              if (!alreadyCaptured && !dedupedPaymentsMap.containsKey(invoiceNum)) {
-                final statusStr = mship['payment_status']?.toString() ?? 'Paid';
-                dedupedPaymentsMap[invoiceNum] = {
-                  'invoice': invoiceNum,
-                  'date': formattedDate,
-                  'amount': amtStr,
-                  'status': statusStr == 'Fully Paid' ? 'Paid' : statusStr,
-                  'raw_date': pDate,
-                  'tx_id': mId,
-                };
-              }
-            }
-          }
-        }
-
-        // Atomically replace _paymentHistory with sorted unique entries
-        final sortedList = dedupedPaymentsMap.values.toList()
-          ..sort((a, b) {
-            final da = a['raw_date'] as DateTime? ?? DateTime(2000);
-            final db = b['raw_date'] as DateTime? ?? DateTime(2000);
-            return db.compareTo(da);
-          });
-        _paymentHistory.clear();
-        _paymentHistory.addAll(sortedList);
-
-        // Fetch workout logs for the last 30 days and clean up old ones
-        try {
-          final thirtyDaysAgo = DateTime.now().subtract(const Duration(days: 30));
-          final cutoffDateIso = DateFormat('yyyy-MM-dd').format(thirtyDaysAgo);
-          
-          // Delete logs older than 30 days from database
+          // Payments deduping
           try {
-            await SupabaseService.client
-                .from('member_workout_logs')
-                .delete()
-                .eq('member_id', _memberId)
-                .lt('date', cutoffDateIso);
-          } catch (deleteErr) {
-            print('Error purging old workout logs: $deleteErr');
-          }
+            final Map<String, Map<String, dynamic>> dedupedPaymentsMap = {};
+            final Set<String> processedMembershipIds = {};
 
-          // Fetch recent logs
-          final dbLogs = await SupabaseService.client
-              .from('member_workout_logs')
-              .select('date, muscle, status')
-              .eq('member_id', _memberId)
-              .gte('date', cutoffDateIso)
-              .order('date', ascending: false);
+            List<dynamic>? membershipsList;
+            try {
+              membershipsList = await SupabaseService.client
+                  .from('member_memberships')
+                  .select('id, start_date, total_amount, paid_amount, payment_status, membership_plans(title)')
+                  .eq('member_id', _memberId)
+                  .order('start_date', ascending: false);
+            } catch (_) {}
 
-          if (dbLogs != null) {
-            final Map<String, Map<String, dynamic>> dbLogsMap = {};
-            for (var log in dbLogs) {
-              dbLogsMap[log['date']] = log;
-            }
+            try {
+              final financeData = await SupabaseService.client
+                  .from('finance_transactions')
+                  .select('id, amount, transaction_date, revenue_date, created_at, notes')
+                  .eq('reference_id', _memberId)
+                  .eq('type', 'Revenue')
+                  .order('created_at', ascending: false);
 
-            // Get assigned workout plan schedule
-            dynamic rawSchedule;
-            if (_assignedWorkoutId.isNotEmpty) {
+              if (financeData != null && financeData.isNotEmpty) {
+                for (var tx in financeData) {
+                  final amtVal = tx['amount'];
+                  if (amtVal == null || (amtVal is num && amtVal <= 0)) continue;
+                  final rawDate = tx['revenue_date'] ?? tx['transaction_date'] ?? tx['created_at'];
+                  final pDate = DateTime.tryParse(rawDate?.toString() ?? '') ?? DateTime.now();
+                  final formattedDate = DateFormat('dd MMM yyyy').format(pDate);
+                  final amtNum = (amtVal is num) ? amtVal.toDouble() : double.tryParse(amtVal.toString()) ?? 0.0;
+                  final amtStr = '₹${amtNum.toStringAsFixed(0)}';
+                  final txId = tx['id']?.toString() ?? '';
+                  final shortCode = txId.replaceAll('-', '').substring(0, 4).toUpperCase();
+                  final invoiceNum = 'INV-${pDate.year}-$shortCode';
+                  final uniqueKey = '${pDate.year}-${pDate.month}-${pDate.day}_${amtNum.toStringAsFixed(0)}_$shortCode';
+
+                  if (!dedupedPaymentsMap.containsKey(uniqueKey) && !dedupedPaymentsMap.containsKey(invoiceNum)) {
+                    dedupedPaymentsMap[invoiceNum] = {
+                      'invoice': invoiceNum,
+                      'date': formattedDate,
+                      'amount': amtStr,
+                      'status': 'Paid',
+                      'raw_date': pDate,
+                      'tx_id': txId,
+                    };
+                  }
+                }
+              }
+            } catch (_) {}
+
+            if (membershipsList != null && membershipsList.isNotEmpty) {
+              final membershipIds = membershipsList.map((m) => m['id'].toString()).toList();
               try {
-                final wPlan = await SupabaseService.client
-                    .from('workout_plans')
-                    .select('schedule')
-                    .eq('id', _assignedWorkoutId)
-                    .maybeSingle();
-                if (wPlan != null) {
-                  rawSchedule = wPlan['schedule'];
-                  if (rawSchedule is String && rawSchedule.isNotEmpty) {
-                    try {
-                      rawSchedule = jsonDecode(rawSchedule);
-                    } catch (_) {}
+                final paymentsData = await SupabaseService.client
+                    .from('membership_payments')
+                    .select('id, amount, payment_date, member_membership_id')
+                    .inFilter('member_membership_id', membershipIds)
+                    .order('payment_date', ascending: false);
+
+                if (paymentsData != null && paymentsData.isNotEmpty) {
+                  for (var pay in paymentsData) {
+                    final mId = pay['member_membership_id']?.toString() ?? '';
+                    processedMembershipIds.add(mId);
+                    final amtVal = pay['amount'];
+                    if (amtVal == null || (amtVal is num && amtVal <= 0)) continue;
+                    final pDate = DateTime.tryParse(pay['payment_date'] ?? '') ?? DateTime.now();
+                    final formattedDate = DateFormat('dd MMM yyyy').format(pDate);
+                    final amtNum = (amtVal is num) ? amtVal.toDouble() : double.tryParse(amtVal.toString()) ?? 0.0;
+                    final amtStr = '₹${amtNum.toStringAsFixed(0)}';
+                    final payId = pay['id']?.toString() ?? '';
+                    final shortCode = payId.replaceAll('-', '').substring(0, 4).toUpperCase();
+                    final invoiceNum = 'INV-${pDate.year}-$shortCode';
+
+                    bool alreadyInFinance = dedupedPaymentsMap.values.any((item) =>
+                        item['amount'] == amtStr && item['date'] == formattedDate);
+
+                    if (!alreadyInFinance && !dedupedPaymentsMap.containsKey(invoiceNum)) {
+                      dedupedPaymentsMap[invoiceNum] = {
+                        'invoice': invoiceNum,
+                        'date': formattedDate,
+                        'amount': amtStr,
+                        'status': 'Paid',
+                        'raw_date': pDate,
+                        'tx_id': payId,
+                      };
+                    }
                   }
                 }
               } catch (_) {}
             }
 
-            final List<Map<String, dynamic>> newHistory = [];
+            if (membershipsList != null) {
+              for (var mship in membershipsList) {
+                final mId = mship['id'].toString();
+                final paidAmount = (mship['paid_amount'] as num?)?.toDouble() ?? 0.0;
+                if (!processedMembershipIds.contains(mId) && paidAmount > 0) {
+                  final pDate = DateTime.tryParse(mship['start_date'] ?? '') ?? DateTime.now();
+                  final formattedDate = DateFormat('dd MMM yyyy').format(pDate);
+                  final amtStr = '₹${paidAmount.toStringAsFixed(0)}';
+                  final shortCode = mId.replaceAll('-', '').substring(0, 4).toUpperCase();
+                  final invoiceNum = 'INV-${pDate.year}-$shortCode';
 
-            for (int i = 1; i <= 30; i++) {
-              final pastDate = DateTime.now().subtract(Duration(days: i));
-              final pastDateIso = DateFormat('yyyy-MM-dd').format(pastDate);
-              final pastDateFormatted = DateFormat('dd MMM yyyy').format(pastDate);
+                  bool alreadyCaptured = dedupedPaymentsMap.values.any((item) =>
+                      item['amount'] == amtStr && item['date'] == formattedDate);
 
-              // Determine muscle group for this day
-              final dayName = DateFormat('EEEE').format(pastDate);
-              dynamic dayList;
-              if (rawSchedule is Map) {
-                dayList = rawSchedule[dayName];
-              }
-              String muscle = 'Rest Day';
-              if (dayList is List && dayList.isNotEmpty) {
-                final firstVal = dayList.first;
-                if (firstVal is Map) {
-                  muscle = firstVal['title']?.toString() ?? 'Rest Day';
-                } else {
-                  muscle = firstVal?.toString() ?? 'Rest Day';
+                  if (!alreadyCaptured && !dedupedPaymentsMap.containsKey(invoiceNum)) {
+                    final statusStr = mship['payment_status']?.toString() ?? 'Paid';
+                    dedupedPaymentsMap[invoiceNum] = {
+                      'invoice': invoiceNum,
+                      'date': formattedDate,
+                      'amount': amtStr,
+                      'status': statusStr == 'Fully Paid' ? 'Paid' : statusStr,
+                      'raw_date': pDate,
+                      'tx_id': mId,
+                    };
+                  }
                 }
               }
+            }
 
-              if (dbLogsMap.containsKey(pastDateIso)) {
-                final dbLog = dbLogsMap[pastDateIso]!;
-                newHistory.add({
-                  'date': pastDateFormatted,
-                  'muscle': dbLog['muscle'] ?? muscle,
-                  'status': dbLog['status'] ?? 'Completed',
-                });
-              } else {
-                // Day changed, and they didn't complete it: save it in DB as 'Not Done'!
+            final sortedList = dedupedPaymentsMap.values.toList()
+              ..sort((a, b) {
+                final da = a['raw_date'] as DateTime? ?? DateTime(2000);
+                final db = b['raw_date'] as DateTime? ?? DateTime(2000);
+                return db.compareTo(da);
+              });
+            _paymentHistory.clear();
+            _paymentHistory.addAll(sortedList);
+          } catch (_) {}
+        }
+
+        // Subtask 5: Workout Logs (Last 30 Days)
+        Future<void> fetchWorkoutLogsTask() async {
+          try {
+            final thirtyDaysAgo = DateTime.now().subtract(const Duration(days: 30));
+            final cutoffDateIso = DateFormat('yyyy-MM-dd').format(thirtyDaysAgo);
+
+            final dbLogs = await SupabaseService.client
+                .from('member_workout_logs')
+                .select('date, muscle, status')
+                .eq('member_id', _memberId)
+                .gte('date', cutoffDateIso)
+                .order('date', ascending: false);
+
+            if (dbLogs != null) {
+              final Map<String, Map<String, dynamic>> dbLogsMap = {};
+              for (var log in dbLogs) {
+                dbLogsMap[log['date']] = log;
+              }
+
+              dynamic rawSchedule;
+              if (_assignedWorkoutId.isNotEmpty) {
                 try {
-                  await SupabaseService.client.from('member_workout_logs').insert({
-                    'gym_id': memberData['gym_id'],
-                    'member_id': _memberId,
-                    'date': pastDateIso,
+                  final wPlan = await SupabaseService.client
+                      .from('workout_plans')
+                      .select('schedule')
+                      .eq('id', _assignedWorkoutId)
+                      .maybeSingle();
+                  if (wPlan != null) {
+                    rawSchedule = wPlan['schedule'];
+                    if (rawSchedule is String && rawSchedule.isNotEmpty) {
+                      try {
+                        rawSchedule = jsonDecode(rawSchedule);
+                      } catch (_) {}
+                    }
+                  }
+                } catch (_) {}
+              }
+
+              final List<Map<String, dynamic>> newHistory = [];
+              for (int i = 1; i <= 30; i++) {
+                final pastDate = DateTime.now().subtract(Duration(days: i));
+                final pastDateIso = DateFormat('yyyy-MM-dd').format(pastDate);
+                final pastDateFormatted = DateFormat('dd MMM yyyy').format(pastDate);
+
+                final dayName = DateFormat('EEEE').format(pastDate);
+                dynamic dayList;
+                if (rawSchedule is Map) {
+                  dayList = rawSchedule[dayName];
+                }
+                String muscle = 'Rest Day';
+                if (dayList is List && dayList.isNotEmpty) {
+                  final firstVal = dayList.first;
+                  if (firstVal is Map) {
+                    muscle = firstVal['title']?.toString() ?? 'Rest Day';
+                  } else {
+                    muscle = firstVal?.toString() ?? 'Rest Day';
+                  }
+                }
+
+                if (dbLogsMap.containsKey(pastDateIso)) {
+                  final dbLog = dbLogsMap[pastDateIso]!;
+                  newHistory.add({
+                    'date': pastDateFormatted,
+                    'muscle': dbLog['muscle'] ?? muscle,
+                    'status': dbLog['status'] ?? 'Completed',
+                  });
+                } else {
+                  newHistory.add({
+                    'date': pastDateFormatted,
                     'muscle': muscle,
                     'status': 'Not Done',
                   });
-                } catch (_) {}
-
-                newHistory.add({
-                  'date': pastDateFormatted,
-                  'muscle': muscle,
-                  'status': 'Not Done',
-                });
-              }
-            }
-
-            _trainingHistory.clear();
-            _trainingHistory.addAll(newHistory);
-            await prefs.setString('member_training_history', jsonEncode(_trainingHistory));
-          }
-        } catch (e) {
-          print('Error syncing training history: $e');
-        }
-
-        final extra = memberData['extra_fields'] as Map<String, dynamic>? ?? {};
-        if (extra['weight'] != null && extra['weight'].toString().trim().isNotEmpty) {
-          final w = extra['weight'].toString().trim();
-          _weight = w.endsWith('kg') ? w : '$w kg';
-        } else {
-          _weight = '';
-        }
-        if (extra['height'] != null && extra['height'].toString().trim().isNotEmpty) {
-          final h = extra['height'].toString().trim();
-          _height = h.endsWith('cm') ? h : '$h cm';
-        } else {
-          _height = '';
-        }
-        if ((extra['body_fat'] != null && extra['body_fat'].toString().trim().isNotEmpty) ||
-            (extra['bodyFat'] != null && extra['bodyFat'].toString().trim().isNotEmpty)) {
-          final bf = (extra['body_fat'] ?? extra['bodyFat']).toString().trim();
-          _bodyFat = bf.endsWith('%') ? bf : '$bf%';
-        } else {
-          _bodyFat = '';
-        }
-        if (extra['fitness_goal'] != null && extra['fitness_goal'].toString().trim().isNotEmpty) {
-          _fitnessGoal = extra['fitness_goal'].toString().trim();
-        } else if (extra['fitnessGoal'] != null && extra['fitnessGoal'].toString().trim().isNotEmpty) {
-          _fitnessGoal = extra['fitnessGoal'].toString().trim();
-        } else {
-          _fitnessGoal = '';
-        }
-
-        // Fetch latest weight and body fat from member_body_logs table
-        try {
-          final latestBodyLog = await SupabaseService.client
-              .from('member_body_logs')
-              .select('weight_kg, body_fat_pct')
-              .eq('member_id', _memberId)
-              .order('logged_date', ascending: false)
-              .limit(1)
-              .maybeSingle();
-          if (latestBodyLog != null) {
-            if (latestBodyLog['weight_kg'] != null && latestBodyLog['weight_kg'].toString().trim().isNotEmpty) {
-              _weight = '${latestBodyLog['weight_kg']} kg';
-            }
-            if (latestBodyLog['body_fat_pct'] != null && latestBodyLog['body_fat_pct'].toString().trim().isNotEmpty) {
-              _bodyFat = '${latestBodyLog['body_fat_pct']}%';
-            }
-          }
-        } catch (_) {}
-
-        _pendingAmount = (memberData['pending_amount'] as num?)?.toDouble() ?? 0.0;
-
-        // Fetch current week's attendance checklist & streak directly from Supabase RPC
-        try {
-          final streakRes = await SupabaseService.client.rpc(
-            'get_member_attendance_streak_v1',
-            params: {
-              'p_user_id': user.id,
-              'p_gym_id': memberData['gym_id'] ?? '',
-            },
-          );
-
-          if (streakRes != null && streakRes is Map) {
-            _currentStreak = streakRes['current_streak'] ?? 0;
-            _lastStreak = streakRes['last_streak'] ?? 0;
-            
-            final weekAtt = streakRes['week_attendance'] as List?;
-            if (weekAtt != null) {
-              _weekAttendance = weekAtt.map((val) => val == true).toList();
-            }
-            
-            final weekDts = streakRes['week_dates'] as List?;
-            if (weekDts != null) {
-              _weekDates = weekDts.map((val) => (val as num).toInt()).toList();
-            }
-          }
-          
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setInt('member_current_streak', _currentStreak);
-        } catch (e) {
-          print('Error loading member streak from DB: $e');
-        }
-
-        // Fetch current month's attendance logs
-        try {
-          final now = DateTime.now();
-          final startOfMonth = DateTime(now.year, now.month, 1).toIso8601String();
-
-          final monthLogs = await SupabaseService.client
-              .from('attendance_logs')
-              .select('check_in, status')
-              .eq('user_id', user.id)
-              .gte('check_in', startOfMonth);
-
-          final Set<int> attendedDays = {};
-          for (var log in monthLogs) {
-            final checkInStr = log['check_in'] as String?;
-            final status = log['status'] as String?;
-            if (checkInStr != null && status != 'Absent' && status != 'Leave' && status != 'On Leave') {
-              final checkInDate = DateTime.parse(checkInStr).toLocal();
-              if (checkInDate.year == now.year && checkInDate.month == now.month) {
-                attendedDays.add(checkInDate.day);
-              }
-            }
-          }
-          _attendedDaysOfCurrentMonth = attendedDays.toList();
-          _presentDays = _attendedDaysOfCurrentMonth.length;
-          await prefs.setString('member_cached_attendance_days', jsonEncode(_attendedDaysOfCurrentMonth));
-
-          // Calculate attendance percentage based on total operational days (excluding Sundays) in current month
-          int totalGymDays = 0;
-          final lastDay = DateTime(now.year, now.month + 1, 0).day;
-          for (int i = 1; i <= lastDay; i++) {
-            if (DateTime(now.year, now.month, i).weekday != DateTime.sunday) {
-              totalGymDays++;
-            }
-          }
-          _attendancePercentage = totalGymDays > 0 ? ((_presentDays / totalGymDays) * 100).round() : 0;
-        } catch (e) {
-          print('Error loading month attendance logs: $e');
-        }
-
-        // Fetch gamification profile
-        try {
-          final gamificationRes = await SupabaseService.client.rpc(
-            'get_member_gamification_profile',
-            params: {'p_user_id': user.id},
-          );
-          if (gamificationRes != null && gamificationRes is Map) {
-            final profile = Map<String, dynamic>.from(gamificationRes as Map);
-            _currentLevel = profile['current_level'] ?? 1;
-            _currentTitle = profile['current_title'] ?? '🌱 New Member';
-            _currentXP = profile['current_xp'] ?? 0;
-            _nextLevelXP = profile['required_xp'] ?? 100;
-            
-            // Map achievements/badges from DB
-            final badgesList = profile['badges'] as List?;
-            if (badgesList != null) {
-              _achievements.clear();
-              for (var badge in badgesList) {
-                final Map<String, dynamic> bMap = Map<String, dynamic>.from(badge as Map);
-                final key = bMap['key']?.toString() ?? '';
-                final isUnlocked = bMap['is_unlocked'] == true;
-                final progress = bMap['current_progress'] ?? 0;
-                final target = bMap['target_value'] ?? 1;
-                final reward = bMap['xp_reward'] ?? 100;
-                
-                final details = _badgeDisplayDetails(key);
-                _achievements.add({
-                  'key': key,
-                  'title': details['title'],
-                  'description': details['description'],
-                  'requirement': details['requirement'],
-                  'icon': details['icon'],
-                  'color': details['color'],
-                  'unlocked': isUnlocked,
-                  'progress': progress,
-                  'target': target,
-                  'xp_reward': reward,
-                });
+                }
               }
 
-              // Sort achievements: Unlocked badges FIRST, Locked badges SECOND
-              _achievements.sort((a, b) {
-                final aUnlocked = a['unlocked'] == true ? 0 : 1;
-                final bUnlocked = b['unlocked'] == true ? 0 : 1;
-                return aUnlocked.compareTo(bUnlocked);
-              });
+              _trainingHistory.clear();
+              _trainingHistory.addAll(newHistory);
+              prefs.setString('member_training_history', jsonEncode(_trainingHistory));
             }
-          }
-        } catch (e) {
-          print('Error loading gamification profile: $e');
+          } catch (_) {}
         }
 
-        // Fetch declared holidays from public.holidays for gym
-        try {
-          final gymIdVal = memberData['gym_id'];
-          if (gymIdVal != null) {
-            final holidaysRes = await SupabaseService.client
-                .from('holidays')
-                .select('holiday_date, date')
-                .eq('gym_id', gymIdVal);
-            final Set<String> hDates = {};
-            for (var h in holidaysRes) {
-              final dStr = h['holiday_date']?.toString() ?? h['date']?.toString() ?? '';
-              if (dStr.isNotEmpty) hDates.add(dStr);
-            }
-            _declaredHolidays = hDates.toList();
-            await prefs.setStringList('member_declared_holidays', _declaredHolidays);
-          }
-        } catch (e) {
-          print('Error loading declared holidays: $e');
-        }
-
-        // Fetch today's daily wellness logs (water, calories, protein)
-        try {
-          final todayStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
-          final logData = await SupabaseService.client
-              .from('member_daily_logs')
-              .select()
-              .eq('member_id', _memberId)
-              .eq('date', todayStr)
-              .maybeSingle();
-
-          if (logData != null) {
-            _waterIntake = (logData['water_intake'] as num?)?.toDouble() ?? _waterIntake;
-            _waterGoal = (logData['water_goal'] as num?)?.toDouble() ?? _waterGoal;
-            _caloriesIntake = (logData['calories_intake'] as num?)?.toInt() ?? _caloriesIntake;
-            _caloriesGoal = (logData['calories_goal'] as num?)?.toInt() ?? _caloriesGoal;
-            _proteinIntake = (logData['protein_intake'] as num?)?.toInt() ?? _proteinIntake;
-            _proteinGoal = (logData['protein_goal'] as num?)?.toInt() ?? _proteinGoal;
+        // Subtask 6: Body Stats
+        Future<void> fetchBodyStatsTask() async {
+          final extra = memberData['extra_fields'] as Map<String, dynamic>? ?? {};
+          if (extra['weight'] != null && extra['weight'].toString().trim().isNotEmpty) {
+            final w = extra['weight'].toString().trim();
+            _weight = w.endsWith('kg') ? w : '$w kg';
           } else {
-            // First time today: reset daily counters and try inserting a row on database
-            _waterIntake = 0.0;
-            _caloriesIntake = 0;
-            _proteinIntake = 0;
+            _weight = '';
+          }
+          if (extra['height'] != null && extra['height'].toString().trim().isNotEmpty) {
+            final h = extra['height'].toString().trim();
+            _height = h.endsWith('cm') ? h : '$h cm';
+          } else {
+            _height = '';
+          }
+          if ((extra['body_fat'] != null && extra['body_fat'].toString().trim().isNotEmpty) ||
+              (extra['bodyFat'] != null && extra['bodyFat'].toString().trim().isNotEmpty)) {
+            final bf = (extra['body_fat'] ?? extra['bodyFat']).toString().trim();
+            _bodyFat = bf.endsWith('%') ? bf : '$bf%';
+          } else {
+            _bodyFat = '';
+          }
+          if (extra['fitness_goal'] != null && extra['fitness_goal'].toString().trim().isNotEmpty) {
+            _fitnessGoal = extra['fitness_goal'].toString().trim();
+          } else if (extra['fitnessGoal'] != null && extra['fitnessGoal'].toString().trim().isNotEmpty) {
+            _fitnessGoal = extra['fitnessGoal'].toString().trim();
+          } else {
+            _fitnessGoal = '';
+          }
 
+          try {
+            final latestBodyLog = await SupabaseService.client
+                .from('member_body_logs')
+                .select('weight_kg, body_fat_pct')
+                .eq('member_id', _memberId)
+                .order('logged_date', ascending: false)
+                .limit(1)
+                .maybeSingle();
+            if (latestBodyLog != null) {
+              if (latestBodyLog['weight_kg'] != null && latestBodyLog['weight_kg'].toString().trim().isNotEmpty) {
+                _weight = '${latestBodyLog['weight_kg']} kg';
+              }
+              if (latestBodyLog['body_fat_pct'] != null && latestBodyLog['body_fat_pct'].toString().trim().isNotEmpty) {
+                _bodyFat = '${latestBodyLog['body_fat_pct']}%';
+              }
+            }
+          } catch (_) {}
+        }
+
+        // Subtask 7: Attendance Streak RPC
+        Future<void> fetchStreakTask() async {
+          try {
+            final streakRes = await SupabaseService.client.rpc(
+              'get_member_attendance_streak_v1',
+              params: {
+                'p_user_id': user.id,
+                'p_gym_id': memberData['gym_id'] ?? '',
+              },
+            );
+
+            if (streakRes != null && streakRes is Map) {
+              _currentStreak = streakRes['current_streak'] ?? 0;
+              _lastStreak = streakRes['last_streak'] ?? 0;
+              final weekAtt = streakRes['week_attendance'] as List?;
+              if (weekAtt != null) {
+                _weekAttendance = weekAtt.map((val) => val == true).toList();
+              }
+              final weekDts = streakRes['week_dates'] as List?;
+              if (weekDts != null) {
+                _weekDates = weekDts.map((val) => (val as num).toInt()).toList();
+              }
+            }
+            prefs.setInt('member_current_streak', _currentStreak);
+          } catch (_) {}
+        }
+
+        // Subtask 8: Gamification Profile RPC
+        Future<void> fetchGamificationTask() async {
+          try {
+            final gamificationRes = await SupabaseService.client.rpc(
+              'get_member_gamification_profile',
+              params: {'p_user_id': user.id},
+            );
+            if (gamificationRes != null && gamificationRes is Map) {
+              final profile = Map<String, dynamic>.from(gamificationRes as Map);
+              _currentLevel = profile['current_level'] ?? 1;
+              _currentTitle = profile['current_title'] ?? '🌱 New Member';
+              _currentXP = profile['current_xp'] ?? 0;
+              _nextLevelXP = profile['required_xp'] ?? 100;
+
+              final badgesList = profile['badges'] as List?;
+              if (badgesList != null) {
+                _achievements.clear();
+                for (var badge in badgesList) {
+                  final Map<String, dynamic> bMap = Map<String, dynamic>.from(badge as Map);
+                  final key = bMap['key']?.toString() ?? '';
+                  final isUnlocked = bMap['is_unlocked'] == true;
+                  final progress = bMap['current_progress'] ?? 0;
+                  final target = bMap['target_value'] ?? 1;
+                  final reward = bMap['xp_reward'] ?? 100;
+                  final details = _badgeDisplayDetails(key);
+                  _achievements.add({
+                    'key': key,
+                    'title': details['title'],
+                    'description': details['description'],
+                    'requirement': details['requirement'],
+                    'icon': details['icon'],
+                    'color': details['color'],
+                    'unlocked': isUnlocked,
+                    'progress': progress,
+                    'target': target,
+                    'xp_reward': reward,
+                  });
+                }
+                _achievements.sort((a, b) {
+                  final aUnlocked = a['unlocked'] == true ? 0 : 1;
+                  final bUnlocked = b['unlocked'] == true ? 0 : 1;
+                  return aUnlocked.compareTo(bUnlocked);
+                });
+              }
+            }
+          } catch (_) {}
+        }
+
+        // Subtask 9: Holidays
+        Future<void> fetchHolidaysTask() async {
+          try {
             final gymIdVal = memberData['gym_id'];
             if (gymIdVal != null) {
-              await SupabaseService.client.from('member_daily_logs').insert({
-                'member_id': _memberId,
-                'gym_id': gymIdVal,
-                'date': todayStr,
-                'water_intake': _waterIntake,
-                'water_goal': _waterGoal,
-                'calories_intake': _caloriesIntake,
-                'calories_goal': _caloriesGoal,
-                'protein_intake': _proteinIntake,
-                'protein_goal': _proteinGoal,
-              });
+              final holidaysRes = await SupabaseService.client
+                  .from('holidays')
+                  .select('holiday_date, date')
+                  .eq('gym_id', gymIdVal);
+              final Set<String> hDates = {};
+              for (var h in holidaysRes) {
+                final dStr = h['holiday_date']?.toString() ?? h['date']?.toString() ?? '';
+                if (dStr.isNotEmpty) hDates.add(dStr);
+              }
+              _declaredHolidays = hDates.toList();
+              prefs.setStringList('member_declared_holidays', _declaredHolidays);
             }
-          }
-
-          await prefs.setDouble('member_cached_water_intake', _waterIntake);
-          await prefs.setDouble('member_cached_water_goal', _waterGoal);
-          await prefs.setInt('member_cached_calories_intake', _caloriesIntake);
-          await prefs.setInt('member_cached_calories_goal', _caloriesGoal);
-          await prefs.setInt('member_cached_protein_intake', _proteinIntake);
-          await prefs.setInt('member_cached_protein_goal', _proteinGoal);
-        } catch (e) {
-          print('Error loading member daily logs: $e');
+          } catch (_) {}
         }
 
-        // Fetch attendance logs for member
-        try {
-          final attendanceData = await SupabaseService.client
-              .from('attendance_logs')
-              .select('date, check_in, check_out, status')
-              .eq('member_id', _memberId)
-              .order('date', ascending: false)
-              .limit(50);
+        // Subtask 10: Daily Wellness Logs
+        Future<void> fetchDailyWellnessTask() async {
+          try {
+            final todayStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
+            final logData = await SupabaseService.client
+                .from('member_daily_logs')
+                .select()
+                .eq('member_id', _memberId)
+                .eq('date', todayStr)
+                .maybeSingle();
 
-          if (attendanceData != null) {
-            _attendanceHistory.clear();
-            _presentDays = 0;
-            _absentDays = 0;
-            _lateDays = 0;
-            _attendedDaysOfCurrentMonth.clear();
-            
-            final now = DateTime.now();
-            final todayIso = DateFormat('yyyy-MM-dd').format(now);
-            bool markedTodayInDb = false;
-            String todayTimeInDb = '';
-            String todayDateInDb = '';
-
-            for (var row in attendanceData) {
-              final status = row['status']?.toString() ?? 'Present';
-              if (status == 'Present') _presentDays++;
-              if (status == 'Absent') _absentDays++;
-              if (status == 'Late') _lateDays++;
-
-              final rawDateStr = row['date']?.toString() ?? '';
-              DateTime? parsedDate;
-              if (rawDateStr.isNotEmpty) {
-                try {
-                  parsedDate = DateTime.parse(rawDateStr);
-                } catch (_) {}
+            if (logData != null) {
+              _waterIntake = (logData['water_intake'] as num?)?.toDouble() ?? _waterIntake;
+              _waterGoal = (logData['water_goal'] as num?)?.toDouble() ?? _waterGoal;
+              _caloriesIntake = (logData['calories_intake'] as num?)?.toInt() ?? _caloriesIntake;
+              _caloriesGoal = (logData['calories_goal'] as num?)?.toInt() ?? _caloriesGoal;
+              _proteinIntake = (logData['protein_intake'] as num?)?.toInt() ?? _proteinIntake;
+              _proteinGoal = (logData['protein_goal'] as num?)?.toInt() ?? _proteinGoal;
+            } else {
+              _waterIntake = 0.0;
+              _caloriesIntake = 0;
+              _proteinIntake = 0;
+              final gymIdVal = memberData['gym_id'];
+              if (gymIdVal != null) {
+                await SupabaseService.client.from('member_daily_logs').insert({
+                  'member_id': _memberId,
+                  'gym_id': gymIdVal,
+                  'date': todayStr,
+                  'water_intake': _waterIntake,
+                  'water_goal': _waterGoal,
+                  'calories_intake': _caloriesIntake,
+                  'calories_goal': _caloriesGoal,
+                  'protein_intake': _proteinIntake,
+                  'protein_goal': _proteinGoal,
+                });
               }
+            }
+            prefs.setDouble('member_cached_water_intake', _waterIntake);
+            prefs.setDouble('member_cached_water_goal', _waterGoal);
+            prefs.setInt('member_cached_calories_intake', _caloriesIntake);
+            prefs.setInt('member_cached_calories_goal', _caloriesGoal);
+            prefs.setInt('member_cached_protein_intake', _proteinIntake);
+            prefs.setInt('member_cached_protein_goal', _proteinGoal);
+          } catch (_) {}
+        }
 
-              if (parsedDate != null && parsedDate.month == now.month && parsedDate.year == now.year) {
-                if (status == 'Present' || status == 'Late') {
-                  _attendedDaysOfCurrentMonth.add(parsedDate.day);
-                }
-              }
+        // Subtask 11: Attendance History & Status
+        Future<void> fetchAttendanceHistoryTask() async {
+          try {
+            final authUid = SupabaseService.client.auth.currentUser?.id ?? '';
+            var attQuery = SupabaseService.client
+                .from('attendance_logs')
+                .select('date, check_in, check_out, status');
+            if (_memberId.isNotEmpty && authUid.isNotEmpty) {
+              attQuery = attQuery.or('member_id.eq.$_memberId,user_id.eq.$authUid');
+            } else if (_memberId.isNotEmpty) {
+              attQuery = attQuery.eq('member_id', _memberId);
+            } else if (authUid.isNotEmpty) {
+              attQuery = attQuery.eq('user_id', authUid);
+            }
 
-              // Determine if this row is for today
-              final rawCheckIn = row['check_in']?.toString() ?? '';
-              bool isRowToday = false;
-              if (rawDateStr.startsWith(todayIso)) {
-                isRowToday = true;
-              } else if (rawCheckIn.isNotEmpty) {
-                try {
-                  final dt = DateTime.parse(rawCheckIn).toLocal();
-                  if (DateFormat('yyyy-MM-dd').format(dt) == todayIso) {
-                    isRowToday = true;
+            final attendanceData = await attQuery
+                .order('date', ascending: false)
+                .limit(50);
+
+            if (attendanceData.isNotEmpty) {
+              _attendanceHistory.clear();
+              _attendanceMapByIsoDate.clear();
+              _attendedDaysOfCurrentMonth.clear();
+              int currentMonthAbsent = 0;
+              int currentMonthLate = 0;
+
+              final now = DateTime.now();
+              final todayIso = DateFormat('yyyy-MM-dd').format(now);
+              bool markedTodayInDb = false;
+              String todayTimeInDb = '';
+              String todayDateInDb = '';
+
+              for (var row in attendanceData) {
+                final status = row['status']?.toString() ?? 'Present';
+                final rawDateStr = row['date']?.toString() ?? '';
+                final rawCheckIn = row['check_in']?.toString() ?? '';
+                final rawCheckOut = row['check_out']?.toString() ?? '';
+
+                DateTime? parsedDate;
+                if (rawDateStr.isNotEmpty) {
+                  try {
+                    parsedDate = DateTime.parse(rawDateStr);
+                  } catch (_) {
+                    try {
+                      parsedDate = DateFormat('dd-MM-yyyy').parse(rawDateStr);
+                    } catch (_) {}
                   }
-                } catch (_) {}
-              }
+                } else if (rawCheckIn.isNotEmpty) {
+                  try {
+                    parsedDate = DateTime.parse(rawCheckIn).toLocal();
+                  } catch (_) {}
+                }
 
-              if (isRowToday && status != 'Absent' && status != 'Leave' && status != 'On Leave') {
-                markedTodayInDb = true;
+                if (parsedDate != null) {
+                  final isoDateStr = DateFormat('yyyy-MM-dd').format(parsedDate);
+                  _attendanceMapByIsoDate[isoDateStr] = status;
+
+                  if (parsedDate.month == now.month && parsedDate.year == now.year) {
+                    final isSun = parsedDate.weekday == DateTime.sunday;
+                    final isDecHol = _declaredHolidays.any((h) => h.startsWith(isoDateStr));
+                    if (!isSun && !isDecHol && (status == 'Present' || status == 'Late' || status == 'Early Exit' || status == 'Overtime')) {
+                      if (!_attendedDaysOfCurrentMonth.contains(parsedDate.day)) {
+                        _attendedDaysOfCurrentMonth.add(parsedDate.day);
+                      }
+                    } else if (status == 'Absent') {
+                      currentMonthAbsent++;
+                    } else if (status == 'Late') {
+                      currentMonthLate++;
+                    }
+                  }
+                }
+
+                bool isRowToday = false;
+                if (rawDateStr.startsWith(todayIso)) {
+                  isRowToday = true;
+                } else if (rawCheckIn.isNotEmpty) {
+                  try {
+                    final dt = DateTime.parse(rawCheckIn).toLocal();
+                    if (DateFormat('yyyy-MM-dd').format(dt) == todayIso) {
+                      isRowToday = true;
+                    }
+                  } catch (_) {}
+                }
+
+                if (isRowToday && status != 'Absent' && status != 'Leave' && status != 'On Leave') {
+                  markedTodayInDb = true;
+                  if (rawCheckIn.isNotEmpty) {
+                    try {
+                      todayTimeInDb = DateFormat('hh:mm a').format(DateTime.parse(rawCheckIn).toLocal());
+                    } catch (_) {
+                      todayTimeInDb = rawCheckIn;
+                    }
+                  }
+                  todayDateInDb = DateFormat('dd-MM-yyyy').format(now);
+                }
+
+                String displayDate = 'Unknown Date';
+                if (parsedDate != null) {
+                  displayDate = DateFormat('dd MMM yyyy').format(parsedDate);
+                }
+
+                String checkInTime = '—';
                 if (rawCheckIn.isNotEmpty) {
                   try {
-                    todayTimeInDb = DateFormat('hh:mm a').format(DateTime.parse(rawCheckIn).toLocal());
+                    checkInTime = DateFormat('hh:mm a').format(DateTime.parse(rawCheckIn).toLocal());
                   } catch (_) {
-                    todayTimeInDb = rawCheckIn;
+                    checkInTime = rawCheckIn;
                   }
                 }
-                todayDateInDb = DateFormat('dd-MM-yyyy').format(now);
+
+                String checkOutTime = '—';
+                if (rawCheckOut.isNotEmpty) {
+                  try {
+                    checkOutTime = DateFormat('hh:mm a').format(DateTime.parse(rawCheckOut).toLocal());
+                  } catch (_) {
+                    checkOutTime = rawCheckOut;
+                  }
+                }
+
+                _attendanceHistory.add({
+                  'date': displayDate,
+                  'isoDate': parsedDate != null ? DateFormat('yyyy-MM-dd').format(parsedDate) : '',
+                  'checkIn': checkInTime,
+                  'checkOut': checkOutTime,
+                  'status': status,
+                });
               }
 
-              String displayDate = 'Unknown Date';
-              if (parsedDate != null) {
-                displayDate = DateFormat('dd MMM yyyy').format(parsedDate);
+              // Present days is strictly for current month (never 50/27)
+              _presentDays = _attendedDaysOfCurrentMonth.length;
+              _absentDays = currentMonthAbsent;
+              _lateDays = currentMonthLate;
+
+              if (markedTodayInDb) {
+                _checkedInToday = true;
+                _checkInTime = todayTimeInDb.isNotEmpty ? todayTimeInDb : (_checkInTime.isNotEmpty ? _checkInTime : DateFormat('hh:mm a').format(now));
+                _checkInDate = todayDateInDb.isNotEmpty ? todayDateInDb : DateFormat('dd-MM-yyyy').format(now);
+                _checkInDateIso = todayIso;
+                prefs.setBool('member_checked_in_today', true);
+                prefs.setString('member_check_in_time', _checkInTime);
+                prefs.setString('member_check_in_date', _checkInDate);
+                prefs.setString('member_check_in_date_iso', todayIso);
+              } else {
+                _checkedInToday = false;
+                _checkInTime = '';
+                _checkInDate = '';
+                _checkInDateIso = '';
+                prefs.setBool('member_checked_in_today', false);
+                prefs.remove('member_check_in_time');
+                prefs.remove('member_check_in_date');
+                prefs.remove('member_check_in_date_iso');
               }
 
-              String checkInTime = '—';
-              if (rawCheckIn.isNotEmpty) {
-                try {
-                  checkInTime = DateFormat('hh:mm a').format(DateTime.parse(rawCheckIn));
-                } catch (_) {
-                  checkInTime = rawCheckIn;
+              // Attendance % calculation
+              int totalGymDays = 0;
+              final lastDay = DateTime(now.year, now.month + 1, 0).day;
+              for (int i = 1; i <= lastDay; i++) {
+                if (DateTime(now.year, now.month, i).weekday != DateTime.sunday) {
+                  totalGymDays++;
                 }
               }
+              _attendancePercentage = totalGymDays > 0 ? ((_presentDays / totalGymDays) * 100).round() : 0;
 
-              String checkOutTime = '—';
-              final rawCheckOut = row['check_out']?.toString() ?? '';
-              if (rawCheckOut.isNotEmpty) {
-                try {
-                  checkOutTime = DateFormat('hh:mm a').format(DateTime.parse(rawCheckOut));
-                } catch (_) {
-                  checkOutTime = rawCheckOut;
-                }
-              }
-
-              _attendanceHistory.add({
-                'date': displayDate,
-                'checkIn': checkInTime,
-                'checkOut': checkOutTime,
-                'status': status,
-              });
+              prefs.setString('member_cached_attendance_history', jsonEncode(_attendanceHistory));
+              prefs.setInt('member_cached_present_days', _presentDays);
+              prefs.setInt('member_cached_absent_days', _absentDays);
+              prefs.setInt('member_cached_late_days', _lateDays);
+              prefs.setStringList('member_cached_attended_days_curr_month', _attendedDaysOfCurrentMonth.map((e) => e.toString()).toList());
+              prefs.setString('member_cached_attendance_days', jsonEncode(_attendedDaysOfCurrentMonth));
+              prefs.setString('member_cached_attendance_map', jsonEncode(_attendanceMapByIsoDate));
             }
-
-            // Sync today's attendance flag with actual logs
-            if (markedTodayInDb) {
-              _checkedInToday = true;
-              _checkInTime = todayTimeInDb.isNotEmpty ? todayTimeInDb : (_checkInTime.isNotEmpty ? _checkInTime : DateFormat('hh:mm a').format(now));
-              _checkInDate = todayDateInDb.isNotEmpty ? todayDateInDb : DateFormat('dd-MM-yyyy').format(now);
-              _checkInDateIso = todayIso;
-              await prefs.setBool('member_checked_in_today', true);
-              await prefs.setString('member_check_in_time', _checkInTime);
-              await prefs.setString('member_check_in_date', _checkInDate);
-              await prefs.setString('member_check_in_date_iso', todayIso);
-            } else {
-              // Not marked today: reset check in state so QR scanner is available
-              _checkedInToday = false;
-              _checkInTime = '';
-              _checkInDate = '';
-              _checkInDateIso = '';
-              await prefs.setBool('member_checked_in_today', false);
-              await prefs.remove('member_check_in_time');
-              await prefs.remove('member_check_in_date');
-              await prefs.remove('member_check_in_date_iso');
-            }
-            
-            await prefs.setString('member_cached_attendance_history', jsonEncode(_attendanceHistory));
-            await prefs.setInt('member_cached_present_days', _presentDays);
-            await prefs.setInt('member_cached_absent_days', _absentDays);
-            await prefs.setInt('member_cached_late_days', _lateDays);
-            await prefs.setStringList('member_cached_attended_days_curr_month', _attendedDaysOfCurrentMonth.map((e) => e.toString()).toList());
-          }
-        } catch (e) {
-          print('Error loading member attendance logs: $e');
+          } catch (_) {}
         }
+
+        // Run all independent queries in parallel via Future.wait
+        await Future.wait([
+          fetchWorkoutPlanTask(),
+          fetchGymDetailsTask(),
+          fetchDietPlanTask(),
+          fetchMembershipAndPaymentsTask(),
+          fetchWorkoutLogsTask(),
+          fetchBodyStatsTask(),
+          fetchStreakTask(),
+          fetchGamificationTask(),
+          fetchHolidaysTask(),
+          fetchDailyWellnessTask(),
+          fetchAttendanceHistoryTask(),
+        ]);
 
         // Setup Realtime listener for member row updates
         try {
@@ -1591,16 +1577,12 @@ class MemberAppViewModel extends ChangeNotifier {
                 },
               );
           _memberSubscription?.subscribe();
-        } catch (e) {
-          print('Error setting up Realtime member subscription: $e');
-        }
+        } catch (_) {}
 
         _isMemberCodeVerified = true;
         _isLoggedIn = true;
 
         await checkRulesAgreementStatus();
-
-        notifyListeners();
       } else {
         clearAllDataInMemory();
       }
@@ -1616,6 +1598,191 @@ class MemberAppViewModel extends ChangeNotifier {
     }
   }
 
+  /// Fast, targeted attendance refresh without reloading the entire member profile
+  Future<void> fetchAttendanceOnly() async {
+    final authUid = SupabaseService.client.auth.currentUser?.id ?? '';
+    if (_memberId.isEmpty && authUid.isEmpty) return;
+
+    try {
+      final now = DateTime.now();
+
+      // Refresh declared holidays if gymId available
+      if (_gymId.isNotEmpty) {
+        try {
+          final holidaysRes = await SupabaseService.client
+              .from('holidays')
+              .select('holiday_date, date')
+              .eq('gym_id', _gymId);
+          final Set<String> hDates = {};
+          for (var h in holidaysRes) {
+            final dStr = h['holiday_date']?.toString() ?? h['date']?.toString() ?? '';
+            if (dStr.isNotEmpty) hDates.add(dStr);
+          }
+          _declaredHolidays = hDates.toList();
+          final prefs = await SharedPreferences.getInstance();
+          prefs.setStringList('member_declared_holidays', _declaredHolidays);
+        } catch (_) {}
+      }
+
+      var attQuery = SupabaseService.client
+          .from('attendance_logs')
+          .select('date, check_in, check_out, status');
+      if (_memberId.isNotEmpty && authUid.isNotEmpty) {
+        attQuery = attQuery.or('member_id.eq.$_memberId,user_id.eq.$authUid');
+      } else if (_memberId.isNotEmpty) {
+        attQuery = attQuery.eq('member_id', _memberId);
+      } else if (authUid.isNotEmpty) {
+        attQuery = attQuery.eq('user_id', authUid);
+      }
+
+      final attendanceData = await attQuery
+          .order('date', ascending: false)
+          .limit(50);
+
+      if (attendanceData.isNotEmpty) {
+        _attendanceHistory.clear();
+        _attendanceMapByIsoDate.clear();
+        _attendedDaysOfCurrentMonth.clear();
+        int currentMonthAbsent = 0;
+        int currentMonthLate = 0;
+
+        final todayIso = DateFormat('yyyy-MM-dd').format(now);
+        bool markedTodayInDb = false;
+        String todayTimeInDb = '';
+        String todayDateInDb = '';
+
+        for (var row in attendanceData) {
+          final status = row['status']?.toString() ?? 'Present';
+          final rawDateStr = row['date']?.toString() ?? '';
+          final rawCheckIn = row['check_in']?.toString() ?? '';
+          final rawCheckOut = row['check_out']?.toString() ?? '';
+
+          DateTime? parsedDate;
+          if (rawDateStr.isNotEmpty) {
+            try {
+              parsedDate = DateTime.parse(rawDateStr);
+            } catch (_) {
+              try {
+                parsedDate = DateFormat('dd-MM-yyyy').parse(rawDateStr);
+              } catch (_) {}
+            }
+          } else if (rawCheckIn.isNotEmpty) {
+            try {
+              parsedDate = DateTime.parse(rawCheckIn).toLocal();
+            } catch (_) {}
+          }
+
+          if (parsedDate != null) {
+            final isoDateStr = DateFormat('yyyy-MM-dd').format(parsedDate);
+            _attendanceMapByIsoDate[isoDateStr] = status;
+
+            if (parsedDate.month == now.month && parsedDate.year == now.year) {
+              final isSun = parsedDate.weekday == DateTime.sunday;
+              final isDecHol = _declaredHolidays.any((h) => h.startsWith(isoDateStr));
+              if (!isSun && !isDecHol && (status == 'Present' || status == 'Late' || status == 'Early Exit' || status == 'Overtime')) {
+                if (!_attendedDaysOfCurrentMonth.contains(parsedDate.day)) {
+                  _attendedDaysOfCurrentMonth.add(parsedDate.day);
+                }
+              } else if (status == 'Absent') {
+                currentMonthAbsent++;
+              } else if (status == 'Late') {
+                currentMonthLate++;
+              }
+            }
+          }
+
+          bool isRowToday = false;
+          if (rawDateStr.startsWith(todayIso)) {
+            isRowToday = true;
+          } else if (rawCheckIn.isNotEmpty) {
+            try {
+              final dt = DateTime.parse(rawCheckIn).toLocal();
+              if (DateFormat('yyyy-MM-dd').format(dt) == todayIso) {
+                isRowToday = true;
+              }
+            } catch (_) {}
+          }
+
+          if (isRowToday && status != 'Absent' && status != 'Leave' && status != 'On Leave') {
+            markedTodayInDb = true;
+            if (rawCheckIn.isNotEmpty) {
+              try {
+                todayTimeInDb = DateFormat('hh:mm a').format(DateTime.parse(rawCheckIn).toLocal());
+              } catch (_) {
+                todayTimeInDb = rawCheckIn;
+              }
+            }
+            todayDateInDb = DateFormat('dd-MM-yyyy').format(now);
+          }
+
+          String displayDate = 'Unknown Date';
+          if (parsedDate != null) {
+            displayDate = DateFormat('dd MMM yyyy').format(parsedDate);
+          }
+
+          String checkInTime = '—';
+          if (rawCheckIn.isNotEmpty) {
+            try {
+              checkInTime = DateFormat('hh:mm a').format(DateTime.parse(rawCheckIn).toLocal());
+            } catch (_) {
+              checkInTime = rawCheckIn;
+            }
+          }
+
+          String checkOutTime = '—';
+          if (rawCheckOut.isNotEmpty) {
+            try {
+              checkOutTime = DateFormat('hh:mm a').format(DateTime.parse(rawCheckOut).toLocal());
+            } catch (_) {
+              checkOutTime = rawCheckOut;
+            }
+          }
+
+          _attendanceHistory.add({
+            'date': displayDate,
+            'isoDate': parsedDate != null ? DateFormat('yyyy-MM-dd').format(parsedDate) : '',
+            'checkIn': checkInTime,
+            'checkOut': checkOutTime,
+            'status': status,
+          });
+        }
+
+        // Present days is strictly for current month (never 50/27)
+        _presentDays = _attendedDaysOfCurrentMonth.length;
+        _absentDays = currentMonthAbsent;
+        _lateDays = currentMonthLate;
+
+        if (markedTodayInDb) {
+          _checkedInToday = true;
+          _checkInTime = todayTimeInDb.isNotEmpty ? todayTimeInDb : (_checkInTime.isNotEmpty ? _checkInTime : DateFormat('hh:mm a').format(now));
+          _checkInDate = todayDateInDb.isNotEmpty ? todayDateInDb : DateFormat('dd-MM-yyyy').format(now);
+          _checkInDateIso = todayIso;
+        }
+
+        int totalDaysCount = 0;
+        final lastDay = DateTime(now.year, now.month + 1, 0).day;
+        for (int i = 1; i <= lastDay; i++) {
+          if (DateTime(now.year, now.month, i).weekday != DateTime.sunday) {
+            totalDaysCount++;
+          }
+        }
+        _attendancePercentage = totalDaysCount > 0 ? ((_presentDays / totalDaysCount) * 100).round() : 0;
+
+        final prefs = await SharedPreferences.getInstance();
+        prefs.setString('member_cached_attendance_history', jsonEncode(_attendanceHistory));
+        prefs.setInt('member_cached_present_days', _presentDays);
+        prefs.setInt('member_cached_absent_days', _absentDays);
+        prefs.setInt('member_cached_late_days', _lateDays);
+        prefs.setStringList('member_cached_attended_days_curr_month', _attendedDaysOfCurrentMonth.map((e) => e.toString()).toList());
+        prefs.setString('member_cached_attendance_days', jsonEncode(_attendedDaysOfCurrentMonth));
+        prefs.setString('member_cached_attendance_map', jsonEncode(_attendanceMapByIsoDate));
+
+        notifyListeners();
+      }
+    } catch (e) {
+      print('fetchAttendanceOnly error: $e');
+    }
+  }
 
   // ── Gym Rules & Agreement Methods (Phase 09) ──
   Future<bool> checkRulesAgreementStatus() async {
@@ -1993,6 +2160,7 @@ class MemberAppViewModel extends ChangeNotifier {
     _absentDays = 0;
     _lateDays = 0;
     _attendedDaysOfCurrentMonth = [];
+    _attendanceMapByIsoDate.clear();
     _checkInTime = '';
     _checkInDate = '';
     _checkedInToday = false;
@@ -2068,9 +2236,14 @@ class MemberAppViewModel extends ChangeNotifier {
             _currentStreak += 1;
             _currentXP += 250;
           }
-          if (!_attendedDaysOfCurrentMonth.contains(now.day)) {
-            _attendedDaysOfCurrentMonth.add(now.day);
-            _presentDays = _attendedDaysOfCurrentMonth.length;
+          final isSun = now.weekday == DateTime.sunday;
+          final isDecHol = _declaredHolidays.any((h) => h.startsWith(todayIso));
+          _attendanceMapByIsoDate[todayIso] = 'Present';
+          if (!isSun && !isDecHol) {
+            if (!_attendedDaysOfCurrentMonth.contains(now.day)) {
+              _attendedDaysOfCurrentMonth.add(now.day);
+              _presentDays = _attendedDaysOfCurrentMonth.length;
+            }
           }
           final prefs = await SharedPreferences.getInstance();
           await prefs.setBool('member_checked_in_today', true);

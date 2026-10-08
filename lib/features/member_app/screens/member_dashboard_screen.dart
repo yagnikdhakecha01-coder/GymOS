@@ -10,14 +10,14 @@ import '../member_app_viewmodel.dart';
 import 'member_training_screen.dart';
 import 'member_diet_screen.dart';
 import 'member_body_stats_screen.dart';
-import 'member_scan_qr_screen.dart';
-import 'member_attendance_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'member_notifications_screen.dart';
 import '../../dashboard/gym_switcher_bottom_sheet.dart';
 import '../widgets/workout_category_selector_sheet.dart';
 import '../widgets/member_rules_agreement_dialog.dart';
 import '../../../core/widgets/skeleton_shimmer.dart';
+import '../../../core/widgets/app_cached_avatar.dart';
+import 'member_shell.dart';
 
 class MemberDashboardScreen extends StatefulWidget {
   const MemberDashboardScreen({super.key});
@@ -27,49 +27,44 @@ class MemberDashboardScreen extends StatefulWidget {
 }
 
 class _MemberDashboardScreenState extends State<MemberDashboardScreen>
-    with TickerProviderStateMixin {
-  late List<AnimationController> _controllers;
-  late List<Animation<double>> _fadeAnims;
-  late List<Animation<Offset>> _slideAnims;
-  static const int _sectionCount = 5;
+    with SingleTickerProviderStateMixin {
+  late AnimationController _animController;
+  late Animation<double> _fadeAnim;
+  late Animation<Offset> _slideAnim;
 
   @override
   void initState() {
     super.initState();
-    _controllers = List.generate(
-      _sectionCount,
-      (i) => AnimationController(vsync: this, duration: const Duration(milliseconds: 500)),
+    _animController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 350),
     );
-    _fadeAnims = _controllers.map((c) =>
-      Tween<double>(begin: 0, end: 1).animate(CurvedAnimation(parent: c, curve: Curves.easeOut))
-    ).toList();
-    _slideAnims = _controllers.map((c) =>
-      Tween<Offset>(begin: const Offset(0, 0.06), end: Offset.zero)
-          .animate(CurvedAnimation(parent: c, curve: Curves.easeOutCubic))
-    ).toList();
-    _startAnimations();
+    _fadeAnim = CurvedAnimation(parent: _animController, curve: Curves.easeOut);
+    _slideAnim = Tween<Offset>(begin: const Offset(0, 0.04), end: Offset.zero)
+        .animate(CurvedAnimation(parent: _animController, curve: Curves.easeOutCubic));
+    _animController.forward();
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Provider.of<MemberAppViewModel>(context, listen: false).loadMemberDataFromSupabase();
     });
   }
 
-  void _startAnimations() {
-    for (int i = 0; i < _sectionCount; i++) {
-      Future.delayed(Duration(milliseconds: 80 + (i * 80)), () {
-        if (mounted) _controllers[i].forward();
-      });
-    }
-  }
-
   @override
   void dispose() {
-    for (var c in _controllers) { c.dispose(); }
+    _animController.dispose();
     super.dispose();
   }
 
   Widget _animated(int i, Widget child) {
-    if (i >= _sectionCount) return child;
-    return FadeTransition(opacity: _fadeAnims[i], child: SlideTransition(position: _slideAnims[i], child: child));
+    return RepaintBoundary(
+      child: FadeTransition(
+        opacity: _fadeAnim,
+        child: SlideTransition(
+          position: _slideAnim,
+          child: child,
+        ),
+      ),
+    );
   }
 
   @override
@@ -197,31 +192,11 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen>
                         ),
                         const SizedBox(width: 10),
                         // Profile avatar
-                        Container(
-                          width: 40, height: 40,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(color: AppTheme.primary.withValues(alpha: 0.3), width: 2),
-                          ),
-                          child: ClipOval(
-                            child: vm.memberAvatar.startsWith('http')
-                                ? Image.network(
-                                    vm.memberAvatar,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) => Container(
-                                      color: AppTheme.primaryLight,
-                                      child: const Icon(Icons.person_rounded, color: AppTheme.primary, size: 22),
-                                    ),
-                                  )
-                                : Image.asset(
-                                    'assets/images/member/avatar_default.png',
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) => Container(
-                                      color: AppTheme.primaryLight,
-                                      child: const Icon(Icons.person_rounded, color: AppTheme.primary, size: 22),
-                                    ),
-                                  ),
-                          ),
+                        AppCachedAvatar(
+                          imageUrl: vm.memberAvatar,
+                          name: vm.memberName,
+                          size: 40,
+                          border: Border.all(color: AppTheme.primary.withValues(alpha: 0.3), width: 2),
                         ),
                       ],
                     ),
@@ -230,78 +205,80 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen>
 
                   // ═══════ PENDING RULES AGREEMENT BANNER (For existing/old members) ═══════
                   if (!vm.hasAgreedRules) ...[
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: InkWell(
-                        onTap: () => MemberRulesAgreementDialog.show(context),
-                        borderRadius: BorderRadius.circular(16),
-                        child: Container(
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFFFEF2F2), Color(0xFFFFF1F2)],
+                    RepaintBoundary(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: InkWell(
+                          onTap: () => MemberRulesAgreementDialog.show(context),
+                          borderRadius: BorderRadius.circular(16),
+                          child: Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: [Color(0xFFFEF2F2), Color(0xFFFFF1F2)],
+                              ),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: const Color(0xFFFECDD3), width: 1.5),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(0xFFEF4444).withValues(alpha: 0.1),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
                             ),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: const Color(0xFFFECDD3), width: 1.5),
-                            boxShadow: [
-                              BoxShadow(
-                                color: const Color(0xFFEF4444).withValues(alpha: 0.1),
-                                blurRadius: 10,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFEF4444).withValues(alpha: 0.12),
-                                  shape: BoxShape.circle,
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFEF4444).withValues(alpha: 0.12),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(Icons.shield_outlined, color: Color(0xFFDC2626), size: 24),
                                 ),
-                                child: const Icon(Icons.shield_outlined, color: Color(0xFFDC2626), size: 24),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      '${vm.gymName.isNotEmpty && vm.gymName != 'GYMOS' ? vm.gymName : 'Gym'} Rules Agreement Pending',
-                                      style: GoogleFonts.inter(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w700,
-                                        color: const Color(0xFF991B1B),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        '${vm.gymName.isNotEmpty && vm.gymName != 'GYMOS' ? vm.gymName : 'Gym'} Rules Agreement Pending',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w700,
+                                          color: const Color(0xFF991B1B),
+                                        ),
                                       ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      'Please review and sign your gym rules to continue.',
-                                      style: GoogleFonts.inter(
-                                        fontSize: 11,
-                                        color: const Color(0xFFB91C1C),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        'Please review and sign your gym rules to continue.',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 11,
+                                          color: const Color(0xFFB91C1C),
+                                        ),
                                       ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFDC2626),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Text(
-                                  'Review',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                    color: Colors.white,
+                                    ],
                                   ),
                                 ),
-                              ),
-                            ],
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFDC2626),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    'Review',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -566,6 +543,8 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen>
                                           child: Image.asset(
                                             vm.todayWorkoutImage,
                                             fit: BoxFit.contain,
+                                            cacheWidth: 350,
+                                            cacheHeight: 350,
                                             errorBuilder: (_, __, ___) => const Icon(Icons.fitness_center_rounded, size: 50, color: AppTheme.primary),
                                           ),
                                         ),
@@ -634,148 +613,147 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen>
                   // ═══════ QUICK ACCESS — Body Stats & Exercise Library ═══════
                   _animated(3, Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: IntrinsicHeight(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Expanded(
-                            child: Material(
-                              color: Colors.transparent,
-                              borderRadius: BorderRadius.circular(18),
-                              child: InkWell(
-                                onTap: () async {
-                                  final prefs = await SharedPreferences.getInstance();
-                                  final gymInfoStr = prefs.getString('gymos_gym_info');
-                                  String gymId = '';
-                                  if (gymInfoStr != null) {
-                                    try {
-                                      final gi = (jsonDecode(gymInfoStr) as Map<String, dynamic>);
-                                      gymId = gi['id'] ?? '';
-                                    } catch (_) {}
-                                  }
-                                  if (context.mounted) {
-                                    Navigator.push(context, MaterialPageRoute(
-                                      builder: (_) => MemberBodyStatsScreen(
-                                        memberId: vm.memberId,
-                                        gymId: gymId,
-                                      ),
-                                    ));
-                                  }
-                                },
-                                borderRadius: BorderRadius.circular(18),
-                                child: Container(
-                                  padding: const EdgeInsets.all(16),
-                                  decoration: BoxDecoration(
-                                    gradient: const LinearGradient(
-                                      colors: [Color(0xFF7C3AED), Color(0xFF6D28D9)],
-                                      begin: Alignment.topLeft, end: Alignment.bottomRight,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Material(
+                            color: Colors.transparent,
+                            borderRadius: BorderRadius.circular(18),
+                            child: InkWell(
+                              onTap: () async {
+                                final prefs = await SharedPreferences.getInstance();
+                                final gymInfoStr = prefs.getString('gymos_gym_info');
+                                String gymId = '';
+                                if (gymInfoStr != null) {
+                                  try {
+                                    final gi = (jsonDecode(gymInfoStr) as Map<String, dynamic>);
+                                    gymId = gi['id'] ?? '';
+                                  } catch (_) {}
+                                }
+                                if (context.mounted) {
+                                  Navigator.push(context, MaterialPageRoute(
+                                    builder: (_) => MemberBodyStatsScreen(
+                                      memberId: vm.memberId,
+                                      gymId: gymId,
                                     ),
-                                    borderRadius: BorderRadius.circular(18),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: const Color(0xFF7C3AED).withValues(alpha: 0.25),
-                                        blurRadius: 12,
-                                        offset: const Offset(0, 4),
-                                      ),
-                                    ],
+                                  ));
+                                }
+                              },
+                              borderRadius: BorderRadius.circular(18),
+                              child: Container(
+                                height: 116,
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  gradient: const LinearGradient(
+                                    colors: [Color(0xFF7C3AED), Color(0xFF6D28D9)],
+                                    begin: Alignment.topLeft, end: Alignment.bottomRight,
                                   ),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          Container(
-                                            padding: const EdgeInsets.all(8),
-                                            decoration: BoxDecoration(
-                                              color: Colors.white.withValues(alpha: 0.2),
-                                              borderRadius: BorderRadius.circular(10),
-                                            ),
-                                            child: const Icon(Icons.monitor_weight_rounded, color: Colors.white, size: 20),
+                                  borderRadius: BorderRadius.circular(18),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: const Color(0xFF7C3AED).withValues(alpha: 0.25),
+                                      blurRadius: 12,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                  ],
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.all(8),
+                                          decoration: BoxDecoration(
+                                            color: Colors.white.withValues(alpha: 0.2),
+                                            borderRadius: BorderRadius.circular(10),
                                           ),
-                                          const Icon(Icons.arrow_forward_rounded, color: Colors.white70, size: 16),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 14),
-                                      Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text('Body Stats', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
-                                          const SizedBox(height: 3),
-                                          Text('Track weight & goals', style: GoogleFonts.inter(fontSize: 11, color: Colors.white.withValues(alpha: 0.85))),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
+                                          child: const Icon(Icons.monitor_weight_rounded, color: Colors.white, size: 20),
+                                        ),
+                                        const Icon(Icons.arrow_forward_rounded, color: Colors.white70, size: 16),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 14),
+                                    Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text('Body Stats', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
+                                        const SizedBox(height: 3),
+                                        Text('Track weight & goals', style: GoogleFonts.inter(fontSize: 11, color: Colors.white.withValues(alpha: 0.85))),
+                                      ],
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Material(
-                              color: Colors.transparent,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Material(
+                            color: Colors.transparent,
+                            borderRadius: BorderRadius.circular(18),
+                            child: InkWell(
+                              onTap: () => WorkoutCategoryHelper.openCategoryFlow(
+                                context,
+                                splits: vm.todaySplits,
+                                muscleGroup: vm.todayMuscleGroup,
+                                memberId: vm.memberId,
+                              ),
                               borderRadius: BorderRadius.circular(18),
-                              child: InkWell(
-                                onTap: () => WorkoutCategoryHelper.openCategoryFlow(
-                                  context,
-                                  splits: vm.todaySplits,
-                                  muscleGroup: vm.todayMuscleGroup,
-                                  memberId: vm.memberId,
-                                ),
-                                borderRadius: BorderRadius.circular(18),
-                                child: Container(
-                                  padding: const EdgeInsets.all(16),
-                                  decoration: BoxDecoration(
-                                    gradient: const LinearGradient(
-                                      colors: [Color(0xFF0284C7), Color(0xFF0369A1)],
-                                      begin: Alignment.topLeft, end: Alignment.bottomRight,
+                              child: Container(
+                                height: 116,
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  gradient: const LinearGradient(
+                                    colors: [Color(0xFF0284C7), Color(0xFF0369A1)],
+                                    begin: Alignment.topLeft, end: Alignment.bottomRight,
+                                  ),
+                                  borderRadius: BorderRadius.circular(18),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: const Color(0xFF0284C7).withValues(alpha: 0.25),
+                                      blurRadius: 12,
+                                      offset: const Offset(0, 4),
                                     ),
-                                    borderRadius: BorderRadius.circular(18),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: const Color(0xFF0284C7).withValues(alpha: 0.25),
-                                        blurRadius: 12,
-                                        offset: const Offset(0, 4),
-                                      ),
-                                    ],
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          Container(
-                                            padding: const EdgeInsets.all(8),
-                                            decoration: BoxDecoration(
-                                              color: Colors.white.withValues(alpha: 0.2),
-                                              borderRadius: BorderRadius.circular(10),
-                                            ),
-                                            child: const Icon(Icons.menu_book_rounded, color: Colors.white, size: 20),
+                                  ],
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.all(8),
+                                          decoration: BoxDecoration(
+                                            color: Colors.white.withValues(alpha: 0.2),
+                                            borderRadius: BorderRadius.circular(10),
                                           ),
-                                          const Icon(Icons.arrow_forward_rounded, color: Colors.white70, size: 16),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 14),
-                                      Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text('Exercises', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
-                                          const SizedBox(height: 3),
-                                          Text('50+ workout library', style: GoogleFonts.inter(fontSize: 11, color: Colors.white.withValues(alpha: 0.85))),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
+                                          child: const Icon(Icons.menu_book_rounded, color: Colors.white, size: 20),
+                                        ),
+                                        const Icon(Icons.arrow_forward_rounded, color: Colors.white70, size: 16),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 14),
+                                    Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text('Exercises', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
+                                        const SizedBox(height: 3),
+                                        Text('50+ workout library', style: GoogleFonts.inter(fontSize: 11, color: Colors.white.withValues(alpha: 0.85))),
+                                      ],
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   )),
                   const SizedBox(height: 20),
@@ -969,11 +947,11 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen>
                         }),
                         if (vm.isBiometricAttendanceOnly)
                           _buildQuickAction(Icons.calendar_month_rounded, 'Attendance', const Color(0xFF3B82F6), () {
-                            Navigator.push(context, MaterialPageRoute(builder: (_) => const MemberAttendanceScreen()));
+                            MemberShell.switchToTab(context, 1);
                           })
                         else
                           _buildQuickAction(Icons.qr_code_scanner_rounded, 'Scan QR', const Color(0xFF3B82F6), () {
-                            Navigator.push(context, MaterialPageRoute(builder: (_) => const MemberScanQRScreen()));
+                            MemberShell.switchToTab(context, 2);
                           }),
                         _buildQuickAction(Icons.share_rounded, 'Share', const Color(0xFFF59E0B), () {
                           _showShareSheet(context, vm);

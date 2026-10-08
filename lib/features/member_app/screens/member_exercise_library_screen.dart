@@ -274,6 +274,8 @@ class _MemberExerciseLibraryScreenState
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
+      enableDrag: true,
+      useSafeArea: true,
       builder: (_) => _OpenGymExerciseDetailSheet(
         exercise: exercise,
         imgBase: _imgBase,
@@ -1340,29 +1342,83 @@ class _OpenGymExerciseDetailSheetState
         ? '${widget.imgBase}${ex['img']}'
         : '';
 
+    final topPadding = MediaQuery.of(context).padding.top;
+    final topMargin = topPadding > 0 ? topPadding + 44.0 : 64.0;
+
     return Container(
-      margin: const EdgeInsets.only(top: 40),
+      margin: EdgeInsets.only(top: topMargin),
       decoration: const BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       child: Column(
         children: [
-          // Top handle bar
-          Container(
-            margin: const EdgeInsets.only(top: 12, bottom: 8),
-            width: 38,
-            height: 4,
-            decoration: BoxDecoration(
-              color: const Color(0xFFCBD5E1),
-              borderRadius: BorderRadius.circular(2),
+          // Top Navigation / Handle & Close Bar
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+            child: Row(
+              children: [
+                // Quick Back button
+                Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(20),
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      width: 36,
+                      height: 36,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFF1F5F9),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.arrow_back_rounded,
+                        size: 20,
+                        color: Color(0xFF334155),
+                      ),
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                // Pill drag handle
+                Container(
+                  width: 48,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFCBD5E1),
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                ),
+                const Spacer(),
+                // Quick Close button
+                Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(20),
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      width: 36,
+                      height: 36,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFF1F5F9),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.close_rounded,
+                        size: 20,
+                        color: Color(0xFF334155),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
 
           // Scrollable detail content
           Expanded(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(20, 10, 20, 36),
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 36),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [

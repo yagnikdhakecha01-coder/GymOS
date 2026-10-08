@@ -63,18 +63,43 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool _showAllActivities = false;
   bool _isBannerDismissed = false;
 
-  int? _getDaysLeft(Member member) {
-    final exp = member.extraFields['expiryDate'] as String?;
-    if (exp == null || exp.isEmpty) return null;
-    try {
-      final parsed = DateTime.parse(exp);
-      final today = DateTime.now();
-      final todayDateOnly = DateTime(today.year, today.month, today.day);
-      final expiryDateOnly = DateTime(parsed.year, parsed.month, parsed.day);
-      return expiryDateOnly.difference(todayDateOnly).inDays;
-    } catch (_) {
-      return null;
+  // Memoized alert bucket cache
+  List<Member>? _lastAlertMembersRef;
+  int _lastAlertMembersLength = -1;
+  List<Member> _endingTodayMembers = [];
+  List<Member> _expiring15Members = [];
+  List<Member> _expired1MonthMembers = [];
+
+  void _computeAlertBuckets(List<Member> allMembers) {
+    if (identical(_lastAlertMembersRef, allMembers) && _lastAlertMembersLength == allMembers.length) {
+      return;
     }
+    _lastAlertMembersRef = allMembers;
+    _lastAlertMembersLength = allMembers.length;
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
+    final endingToday = <Member>[];
+    final expiring15 = <Member>[];
+    final expired1Month = <Member>[];
+
+    for (final m in allMembers) {
+      final exp = m.parsedExpiryDate;
+      if (exp == null) continue;
+      final expDay = DateTime(exp.year, exp.month, exp.day);
+      final diff = expDay.difference(today).inDays;
+      if (diff == 0) {
+        endingToday.add(m);
+      } else if (diff >= 1 && diff <= 15) {
+        expiring15.add(m);
+      } else if (diff >= -30 && diff < 0) {
+        expired1Month.add(m);
+      }
+    }
+    _endingTodayMembers = endingToday;
+    _expiring15Members = expiring15;
+    _expired1MonthMembers = expired1Month;
   }
 
   @override
@@ -82,28 +107,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _repository = Provider.of<GymRepository>(context, listen: false);
-      _repository?.addListener(_onRepositoryChanged);
       // Fetch initial stats
       final authVm = Provider.of<AuthViewModel>(context, listen: false);
       final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
-      if (gymId != null) {
+      if (gymId != null && _repository != null) {
         final formattedDate = DateFormat('yyyy-MM-dd').format(_repository!.selectedDashboardDate);
         _repository?.fetchDashboardStatsFromSupabase(gymId, formattedDate);
         authVm.fetchSubscriptionStatus();
       }
     });
-  }
-
-  void _onRepositoryChanged() {
-    if (mounted) {
-      setState(() {});
-    }
-  }
-
-  @override
-  void dispose() {
-    _repository?.removeListener(_onRepositoryChanged);
-    super.dispose();
   }
 
   @override
@@ -231,22 +243,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     // Alerts
     final allMembers = membersVm.allMembers;
-
-    final endingTodayMembers = <Member>[];
-    final expiring15Members = <Member>[];
-    final expired1MonthMembers = <Member>[];
-
-    for (final m in allMembers) {
-      final daysLeft = _getDaysLeft(m);
-      if (daysLeft == null) continue;
-      if (daysLeft == 0) {
-        endingTodayMembers.add(m);
-      } else if (daysLeft >= 1 && daysLeft <= 15) {
-        expiring15Members.add(m);
-      } else if (daysLeft >= -30 && daysLeft < 0) {
-        expired1MonthMembers.add(m);
-      }
-    }
+    _computeAlertBuckets(allMembers);
+    final endingTodayMembers = _endingTodayMembers;
+    final expiring15Members = _expiring15Members;
+    final expired1MonthMembers = _expired1MonthMembers;
 
     final _dbExpiringToday = endingTodayMembers.length;
     final _dbExpiring15Days = expiring15Members.length;
@@ -1234,7 +1234,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             radius: 8,
                             backgroundColor: const Color(0xFF6366F1),
                             backgroundImage: (url.isNotEmpty && !AppCachedAvatar.isDummyUrl(url))
-                                ? NetworkImage(url)
+                                ? ResizeImage(NetworkImage(url), width: 32, height: 32)
                                 : null,
                             child: (url.isEmpty || AppCachedAvatar.isDummyUrl(url))
                                 ? const Icon(Icons.person, size: 10, color: Colors.white)
@@ -1334,7 +1334,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
             if (avatarUrl != null)
               ClipRRect(
                 borderRadius: BorderRadius.circular(14),
-                child: Image.network(avatarUrl, width: 28, height: 28, fit: BoxFit.cover),
+                child: Image.network(
+                  avatarUrl,
+                  width: 28,
+                  height: 28,
+                  cacheWidth: 56,
+                  cacheHeight: 56,
+                  fit: BoxFit.cover,
+                ),
               )
             else if (icon != null)
               Container(

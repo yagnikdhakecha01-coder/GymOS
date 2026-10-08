@@ -3,8 +3,6 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../../core/theme/theme.dart';
-import '../../authentication/auth_viewmodel.dart';
-import '../../../core/repository/gym_repository.dart';
 import '../member_app_viewmodel.dart';
 
 class MemberAttendanceScreen extends StatefulWidget {
@@ -16,6 +14,15 @@ class MemberAttendanceScreen extends StatefulWidget {
 
 class _MemberAttendanceScreenState extends State<MemberAttendanceScreen> {
   DateTime _currentMonth = DateTime.now();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final vm = Provider.of<MemberAppViewModel>(context, listen: false);
+      vm.fetchAttendanceOnly();
+    });
+  }
 
   void _changeMonth(int offset) {
     setState(() {
@@ -42,10 +49,13 @@ class _MemberAttendanceScreenState extends State<MemberAttendanceScreen> {
             automaticallyImplyLeading: false,
             title: Text('Attendance', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
           ),
-          body: SingleChildScrollView(
-            physics: const BouncingScrollPhysics(),
-            child: Column(
-              children: [
+          body: RefreshIndicator(
+            onRefresh: () => vm.fetchAttendanceOnly(),
+            color: AppTheme.primary,
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+              child: Column(
+                children: [
                 const SizedBox(height: 16),
 
                 // ═══════ TODAY'S STATUS CARD ═══════
@@ -211,6 +221,7 @@ class _MemberAttendanceScreenState extends State<MemberAttendanceScreen> {
               ],
             ),
           ),
+          ),
         );
       },
     );
@@ -228,20 +239,6 @@ class _MemberAttendanceScreenState extends State<MemberAttendanceScreen> {
     final today = now.day;
     final isCurrentMonth = _currentMonth.year == now.year && _currentMonth.month == now.month;
 
-    final authVm = Provider.of<AuthViewModel>(context, listen: false);
-    final repo = Provider.of<GymRepository>(context, listen: false);
-
-    // We filter logs for _currentMonth
-    final logsThisMonth = repo.getAttendance().where((r) {
-      if (r.userId != authVm.currentUser?.id && r.userId != authVm.currentProfile?.id) return false;
-      try {
-        DateTime parsedDate = DateFormat('dd-MM-yyyy').parse(r.date);
-        return parsedDate.year == _currentMonth.year && parsedDate.month == _currentMonth.month;
-      } catch (_) {
-        return false;
-      }
-    }).toList();
-
     List<Widget> rows = [];
     List<Widget> currentRow = [];
 
@@ -254,61 +251,54 @@ class _MemberAttendanceScreenState extends State<MemberAttendanceScreen> {
       final dateStr = DateFormat('dd-MM-yyyy').format(dayDate);
       final dateIsoStr = DateFormat('yyyy-MM-dd').format(dayDate);
       final isSunday = dayDate.weekday == DateTime.sunday;
-      final isDeclaredHoliday = vm.declaredHolidays.contains(dateIsoStr) || vm.declaredHolidays.contains(dateStr);
+      final isDeclaredHoliday = vm.declaredHolidays.any((h) =>
+          h.startsWith(dateIsoStr) || h == dateStr || h.startsWith(dateStr));
       final isHoliday = isSunday || isDeclaredHoliday;
-      final logsForDay = logsThisMonth.where((l) => l.date == dateStr).toList();
       
+      final status = vm.attendanceMapByIsoDate[dateIsoStr];
+      final isAttendedThisMonth = isCurrentMonth && vm.attendedDaysOfCurrentMonth.contains(day);
+
       Color bgColor = Colors.transparent;
       Color textColor = AppTheme.textPrimary;
       final isToday = isCurrentMonth && day == today;
       
-      if (logsForDay.isNotEmpty) {
-        final status = logsForDay.first.status;
-        if (isToday) {
-          // Today (Solid background, white text)
-          if (status == 'Present' || status == 'Late' || status == 'Early Exit' || status == 'Overtime') {
-            bgColor = AppTheme.success;
-            textColor = Colors.white;
-          } else if (status == 'Half Day' || status == 'Half Leave') {
-            bgColor = Colors.orange;
-            textColor = Colors.white;
-          } else if (status == 'Absent') {
-            bgColor = AppTheme.danger;
-            textColor = Colors.white;
-          } else if (status == 'Leave' || status == 'On Leave') {
-            bgColor = Colors.purple;
-            textColor = Colors.white;
-          } else if (status == 'Holiday') {
-            bgColor = const Color(0xFF9333EA);
-            textColor = Colors.white;
-          }
-        } else {
-          // Past days (Light background, colored text)
-          if (status == 'Present' || status == 'Late' || status == 'Early Exit' || status == 'Overtime') {
-            bgColor = AppTheme.successLight;
-            textColor = AppTheme.success;
-          } else if (status == 'Half Day' || status == 'Half Leave') {
-            bgColor = const Color(0xFFFEF3C7);
-            textColor = Colors.orange;
-          } else if (status == 'Absent') {
-            bgColor = AppTheme.dangerLight;
-            textColor = AppTheme.danger;
-          } else if (status == 'Leave' || status == 'On Leave') {
-            bgColor = const Color(0xFFF3E8FF);
-            textColor = Colors.purple;
-          } else if (status == 'Holiday') {
-            bgColor = const Color(0xFFF3E8FF);
-            textColor = const Color(0xFF9333EA);
-          }
-        }
-      } else if (isHoliday) {
+      if (isHoliday) {
+        // SUNDAYS & HOLIDAYS ARE NEVER GREEN. MUST ALWAYS BE PURPLE!
         bgColor = isToday ? const Color(0xFF9333EA) : const Color(0xFFF3E8FF);
         textColor = isToday ? Colors.white : const Color(0xFF9333EA);
-      }
-
-      if (isToday && bgColor == Colors.transparent) {
-        bgColor = AppTheme.info;
-        textColor = Colors.white;
+      } else if (isToday) {
+        // Today (solid background)
+        final isAttendedToday = vm.checkedInToday || 
+            (status != null && (status == 'Present' || status == 'Late' || status == 'Early Exit' || status == 'Overtime')) ||
+            isAttendedThisMonth;
+        if (isAttendedToday) {
+          bgColor = AppTheme.success;
+          textColor = Colors.white;
+        } else if (status == 'Absent') {
+          bgColor = AppTheme.danger;
+          textColor = Colors.white;
+        } else {
+          bgColor = AppTheme.info;
+          textColor = Colors.white;
+        }
+      } else if (status != null) {
+        // Attendance recorded
+        if (status == 'Present' || status == 'Late' || status == 'Early Exit' || status == 'Overtime') {
+          bgColor = AppTheme.successLight;
+          textColor = AppTheme.success;
+        } else if (status == 'Half Day' || status == 'Half Leave') {
+          bgColor = const Color(0xFFFEF3C7);
+          textColor = Colors.orange;
+        } else if (status == 'Absent') {
+          bgColor = AppTheme.dangerLight;
+          textColor = AppTheme.danger;
+        } else if (status == 'Leave' || status == 'On Leave') {
+          bgColor = const Color(0xFFF3E8FF);
+          textColor = Colors.purple;
+        }
+      } else if (isAttendedThisMonth) {
+        bgColor = AppTheme.successLight;
+        textColor = AppTheme.success;
       }
 
       currentRow.add(

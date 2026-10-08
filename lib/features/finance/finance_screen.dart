@@ -357,49 +357,51 @@ class _FinanceScreenState extends State<FinanceScreen> {
                       itemBuilder: (context, index) {
                         final tx = transactions[index];
                         final isRevenue = tx.type == 'Revenue';
-                        return CustomCard(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          child: Row(
-                            children: [
-                              CircleAvatar(
-                                backgroundColor: isRevenue ? AppTheme.successLight : AppTheme.dangerLight,
-                                child: Icon(
-                                  isRevenue ? Icons.person_outline_rounded : Icons.flash_on_rounded,
-                                  color: isRevenue ? AppTheme.success : AppTheme.danger,
-                                  size: 18,
+                        return RepaintBoundary(
+                          child: CustomCard(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            child: Row(
+                              children: [
+                                CircleAvatar(
+                                  backgroundColor: isRevenue ? AppTheme.successLight : AppTheme.dangerLight,
+                                  child: Icon(
+                                    isRevenue ? Icons.person_outline_rounded : Icons.flash_on_rounded,
+                                    color: isRevenue ? AppTheme.success : AppTheme.danger,
+                                    size: 18,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      tx.title,
-                                      style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
-                                    ),
-                                    Text(
-                                      '${isRevenue ? "Membership Fee" : "Expense"} • by ${tx.createdByInfo.isNotEmpty ? tx.createdByInfo : "Owner"}',
-                                      style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary),
-                                    ),
-                                    Text(
-                                      tx.date,
-                                      style: GoogleFonts.inter(fontSize: 10, color: AppTheme.textMuted),
-                                    ),
-                                  ],
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        tx.title,
+                                        style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                                      ),
+                                      Text(
+                                        '${isRevenue ? "Membership Fee" : "Expense"} • by ${tx.createdByInfo.isNotEmpty ? tx.createdByInfo : "Owner"}',
+                                        style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary),
+                                      ),
+                                      Text(
+                                        tx.date,
+                                        style: GoogleFonts.inter(fontSize: 10, color: AppTheme.textMuted),
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                              Text(
-                                '${isRevenue ? "+" : "-"} ₹ ${NumberFormat('#,##,###').format(tx.amount)}',
-                                style: GoogleFonts.inter(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.bold,
-                                  color: isRevenue ? AppTheme.success : AppTheme.danger,
+                                Text(
+                                  '${isRevenue ? "+" : "-"} ₹ ${NumberFormat('#,##,###').format(tx.amount)}',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    color: isRevenue ? AppTheme.success : AppTheme.danger,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(width: 8),
-                              const Icon(Icons.chevron_right, color: AppTheme.textMuted, size: 20),
-                            ],
+                                const SizedBox(width: 8),
+                                const Icon(Icons.chevron_right, color: AppTheme.textMuted, size: 20),
+                              ],
+                            ),
                           ),
                         );
                       },

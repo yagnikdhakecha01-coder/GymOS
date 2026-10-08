@@ -18,12 +18,20 @@ class MemberShell extends StatefulWidget {
   final int initialIndex;
   const MemberShell({super.key, this.initialIndex = 0});
 
+  static final ValueNotifier<int> currentTabNotifier = ValueNotifier<int>(0);
+
+  static void switchToTab(BuildContext context, int index) {
+    final state = context.findAncestorStateOfType<_MemberShellState>();
+    state?._onTabTapped(index);
+  }
+
   @override
   State<MemberShell> createState() => _MemberShellState();
 }
 
 class _MemberShellState extends State<MemberShell> with WidgetsBindingObserver {
   late int _currentIndex;
+  late final Set<int> _loadedTabs;
   Timer? _syncTimer;
   bool _isRedirecting = false;
   bool _isAgreementModalShowing = false;
@@ -32,6 +40,8 @@ class _MemberShellState extends State<MemberShell> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     _currentIndex = widget.initialIndex;
+    MemberShell.currentTabNotifier.value = widget.initialIndex;
+    _loadedTabs = {widget.initialIndex};
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkUnlinkedStatus();
@@ -131,7 +141,11 @@ class _MemberShellState extends State<MemberShell> with WidgetsBindingObserver {
     if (_currentIndex == index) {
       _navigatorKeys[index]?.currentState?.popUntil((route) => route.isFirst);
     } else {
-      setState(() => _currentIndex = index);
+      setState(() {
+        _currentIndex = index;
+        _loadedTabs.add(index);
+      });
+      MemberShell.currentTabNotifier.value = index;
     }
   }
 
@@ -163,11 +177,11 @@ class _MemberShellState extends State<MemberShell> with WidgetsBindingObserver {
         body: IndexedStack(
           index: _currentIndex,
           children: [
-            _buildTabNavigator(0, const MemberDashboardScreen()),
-            _buildTabNavigator(1, const MemberAttendanceScreen()),
-            _buildTabNavigator(2, const MemberScanQRScreen()),
-            _buildTabNavigator(3, const MemberAchievementsScreen()),
-            _buildTabNavigator(4, const MemberProfileScreen()),
+            _buildTab(0, const MemberDashboardScreen()),
+            _buildTab(1, const MemberAttendanceScreen()),
+            _buildTab(2, MemberScanQRScreen(isActive: _currentIndex == 2)),
+            _buildTab(3, const MemberAchievementsScreen()),
+            _buildTab(4, const MemberProfileScreen()),
           ],
         ),
         bottomNavigationBar: Container(
@@ -204,6 +218,13 @@ class _MemberShellState extends State<MemberShell> with WidgetsBindingObserver {
         ),
       ),
     );
+  }
+
+  Widget _buildTab(int index, Widget rootPage) {
+    if (!_loadedTabs.contains(index)) {
+      return const SizedBox.shrink();
+    }
+    return _buildTabNavigator(index, rootPage);
   }
 
   Widget _buildTabNavigator(int index, Widget rootPage) {

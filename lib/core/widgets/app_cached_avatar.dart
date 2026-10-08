@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class AvatarCacheService {
+  static const int _maxCacheEntries = 150;
   static final Map<String, Uint8List> _memoryCache = {};
   static final Set<String> _pendingDownloads = {};
 
@@ -13,6 +14,13 @@ class AvatarCacheService {
   }
 
   static void putInMemory(String key, Uint8List bytes) {
+    if (_memoryCache.length >= _maxCacheEntries) {
+      // Remove oldest entries to prevent RAM bloat
+      final keysToRemove = _memoryCache.keys.take(30).toList();
+      for (final k in keysToRemove) {
+        _memoryCache.remove(k);
+      }
+    }
     _memoryCache[key] = bytes;
   }
 
@@ -28,7 +36,7 @@ class AvatarCacheService {
         if (response.statusCode == 200) {
           final bytes = await consolidateHttpClientResponseBytes(response);
           if (bytes.isNotEmpty) {
-            _memoryCache[url] = bytes;
+            putInMemory(url, bytes);
           }
         }
       }
@@ -164,6 +172,10 @@ class _AppCachedAvatarState extends State<AppCachedAvatar> {
     final txtColor = widget.textColor ?? colorPair.text;
     final fSize = widget.fontSize ?? (widget.size * 0.42);
 
+    // Target raster decode dimensions (2x-3x for Retina sharpness, capped to avoid GPU RAM blowout)
+    final dpr = MediaQuery.maybeDevicePixelRatioOf(context) ?? 2.0;
+    final pixelSize = (widget.size * dpr).round().clamp(64, 256);
+
     Widget fallbackInitials() {
       final trimmed = widget.name.trim();
       final initial = trimmed.isNotEmpty ? trimmed[0].toUpperCase() : 'M';
@@ -193,44 +205,52 @@ class _AppCachedAvatarState extends State<AppCachedAvatar> {
     }
 
     if (_cachedBytes != null) {
-      return Container(
-        width: widget.size,
-        height: widget.size,
-        decoration: BoxDecoration(
-          borderRadius: radius,
-          border: widget.border,
-        ),
-        child: ClipRRect(
-          borderRadius: radius,
-          child: Image.memory(
-            _cachedBytes!,
-            width: widget.size,
-            height: widget.size,
-            fit: BoxFit.cover,
-            gaplessPlayback: true,
-            errorBuilder: (_, __, ___) => fallbackInitials(),
+      return RepaintBoundary(
+        child: Container(
+          width: widget.size,
+          height: widget.size,
+          decoration: BoxDecoration(
+            borderRadius: radius,
+            border: widget.border,
+          ),
+          child: ClipRRect(
+            borderRadius: radius,
+            child: Image.memory(
+              _cachedBytes!,
+              width: widget.size,
+              height: widget.size,
+              cacheWidth: pixelSize,
+              cacheHeight: pixelSize,
+              fit: BoxFit.cover,
+              gaplessPlayback: true,
+              errorBuilder: (_, __, ___) => fallbackInitials(),
+            ),
           ),
         ),
       );
     }
 
     if (rawUrl.isNotEmpty && rawUrl.startsWith('http')) {
-      return Container(
-        width: widget.size,
-        height: widget.size,
-        decoration: BoxDecoration(
-          borderRadius: radius,
-          border: widget.border,
-        ),
-        child: ClipRRect(
-          borderRadius: radius,
-          child: Image.network(
-            rawUrl,
-            width: widget.size,
-            height: widget.size,
-            fit: BoxFit.cover,
-            gaplessPlayback: true,
-            errorBuilder: (_, __, ___) => fallbackInitials(),
+      return RepaintBoundary(
+        child: Container(
+          width: widget.size,
+          height: widget.size,
+          decoration: BoxDecoration(
+            borderRadius: radius,
+            border: widget.border,
+          ),
+          child: ClipRRect(
+            borderRadius: radius,
+            child: Image.network(
+              rawUrl,
+              width: widget.size,
+              height: widget.size,
+              cacheWidth: pixelSize,
+              cacheHeight: pixelSize,
+              fit: BoxFit.cover,
+              gaplessPlayback: true,
+              errorBuilder: (_, __, ___) => fallbackInitials(),
+            ),
           ),
         ),
       );

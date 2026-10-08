@@ -12,6 +12,7 @@ import '../../more/settings_screen.dart';
 import '../../dashboard/gym_switcher_bottom_sheet.dart';
 import '../../more/linked_devices_screen.dart';
 import '../widgets/member_rules_agreement_dialog.dart';
+import '../../../core/widgets/app_cached_avatar.dart';
 
 class MemberProfileScreen extends StatelessWidget {
   const MemberProfileScreen({super.key});
@@ -151,32 +152,11 @@ class MemberProfileScreen extends StatelessWidget {
                 Center(
                   child: Column(
                     children: [
-                      Container(
-                        width: 88,
-                        height: 88,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(color: AppTheme.primary, width: 3),
-                        ),
-                        child: ClipOval(
-                          child: vm.memberAvatar.startsWith('http')
-                              ? Image.network(
-                                  vm.memberAvatar,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => Container(
-                                    color: AppTheme.primaryLight,
-                                    child: const Icon(Icons.person, color: AppTheme.primary, size: 44),
-                                  ),
-                                )
-                              : Image.asset(
-                                  'assets/images/member/avatar_default.png',
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => Container(
-                                    color: AppTheme.primaryLight,
-                                    child: const Icon(Icons.person, color: AppTheme.primary, size: 44),
-                                  ),
-                                ),
-                        ),
+                      AppCachedAvatar(
+                        imageUrl: vm.memberAvatar,
+                        name: vm.memberName,
+                        size: 88,
+                        border: Border.all(color: AppTheme.primary, width: 3),
                       ),
                       const SizedBox(height: 14),
                       Text(

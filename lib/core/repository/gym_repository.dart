@@ -254,12 +254,16 @@ class GymRepository extends ChangeNotifier {
   void _startSyncTimer() {
     _syncTimer?.cancel();
     _syncTimer = Timer.periodic(const Duration(minutes: 2), (timer) async {
+      final role = _storage.getUserRole();
+      if (role == 'member') return;
       await triggerBackgroundSync();
     });
   }
 
   void _subscribeToRealtime(String gymId) {
     if (!SupabaseService.isInitialized || _subscribedGymId == gymId) return;
+    final role = _storage.getUserRole();
+    if (role == 'member') return;
     try {
       _realtimeChannel?.unsubscribe();
       _subscribedGymId = gymId;
@@ -331,11 +335,6 @@ class GymRepository extends ChangeNotifier {
 
     final role = _storage.getUserRole();
     if (role == 'member') {
-      try {
-        await fetchAttendanceLogsFromSupabase();
-      } catch (e) {
-        print('Member background sync error: $e');
-      }
       return;
     }
 
@@ -674,6 +673,8 @@ class GymRepository extends ChangeNotifier {
       _manualAttendanceQueue.isNotEmpty;
 
   Future<void> triggerBackgroundSync({bool forceRetry = false}) async {
+    final role = _storage.getUserRole();
+    if (role == 'member') return;
     if (_isSyncing) return;
     // Optimization: Skip network ping if there are no pending operations in offline queue
     if (!forceRetry && !hasPendingOfflineOperations) {
@@ -1082,6 +1083,8 @@ class GymRepository extends ChangeNotifier {
   }
 
   Future<void> _runBackgroundVerification() async {
+    final role = _storage.getUserRole();
+    if (role == 'member') return;
     try {
       final gymId = _storage.getGymInfo()?['id'];
       await fetchMembersFromSupabase();
@@ -1969,6 +1972,8 @@ class GymRepository extends ChangeNotifier {
   bool get isSyncingInitial => _isSyncingInitial;
 
   Future<void> performInitialSync(String gymId) async {
+    final role = _storage.getUserRole();
+    if (role == 'member') return;
     if (_isSyncingInitial) return;
     _isSyncingInitial = true;
     notifyListeners();
@@ -2011,6 +2016,8 @@ class GymRepository extends ChangeNotifier {
   }
 
   Future<void> reloadForActiveGym() async {
+    final role = _storage.getUserRole();
+    if (role == 'member') return;
     _loadAllFromStorage();
     
     final gymId = _storage.getGymInfo()?['id'];
@@ -2026,6 +2033,8 @@ class GymRepository extends ChangeNotifier {
 
   // Initial load
   void _loadAllFromStorage() {
+    final role = _storage.getUserRole();
+    if (role == 'member') return;
     _loadMembers();
     _loadStaff();
     _loadWorkouts();
