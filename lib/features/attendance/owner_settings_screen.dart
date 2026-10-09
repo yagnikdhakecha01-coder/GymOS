@@ -11,6 +11,7 @@ import '../../core/services/supabase_service.dart';
 import 'attendance_viewmodel.dart';
 import 'emergency_attendance_hub_screen.dart';
 import 'owner_attendance_correction_screen.dart';
+import 'biometric_devices_screen.dart';
 
 class OwnerQrSettingsScreen extends StatefulWidget {
   const OwnerQrSettingsScreen({super.key});
@@ -1038,6 +1039,32 @@ class _OwnerQrSettingsScreenState extends State<OwnerQrSettingsScreen> {
           ),
           if (_biometricEnabled) ...[
             const Divider(height: 24),
+
+            // Manage Terminals & Pairing Button
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const BiometricDevicesScreen()),
+                ).then((_) => _loadBiometricSettings()),
+                icon: const Icon(Icons.face_retouching_natural_rounded, size: 18),
+                label: Text(
+                  _connectedDevicesCount > 0
+                      ? 'Manage Connected Terminals ($_connectedDevicesCount) →'
+                      : 'Pair & Setup Face Machine →',
+                  style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.bold),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primary,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
 
             // Connection Mode Tabs (PC Bridge vs Direct Cloud)
             Text(

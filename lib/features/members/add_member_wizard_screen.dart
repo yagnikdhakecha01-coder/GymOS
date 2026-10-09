@@ -718,14 +718,43 @@ class _AddMemberWizardScreenState extends State<AddMemberWizardScreen> {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _fieldLabel('Biometric Machine User ID / PIN (Optional)'),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    _fieldLabel('Biometric & Face User ID / PIN'),
+                    TextButton.icon(
+                      onPressed: () async {
+                        final authVm = Provider.of<AuthViewModel>(context, listen: false);
+                        final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'] ?? '';
+                        if (gymId.isEmpty) return;
+                        try {
+                          final res = await SupabaseService.client.rpc('get_next_available_biometric_pin', params: {'p_gym_id': gymId});
+                          if (res != null && res['next_pin'] != null) {
+                            _biometricPinController.text = res['next_pin'].toString();
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Auto-assigned PIN #${res['next_pin']}'),
+                                  duration: const Duration(seconds: 1),
+                                  behavior: SnackBarBehavior.floating,
+                                ),
+                              );
+                            }
+                          }
+                        } catch (_) {}
+                      },
+                      icon: const Icon(Icons.auto_awesome_rounded, size: 14, color: AppTheme.primary),
+                      label: Text('Auto-Assign PIN', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.primary)),
+                    ),
+                  ],
+                ),
                 TextFormField(
                   controller: _biometricPinController,
                   keyboardType: TextInputType.number,
                   decoration: InputDecoration(
                     hintText: 'e.g. 101, 1024',
-                    prefixIcon: const Icon(Icons.fingerprint_rounded, color: AppTheme.primary),
-                    helperText: 'Enroll this same ID number on the fingerprint/face machine',
+                    prefixIcon: const Icon(Icons.face_retouching_natural_rounded, color: AppTheme.primary),
+                    helperText: 'Machine par isi ID se face scan karein. Expiry server se auto sync ho jayegi.',
                     helperStyle: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary),
                   ),
                 ),

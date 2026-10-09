@@ -1107,10 +1107,25 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
                     TextField(
                       controller: biometricPinController,
                       keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Biometric Machine PIN / User ID',
-                        prefixIcon: Icon(Icons.fingerprint_rounded, color: AppTheme.primary),
+                      decoration: InputDecoration(
+                        labelText: 'Face & Biometric PIN / User ID',
+                        prefixIcon: const Icon(Icons.face_retouching_natural_rounded, color: AppTheme.primary),
                         hintText: 'e.g. 101, 1024',
+                        suffixIcon: IconButton(
+                          icon: const Icon(Icons.auto_awesome_rounded, size: 18, color: AppTheme.primary),
+                          tooltip: 'Auto-Assign Next Free PIN',
+                          onPressed: () async {
+                            final authVm = Provider.of<AuthViewModel>(context, listen: false);
+                            final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'] ?? '';
+                            if (gymId.isEmpty) return;
+                            try {
+                              final res = await SupabaseService.client.rpc('get_next_available_biometric_pin', params: {'p_gym_id': gymId});
+                              if (res != null && res['next_pin'] != null) {
+                                biometricPinController.text = res['next_pin'].toString();
+                              }
+                            } catch (_) {}
+                          },
+                        ),
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -2231,12 +2246,12 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
                   const SizedBox(height: 4),
                   Row(
                     children: [
-                      const Icon(Icons.fingerprint_rounded, size: 12, color: AppTheme.primary),
+                      const Icon(Icons.face_retouching_natural_rounded, size: 12, color: AppTheme.primary),
                       const SizedBox(width: 4),
                       Text(
                         member.biometricPin != null
-                            ? 'Biometric PIN: #${member.biometricPin}'
-                            : 'Biometric: Not linked',
+                            ? 'Face & Biometric PIN: #${member.biometricPin}'
+                            : 'Face/Biometric: Not linked',
                         style: GoogleFonts.inter(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
