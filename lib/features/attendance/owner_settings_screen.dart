@@ -1111,7 +1111,7 @@ class _OwnerQrSettingsScreenState extends State<OwnerQrSettingsScreen> {
                           ),
                           const SizedBox(height: 3),
                           Text(
-                            'Offline-Safe • Recommended',
+                            'Old LAN Machines • Needs PC',
                             style: GoogleFonts.inter(
                               fontSize: 9.5,
                               color: _biometricConnectionMode == 'bridge' ? AppTheme.primary : AppTheme.textSecondary,
@@ -1161,7 +1161,7 @@ class _OwnerQrSettingsScreenState extends State<OwnerQrSettingsScreen> {
                           ),
                           const SizedBox(height: 3),
                           Text(
-                            'eSSL ADMS / Realtime Cloud',
+                            'WiFi/SIM/LAN • No PC Needed',
                             style: GoogleFonts.inter(
                               fontSize: 9.5,
                               color: _biometricConnectionMode == 'cloud' ? AppTheme.primary : AppTheme.textSecondary,
@@ -1179,16 +1179,16 @@ class _OwnerQrSettingsScreenState extends State<OwnerQrSettingsScreen> {
 
             // Mode Explanation Banner
             Container(
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: _biometricConnectionMode == 'bridge'
                     ? const Color(0xFFECFDF5)
                     : const Color(0xFFEFF6FF),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(10),
                 border: Border.all(
                   color: _biometricConnectionMode == 'bridge'
-                      ? const Color(0xFFA7F3D0)
-                      : const Color(0xFFBFDBFE),
+                    ? const Color(0xFFA7F3D0)
+                    : const Color(0xFFBFDBFE),
                 ),
               ),
               child: Row(
@@ -1196,19 +1196,19 @@ class _OwnerQrSettingsScreenState extends State<OwnerQrSettingsScreen> {
                 children: [
                   Icon(
                     _biometricConnectionMode == 'bridge'
-                        ? Icons.offline_bolt_rounded
-                        : Icons.wifi_tethering_rounded,
-                    size: 16,
+                        ? Icons.computer_rounded
+                        : Icons.cloud_done_rounded,
+                    size: 18,
                     color: _biometricConnectionMode == 'bridge' ? const Color(0xFF047857) : const Color(0xFF1D4ED8),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       _biometricConnectionMode == 'bridge'
-                          ? 'PC Bridge Mode: Reception PC par chalta hai. Internet band ya PC power cut hone par bhi SQLite WAL buffer me attendance safe rehti hai aur internet aane par automatic sync hoti hai.'
-                          : 'Direct Cloud Mode: Machine directly internet/SIM se judi hoti hai aur Cloud Webhook URL par attendance push karti hai.',
+                          ? 'PC Bridge Mode: Sirf purani machines ke liye jo direct cloud support nahi karti. Isme reception PC on hona chahiye jo machine se data lekar GymOS me sync kare.'
+                          : 'Direct Cloud Mode (Recommended): Modern machines (eSSL, ZKTeco Face) ke liye best hai. Machine directly WiFi ya SIM se GymOS se connect hoti hai — gym me reception PC ki bilkul zarurat nahi hoti.',
                       style: GoogleFonts.inter(
-                        fontSize: 11,
+                        fontSize: 11.5,
                         color: _biometricConnectionMode == 'bridge' ? const Color(0xFF047857) : const Color(0xFF1D4ED8),
                         height: 1.35,
                       ),
