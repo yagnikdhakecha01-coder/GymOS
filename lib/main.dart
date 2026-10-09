@@ -216,8 +216,8 @@ class _GymOSAppState extends State<GymOSApp> with WidgetsBindingObserver {
         home: const SplashScreen(),
         builder: (context, child) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
+            VersionCheckEngine.navigatorKey = rootNavigatorKey;
             AlertsNotificationEngine.start(context);
-            VersionCheckEngine.start(context, key: rootNavigatorKey);
           });
           return child!;
         },

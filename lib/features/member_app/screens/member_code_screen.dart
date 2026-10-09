@@ -101,9 +101,23 @@ class _MemberCodeScreenState extends State<MemberCodeScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        final authVm = Provider.of<AuthViewModel>(context, listen: false);
+        await authVm.logout();
+        if (context.mounted) {
+          Navigator.pushAndRemoveUntil(
+            context,
+            AppRouter.scaleRoute(const RoleSelectionScreen()),
+            (route) => false,
+          );
+        }
+      },
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
         scrolledUnderElevation: 0,
@@ -312,8 +326,9 @@ class _MemberCodeScreenState extends State<MemberCodeScreen>
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }
 
 class UpperCaseTextFormatter extends TextInputFormatter {

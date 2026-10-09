@@ -9,6 +9,8 @@ import 'member_membership_screen.dart';
 import 'member_notifications_screen.dart';
 import '../../more/help_support_screen.dart';
 import '../../more/settings_screen.dart';
+import '../../more/app_review_bottom_sheet.dart';
+import '../../../core/services/app_review_service.dart';
 import '../../dashboard/gym_switcher_bottom_sheet.dart';
 import '../../more/linked_devices_screen.dart';
 import '../widgets/member_rules_agreement_dialog.dart';
@@ -288,6 +290,16 @@ class MemberProfileScreen extends StatelessWidget {
                             MaterialPageRoute(builder: (_) => const HelpSupportScreen()),
                           );
                         }),
+                        _divider(),
+
+                        // ── Rate GymOS ────────────────────────────────
+                        FutureBuilder<bool>(
+                          future: AppReviewService.hasReviewed(),
+                          builder: (context, snap) {
+                            final reviewed = snap.data ?? false;
+                            return _buildRateGymOSTile(context, vm, reviewed);
+                          },
+                        ),
                       ],
                     ),
                   ),
@@ -444,6 +456,55 @@ class MemberProfileScreen extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildRateGymOSTile(BuildContext context, MemberAppViewModel vm, bool reviewed) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () async {
+          final gymId = vm.gymId.isNotEmpty ? vm.gymId : null;
+          await AppReviewBottomSheet.show(
+            context,
+            role: 'member',
+            gymId: gymId,
+          );
+          // FutureBuilder auto-rebuilds when parent rebuilds — trigger rebuild
+          if (context.mounted) {
+            (context as Element).markNeedsBuild();
+          }
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            children: [
+              Icon(
+                Icons.star_rounded,
+                color: reviewed ? AppTheme.success : const Color(0xFFF59E0B),
+                size: 22,
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Text(
+                  reviewed ? 'Thank You for Rating! ✓' : 'Rate GymOS on Play Store',
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: reviewed ? AppTheme.success : AppTheme.textPrimary,
+                  ),
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: AppTheme.textMuted,
+                size: 20,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

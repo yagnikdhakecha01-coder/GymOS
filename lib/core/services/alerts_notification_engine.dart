@@ -6,7 +6,6 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'supabase_service.dart';
 import 'notification_service_mobile.dart';
-import 'version_check_service.dart';
 import '../repository/gym_repository.dart';
 import '../../features/authentication/auth_viewmodel.dart';
 
@@ -76,34 +75,13 @@ class AlertsNotificationEngine {
     // ── 1. REALTIME LISTENER FOR INSTANT SUPPORT MESSAGES & ALERTS ──
     _subscribeRealtime(context);
 
-    // Initial run on startup
-    _checkAppUpdate(context);
+    // Initial run on startup (alerts check)
     _runPeriodicChecks(context);
 
     // ── 2. PERIODIC POLL LOOP (every 5 minutes instead of 30 seconds) ──
     _timer = Timer.periodic(const Duration(minutes: 5), (timer) async {
       await _runPeriodicChecks(context);
     });
-  }
-
-  static Future<void> _checkAppUpdate(BuildContext context) async {
-    if (VersionCheckEngine.isShowingDialog) return;
-    try {
-      final isSnoozed = await VersionCheckService.isSnoozedToday();
-      if (!isSnoozed) {
-        final verResult = await VersionCheckService.checkVersion();
-        if (verResult.isUpdateAvailable) {
-          final targetContext = VersionCheckEngine.navigatorKey?.currentContext;
-          if (targetContext != null && targetContext.mounted) {
-            VersionCheckEngine.showUpdateDialog(verResult, targetContext);
-            return;
-          } else if (context.mounted) {
-            VersionCheckEngine.showUpdateDialog(verResult, context);
-            return;
-          }
-        }
-      }
-    } catch (_) {}
   }
 
   static Future<void> _runPeriodicChecks(BuildContext context) async {

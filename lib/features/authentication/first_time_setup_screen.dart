@@ -8,7 +8,6 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../core/theme/theme.dart';
 import '../../core/navigation/app_router.dart';
-import '../../core/models/user_profile.dart';
 import '../../core/models/association_model.dart';
 import 'auth_viewmodel.dart';
 import 'role_selection_screen.dart';
@@ -398,11 +397,40 @@ class _FirstTimeSetupScreenState extends State<FirstTimeSetupScreen> with Single
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FC), // Apple off-white background
-      appBar: _currentStep == 4 ? null : _buildAppBar(),
-      body: SafeArea(
-        child: _currentStep == 4 ? _buildSuccessStep() : _buildWizardSteps(),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        if (_currentStep > 1) {
+          setState(() {
+            if (widget.isAddingAdditionalGym && _currentStep == 3) {
+              _currentStep = 1;
+            } else {
+              _currentStep--;
+            }
+          });
+        } else {
+          if (widget.isAddingAdditionalGym) {
+            Navigator.pop(context);
+          } else {
+            final authVm = Provider.of<AuthViewModel>(context, listen: false);
+            await authVm.logout();
+            if (context.mounted) {
+              Navigator.pushAndRemoveUntil(
+                context,
+                AppRouter.scaleRoute(const RoleSelectionScreen()),
+                (route) => false,
+              );
+            }
+          }
+        }
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF8F9FC), // Apple off-white background
+        appBar: _currentStep == 4 ? null : _buildAppBar(),
+        body: SafeArea(
+          child: _currentStep == 4 ? _buildSuccessStep() : _buildWizardSteps(),
+        ),
       ),
     );
   }

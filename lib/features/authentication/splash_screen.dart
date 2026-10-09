@@ -10,12 +10,14 @@ import '../dashboard/main_navigation_holder.dart';
 import '../staff/portal/staff_shell.dart';
 import '../receptionist/portal/receptionist_shell.dart';
 import '../member_app/screens/member_shell.dart';
+import '../member_app/screens/member_code_screen.dart';
 import '../error/configuration_error_screen.dart';
 import 'auth_viewmodel.dart';
 import 'first_time_setup_screen.dart';
 import 'gym_role_selector_screen.dart';
 import 'biometric_lock_screen.dart';
 import '../../core/services/biometric_service.dart';
+import '../../core/services/version_check_service.dart';
 
 import '../../core/widgets/app_branding_header.dart';
 
@@ -66,6 +68,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                 context,
                 AppRouter.scaleRoute(const RoleSelectionScreen()),
               );
+              VersionCheckEngine.scheduleCheckAfterAppLoad();
             }
           }
         });
@@ -86,9 +89,10 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
         debugPrint('loadCurrentProfile network warning: $e');
       }
 
+      final currentRoleStr = (authVm.selectedRole ?? authVm.storage.getUserRole() ?? '').toLowerCase();
+
       // Only check unlinked for staff/member, NEVER owner
-      final currentRole = authVm.currentProfile?.role;
-      if (currentRole == UserRole.staff || currentRole == UserRole.member) {
+      if (currentRoleStr == 'staff' || currentRoleStr == 'member') {
         try {
           final unlinked = await authVm.forceLogoutIfUnlinked();
           if (unlinked && mounted) {
@@ -103,58 +107,57 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
 
       Widget nextScreen;
 
-      if (authVm.userAssociations.length > 1 && authVm.activeAssociation == null) {
+      // Filter associations by the user's selected role
+      final matchingAssocs = authVm.userAssociations.where((a) {
+        if (currentRoleStr == 'owner') return a.role == UserRole.owner;
+        if (currentRoleStr == 'staff') return a.role == UserRole.staff;
+        if (currentRoleStr == 'member') return a.role == UserRole.member;
+        return false;
+      }).toList();
+
+      if (matchingAssocs.length > 1 && authVm.activeAssociation == null) {
         nextScreen = const GymRoleSelectorScreen();
-      } else if (authVm.userAssociations.isEmpty) {
-        final role = authVm.selectedRole ?? authVm.storage.getUserRole() ?? '';
-        if (role == 'owner') {
+      } else if (matchingAssocs.isEmpty) {
+        if (currentRoleStr == 'owner') {
           final savedGym = authVm.storage.getGymInfo();
           if (savedGym != null) {
             nextScreen = const MainNavigationHolder();
           } else {
             nextScreen = const FirstTimeSetupScreen();
           }
-        } else if (role == 'staff') {
-          nextScreen = const StaffShell();
-        } else if (role == 'member') {
-          nextScreen = const MemberShell();
+        } else if (currentRoleStr == 'staff' || currentRoleStr == 'member') {
+          // If member or staff has not completed invitation code verification,
+          // ALWAYS route to MemberCodeScreen so they enter their invitation code.
+          nextScreen = const MemberCodeScreen();
         } else {
           nextScreen = const RoleSelectionScreen();
         }
       } else {
+        // User has at least 1 valid association for the selected role
+        final assoc = matchingAssocs.first;
+        if (authVm.activeAssociation?.gymId != assoc.gymId || authVm.activeAssociation?.role != assoc.role) {
+          await authVm.selectAssociation(assoc);
+        }
+
         final profile = authVm.currentProfile;
         Widget targetScreen;
-        if (profile == null) {
-          final role = authVm.selectedRole ?? authVm.storage.getUserRole() ?? '';
-          if (role == 'owner') {
-            final savedGym = authVm.storage.getGymInfo();
-            targetScreen = savedGym != null ? const MainNavigationHolder() : const FirstTimeSetupScreen();
-          } else if (role == 'staff') {
-            targetScreen = const StaffShell();
+        if (currentRoleStr == 'owner') {
+          if (profile?.setupCompleted == true || authVm.storage.getGymInfo() != null) {
+            targetScreen = const MainNavigationHolder();
           } else {
-            targetScreen = const MemberShell();
+            targetScreen = const FirstTimeSetupScreen();
           }
+        } else if (currentRoleStr == 'staff') {
+          final staffRole = authVm.staffRecord?.role.toLowerCase() ?? '';
+          if (staffRole.contains('reception')) {
+            targetScreen = const ReceptionistShell();
+          } else {
+            targetScreen = const StaffShell();
+          }
+        } else if (currentRoleStr == 'member') {
+          targetScreen = const MemberShell();
         } else {
-          switch (profile.role) {
-            case UserRole.owner:
-              if (profile.setupCompleted || authVm.storage.getGymInfo() != null) {
-                targetScreen = const MainNavigationHolder();
-              } else {
-                targetScreen = const FirstTimeSetupScreen();
-              }
-              break;
-            case UserRole.staff:
-              final staffRole = authVm.staffRecord?.role.toLowerCase() ?? '';
-              if (staffRole.contains('reception')) {
-                targetScreen = const ReceptionistShell();
-              } else {
-                targetScreen = const StaffShell();
-              }
-              break;
-            case UserRole.member:
-              targetScreen = const MemberShell();
-              break;
-          }
+          targetScreen = const RoleSelectionScreen();
         }
         nextScreen = targetScreen;
       }
@@ -175,24 +178,42 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
           );
         }
       }
+      VersionCheckEngine.scheduleCheckAfterAppLoad();
     } catch (e) {
       debugPrint('SplashScreen _verifyAndRoute error fallback: $e');
       if (mounted) {
         final authVm = Provider.of<AuthViewModel>(context, listen: false);
         if (authVm.isLoggedIn || authVm.storage.isLoggedIn()) {
           final roleStr = (authVm.selectedRole ?? authVm.storage.getUserRole() ?? '').toLowerCase();
+          final hasSavedGym = authVm.storage.getGymInfo() != null;
+          final hasCachedMember = authVm.storage.hasKey('member_cached_id') || authVm.storage.getString('member_id') != null;
+          final hasCachedStaff = authVm.storage.hasKey('gymos_offline_staff_cache');
+
           if (roleStr == 'owner') {
-            Navigator.pushReplacement(context, AppRouter.scaleRoute(const MainNavigationHolder()));
+            Navigator.pushReplacement(
+              context,
+              AppRouter.scaleRoute(hasSavedGym ? const MainNavigationHolder() : const FirstTimeSetupScreen()),
+            );
+            VersionCheckEngine.scheduleCheckAfterAppLoad();
             return;
           } else if (roleStr == 'staff') {
-            Navigator.pushReplacement(context, AppRouter.scaleRoute(const StaffShell()));
+            Navigator.pushReplacement(
+              context,
+              AppRouter.scaleRoute((hasSavedGym || hasCachedStaff) ? const StaffShell() : const MemberCodeScreen()),
+            );
+            VersionCheckEngine.scheduleCheckAfterAppLoad();
             return;
           } else if (roleStr == 'member') {
-            Navigator.pushReplacement(context, AppRouter.scaleRoute(const MemberShell()));
+            Navigator.pushReplacement(
+              context,
+              AppRouter.scaleRoute((hasSavedGym || hasCachedMember) ? const MemberShell() : const MemberCodeScreen()),
+            );
+            VersionCheckEngine.scheduleCheckAfterAppLoad();
             return;
           }
         }
         Navigator.pushReplacement(context, AppRouter.scaleRoute(const RoleSelectionScreen()));
+        VersionCheckEngine.scheduleCheckAfterAppLoad();
       }
     }
   }

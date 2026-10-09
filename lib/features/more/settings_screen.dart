@@ -8,10 +8,12 @@ import '../../core/widgets/custom_card.dart';
 import '../../core/widgets/success_dialog.dart';
 import '../../core/services/supabase_service.dart';
 import '../../core/services/biometric_service.dart';
+import '../../core/services/app_review_service.dart';
 import '../authentication/auth_viewmodel.dart';
 import '../authentication/role_selection_screen.dart';
 import '../../core/navigation/app_router.dart';
 import '../gym_settings/online_database_screen.dart';
+import 'app_review_bottom_sheet.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -25,6 +27,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _paymentAlerts = true;
   bool _biometricLock = false;
   String _selectedLanguage = 'English';
+  bool _hasReviewed = false;
 
   @override
   void initState() {
@@ -34,11 +37,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
+    final reviewed = await AppReviewService.hasReviewed();
     setState(() {
       _pushNotifications = prefs.getBool('settings_push_notifications') ?? true;
       _paymentAlerts = prefs.getBool('settings_payment_alerts') ?? true;
       _biometricLock = prefs.getBool('settings_biometric_lock') ?? false;
       _selectedLanguage = prefs.getString('settings_selected_language') ?? 'English';
+      _hasReviewed = reviewed;
     });
 
     if (SupabaseService.isInitialized) {
@@ -296,6 +301,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Future<void> _openReviewSheet(BuildContext context) async {
+    final authVm = Provider.of<AuthViewModel>(context, listen: false);
+    final role = (authVm.selectedRole ?? 'owner').toLowerCase();
+    final gymId = authVm.gymInfo?['id']?.toString();
+    await AppReviewBottomSheet.show(context, role: role, gymId: gymId);
+    // Refresh tile state after returning from sheet
+    if (mounted) {
+      final reviewed = await AppReviewService.hasReviewed();
+      setState(() => _hasReviewed = reviewed);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     User? currentUser;
@@ -453,6 +470,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     subtitle: Text('View sync status, queue size, and retry operations', style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted)),
                     trailing: const Icon(Icons.chevron_right_rounded, color: AppTheme.textMuted),
                     onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const OnlineDatabaseScreen())),
+                  ),
+                  const Divider(height: 1),
+
+                  // ── Rate GymOS ─────────────────────────────────
+                  ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                    leading: Container(
+                      width: AppTheme.iconContainerSize,
+                      height: AppTheme.iconContainerSize,
+                      decoration: BoxDecoration(
+                        color: _hasReviewed
+                            ? AppTheme.successLight
+                            : const Color(0xFFFEF3C7),
+                        borderRadius: BorderRadius.circular(AppTheme.radiusIconContainer),
+                      ),
+                      child: Icon(
+                        Icons.star_rounded,
+                        color: _hasReviewed
+                            ? AppTheme.success
+                            : const Color(0xFFF59E0B),
+                        size: 20,
+                      ),
+                    ),
+                    title: Text(
+                      _hasReviewed ? 'Thank You for Rating! ✓' : 'Rate GymOS',
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.textPrimary,
+                      ),
+                    ),
+                    subtitle: Text(
+                      _hasReviewed
+                          ? 'Your review helps other gyms discover GymOS'
+                          : 'Love the app? Leave a review on Play Store',
+                      style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted),
+                    ),
+                    trailing: const Icon(Icons.chevron_right_rounded, color: AppTheme.textMuted),
+                    onTap: () => _openReviewSheet(context),
                   ),
                 ],
               ),

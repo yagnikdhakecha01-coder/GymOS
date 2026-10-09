@@ -13,6 +13,8 @@ import 'member_profile_screen.dart';
 import '../member_app_viewmodel.dart';
 import '../widgets/member_rules_agreement_dialog.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'member_code_screen.dart';
+import '../../../core/navigation/app_router.dart';
 
 class MemberShell extends StatefulWidget {
   final int initialIndex;
@@ -43,7 +45,23 @@ class _MemberShellState extends State<MemberShell> with WidgetsBindingObserver {
     MemberShell.currentTabNotifier.value = widget.initialIndex;
     _loadedTabs = {widget.initialIndex};
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final authVm = Provider.of<AuthViewModel>(context, listen: false);
+      final memberVm = Provider.of<MemberAppViewModel>(context, listen: false);
+
+      final prefs = await SharedPreferences.getInstance();
+      final hasCachedMember = (prefs.getString('member_cached_id') ?? '').isNotEmpty;
+      final hasGymAssoc = authVm.activeAssociation != null || authVm.gymInfo != null || (prefs.getString('gymos_gym_info') != null);
+
+      if (!hasCachedMember && !hasGymAssoc) {
+        await memberVm.loadMemberDataFromSupabase();
+        if (memberVm.memberId.isEmpty && memberVm.gymId.isEmpty && mounted) {
+          Navigator.pushReplacement(context, AppRouter.scaleRoute(const MemberCodeScreen()));
+          return;
+        }
+      }
+
       _checkUnlinkedStatus();
       _checkRulesAgreement();
     });
@@ -95,6 +113,13 @@ class _MemberShellState extends State<MemberShell> with WidgetsBindingObserver {
     // Only if not agreed locally, load member data and check Supabase
     if (memberVm.memberId.isEmpty || memberVm.gymId.isEmpty) {
       await memberVm.loadMemberDataFromSupabase();
+    }
+    if (memberVm.memberId.isEmpty && memberVm.gymId.isEmpty) {
+      // Member record does not exist — do not open agreement dialog, redirect to MemberCodeScreen
+      if (mounted) {
+        Navigator.pushReplacement(context, AppRouter.scaleRoute(const MemberCodeScreen()));
+      }
+      return;
     }
     final agreed = await memberVm.checkRulesAgreementStatus();
 

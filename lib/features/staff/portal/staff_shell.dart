@@ -9,7 +9,10 @@ import '../portal/staff_requests_screen.dart';
 import '../../attendance/staff_attendance_screen.dart';
 
 import 'dart:async';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/services/unlink_guard.dart';
+import '../../member_app/screens/member_code_screen.dart';
+import '../../../core/navigation/app_router.dart';
 
 class StaffShell extends StatefulWidget {
   const StaffShell({super.key});
@@ -35,7 +38,16 @@ class _StaffShellState extends State<StaffShell> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final authVm = Provider.of<AuthViewModel>(context, listen: false);
+      final prefs = await SharedPreferences.getInstance();
+      final hasCachedStaff = (prefs.getString('gymos_offline_staff_cache') ?? '').isNotEmpty;
+      final hasStaffAssoc = authVm.activeAssociation != null || authVm.staffRecord != null || authVm.gymInfo != null || hasCachedStaff;
+      if (!hasStaffAssoc && mounted) {
+        Navigator.pushReplacement(context, AppRouter.scaleRoute(const MemberCodeScreen()));
+        return;
+      }
       _checkUnlinkedStatus();
     });
     // Relaxed 5-minute periodic sync instead of aggressive 3s polling

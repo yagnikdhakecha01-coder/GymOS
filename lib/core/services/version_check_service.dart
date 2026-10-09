@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io' show Platform;
+import 'dart:ui' show ImageFilter;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -197,12 +198,21 @@ class VersionCheckService {
   }
 
   static Future<void> launchStoreUrl(String url) async {
-    if (url.isEmpty) return;
-    final uri = Uri.tryParse(url);
+    String storeUrl = url.trim();
+    if (storeUrl.isEmpty || !storeUrl.startsWith('http')) {
+      if (!kIsWeb && Platform.isIOS) {
+        storeUrl = 'https://apps.apple.com/app/gymos';
+      } else {
+        storeUrl = 'https://play.google.com/store/apps/details?id=com.gymos.fitness.app.v1';
+      }
+    }
+    final uri = Uri.tryParse(storeUrl);
     if (uri != null) {
       try {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('Error launching store url: $e');
+      }
     }
   }
 }
@@ -428,8 +438,19 @@ class VersionCheckEngine {
     if (_hasChecked) return;
     _hasChecked = true;
 
-    // Perform silent background check
-    checkAndPrompt(context: context);
+    // Do NOT prompt on frame 1 while splash screen is displaying.
+    // Instead, schedule check smoothly after app is loaded.
+    scheduleCheckAfterAppLoad(context: context);
+  }
+
+  /// Schedules the version check to trigger smoothly after the app has fully loaded and settled.
+  static void scheduleCheckAfterAppLoad({BuildContext? context, Duration delay = const Duration(milliseconds: 1500)}) {
+    Future.delayed(delay, () {
+      final targetContext = navigatorKey?.currentContext ?? context;
+      if (targetContext != null && targetContext.mounted) {
+        checkAndPrompt(context: targetContext);
+      }
+    });
   }
 
   static Future<void> checkAndPrompt({BuildContext? context}) async {
@@ -440,7 +461,9 @@ class VersionCheckEngine {
       if (isSnoozed) return;
 
       final result = await VersionCheckService.checkVersion();
-      if (result.isUpdateAvailable) {
+      // CRITICAL: Only prompt dialog on startup if FORCE UPDATE is configured (shouldForce == true)!
+      // Normal/optional updates should NOT interrupt the user on launch with a modal popup.
+      if (result.shouldForce) {
         final targetContext = navigatorKey?.currentContext ?? context;
         if (targetContext != null && targetContext.mounted) {
           showUpdateDialog(result, targetContext);
@@ -462,7 +485,11 @@ class VersionCheckEngine {
       await showDialog(
         context: context,
         barrierDismissible: true,
-        builder: (_) => UpdatePromptDialog(result: result),
+        barrierColor: Colors.black.withValues(alpha: 0.35),
+        builder: (_) => BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+          child: UpdatePromptDialog(result: result),
+        ),
       );
     } finally {
       isShowingDialog = false;
