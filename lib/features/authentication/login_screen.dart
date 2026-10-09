@@ -355,11 +355,16 @@ class _LoginScreenState extends State<LoginScreen> {
                         }
                       } catch (e) {
                         if (mounted) {
+                          final cleanMsg = e.toString().replaceFirst('Exception: ', '').trim();
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               backgroundColor: Colors.redAccent,
                               behavior: SnackBarBehavior.floating,
-                              content: Text('Apple Sign-in failed: $e'),
+                              content: Text(
+                                cleanMsg.startsWith('Apple Sign-in failed')
+                                    ? cleanMsg
+                                    : 'Apple Sign-in failed: $cleanMsg',
+                              ),
                             ),
                           );
                         }

@@ -693,13 +693,26 @@ class AuthViewModel extends ChangeNotifier {
           nonce: rawNonce,
         );
 
+        if (credential.givenName != null || credential.familyName != null) {
+          final given = credential.givenName ?? '';
+          final family = credential.familyName ?? '';
+          final fullName = '$given $family'.trim();
+          if (fullName.isNotEmpty) {
+            try {
+              await SupabaseService.client.auth.updateUser(
+                UserAttributes(data: {'full_name': fullName}),
+              );
+            } catch (_) {}
+          }
+        }
+
         await loadCurrentProfile();
         return SupabaseService.client.auth.currentSession != null || _authService.currentUser != null;
       } on SignInWithAppleAuthorizationException catch (e) {
         if (e.code == AuthorizationErrorCode.canceled) {
           return false;
         }
-        throw Exception('Apple Sign-in failed: ${e.message}');
+        throw Exception(e.message);
       } catch (nativeErr) {
         final errStr = nativeErr.toString();
         if (errStr.contains('canceled') || errStr.contains('cancelled')) {
