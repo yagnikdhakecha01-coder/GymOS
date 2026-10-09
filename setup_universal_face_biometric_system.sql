@@ -469,7 +469,8 @@ BEGIN
         total_punches_synced = COALESCE(total_punches_synced, 0) + 1
     WHERE id = v_device.id;
 
-    v_today_str := to_char(p_punch_time AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD');
+    -- Standard Indian Gym date format (DD-MM-YYYY)
+    v_today_str := to_char(p_punch_time AT TIME ZONE 'Asia/Kolkata', 'DD-MM-YYYY');
 
     -- 2. Insert into raw punches buffer (idempotent)
     BEGIN
@@ -500,32 +501,69 @@ BEGIN
             processed_status = CASE WHEN v_is_expired THEN 'EXPIRED_ATTENDANCE' ELSE 'SUCCESS' END 
         WHERE id = v_inserted_raw_id;
 
-        -- Record Attendance Log
+        -- Record in attendance_logs
         SELECT id, check_in, check_out 
         INTO v_existing_attendance 
         FROM attendance_logs 
         WHERE gym_id = v_device.gym_id 
-          AND member_id = v_member.id 
-          AND date = v_today_str;
+          AND (member_id = v_member.id OR user_id = v_member.id) 
+          AND date = v_today_str
+        LIMIT 1;
 
         IF v_existing_attendance.id IS NULL THEN
             INSERT INTO attendance_logs (
                 gym_id, user_id, member_id, role, user_type, name,
-                date, check_in, status, method, created_at
+                date, check_in, status, method, working_minutes, late_minutes,
+                early_exit_minutes, overtime_minutes, rule_version, created_at, updated_at
             ) VALUES (
-                v_device.gym_id, v_member.id, v_member.id, 'member', 'member', v_member.name,
-                v_today_str, p_punch_time, 'present', 'biometric', NOW()
+                v_device.gym_id, v_member.id, v_member.id, 'member', 'Member', v_member.name,
+                v_today_str, p_punch_time, 'Present', CASE WHEN lower(p_verify_mode) = 'face' THEN 'Face' ELSE 'Biometric' END,
+                0, 0, 0, 0, 1, NOW(), NOW()
             );
         ELSE
             IF p_punch_time > (v_existing_attendance.check_in + INTERVAL '5 minutes') THEN
                 UPDATE attendance_logs 
                 SET check_out = p_punch_time,
-                    working_minutes = ROUND(EXTRACT(EPOCH FROM (p_punch_time - v_existing_attendance.check_in)) / 60)
+                    working_minutes = ROUND(EXTRACT(EPOCH FROM (p_punch_time - v_existing_attendance.check_in)) / 60),
+                    updated_at = NOW()
                 WHERE id = v_existing_attendance.id;
             END IF;
         END IF;
 
-        RETURN jsonb_build_object('success', true, 'name', v_member.name, 'is_expired', v_is_expired);
+        -- Record in attendance table (for legacy / parallel view)
+        SELECT id, check_in 
+        INTO v_legacy_attendance 
+        FROM attendance 
+        WHERE gym_id = v_device.gym_id 
+          AND user_id = v_member.id 
+          AND date = v_today_str
+        LIMIT 1;
+
+        IF v_legacy_attendance.id IS NULL THEN
+            INSERT INTO attendance (
+                gym_id, user_id, role, name, date, check_in, status, created_at
+            ) VALUES (
+                v_device.gym_id, v_member.id, 'member', v_member.name,
+                v_today_str, p_punch_time, 'Present', NOW()
+            );
+        ELSE
+            IF p_punch_time > (v_legacy_attendance.check_in + INTERVAL '5 minutes') THEN
+                UPDATE attendance 
+                SET check_out = p_punch_time,
+                    working_minutes = ROUND(EXTRACT(EPOCH FROM (p_punch_time - v_legacy_attendance.check_in)) / 60)
+                WHERE id = v_legacy_attendance.id;
+            END IF;
+        END IF;
+
+        RETURN jsonb_build_object(
+            'success', true, 
+            'name', v_member.name, 
+            'role', 'member',
+            'date', v_today_str,
+            'time', to_char(p_punch_time AT TIME ZONE 'Asia/Kolkata', 'HH12:MI AM'),
+            'status', 'Present',
+            'is_expired', v_is_expired
+        );
     END IF;
 
     -- 4. Check Staff in this gym
@@ -543,27 +581,63 @@ BEGIN
         INTO v_existing_attendance 
         FROM attendance_logs 
         WHERE gym_id = v_device.gym_id 
-          AND staff_id = v_staff.id 
-          AND date = v_today_str;
+          AND (staff_id = v_staff.id OR user_id = v_staff.id) 
+          AND date = v_today_str
+        LIMIT 1;
 
         IF v_existing_attendance.id IS NULL THEN
             INSERT INTO attendance_logs (
                 gym_id, user_id, staff_id, role, user_type, name,
-                date, check_in, status, method, created_at
+                date, check_in, status, method, working_minutes, late_minutes,
+                early_exit_minutes, overtime_minutes, rule_version, created_at, updated_at
             ) VALUES (
-                v_device.gym_id, v_staff.id, v_staff.id, 'staff', 'staff', v_staff.name,
-                v_today_str, p_punch_time, 'present', 'biometric', NOW()
+                v_device.gym_id, v_staff.id, v_staff.id, COALESCE(v_staff.role, 'Staff'), 'Staff', v_staff.name,
+                v_today_str, p_punch_time, 'Present', CASE WHEN lower(p_verify_mode) = 'face' THEN 'Face' ELSE 'Biometric' END,
+                0, 0, 0, 0, 1, NOW(), NOW()
             );
         ELSE
             IF p_punch_time > (v_existing_attendance.check_in + INTERVAL '5 minutes') THEN
                 UPDATE attendance_logs 
                 SET check_out = p_punch_time,
-                    working_minutes = ROUND(EXTRACT(EPOCH FROM (p_punch_time - v_existing_attendance.check_in)) / 60)
+                    working_minutes = ROUND(EXTRACT(EPOCH FROM (p_punch_time - v_existing_attendance.check_in)) / 60),
+                    updated_at = NOW()
                 WHERE id = v_existing_attendance.id;
             END IF;
         END IF;
 
-        RETURN jsonb_build_object('success', true, 'name', v_staff.name, 'role', 'staff');
+        -- Record in attendance table
+        SELECT id, check_in 
+        INTO v_legacy_attendance 
+        FROM attendance 
+        WHERE gym_id = v_device.gym_id 
+          AND user_id = v_staff.id 
+          AND date = v_today_str
+        LIMIT 1;
+
+        IF v_legacy_attendance.id IS NULL THEN
+            INSERT INTO attendance (
+                gym_id, user_id, role, name, date, check_in, status, created_at
+            ) VALUES (
+                v_device.gym_id, v_staff.id, 'staff', v_staff.name,
+                v_today_str, p_punch_time, 'Present', NOW()
+            );
+        ELSE
+            IF p_punch_time > (v_legacy_attendance.check_in + INTERVAL '5 minutes') THEN
+                UPDATE attendance 
+                SET check_out = p_punch_time,
+                    working_minutes = ROUND(EXTRACT(EPOCH FROM (p_punch_time - v_legacy_attendance.check_in)) / 60)
+                WHERE id = v_legacy_attendance.id;
+            END IF;
+        END IF;
+
+        RETURN jsonb_build_object(
+            'success', true, 
+            'name', v_staff.name, 
+            'role', 'staff',
+            'date', v_today_str,
+            'time', to_char(p_punch_time AT TIME ZONE 'Asia/Kolkata', 'HH12:MI AM'),
+            'status', 'Present'
+        );
     END IF;
 
     -- 5. Unlinked User: Record in Discovery Table for Owner

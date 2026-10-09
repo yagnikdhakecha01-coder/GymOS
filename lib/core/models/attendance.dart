@@ -63,8 +63,10 @@ class AttendanceRecord {
     }
 
     String uName = 'User';
-    if (json['userName'] != null) {
-      uName = json['userName'] as String;
+    if (json['userName'] != null && json['userName'].toString().trim().isNotEmpty) {
+      uName = json['userName'].toString().trim();
+    } else if (json['name'] != null && json['name'].toString().trim().isNotEmpty) {
+      uName = json['name'].toString().trim();
     } else if (json['profiles'] != null) {
       final prof = json['profiles'];
       if (prof is Map) {
