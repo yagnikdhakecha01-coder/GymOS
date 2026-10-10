@@ -171,32 +171,8 @@ class _MemberAttendanceScreenState extends State<MemberAttendanceScreen> {
                 ),
                 const SizedBox(height: 20),
 
-                // ═══════ THIS MONTH SUMMARY ═══════
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: AppTheme.border),
-                      boxShadow: AppTheme.cardShadow,
-                    ),
-                    child: Row(
-                      children: [
-                        Text('This Month', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
-                        const Spacer(),
-                        Text('Attendance', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w500, color: AppTheme.textMuted)),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(color: AppTheme.primaryLight, borderRadius: BorderRadius.circular(8)),
-                          child: Text('${vm.presentDays}/${vm.totalGymDays} Days', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: AppTheme.primary)),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+                // ═══════ MONTH SUMMARY ═══════
+                _buildAttendanceSummaryCard(vm),
                 const SizedBox(height: 20),
 
                 // ═══════ CHECK IN HISTORY BUTTON ═══════
@@ -227,6 +203,66 @@ class _MemberAttendanceScreenState extends State<MemberAttendanceScreen> {
     );
   }
 
+  Widget _buildAttendanceSummaryCard(MemberAppViewModel vm) {
+    final now = DateTime.now();
+    final isCurrentMonth = _currentMonth.year == now.year && _currentMonth.month == now.month;
+    final lastDay = DateTime(_currentMonth.year, _currentMonth.month + 1, 0).day;
+
+    int monthPresentDays = 0;
+    int monthTotalGymDays = 0;
+
+    for (int day = 1; day <= lastDay; day++) {
+      final dayDate = DateTime(_currentMonth.year, _currentMonth.month, day);
+      final dateStr = DateFormat('dd-MM-yyyy').format(dayDate);
+      final dateIsoStr = DateFormat('yyyy-MM-dd').format(dayDate);
+      final isSunday = dayDate.weekday == DateTime.sunday;
+      final isDeclaredHoliday = vm.declaredHolidays.any((h) =>
+          h.startsWith(dateIsoStr) || h == dateStr || h.startsWith(dateStr));
+      final isHoliday = isSunday || isDeclaredHoliday;
+
+      if (!isHoliday) {
+        monthTotalGymDays++;
+      }
+
+      final status = vm.attendanceMapByIsoDate[dateIsoStr];
+      final isAttendedThisMonth = isCurrentMonth && vm.attendedDaysOfCurrentMonth.contains(day);
+      final isAttended = (status == 'Present' || status == 'Late' || status == 'Early Exit' || status == 'Overtime') ||
+          isAttendedThisMonth;
+
+      if (!isHoliday && isAttended) {
+        monthPresentDays++;
+      }
+    }
+
+    final monthLabel = isCurrentMonth ? 'This Month' : DateFormat('MMMM yyyy').format(_currentMonth);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppTheme.border),
+          boxShadow: AppTheme.cardShadow,
+        ),
+        child: Row(
+          children: [
+            Text(monthLabel, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
+            const Spacer(),
+            Text('Attendance', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w500, color: AppTheme.textMuted)),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(color: AppTheme.primaryLight, borderRadius: BorderRadius.circular(8)),
+              child: Text('$monthPresentDays/$monthTotalGymDays Days', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: AppTheme.primary)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildCalendarGrid(MemberAppViewModel vm) {
     final now = DateTime.now();
     final firstDayOfMonth = DateTime(_currentMonth.year, _currentMonth.month, 1);
@@ -238,6 +274,8 @@ class _MemberAttendanceScreenState extends State<MemberAttendanceScreen> {
     final totalDays = lastDayOfMonth.day;
     final today = now.day;
     final isCurrentMonth = _currentMonth.year == now.year && _currentMonth.month == now.month;
+    final memberStart = vm.membershipStartDateTime ?? vm.joinDateTime;
+    final memberEnd = vm.membershipEndDateTime;
 
     List<Widget> rows = [];
     List<Widget> currentRow = [];
@@ -261,16 +299,20 @@ class _MemberAttendanceScreenState extends State<MemberAttendanceScreen> {
       Color bgColor = Colors.transparent;
       Color textColor = AppTheme.textPrimary;
       final isToday = isCurrentMonth && day == today;
+      final isPast = dayDate.isBefore(DateTime(now.year, now.month, now.day));
+      final isBeforeStart = memberStart != null && dayDate.isBefore(DateTime(memberStart.year, memberStart.month, memberStart.day));
+      final isAfterEnd = memberEnd != null && dayDate.isAfter(DateTime(memberEnd.year, memberEnd.month, memberEnd.day));
       
+      final isAttended = (status == 'Present' || status == 'Late' || status == 'Early Exit' || status == 'Overtime') ||
+          isAttendedThisMonth;
+
       if (isHoliday) {
         // SUNDAYS & HOLIDAYS ARE NEVER GREEN. MUST ALWAYS BE PURPLE!
         bgColor = isToday ? const Color(0xFF9333EA) : const Color(0xFFF3E8FF);
         textColor = isToday ? Colors.white : const Color(0xFF9333EA);
       } else if (isToday) {
         // Today (solid background)
-        final isAttendedToday = vm.checkedInToday || 
-            (status != null && (status == 'Present' || status == 'Late' || status == 'Early Exit' || status == 'Overtime')) ||
-            isAttendedThisMonth;
+        final isAttendedToday = vm.checkedInToday || isAttended;
         if (isAttendedToday) {
           bgColor = AppTheme.success;
           textColor = Colors.white;
@@ -281,12 +323,13 @@ class _MemberAttendanceScreenState extends State<MemberAttendanceScreen> {
           bgColor = AppTheme.info;
           textColor = Colors.white;
         }
+      } else if (isAttended) {
+        // Attended days are always GREEN!
+        bgColor = AppTheme.successLight;
+        textColor = AppTheme.success;
       } else if (status != null) {
-        // Attendance recorded
-        if (status == 'Present' || status == 'Late' || status == 'Early Exit' || status == 'Overtime') {
-          bgColor = AppTheme.successLight;
-          textColor = AppTheme.success;
-        } else if (status == 'Half Day' || status == 'Half Leave') {
+        // Other recorded statuses
+        if (status == 'Half Day' || status == 'Half Leave') {
           bgColor = const Color(0xFFFEF3C7);
           textColor = Colors.orange;
         } else if (status == 'Absent') {
@@ -296,9 +339,10 @@ class _MemberAttendanceScreenState extends State<MemberAttendanceScreen> {
           bgColor = const Color(0xFFF3E8FF);
           textColor = Colors.purple;
         }
-      } else if (isAttendedThisMonth) {
-        bgColor = AppTheme.successLight;
-        textColor = AppTheme.success;
+      } else if (isPast && !isBeforeStart && !isAfterEnd) {
+        // Past working day during membership without attendance = ABSENT!
+        bgColor = AppTheme.dangerLight;
+        textColor = AppTheme.danger;
       }
 
       currentRow.add(

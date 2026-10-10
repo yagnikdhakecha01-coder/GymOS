@@ -1376,10 +1376,19 @@ class GymRepository extends ChangeNotifier {
       if (alreadyQueued || alreadyMarked) continue;
 
       final uuid = _generateUuidV4();
+      String? memberUserId = _isValidUUID(member['user_id']?.toString()) ? member['user_id'].toString() : null;
+      if (memberUserId == null) {
+        try {
+          final m = _members.firstWhere((e) => e.id == memberId);
+          if (_isValidUUID(m.userId)) memberUserId = m.userId;
+        } catch (_) {}
+      }
+
       final entry = ManualAttendanceEntry(
         operationUuid: uuid,
         gymId: gymId,
         memberId: memberId,
+        userId: memberUserId,
         userType: 'Member',
         userName: memberName,
         userAvatar: member['avatar'] as String?,
@@ -1579,10 +1588,18 @@ class GymRepository extends ChangeNotifier {
           );
 
           // Upsert the present record
+          String? entryUserId = entry.userId;
+          if ((entryUserId == null || !_isValidUUID(entryUserId)) && entry.userType == 'Member' && entry.memberId != null) {
+            try {
+              final m = _members.firstWhere((e) => e.id == entry.memberId);
+              if (_isValidUUID(m.userId)) entryUserId = m.userId;
+            } catch (_) {}
+          }
+
           final data = {
             'id': entry.operationUuid,
             'gym_id': entry.gymId,
-            'user_id': entry.userId,
+            'user_id': _isValidUUID(entryUserId) ? entryUserId : null,
             'member_id': entry.memberId,
             'staff_id': entry.staffId,
             'user_type': entry.userType,
@@ -3479,10 +3496,16 @@ class GymRepository extends ChangeNotifier {
     await _storage.setString(_attendanceKey, jsonEncode(_attendance.map((e) => e.toJson()).toList()));
     notifyListeners();
 
+    String? resolvedUserId;
+    try {
+      final m = _members.firstWhere((e) => e.id == memberId);
+      if (_isValidUUID(m.userId)) resolvedUserId = m.userId;
+    } catch (_) {}
+
     final payload = {
       'id': uuid,
       'gym_id': gymId,
-      'user_id': memberId,
+      'user_id': resolvedUserId,
       'member_id': memberId,
       'user_type': 'Member',
       'role': 'Member',

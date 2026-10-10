@@ -21,6 +21,7 @@ import '../finance/finance_screen.dart';
 import '../more/more_screen.dart';
 import 'gym_role_selector_screen.dart';
 import '../member_app/screens/member_code_screen.dart';
+import '../member_app/member_app_viewmodel.dart';
 import 'role_selection_screen.dart';
 import '../../core/widgets/app_branding_header.dart';
 import '../../core/services/supabase_service.dart';
@@ -247,12 +248,19 @@ class _LoginScreenState extends State<LoginScreen> {
             }
             break;
           case UserRole.member:
+            try {
+              if (mounted) {
+                final memberVm = Provider.of<MemberAppViewModel>(context, listen: false);
+                await memberVm.loadMemberDataFromSupabase(forceRefresh: true);
+              }
+            } catch (_) {}
             targetScreen = const MemberShell();
             break;
         }
       }
     }
 
+    if (!mounted) return;
     Navigator.pushAndRemoveUntil(
       context,
       AppRouter.scaleRoute(targetScreen),

@@ -83,6 +83,8 @@ class MemberAppViewModel extends ChangeNotifier {
   String _membershipStatus = 'Active';
   String _membershipStartDate = '01 Jan 2026';
   String _membershipEndDate = '29 May 2026';
+  String _rawMembershipStartDate = '';
+  String _rawMembershipEndDate = '';
   int _membershipTimeRemaining = 48;
   String _planDuration = '6 Months';
   String _amountPaid = '₹12,000';
@@ -254,6 +256,45 @@ class MemberAppViewModel extends ChangeNotifier {
   String get membershipStatus => _membershipStatus;
   String get membershipStartDate => _membershipStartDate;
   String get membershipEndDate => _membershipEndDate;
+  DateTime? get membershipStartDateTime {
+    if (_rawMembershipStartDate.isNotEmpty) {
+      final dt = DateTime.tryParse(_rawMembershipStartDate);
+      if (dt != null) return dt;
+    }
+    if (_membershipStartDate.isNotEmpty) {
+      try {
+        return DateFormat('dd MMM yyyy').parse(_membershipStartDate);
+      } catch (_) {}
+      return DateTime.tryParse(_membershipStartDate);
+    }
+    return null;
+  }
+  DateTime? get membershipEndDateTime {
+    if (_rawMembershipEndDate.isNotEmpty) {
+      final dt = DateTime.tryParse(_rawMembershipEndDate);
+      if (dt != null) return dt;
+    }
+    if (_membershipEndDate.isNotEmpty) {
+      try {
+        return DateFormat('dd MMM yyyy').parse(_membershipEndDate);
+      } catch (_) {}
+      return DateTime.tryParse(_membershipEndDate);
+    }
+    return null;
+  }
+  DateTime? get joinDateTime {
+    if (_joinDate.isNotEmpty) {
+      final dt = DateTime.tryParse(_joinDate);
+      if (dt != null) return dt;
+      try {
+        return DateFormat('dd MMM yyyy').parse(_joinDate);
+      } catch (_) {}
+      try {
+        return DateFormat('dd-MM-yyyy').parse(_joinDate);
+      } catch (_) {}
+    }
+    return null;
+  }
   int get membershipTimeRemaining => _membershipTimeRemaining;
   String get planDuration => _planDuration;
   String get amountPaid => _amountPaid;
@@ -661,7 +702,7 @@ class MemberAppViewModel extends ChangeNotifier {
   DateTime? _lastMemberDataFetchTime;
 
   Future<void> loadMemberDataFromSupabase({bool forceRefresh = false}) async {
-    if (!forceRefresh && _lastMemberDataFetchTime != null) {
+    if (!forceRefresh && _memberId.isNotEmpty && _lastMemberDataFetchTime != null) {
       final diff = DateTime.now().difference(_lastMemberDataFetchTime!);
       if (diff < const Duration(seconds: 30)) {
         return;
@@ -691,6 +732,7 @@ class MemberAppViewModel extends ChangeNotifier {
           cachedGymId = gymInfo['id'];
         } catch (_) {}
       }
+      cachedGymId ??= _gymId.isNotEmpty ? _gymId : null;
 
       var query = SupabaseService.client
           .from('members')
@@ -701,9 +743,18 @@ class MemberAppViewModel extends ChangeNotifier {
         query = query.eq('gym_id', cachedGymId);
       }
 
-      final memberData = await query.maybeSingle();
+      Map<String, dynamic>? fetchedMemberData = await query.maybeSingle();
+      if (fetchedMemberData == null && cachedGymId != null) {
+        // Fallback: search without gym_id restriction in case cachedGymId was stale/mismatched
+        fetchedMemberData = await SupabaseService.client
+            .from('members')
+            .select()
+            .eq('user_id', user.id)
+            .maybeSingle();
+      }
 
-      if (memberData != null) {
+      if (fetchedMemberData != null) {
+        final memberData = fetchedMemberData;
         _memberName = memberData['name'] ?? _memberName;
         _memberId = memberData['id'] ?? _memberId;
         _gymId = memberData['gym_id']?.toString() ?? cachedGymId ?? _gymId;
@@ -908,6 +959,8 @@ class MemberAppViewModel extends ChangeNotifier {
                 final durationMonths = planData['duration_months'] ?? 1;
                 _planDuration = '$durationMonths Month${durationMonths > 1 ? 's' : ''}';
               }
+              _rawMembershipStartDate = membershipData['start_date']?.toString() ?? '';
+              _rawMembershipEndDate = membershipData['end_date']?.toString() ?? '';
               try {
                 final startDate = DateTime.parse(membershipData['start_date']);
                 _membershipStartDate = DateFormat('dd MMM yyyy').format(startDate);
@@ -1366,7 +1419,7 @@ class MemberAppViewModel extends ChangeNotifier {
             final authUid = SupabaseService.client.auth.currentUser?.id ?? '';
             var attQuery = SupabaseService.client
                 .from('attendance_logs')
-                .select('date, check_in, check_out, status');
+                .select('date, check_in, check_out, status, user_type, role, member_id, user_id');
             if (_memberId.isNotEmpty && authUid.isNotEmpty) {
               attQuery = attQuery.or('member_id.eq.$_memberId,user_id.eq.$authUid');
             } else if (_memberId.isNotEmpty) {
@@ -1375,9 +1428,10 @@ class MemberAppViewModel extends ChangeNotifier {
               attQuery = attQuery.eq('user_id', authUid);
             }
 
+            // Order by check_in descending so latest records are retrieved first
             final attendanceData = await attQuery
-                .order('date', ascending: false)
-                .limit(50);
+                .order('check_in', ascending: false)
+                .limit(365);
 
             if (attendanceData.isNotEmpty) {
               _attendanceHistory.clear();
@@ -1391,15 +1445,32 @@ class MemberAppViewModel extends ChangeNotifier {
               bool markedTodayInDb = false;
               String todayTimeInDb = '';
               String todayDateInDb = '';
+              final Set<String> processedHistoryDates = {};
 
               for (var row in attendanceData) {
                 final status = row['status']?.toString() ?? 'Present';
+                final userType = row['user_type']?.toString().toLowerCase() ?? '';
+                final role = row['role']?.toString().toLowerCase() ?? '';
+
+                final isStaffDutyLog = userType == 'staff' ||
+                    (role == 'staff' || role == 'head receptionist' || role == 'trainer' || role == 'receptionist');
+
+                // An automated absence or missed shift for staff duties should NEVER mark the member as Absent in Member App!
+                if (isStaffDutyLog && (status == 'Absent' || status == 'Leave' || status == 'On Leave')) {
+                  continue; // Skip staff absence/leave records in Member App!
+                }
+
                 final rawDateStr = row['date']?.toString() ?? '';
                 final rawCheckIn = row['check_in']?.toString() ?? '';
                 final rawCheckOut = row['check_out']?.toString() ?? '';
 
                 DateTime? parsedDate;
-                if (rawDateStr.isNotEmpty) {
+                if (rawCheckIn.isNotEmpty) {
+                  try {
+                    parsedDate = DateTime.parse(rawCheckIn).toLocal();
+                  } catch (_) {}
+                }
+                if (parsedDate == null && rawDateStr.isNotEmpty) {
                   try {
                     parsedDate = DateTime.parse(rawDateStr);
                   } catch (_) {
@@ -1407,24 +1478,28 @@ class MemberAppViewModel extends ChangeNotifier {
                       parsedDate = DateFormat('dd-MM-yyyy').parse(rawDateStr);
                     } catch (_) {}
                   }
-                } else if (rawCheckIn.isNotEmpty) {
-                  try {
-                    parsedDate = DateTime.parse(rawCheckIn).toLocal();
-                  } catch (_) {}
                 }
 
                 if (parsedDate != null) {
                   final isoDateStr = DateFormat('yyyy-MM-dd').format(parsedDate);
-                  _attendanceMapByIsoDate[isoDateStr] = status;
+                  final isPresentStatus = (status == 'Present' || status == 'Late' || status == 'Early Exit' || status == 'Overtime');
+                  final existingStatus = _attendanceMapByIsoDate[isoDateStr];
+                  final existingIsPresent = existingStatus != null &&
+                      (existingStatus == 'Present' || existingStatus == 'Late' || existingStatus == 'Early Exit' || existingStatus == 'Overtime');
+
+                  // Never overwrite an existing Present record with an Absent record on the same date!
+                  if (isPresentStatus || !existingIsPresent) {
+                    _attendanceMapByIsoDate[isoDateStr] = status;
+                  }
 
                   if (parsedDate.month == now.month && parsedDate.year == now.year) {
                     final isSun = parsedDate.weekday == DateTime.sunday;
                     final isDecHol = _declaredHolidays.any((h) => h.startsWith(isoDateStr));
-                    if (!isSun && !isDecHol && (status == 'Present' || status == 'Late' || status == 'Early Exit' || status == 'Overtime')) {
+                    if (!isSun && !isDecHol && isPresentStatus) {
                       if (!_attendedDaysOfCurrentMonth.contains(parsedDate.day)) {
                         _attendedDaysOfCurrentMonth.add(parsedDate.day);
                       }
-                    } else if (status == 'Absent') {
+                    } else if (status == 'Absent' && !existingIsPresent) {
                       currentMonthAbsent++;
                     } else if (status == 'Late') {
                       currentMonthLate++;
@@ -1479,14 +1554,33 @@ class MemberAppViewModel extends ChangeNotifier {
                   }
                 }
 
-                _attendanceHistory.add({
-                  'date': displayDate,
-                  'isoDate': parsedDate != null ? DateFormat('yyyy-MM-dd').format(parsedDate) : '',
-                  'checkIn': checkInTime,
-                  'checkOut': checkOutTime,
-                  'status': status,
-                });
+                // Add to Check In History (avoid duplicating day if one is already present)
+                final historyKey = parsedDate != null ? DateFormat('yyyy-MM-dd').format(parsedDate) : displayDate;
+                if (!processedHistoryDates.contains(historyKey) || status == 'Present') {
+                  if (status == 'Present' && processedHistoryDates.contains(historyKey)) {
+                    _attendanceHistory.removeWhere((e) => e['isoDate'] == historyKey);
+                  }
+                  processedHistoryDates.add(historyKey);
+                  _attendanceHistory.add({
+                    'date': displayDate,
+                    'isoDate': parsedDate != null ? DateFormat('yyyy-MM-dd').format(parsedDate) : '',
+                    'checkIn': checkInTime,
+                    'checkOut': checkOutTime,
+                    'status': status,
+                    'parsedDateTime': parsedDate,
+                  });
+                }
               }
+
+              // Explicitly sort Check In History strictly descending by parsedDateTime (latest first)
+              _attendanceHistory.sort((a, b) {
+                final dtA = a['parsedDateTime'] as DateTime?;
+                final dtB = b['parsedDateTime'] as DateTime?;
+                if (dtA != null && dtB != null) {
+                  return dtB.compareTo(dtA);
+                }
+                return 0;
+              });
 
               // Present days is strictly for current month (never 50/27)
               _presentDays = _attendedDaysOfCurrentMonth.length;
@@ -1626,7 +1720,7 @@ class MemberAppViewModel extends ChangeNotifier {
 
       var attQuery = SupabaseService.client
           .from('attendance_logs')
-          .select('date, check_in, check_out, status');
+          .select('date, check_in, check_out, status, user_type, role, member_id, user_id');
       if (_memberId.isNotEmpty && authUid.isNotEmpty) {
         attQuery = attQuery.or('member_id.eq.$_memberId,user_id.eq.$authUid');
       } else if (_memberId.isNotEmpty) {
@@ -1635,9 +1729,10 @@ class MemberAppViewModel extends ChangeNotifier {
         attQuery = attQuery.eq('user_id', authUid);
       }
 
+      // Order by check_in descending so latest records are retrieved first
       final attendanceData = await attQuery
-          .order('date', ascending: false)
-          .limit(50);
+          .order('check_in', ascending: false)
+          .limit(365);
 
       if (attendanceData.isNotEmpty) {
         _attendanceHistory.clear();
@@ -1650,15 +1745,32 @@ class MemberAppViewModel extends ChangeNotifier {
         bool markedTodayInDb = false;
         String todayTimeInDb = '';
         String todayDateInDb = '';
+        final Set<String> processedHistoryDates = {};
 
         for (var row in attendanceData) {
           final status = row['status']?.toString() ?? 'Present';
+          final userType = row['user_type']?.toString().toLowerCase() ?? '';
+          final role = row['role']?.toString().toLowerCase() ?? '';
+
+          final isStaffDutyLog = userType == 'staff' ||
+              (role == 'staff' || role == 'head receptionist' || role == 'trainer' || role == 'receptionist');
+
+          // An automated absence or missed shift for staff duties should NEVER mark the member as Absent in Member App!
+          if (isStaffDutyLog && (status == 'Absent' || status == 'Leave' || status == 'On Leave')) {
+            continue; // Skip staff absence/leave records in Member App!
+          }
+
           final rawDateStr = row['date']?.toString() ?? '';
           final rawCheckIn = row['check_in']?.toString() ?? '';
           final rawCheckOut = row['check_out']?.toString() ?? '';
 
           DateTime? parsedDate;
-          if (rawDateStr.isNotEmpty) {
+          if (rawCheckIn.isNotEmpty) {
+            try {
+              parsedDate = DateTime.parse(rawCheckIn).toLocal();
+            } catch (_) {}
+          }
+          if (parsedDate == null && rawDateStr.isNotEmpty) {
             try {
               parsedDate = DateTime.parse(rawDateStr);
             } catch (_) {
@@ -1666,24 +1778,28 @@ class MemberAppViewModel extends ChangeNotifier {
                 parsedDate = DateFormat('dd-MM-yyyy').parse(rawDateStr);
               } catch (_) {}
             }
-          } else if (rawCheckIn.isNotEmpty) {
-            try {
-              parsedDate = DateTime.parse(rawCheckIn).toLocal();
-            } catch (_) {}
           }
 
           if (parsedDate != null) {
             final isoDateStr = DateFormat('yyyy-MM-dd').format(parsedDate);
-            _attendanceMapByIsoDate[isoDateStr] = status;
+            final isPresentStatus = (status == 'Present' || status == 'Late' || status == 'Early Exit' || status == 'Overtime');
+            final existingStatus = _attendanceMapByIsoDate[isoDateStr];
+            final existingIsPresent = existingStatus != null &&
+                (existingStatus == 'Present' || existingStatus == 'Late' || existingStatus == 'Early Exit' || existingStatus == 'Overtime');
+
+            // Never overwrite an existing Present record with an Absent record on the same date!
+            if (isPresentStatus || !existingIsPresent) {
+              _attendanceMapByIsoDate[isoDateStr] = status;
+            }
 
             if (parsedDate.month == now.month && parsedDate.year == now.year) {
               final isSun = parsedDate.weekday == DateTime.sunday;
               final isDecHol = _declaredHolidays.any((h) => h.startsWith(isoDateStr));
-              if (!isSun && !isDecHol && (status == 'Present' || status == 'Late' || status == 'Early Exit' || status == 'Overtime')) {
+              if (!isSun && !isDecHol && isPresentStatus) {
                 if (!_attendedDaysOfCurrentMonth.contains(parsedDate.day)) {
                   _attendedDaysOfCurrentMonth.add(parsedDate.day);
                 }
-              } else if (status == 'Absent') {
+              } else if (status == 'Absent' && !existingIsPresent) {
                 currentMonthAbsent++;
               } else if (status == 'Late') {
                 currentMonthLate++;
@@ -1738,14 +1854,33 @@ class MemberAppViewModel extends ChangeNotifier {
             }
           }
 
-          _attendanceHistory.add({
-            'date': displayDate,
-            'isoDate': parsedDate != null ? DateFormat('yyyy-MM-dd').format(parsedDate) : '',
-            'checkIn': checkInTime,
-            'checkOut': checkOutTime,
-            'status': status,
-          });
+          // Add to Check In History (avoid duplicating day if one is already present)
+          final historyKey = parsedDate != null ? DateFormat('yyyy-MM-dd').format(parsedDate) : displayDate;
+          if (!processedHistoryDates.contains(historyKey) || status == 'Present') {
+            if (status == 'Present' && processedHistoryDates.contains(historyKey)) {
+              _attendanceHistory.removeWhere((e) => e['isoDate'] == historyKey);
+            }
+            processedHistoryDates.add(historyKey);
+            _attendanceHistory.add({
+              'date': displayDate,
+              'isoDate': parsedDate != null ? DateFormat('yyyy-MM-dd').format(parsedDate) : '',
+              'checkIn': checkInTime,
+              'checkOut': checkOutTime,
+              'status': status,
+              'parsedDateTime': parsedDate,
+            });
+          }
         }
+
+        // Explicitly sort Check In History strictly descending by parsedDateTime (latest first)
+        _attendanceHistory.sort((a, b) {
+          final dtA = a['parsedDateTime'] as DateTime?;
+          final dtB = b['parsedDateTime'] as DateTime?;
+          if (dtA != null && dtB != null) {
+            return dtB.compareTo(dtA);
+          }
+          return 0;
+        });
 
         // Present days is strictly for current month (never 50/27)
         _presentDays = _attendedDaysOfCurrentMonth.length;
@@ -2145,6 +2280,8 @@ class MemberAppViewModel extends ChangeNotifier {
     _membershipStatus = 'Inactive';
     _membershipStartDate = '';
     _membershipEndDate = '';
+    _rawMembershipStartDate = '';
+    _rawMembershipEndDate = '';
     _membershipTimeRemaining = 0;
     _planDuration = '';
     _amountPaid = '';

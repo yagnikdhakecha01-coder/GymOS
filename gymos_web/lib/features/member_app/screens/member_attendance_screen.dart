@@ -304,6 +304,10 @@ class _MemberAttendanceScreenState extends State<MemberAttendanceScreen> {
       } else if (isHoliday) {
         bgColor = isToday ? const Color(0xFF9333EA) : const Color(0xFFF3E8FF);
         textColor = isToday ? Colors.white : const Color(0xFF9333EA);
+      } else if (dayDate.isBefore(DateTime(now.year, now.month, now.day))) {
+        // Past working day without attendance = ABSENT!
+        bgColor = AppTheme.dangerLight;
+        textColor = AppTheme.danger;
       }
 
       if (isToday && bgColor == Colors.transparent) {

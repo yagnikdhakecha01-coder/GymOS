@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../../core/theme/theme.dart';
+import '../../../core/models/user_profile.dart';
 import '../../authentication/auth_viewmodel.dart';
 import '../../../core/services/unlink_guard.dart';
 import 'member_dashboard_screen.dart';
@@ -52,10 +53,13 @@ class _MemberShellState extends State<MemberShell> with WidgetsBindingObserver {
 
       final prefs = await SharedPreferences.getInstance();
       final hasCachedMember = (prefs.getString('member_cached_id') ?? '').isNotEmpty;
-      final hasGymAssoc = authVm.activeAssociation != null || authVm.gymInfo != null || (prefs.getString('gymos_gym_info') != null);
+      final hasGymAssoc = authVm.activeAssociation != null ||
+          authVm.gymInfo != null ||
+          (prefs.getString('gymos_gym_info') != null) ||
+          authVm.userAssociations.any((a) => a.role == UserRole.member);
 
       if (!hasCachedMember && !hasGymAssoc) {
-        await memberVm.loadMemberDataFromSupabase();
+        await memberVm.loadMemberDataFromSupabase(forceRefresh: true);
         if (memberVm.memberId.isEmpty && memberVm.gymId.isEmpty && mounted) {
           Navigator.pushReplacement(context, AppRouter.scaleRoute(const MemberCodeScreen()));
           return;
@@ -91,6 +95,7 @@ class _MemberShellState extends State<MemberShell> with WidgetsBindingObserver {
 
   Future<void> _checkRulesAgreement() async {
     if (!mounted || _isRedirecting || _isAgreementModalShowing) return;
+    final authVm = Provider.of<AuthViewModel>(context, listen: false);
     final memberVm = Provider.of<MemberAppViewModel>(context, listen: false);
 
     // If ALREADY agreed in memory, NEVER open modal!
@@ -112,10 +117,15 @@ class _MemberShellState extends State<MemberShell> with WidgetsBindingObserver {
 
     // Only if not agreed locally, load member data and check Supabase
     if (memberVm.memberId.isEmpty || memberVm.gymId.isEmpty) {
-      await memberVm.loadMemberDataFromSupabase();
+      await memberVm.loadMemberDataFromSupabase(forceRefresh: true);
     }
-    if (memberVm.memberId.isEmpty && memberVm.gymId.isEmpty) {
-      // Member record does not exist — do not open agreement dialog, redirect to MemberCodeScreen
+    final hasGymAssoc = authVm.activeAssociation != null ||
+        authVm.gymInfo != null ||
+        (prefs.getString('gymos_gym_info') != null) ||
+        authVm.userAssociations.any((a) => a.role == UserRole.member);
+
+    if (!hasGymAssoc && memberVm.memberId.isEmpty && memberVm.gymId.isEmpty) {
+      // Only truly unlinked user without any gym association redirects to MemberCodeScreen
       if (mounted) {
         Navigator.pushReplacement(context, AppRouter.scaleRoute(const MemberCodeScreen()));
       }
