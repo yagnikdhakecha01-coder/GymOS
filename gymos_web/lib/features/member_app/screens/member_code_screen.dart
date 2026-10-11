@@ -84,7 +84,11 @@ class _MemberCodeScreenState extends State<MemberCodeScreen>
         if (roleStr == 'staff') {
           targetScreen = const StaffShell();
         } else {
-          await Provider.of<MemberAppViewModel>(context, listen: false).loadMemberDataFromSupabase();
+          try {
+            await Provider.of<MemberAppViewModel>(context, listen: false).loadMemberDataFromSupabase();
+          } catch (e) {
+            debugPrint('loadMemberDataFromSupabase warning on code redeem: $e');
+          }
           targetScreen = const MemberShell();
         }
 

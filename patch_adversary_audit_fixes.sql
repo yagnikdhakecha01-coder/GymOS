@@ -45,7 +45,6 @@ WITH CHECK (
 DROP POLICY IF EXISTS "read_active_invitations" ON public.invitations;
 DROP POLICY IF EXISTS "use_active_invitations" ON public.invitations;
 
--- Create atomic, rate-safe redemption function
 CREATE OR REPLACE FUNCTION public.redeem_gym_invitation(
   p_code TEXT,
   p_mobile TEXT
@@ -61,23 +60,29 @@ DECLARE
   v_gym_id UUID;
   v_role TEXT;
   v_full_name TEXT := '';
+  v_is_already_linked BOOLEAN := FALSE;
 BEGIN
   IF v_caller_id IS NULL THEN
     RETURN jsonb_build_object('success', false, 'error', 'Authentication required.');
   END IF;
 
-  -- 1. Find invitation matching code
+  -- 1. Exact match (case-insensitive)
   SELECT * INTO v_invite
   FROM public.invitations
-  WHERE invitation_code = trim(p_code)
+  WHERE LOWER(TRIM(invitation_code)) = LOWER(TRIM(p_code))
   FOR UPDATE;
+
+  -- 1b. Fuzzy match fallback for visually similar characters (0 vs O, 1 vs I/l)
+  IF NOT FOUND THEN
+    SELECT * INTO v_invite
+    FROM public.invitations
+    WHERE REPLACE(REPLACE(REPLACE(LOWER(TRIM(invitation_code)), 'o', '0'), 'l', '1'), 'i', '1') = 
+          REPLACE(REPLACE(REPLACE(LOWER(TRIM(p_code)), 'o', '0'), 'l', '1'), 'i', '1')
+    FOR UPDATE;
+  END IF;
 
   IF NOT FOUND THEN
     RETURN jsonb_build_object('success', false, 'error', 'Invalid invitation code.');
-  END IF;
-
-  IF v_invite.code_used = TRUE OR v_invite.status <> 'Pending' THEN
-    RETURN jsonb_build_object('success', false, 'error', 'This invitation code is no longer active.');
   END IF;
 
   IF v_invite.expires_at IS NOT NULL AND now() > v_invite.expires_at THEN
@@ -86,7 +91,7 @@ BEGIN
   END IF;
 
   -- 2. Verify mobile number
-  IF trim(v_invite.registered_mobile) <> trim(p_mobile) THEN
+  IF TRIM(v_invite.registered_mobile) <> TRIM(p_mobile) AND RIGHT(TRIM(v_invite.registered_mobile), 10) <> RIGHT(TRIM(p_mobile), 10) THEN
     RETURN jsonb_build_object('success', false, 'error', 'Wrong Mobile Number.');
   END IF;
 
@@ -100,19 +105,51 @@ BEGIN
     SELECT name INTO v_full_name FROM public.staff WHERE id = v_invite.staff_id;
   END IF;
 
-  -- 3. Upsert association if not already existing
+  -- Check if this member or staff record is ALREADY linked to this caller
+  IF v_invite.member_id IS NOT NULL THEN
+    IF EXISTS (SELECT 1 FROM public.members WHERE id = v_invite.member_id AND user_id = v_caller_id) THEN
+      v_is_already_linked := TRUE;
+    END IF;
+  ELSIF v_invite.staff_id IS NOT NULL THEN
+    IF EXISTS (SELECT 1 FROM public.staff WHERE id = v_invite.staff_id AND user_id = v_caller_id) THEN
+      v_is_already_linked := TRUE;
+    END IF;
+  END IF;
+
+  -- Only reject as inactive if this invitation was used by someone else or cancelled, and NOT linked to current caller
+  IF NOT v_is_already_linked THEN
+    IF v_invite.code_used = TRUE OR v_invite.status NOT IN ('Pending', 'Active') THEN
+      RETURN jsonb_build_object('success', false, 'error', 'This invitation code is no longer active.');
+    END IF;
+  END IF;
+
+  -- 3. Ensure caller has a profile record (satisfies foreign key)
+  INSERT INTO public.profiles (id, email, full_name, name)
+  SELECT 
+    v_caller_id,
+    COALESCE(u.email, ''),
+    COALESCE(v_full_name, u.raw_user_meta_data->>'full_name', u.raw_user_meta_data->>'name', split_part(u.email, '@', 1)),
+    COALESCE(v_full_name, u.raw_user_meta_data->>'full_name', u.raw_user_meta_data->>'name', split_part(u.email, '@', 1))
+  FROM auth.users u WHERE u.id = v_caller_id
+  ON CONFLICT (id) DO UPDATE SET
+    full_name = COALESCE(public.profiles.full_name, EXCLUDED.full_name);
+
+  -- 4. Upsert association if not already existing
   IF NOT EXISTS (
     SELECT 1 FROM public.user_gym_associations
     WHERE user_id = v_caller_id AND gym_id = v_gym_id AND role = v_role
   ) THEN
     INSERT INTO public.user_gym_associations (user_id, gym_id, role, setup_completed)
-    VALUES (v_caller_id, v_gym_id, v_role, TRUE);
+    VALUES (v_caller_id, v_gym_id, v_role, TRUE)
+    ON CONFLICT (user_id, gym_id, role) DO UPDATE SET setup_completed = TRUE;
   END IF;
 
-  -- 4. Link member or staff record
+  -- 5. Link member or staff record
   IF v_invite.member_id IS NOT NULL THEN
     UPDATE public.members
-    SET user_id = v_caller_id, status = 'Active'
+    SET user_id = v_caller_id, 
+        status = 'Active',
+        email = COALESCE(NULLIF(members.email, ''), (SELECT email FROM auth.users WHERE id = v_caller_id))
     WHERE id = v_invite.member_id;
   ELSIF v_invite.staff_id IS NOT NULL THEN
     UPDATE public.staff
@@ -120,11 +157,11 @@ BEGIN
     WHERE id = v_invite.staff_id;
   END IF;
 
-  -- 5. Mark invitation as used
+  -- 6. Mark invitation as used
   UPDATE public.invitations
   SET code_used = TRUE,
       status = 'Used',
-      activated_at = now()
+      activated_at = COALESCE(activated_at, now())
   WHERE id = v_invite.id;
 
   RETURN jsonb_build_object(

@@ -3774,14 +3774,36 @@ class GymRepository extends ChangeNotifier {
     required String name,
     required String phone,
     required bool isStaff,
+    bool forceRegenerate = false,
   }) async {
-    final code = _generateRandomCode();
     if (!SupabaseService.isInitialized) {
       throw Exception('Supabase client is not initialized.');
     }
     if (!_isValidUUID(recordId)) {
       throw Exception('Invalid member/staff ID format.');
     }
+
+    // Reuse existing valid active/pending invitation if present unless forceRegenerate is true
+    if (!forceRegenerate) {
+      try {
+        final existing = await SupabaseService.client
+            .from('invitations')
+            .select('invitation_code')
+            .eq(isStaff ? 'staff_id' : 'member_id', recordId)
+            .eq('code_used', false)
+            .eq('status', 'Pending')
+            .order('created_at', ascending: false)
+            .limit(1)
+            .maybeSingle();
+        if (existing != null && (existing['invitation_code']?.toString().isNotEmpty ?? false)) {
+          return existing['invitation_code'].toString();
+        }
+      } catch (e) {
+        debugPrint('Check existing invitation notice: $e');
+      }
+    }
+
+    final code = _generateRandomCode();
     final gymId = _storage.getGymInfo()?['id'];
     final ownerId = SupabaseService.client.auth.currentUser?.id;
 
@@ -4080,7 +4102,8 @@ class GymRepository extends ChangeNotifier {
   }
 
   String _generateRandomCode() {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    // Avoid ambiguous characters (0, O, 1, I, l) to prevent typing mistakes on mobile
+    const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
     final rnd = Random.secure();
     return List.generate(8, (index) => chars[rnd.nextInt(chars.length)]).join();
   }

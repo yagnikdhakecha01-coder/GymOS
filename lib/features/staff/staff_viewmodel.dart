@@ -466,8 +466,8 @@ class StaffViewModel extends ChangeNotifier {
   // --- Invitations & Activation System ---
   Future<Map<String, dynamic>?> getLatestInvitation(String id) => _repository.getLatestInvitation(id, true);
 
-  Future<String> generateInvitation({required String recordId, required String name, required String phone}) async {
-    final code = await _repository.generateInvitation(recordId: recordId, name: name, phone: phone, isStaff: true);
+  Future<String> generateInvitation({required String recordId, required String name, required String phone, bool forceRegenerate = false}) async {
+    final code = await _repository.generateInvitation(recordId: recordId, name: name, phone: phone, isStaff: true, forceRegenerate: forceRegenerate);
     notifyListeners();
     return code;
   }
