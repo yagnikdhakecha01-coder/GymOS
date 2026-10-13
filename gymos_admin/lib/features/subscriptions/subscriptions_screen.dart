@@ -4,6 +4,7 @@ import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
 import '../../core/theme/admin_theme.dart';
 import '../../core/theme/responsive.dart';
 import '../../core/widgets/skeleton_loader.dart';
+import '../../core/widgets/gym_logo_avatar.dart';
 import '../../core/services/supabase_service.dart';
 
 class SubscriptionsScreen extends StatefulWidget {
@@ -96,6 +97,7 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> with SingleTi
             'id': map['id'],
             'gym_id': map['gym_id'],
             'gym_name': gymName,
+            'logo_url': gymMap?['logo_url'],
             'owner_name': ownerName,
             'owner_email': ownerEmail,
             'owner_phone': ownerPhone,
@@ -116,7 +118,7 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> with SingleTi
         try {
           final gymsRes = await client
               .from('gyms')
-              .select('id, name, city, plan, status, trial_end_date, expiry_date, user_gym_associations(role, profiles(full_name, email, phone_number))');
+              .select('id, name, logo_url, city, plan, status, trial_end_date, expiry_date, user_gym_associations(role, profiles(full_name, email, phone_number))');
 
           for (var item in gymsRes as List) {
             final gymMap = Map<String, dynamic>.from(item);
@@ -153,6 +155,7 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> with SingleTi
               'id': gymMap['id'],
               'gym_id': gymMap['id'],
               'gym_name': gymMap['name'] ?? 'Gym',
+              'logo_url': gymMap['logo_url'],
               'owner_name': ownerName,
               'owner_email': ownerEmail,
               'owner_phone': ownerPhone,
@@ -849,10 +852,12 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> with SingleTi
 
         return ListTile(
           contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-          leading: Container(
-            width: 44, height: 44,
-            decoration: BoxDecoration(color: AdminTheme.primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)),
-            child: Center(child: Text(gymName.isNotEmpty ? gymName[0].toUpperCase() : 'G', style: GoogleFonts.inter(fontWeight: FontWeight.w700, color: AdminTheme.primary, fontSize: 18))),
+          leading: GymLogoAvatar(
+            logoUrl: item['logo_url'] as String?,
+            gymName: gymName,
+            size: 44,
+            borderRadius: 12,
+            enableFullScreenViewer: true,
           ),
           title: Row(
             children: [

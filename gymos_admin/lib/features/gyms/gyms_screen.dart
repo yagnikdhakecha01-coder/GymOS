@@ -14,6 +14,7 @@ import '../../core/constants/app_constants.dart';
 
 import '../../core/services/supabase_service.dart';
 import '../../core/services/google_drive_service.dart';
+import '../../core/widgets/gym_logo_avatar.dart';
 import 'admin_gym_dashboard_screen.dart';
 import 'widgets/bulk_send_invitations_dialog.dart';
 
@@ -177,6 +178,7 @@ class _GymsScreenState extends State<GymsScreen> {
         loadedGyms.add({
           'id': gymMap['id'],
           'name': gymMap['name'] ?? 'Unnamed Gym',
+          'logo_url': gymMap['logo_url'] ?? gymMap['logo'],
           'owner': ownerName,
           'email': gymMap['email'] ?? '-',
           'mobile': ownerMobile != '-' ? ownerMobile : (gymMap['phone_number'] ?? '-'),
@@ -679,22 +681,12 @@ class _GymsScreenState extends State<GymsScreen> {
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Container(
-                          width: 32, height: 32,
-                          decoration: BoxDecoration(
-                            color: AdminTheme.primary.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Center(
-                            child: Text(
-                              (gym['name'] as String)[0],
-                              style: GoogleFonts.inter(
-                                fontWeight: FontWeight.w700,
-                                color: AdminTheme.primary,
-                                fontSize: 14,
-                              ),
-                            ),
-                          ),
+                        GymLogoAvatar(
+                          logoUrl: gym['logo_url'] as String?,
+                          gymName: gym['name'] as String,
+                          size: 34,
+                          borderRadius: 8,
+                          enableFullScreenViewer: true,
                         ),
                         const SizedBox(width: 10),
                         Column(
@@ -1733,18 +1725,12 @@ class _GymsScreenState extends State<GymsScreen> {
               children: [
                 Row(
                   children: [
-                    Container(
-                      width: 48, height: 48,
-                      decoration: BoxDecoration(
-                        color: AdminTheme.primary.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Center(
-                        child: Text(
-                          (gym['name'] as String)[0],
-                          style: GoogleFonts.inter(fontWeight: FontWeight.w700, color: AdminTheme.primary, fontSize: 22),
-                        ),
-                      ),
+                    GymLogoAvatar(
+                      logoUrl: gym['logo_url'] as String?,
+                      gymName: gym['name'] as String,
+                      size: 48,
+                      borderRadius: 12,
+                      enableFullScreenViewer: true,
                     ),
                     const SizedBox(width: 16),
                     Expanded(

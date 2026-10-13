@@ -58,7 +58,7 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 6, vsync: this);
+    _tabController = TabController(length: 7, vsync: this);
     _isLocked = widget.gym['is_locked'] == true;
     _gymStatus = widget.gym['status']?.toString() ?? 'Active';
     _loadAllData();
@@ -2125,6 +2125,20 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
             const Tab(icon: Icon(Icons.analytics_rounded), text: 'Financials'),
             Tab(icon: const Icon(Icons.people_rounded), text: 'Members (${_members.length})'),
             Tab(icon: const Icon(Icons.badge_rounded), text: 'Staff List (${_staff.length})'),
+            Builder(
+              builder: (context) {
+                final dupCount = _detectDuplicateMembers().length;
+                return Tab(
+                  icon: Badge(
+                    isLabelVisible: dupCount > 0,
+                    label: Text('$dupCount', style: const TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold)),
+                    backgroundColor: Colors.amber.shade800,
+                    child: const Icon(Icons.people_outline_rounded),
+                  ),
+                  text: 'Duplicates ($dupCount)',
+                );
+              },
+            ),
             Tab(
               icon: Badge(
                 isLabelVisible: _diagnostics.isNotEmpty,
@@ -2172,6 +2186,9 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
                 _loadingStaff
                     ? const Center(child: CircularProgressIndicator(color: AdminTheme.primary))
                     : _buildStaffTab(),
+                _loadingMembers
+                    ? const Center(child: CircularProgressIndicator(color: AdminTheme.primary))
+                    : _buildDuplicateMembersTab(currencyFormat),
                 _loadingDiagnostics
                     ? const Center(child: CircularProgressIndicator(color: AdminTheme.primary))
                     : _buildDiagnosticsTab(),
@@ -3011,7 +3028,37 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
                   ),
                 ),
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: 12),
+              Builder(
+                builder: (context) {
+                  final dupCount = _detectDuplicateMembers().length;
+                  return OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      side: BorderSide(
+                        color: dupCount > 0 ? Colors.amber.shade700 : AdminTheme.borderColor(context),
+                      ),
+                      backgroundColor: dupCount > 0 ? Colors.amber.withValues(alpha: 0.1) : Colors.transparent,
+                    ),
+                    icon: Icon(
+                      Icons.people_outline_rounded,
+                      size: 18,
+                      color: dupCount > 0 ? Colors.amber.shade700 : AdminTheme.secondaryTextColor(context),
+                    ),
+                    label: Text(
+                      'Duplicates ($dupCount)',
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: dupCount > 0 ? Colors.amber.shade700 : AdminTheme.secondaryTextColor(context),
+                      ),
+                    ),
+                    onPressed: () => _tabController.animateTo(3),
+                  );
+                },
+              ),
+              const SizedBox(width: 12),
               // Direct Shortcut to Restore Tab
               OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(
@@ -3035,7 +3082,7 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
                     color: _deletedMembers.isNotEmpty ? Colors.redAccent : AdminTheme.secondaryTextColor(context),
                   ),
                 ),
-                onPressed: () => _tabController.animateTo(5),
+                onPressed: () => _tabController.animateTo(6),
               ),
             ],
           ),
@@ -4115,6 +4162,472 @@ class _AdminGymDashboardScreenState extends State<AdminGymDashboardScreen> with 
                 },
               ),
             ),
+        ],
+      ),
+    );
+  }
+
+  // =========================================================================
+  // DUPLICATE MEMBER DETECTION (SAME NAME / SAME MOBILE NUMBER)
+  // =========================================================================
+
+  String _normalizePhone(String? phone) {
+    if (phone == null) return '';
+    String p = phone.trim().replaceAll(RegExp(r'[^0-9]'), '');
+    if (p.length > 10 && p.startsWith('91')) {
+      p = p.substring(2);
+    }
+    return p;
+  }
+
+  String _normalizeName(String? name) {
+    if (name == null) return '';
+    return name
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9]'), '');
+  }
+
+  List<Map<String, dynamic>> _detectDuplicateMembers() {
+    final List<Map<String, dynamic>> dupList = [];
+    final Set<String> pairedKeys = {};
+
+    for (int i = 0; i < _members.length; i++) {
+      final m1 = _members[i];
+      final id1 = m1['id']?.toString() ?? '';
+      final rawName1 = (m1['full_name'] ?? '').toString().trim();
+      final normName1 = _normalizeName(rawName1);
+      final normPhone1 = _normalizePhone(m1['phone']?.toString());
+
+      if (id1.isEmpty) continue;
+
+      for (int j = i + 1; j < _members.length; j++) {
+        final m2 = _members[j];
+        final id2 = m2['id']?.toString() ?? '';
+        final rawName2 = (m2['full_name'] ?? '').toString().trim();
+        final normName2 = _normalizeName(rawName2);
+        final normPhone2 = _normalizePhone(m2['phone']?.toString());
+
+        if (id2.isEmpty || id1 == id2) continue;
+
+        final pairKey = '$id1-$id2';
+        final pairKeyRev = '$id2-$id1';
+        if (pairedKeys.contains(pairKey) || pairedKeys.contains(pairKeyRev)) continue;
+
+        bool isDup = false;
+        int score = 0;
+        List<String> reasons = [];
+
+        // 1. Same Mobile Number match (Highest confidence)
+        if (normPhone1.isNotEmpty && normPhone1 == normPhone2 && normPhone1 != '0000000000') {
+          isDup = true;
+          score = 98;
+          reasons.add('Same Mobile Number (${m1['phone']})');
+        }
+
+        // 2. Exact Identical Name
+        if (normName1.isNotEmpty && normName1 == normName2 && normName1.length >= 3) {
+          isDup = true;
+          score = max(score, 90);
+          reasons.add('Exact Identical Full Name ($rawName1)');
+        } else if (normName1.length >= 5 && normName2.length >= 5) {
+          // Substring / High name similarity
+          if (normName1.contains(normName2) || normName2.contains(normName1)) {
+            isDup = true;
+            score = max(score, 78);
+            reasons.add('High Name Similarity ("$rawName1" & "$rawName2")');
+          }
+        }
+
+        if (isDup) {
+          pairedKeys.add(pairKey);
+          dupList.add({
+            'score': score,
+            'reasons': reasons,
+            'memberA': m1,
+            'memberB': m2,
+          });
+        }
+      }
+    }
+
+    // Sort by confidence score descending
+    dupList.sort((a, b) => (b['score'] as int).compareTo(a['score'] as int));
+    return dupList;
+  }
+
+  Widget _buildDuplicateMembersTab(NumberFormat currencyFormat) {
+    final duplicates = _detectDuplicateMembers();
+
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Banner
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Colors.amber.withValues(alpha: 0.12),
+                  AdminTheme.surfaceColor(context),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.people_outline_rounded, color: Colors.amber, size: 28),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            'Internal Duplicate Members Detection',
+                            style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: AdminTheme.textColor(context)),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: duplicates.isEmpty ? AdminTheme.success.withValues(alpha: 0.15) : Colors.amber.withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              duplicates.isEmpty ? 'ALL CLEAN' : '${duplicates.length} PAIRS DETECTED',
+                              style: GoogleFonts.inter(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w800,
+                                color: duplicates.isEmpty ? AdminTheme.success : Colors.amber.shade800,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Automatic scanning for members within ${widget.gym['name'] ?? 'this Gym'} sharing the exact same Mobile Number or Full Name. Review and archive redundant entries.',
+                        style: GoogleFonts.inter(fontSize: 12, color: AdminTheme.secondaryTextColor(context), height: 1.3),
+                      ),
+                    ],
+                  ),
+                ),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    side: BorderSide(color: AdminTheme.borderColor(context)),
+                  ),
+                  icon: const Icon(Icons.refresh_rounded, size: 18),
+                  label: const Text('Re-scan'),
+                  onPressed: () {
+                    setState(() {});
+                  },
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          if (duplicates.isEmpty)
+            Expanded(
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: AdminTheme.success.withValues(alpha: 0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.verified_user_rounded, size: 48, color: AdminTheme.success),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'No Duplicate Members Found',
+                      style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold, color: AdminTheme.textColor(context)),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Every member in this gym has unique contact information and distinct identity.',
+                      style: GoogleFonts.inter(fontSize: 13, color: AdminTheme.secondaryTextColor(context)),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            Expanded(
+              child: ListView.separated(
+                itemCount: duplicates.length,
+                separatorBuilder: (context, index) => const SizedBox(height: 16),
+                itemBuilder: (context, index) {
+                  final dup = duplicates[index];
+                  final m1 = dup['memberA'] as Map<String, dynamic>;
+                  final m2 = dup['memberB'] as Map<String, dynamic>;
+                  final score = dup['score'] as int;
+                  final reasons = List<String>.from(dup['reasons'] ?? []);
+
+                  return Container(
+                    decoration: BoxDecoration(
+                      color: AdminTheme.surfaceColor(context),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: score >= 90 ? Colors.redAccent.withValues(alpha: 0.4) : Colors.amber.withValues(alpha: 0.4),
+                      ),
+                    ),
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Card Header
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: score >= 90 ? Colors.redAccent.withValues(alpha: 0.15) : Colors.amber.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    score >= 90 ? Icons.warning_amber_rounded : Icons.info_outline_rounded,
+                                    size: 15,
+                                    color: score >= 90 ? Colors.redAccent : Colors.amber.shade800,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    '$score% Match Confidence',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: score >= 90 ? Colors.redAccent : Colors.amber.shade800,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Wrap(
+                                spacing: 8,
+                                children: reasons.map((r) => Chip(
+                                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  padding: EdgeInsets.zero,
+                                  labelPadding: const EdgeInsets.symmetric(horizontal: 8),
+                                  backgroundColor: AdminTheme.cardColor(context),
+                                  label: Text(r, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600)),
+                                )).toList(),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+
+                        // Two Columns Comparison (Member A vs Member B)
+                        LayoutBuilder(
+                          builder: (context, constraints) {
+                            final isMobile = constraints.maxWidth < 650;
+                            return Flex(
+                              direction: isMobile ? Axis.vertical : Axis.horizontal,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  flex: isMobile ? 0 : 1,
+                                  child: _buildDuplicateMemberProfileCard(m1, 'Entry #1 (Registered Earlier)', currencyFormat),
+                                ),
+                                if (isMobile)
+                                  const Padding(
+                                    padding: EdgeInsets.symmetric(vertical: 8),
+                                    child: Center(child: Icon(Icons.compare_arrows_rounded, color: Colors.grey)),
+                                  )
+                                else
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                                    child: Center(
+                                      child: Container(
+                                        padding: const EdgeInsets.all(8),
+                                        decoration: BoxDecoration(
+                                          color: AdminTheme.cardColor(context),
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: const Icon(Icons.compare_arrows_rounded, color: Colors.grey, size: 20),
+                                      ),
+                                    ),
+                                  ),
+                                Expanded(
+                                  flex: isMobile ? 0 : 1,
+                                  child: _buildDuplicateMemberProfileCard(m2, 'Entry #2 (Potential Duplicate)', currencyFormat),
+                                ),
+                              ],
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDuplicateMemberProfileCard(Map<String, dynamic> m, String tag, NumberFormat currencyFormat) {
+    final name = m['full_name'] ?? 'Member';
+    final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
+    final avatar = m['avatar_url'];
+    final pending = m['pending_amount'] as double? ?? 0.0;
+    final totalRecv = m['total_received_amount'] as double? ?? 0.0;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: AdminTheme.cardColor(context),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AdminTheme.borderColor(context)),
+      ),
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                tag,
+                style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: AdminTheme.primary),
+              ),
+              const Spacer(),
+              _statusChip(m['status'] ?? 'Active'),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              InteractiveAvatarWrapper(
+                imageUrl: avatar?.toString(),
+                title: name,
+                subtitle: 'Member Profile Photo • ${m['phone'] ?? ''}',
+                radius: 20,
+                showZoomBadge: false,
+                child: CircleAvatar(
+                  radius: 20,
+                  backgroundColor: AdminTheme.primary.withValues(alpha: 0.12),
+                  backgroundImage: (avatar != null && avatar.toString().isNotEmpty) ? NetworkImage(avatar) : null,
+                  child: (avatar == null || avatar.toString().isEmpty)
+                      ? Text(initial, style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 14, color: AdminTheme.primary))
+                      : null,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 14, color: AdminTheme.textColor(context)),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '📱 ${m['phone'] ?? '-'}',
+                      style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AdminTheme.secondaryTextColor(context)),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: AdminTheme.surfaceColor(context),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Plan:', style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.mutedTextColor(context))),
+                    Text(m['membership_name'] ?? 'No Plan', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600)),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Join Date:', style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.mutedTextColor(context))),
+                    Text(m['join_date'] ?? '-', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w500)),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Paid / Due:', style: GoogleFonts.inter(fontSize: 11, color: AdminTheme.mutedTextColor(context))),
+                    Text(
+                      '${currencyFormat.format(totalRecv)} / ${currencyFormat.format(pending)}',
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: pending > 0 ? AdminTheme.danger : AdminTheme.success,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  icon: const Icon(Icons.visibility_outlined, size: 15),
+                  label: const Text('View Profile', style: TextStyle(fontSize: 12)),
+                  onPressed: () => _showMemberDetailsDialog(m),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.redAccent.withValues(alpha: 0.15),
+                    foregroundColor: Colors.redAccent,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  icon: const Icon(Icons.delete_outline_rounded, size: 15),
+                  label: const Text('Delete / Trash', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                  onPressed: () => _confirmDeleteMember(m),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
