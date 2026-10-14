@@ -8,7 +8,9 @@ import 'supabase_service.dart';
 class AppReviewService {
   static const _reviewedKey = 'gymos_has_reviewed';
 
-  // ── Play Store URL ──────────────────────────────────────────────
+  // ── Store URLs ──────────────────────────────────────────────────
+  static const String appStoreUrl =
+      'https://apps.apple.com/app/gymos';
   static const String playStoreUrl =
       'https://play.google.com/store/apps/details?id=com.gymos.fitness.app.v1';
   static const String playStoreFallbackUrl =

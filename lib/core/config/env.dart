@@ -5,6 +5,6 @@ class Env {
   /// Reads SUPABASE_ANON_KEY from Dart environment variables.
   static const String supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
 
-  /// Configurable Attendance Display base URL (defaults to https://localhost:3000)
-  static const String displayBaseUrl = String.fromEnvironment('DISPLAY_BASE_URL', defaultValue: 'https://localhost:3000');
+  /// Configurable Attendance Display base URL
+  static const String displayBaseUrl = String.fromEnvironment('DISPLAY_BASE_URL');
 }

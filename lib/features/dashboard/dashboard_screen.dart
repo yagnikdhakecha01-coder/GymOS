@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:convert';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -1441,7 +1443,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildTrialExpirationBanner(BuildContext context, int daysLeft) {
-    if (_isBannerDismissed) return const SizedBox.shrink();
+    if ((!kIsWeb && Platform.isIOS) || _isBannerDismissed) return const SizedBox.shrink();
 
     final text = daysLeft == 0 
         ? "Your trial ends today. Gym OS plan tiers are managed by your account administrator."

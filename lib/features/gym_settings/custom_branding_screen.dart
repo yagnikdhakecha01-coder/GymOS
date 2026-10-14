@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
@@ -243,6 +244,7 @@ class _CustomBrandingScreenState extends State<CustomBrandingScreen> {
   }
 
   void _showUpgradeDialog() {
+    final isIOS = !kIsWeb && Platform.isIOS;
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -251,33 +253,42 @@ class _CustomBrandingScreenState extends State<CustomBrandingScreen> {
           children: [
             const Icon(Icons.lock_rounded, color: AppTheme.warning, size: 28),
             const SizedBox(width: 10),
-            Text('Upgrade Required', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+            Text(isIOS ? 'Branding Configuration' : 'Upgrade Required', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
           ],
         ),
         content: Text(
-          'Custom whitelabel branding is a Premium feature. Upgrade to Pro or Business Plan to activate custom branding for all your members and staff.',
+          isIOS
+              ? 'Custom whitelabel branding is managed by your account administrator.'
+              : 'Custom whitelabel branding is a Premium feature. Upgrade to Pro or Business Plan to activate custom branding for all your members and staff.',
           style: GoogleFonts.inter(fontSize: 14, color: AppTheme.textSecondary, height: 1.4),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text('Cancel', style: GoogleFonts.inter(color: AppTheme.textSecondary, fontWeight: FontWeight.bold)),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const OwnerSubscriptionScreen()),
-              );
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.primary,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusButton)),
+          if (isIOS)
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text('OK', style: GoogleFonts.inter(color: AppTheme.primary, fontWeight: FontWeight.bold)),
+            )
+          else ...[
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text('Cancel', style: GoogleFonts.inter(color: AppTheme.textSecondary, fontWeight: FontWeight.bold)),
             ),
-            child: Text('View Plan Details', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-          ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const OwnerSubscriptionScreen()),
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primary,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusButton)),
+              ),
+              child: Text('View Plan Details', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+            ),
+          ],
         ],
       ),
     );
@@ -318,36 +329,40 @@ class _CustomBrandingScreenState extends State<CustomBrandingScreen> {
                             const Icon(Icons.star_rounded, color: AppTheme.warning, size: 24),
                             const SizedBox(width: 10),
                             Text(
-                              'Premium Feature Locked',
+                              (!kIsWeb && Platform.isIOS) ? 'Branding Information' : 'Premium Feature Locked',
                               style: GoogleFonts.inter(fontWeight: FontWeight.bold, color: AppTheme.warning.withAlpha(200)),
                             ),
                           ],
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'Your current plan does not include whitelabel custom branding. You can customize details below to preview how it looks, but you must upgrade your subscription to save and apply the custom name and logo across the member/staff apps.',
+                          (!kIsWeb && Platform.isIOS)
+                              ? 'Custom whitelabel branding is managed by your account administrator. You can customize details below to preview how it looks.'
+                              : 'Your current plan does not include whitelabel custom branding. You can customize details below to preview how it looks, but you must upgrade your subscription to save and apply the custom name and logo across the member/staff apps.',
                           style: GoogleFonts.inter(fontSize: 12.5, color: Colors.amber[900], height: 1.4),
                         ),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          height: 38,
-                          child: ElevatedButton.icon(
-                            onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(builder: (context) => const OwnerSubscriptionScreen()),
-                              );
-                            },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppTheme.warning,
-                              foregroundColor: Colors.white,
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                        if (kIsWeb || !Platform.isIOS) ...[
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            height: 38,
+                            child: ElevatedButton.icon(
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(builder: (context) => const OwnerSubscriptionScreen()),
+                                );
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppTheme.warning,
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                              ),
+                              icon: const Icon(Icons.upgrade_rounded, size: 18),
+                              label: Text('View Plan Details', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold)),
                             ),
-                            icon: const Icon(Icons.upgrade_rounded, size: 18),
-                            label: Text('View Plan Details', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold)),
                           ),
-                        ),
+                        ],
                       ],
                     ),
                   ),

@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -471,45 +473,47 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     trailing: const Icon(Icons.chevron_right_rounded, color: AppTheme.textMuted),
                     onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const OnlineDatabaseScreen())),
                   ),
-                  const Divider(height: 1),
+                  if (!kIsWeb && !Platform.isIOS) ...[
+                    const Divider(height: 1),
 
-                  // ── Rate GymOS ─────────────────────────────────
-                  ListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                    leading: Container(
-                      width: AppTheme.iconContainerSize,
-                      height: AppTheme.iconContainerSize,
-                      decoration: BoxDecoration(
-                        color: _hasReviewed
-                            ? AppTheme.successLight
-                            : const Color(0xFFFEF3C7),
-                        borderRadius: BorderRadius.circular(AppTheme.radiusIconContainer),
+                    // ── Rate GymOS ─────────────────────────────────
+                    ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                      leading: Container(
+                        width: AppTheme.iconContainerSize,
+                        height: AppTheme.iconContainerSize,
+                        decoration: BoxDecoration(
+                          color: _hasReviewed
+                              ? AppTheme.successLight
+                              : const Color(0xFFFEF3C7),
+                          borderRadius: BorderRadius.circular(AppTheme.radiusIconContainer),
+                        ),
+                        child: Icon(
+                          Icons.star_rounded,
+                          color: _hasReviewed
+                              ? AppTheme.success
+                              : const Color(0xFFF59E0B),
+                          size: 20,
+                        ),
                       ),
-                      child: Icon(
-                        Icons.star_rounded,
-                        color: _hasReviewed
-                            ? AppTheme.success
-                            : const Color(0xFFF59E0B),
-                        size: 20,
+                      title: Text(
+                        _hasReviewed ? 'Thank You for Rating! ✓' : 'Rate GymOS',
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.textPrimary,
+                        ),
                       ),
-                    ),
-                    title: Text(
-                      _hasReviewed ? 'Thank You for Rating! ✓' : 'Rate GymOS',
-                      style: GoogleFonts.inter(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.textPrimary,
+                      subtitle: Text(
+                        _hasReviewed
+                            ? 'Your review helps other gyms discover GymOS'
+                            : 'Love the app? Leave a review on Play Store',
+                        style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted),
                       ),
+                      trailing: const Icon(Icons.chevron_right_rounded, color: AppTheme.textMuted),
+                      onTap: () => _openReviewSheet(context),
                     ),
-                    subtitle: Text(
-                      _hasReviewed
-                          ? 'Your review helps other gyms discover GymOS'
-                          : 'Love the app? Leave a review on Play Store',
-                      style: GoogleFonts.inter(fontSize: 11, color: AppTheme.textMuted),
-                    ),
-                    trailing: const Icon(Icons.chevron_right_rounded, color: AppTheme.textMuted),
-                    onTap: () => _openReviewSheet(context),
-                  ),
+                  ],
                 ],
               ),
             ),

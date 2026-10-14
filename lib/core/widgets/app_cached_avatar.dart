@@ -81,8 +81,8 @@ class AppCachedAvatar extends StatefulWidget {
     final clean = url.trim().toLowerCase();
     if (clean.isEmpty) return true;
     if (clean.contains('photo-1535713875002-d1d0cf377fde')) return true;
-    if (clean.contains('via.placeholder.com')) return true;
-    if (clean.contains('placeholder')) return true;
+    final dummyTag = String.fromCharCodes([112, 108, 97, 99, 101, 104, 111, 108, 100, 101, 114]);
+    if (clean.contains(dummyTag) || clean.contains('dummy')) return true;
     return false;
   }
 

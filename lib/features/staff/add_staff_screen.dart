@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:math';
 import 'package:image_picker/image_picker.dart';
 import '../../core/services/supabase_service.dart';
@@ -444,24 +446,34 @@ class _AddStaffScreenState extends State<AddStaffScreen> {
           style: GoogleFonts.inter(fontSize: 14, color: AppTheme.textSecondary),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(
-              'Cancel',
-              style: GoogleFonts.inter(color: AppTheme.textMuted, fontWeight: FontWeight.w600),
+          if (!kIsWeb && Platform.isIOS)
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(
+                'OK',
+                style: GoogleFonts.inter(color: AppTheme.primary, fontWeight: FontWeight.bold),
+              ),
+            )
+          else ...[
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(
+                'Cancel',
+                style: GoogleFonts.inter(color: AppTheme.textMuted, fontWeight: FontWeight.w600),
+              ),
             ),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              Navigator.push(context, AppRouter.slideRoute(const OwnerSubscriptionScreen()));
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primary),
-            child: Text(
-              'View Plan Details',
-              style: GoogleFonts.inter(fontWeight: FontWeight.bold),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                Navigator.push(context, AppRouter.slideRoute(const OwnerSubscriptionScreen()));
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primary),
+              child: Text(
+                'View Plan Details',
+                style: GoogleFonts.inter(fontWeight: FontWeight.bold),
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );

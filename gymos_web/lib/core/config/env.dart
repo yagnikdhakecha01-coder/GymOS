@@ -8,6 +8,6 @@ class Env {
   /// Reads RAZORPAY_KEY_ID from Dart environment variables or uses default live key.
   static const String razorpayKeyId = String.fromEnvironment('RAZORPAY_KEY_ID', defaultValue: 'rzp_live_TkaAcBNqI1IitC');
 
-  /// Configurable Attendance Display base URL (defaults to https://localhost:3000)
-  static const String displayBaseUrl = String.fromEnvironment('DISPLAY_BASE_URL', defaultValue: 'https://localhost:3000');
+  /// Configurable Attendance Display base URL
+  static const String displayBaseUrl = String.fromEnvironment('DISPLAY_BASE_URL');
 }

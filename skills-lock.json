@@ -1,11 +1,23 @@
 {
   "version": 1,
   "skills": {
+    "app-store-review": {
+      "source": "ElxMaj/app-store-review-skill",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "af2159689b011a338ed82e35cefb69603fa1c590fa0b36ff4c3252d6a917df1d"
+    },
     "goldie": {
       "source": "kacperkapusciak/goldie",
       "sourceType": "github",
       "skillPath": "skills/goldie/SKILL.md",
       "computedHash": "9caebbdbc68494bbb2d46b06cd6b72f5e309490ea2cc17061bb3ecec6be91626"
+    },
+    "greenlight": {
+      "source": "RevylAI/greenlight",
+      "sourceType": "github",
+      "skillPath": "skills/greenlight/SKILL.md",
+      "computedHash": "58167a76e26a991b82d25e0cc4abca07f4294716bccc837b68bf42ac3893b0e2"
     },
     "supabase": {
       "source": "supabase/agent-skills",

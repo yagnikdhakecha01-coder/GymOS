@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -143,9 +145,11 @@ class _MoreScreenState extends State<MoreScreen> {
             // Gym Profile Banner
             CustomCard(
               padding: const EdgeInsets.all(16),
-              onTap: () {
-                Navigator.push(context, AppRouter.slideRoute(const OwnerSubscriptionScreen()));
-              },
+              onTap: (!kIsWeb && Platform.isIOS)
+                  ? null
+                  : () {
+                      Navigator.push(context, AppRouter.slideRoute(const OwnerSubscriptionScreen()));
+                    },
               child: Row(
                 children: [
                   AppCachedGymLogo(
@@ -190,15 +194,18 @@ class _MoreScreenState extends State<MoreScreen> {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '$planDisplay • Valid till $validityDisplay',
-                          style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
-                        ),
+                        if (kIsWeb || !Platform.isIOS) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            '$planDisplay • Valid till $validityDisplay',
+                            style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                          ),
+                        ],
                       ],
                     ),
                   ),
-                  const Icon(Icons.chevron_right_rounded, color: AppTheme.textMuted),
+                  if (kIsWeb || !Platform.isIOS)
+                    const Icon(Icons.chevron_right_rounded, color: AppTheme.textMuted),
                 ],
               ),
             ),
@@ -222,8 +229,8 @@ class _MoreScreenState extends State<MoreScreen> {
                   ),
                   const Divider(height: 1),
 
-                  // Subscription & Billing (Owner only)
-                  if (authVm.selectedRole?.toLowerCase() == 'owner') ...[
+                  // Subscription & Billing (Owner only, hidden on iOS)
+                  if ((kIsWeb || !Platform.isIOS) && authVm.selectedRole?.toLowerCase() == 'owner') ...[
                     _buildSettingTile(
                       context,
                       icon: Icons.card_membership_rounded,

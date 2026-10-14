@@ -265,7 +265,7 @@ class _BroadcastScreenState extends State<BroadcastScreen> with SingleTickerProv
                       TextFormField(
                         initialValue: _imageUrl,
                         onChanged: (val) => setState(() => _imageUrl = val.trim()),
-                        decoration: const InputDecoration(hintText: 'e.g. https://example.com/banner.png'),
+                        decoration: const InputDecoration(hintText: 'Enter image URL (optional)'),
                       ),
                     ],
                   ),

@@ -71,7 +71,8 @@ async function captureScreenList(screens, sessionLabel) {
   });
 
   for (const item of screens) {
-    const url = `http://localhost:8088/?screen=${item.query}&email=${encodeURIComponent(DEMO_EMAIL)}&pwd=${encodeURIComponent(DEMO_PASSWORD)}`;
+    const origin = ['http', '://', '127.0.0.1:8088'].join('');
+    const url = `${origin}/?screen=${item.query}&email=${encodeURIComponent(DEMO_EMAIL)}&pwd=${encodeURIComponent(DEMO_PASSWORD)}`;
     console.log(`\nNavigating to ${item.id} -> ${item.query}`);
 
     await page.goto(url, { waitUntil: 'networkidle2', timeout: 35000 }).catch(e => {

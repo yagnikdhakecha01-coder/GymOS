@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -479,8 +481,8 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
                 ],
               ),
             ),
-            // Two Box Subscription Section (Gym Owners only)
-            if (authVm.selectedRole?.toLowerCase() == 'owner') ...[
+            // Two Box Subscription Section (Gym Owners only, hidden on iOS)
+            if ((kIsWeb || !Platform.isIOS) && authVm.selectedRole?.toLowerCase() == 'owner') ...[
               const Divider(),
               Expanded(
                 child: SingleChildScrollView(

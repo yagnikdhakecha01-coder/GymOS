@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -290,16 +292,18 @@ class MemberProfileScreen extends StatelessWidget {
                             MaterialPageRoute(builder: (_) => const HelpSupportScreen()),
                           );
                         }),
-                        _divider(),
+                        if (!kIsWeb && !Platform.isIOS) ...[
+                          _divider(),
 
-                        // ── Rate GymOS ────────────────────────────────
-                        FutureBuilder<bool>(
-                          future: AppReviewService.hasReviewed(),
-                          builder: (context, snap) {
-                            final reviewed = snap.data ?? false;
-                            return _buildRateGymOSTile(context, vm, reviewed);
-                          },
-                        ),
+                          // ── Rate GymOS ────────────────────────────────
+                          FutureBuilder<bool>(
+                            future: AppReviewService.hasReviewed(),
+                            builder: (context, snap) {
+                              final reviewed = snap.data ?? false;
+                              return _buildRateGymOSTile(context, vm, reviewed);
+                            },
+                          ),
+                        ],
                       ],
                     ),
                   ),

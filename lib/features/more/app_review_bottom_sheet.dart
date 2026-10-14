@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -26,6 +28,9 @@ class AppReviewBottomSheet extends StatefulWidget {
     required String role,
     String? gymId,
   }) {
+    if (!kIsWeb && Platform.isIOS) {
+      return Future.value();
+    }
     return showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -116,14 +121,21 @@ class _AppReviewBottomSheetState extends State<AppReviewBottomSheet>
     // 3. Dismiss sheet
     Navigator.of(context).pop();
 
-    // 4. Open Play Store
-    final uri = Uri.parse(AppReviewService.playStoreUrl);
-    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!launched) {
-      await launchUrl(
-        Uri.parse(AppReviewService.playStoreFallbackUrl),
-        mode: LaunchMode.externalApplication,
-      );
+    // 4. Open Store
+    if (!kIsWeb && Platform.isIOS) {
+      final iosUri = Uri.parse(AppReviewService.appStoreUrl);
+      if (await canLaunchUrl(iosUri)) {
+        await launchUrl(iosUri, mode: LaunchMode.externalApplication);
+      }
+    } else {
+      final uri = Uri.parse(AppReviewService.playStoreUrl);
+      final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!launched) {
+        await launchUrl(
+          Uri.parse(AppReviewService.playStoreFallbackUrl),
+          mode: LaunchMode.externalApplication,
+        );
+      }
     }
 
     // 5. Show success snackbar (on parent context — called after pop)
@@ -229,7 +241,9 @@ class _AppReviewBottomSheetState extends State<AppReviewBottomSheet>
 
               // ── Subtitle ─────────────────────────────────
               Text(
-                'Your review helps other gym owners\ndiscover us on Play Store.',
+                (!kIsWeb && Platform.isIOS)
+                    ? 'Your review helps other gym owners\ndiscover GymOS.'
+                    : 'Your review helps other gym owners\ndiscover us on Play Store.',
                 style: GoogleFonts.inter(
                   fontSize: 13,
                   color: AppTheme.textSecondary,
@@ -366,7 +380,9 @@ class _AppReviewBottomSheetState extends State<AppReviewBottomSheet>
                   )
                 : const Icon(Icons.open_in_new_rounded, size: 18),
             label: Text(
-              _isSubmitting ? 'Opening Play Store...' : 'Submit Review on Play Store',
+              _isSubmitting
+                  ? ((!kIsWeb && Platform.isIOS) ? 'Opening Store...' : 'Opening Play Store...')
+                  : ((!kIsWeb && Platform.isIOS) ? 'Submit Review' : 'Submit Review on Play Store'),
               style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700),
             ),
             style: ElevatedButton.styleFrom(

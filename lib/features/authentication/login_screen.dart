@@ -2,6 +2,7 @@ import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/theme.dart';
 import '../../core/widgets/custom_button.dart';
@@ -213,7 +214,14 @@ class _LoginScreenState extends State<LoginScreen> {
     Widget targetScreen;
 
     if (matchingAssocs.isEmpty) {
-      if (selectedRole == 'owner') {
+      if (authVm.userAssociations.isNotEmpty) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          AppRouter.scaleRoute(const GymRoleSelectorScreen()),
+          (route) => false,
+        );
+        return;
+      } else if (selectedRole == 'owner') {
         targetScreen = const FirstTimeSetupScreen();
       } else {
         targetScreen = const MemberCodeScreen();
@@ -226,7 +234,9 @@ class _LoginScreenState extends State<LoginScreen> {
       final profile = authVm.currentProfile;
 
       if (profile == null) {
-        if (selectedRole == 'owner') {
+        if (authVm.userAssociations.isNotEmpty) {
+          targetScreen = const GymRoleSelectorScreen();
+        } else if (selectedRole == 'owner') {
           targetScreen = const FirstTimeSetupScreen();
         } else {
           targetScreen = const MemberCodeScreen();
@@ -363,7 +373,10 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 if (kIsWeb || Platform.isIOS || Platform.isMacOS) ...[
                   const SizedBox(height: 12),
-                  OutlinedButton(
+                  SignInWithAppleButton(
+                    style: SignInWithAppleButtonStyle.whiteOutlined,
+                    height: 48,
+                    borderRadius: BorderRadius.circular(AppTheme.radiusInput),
                     onPressed: () async {
                       setState(() => _isLoading = true);
                       try {
@@ -396,21 +409,6 @@ class _LoginScreenState extends State<LoginScreen> {
                         }
                       }
                     },
-                    style: OutlinedButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      foregroundColor: Colors.black,
-                      side: const BorderSide(color: Colors.white),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusInput)),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.apple, size: 22, color: Colors.black),
-                        const SizedBox(width: 8),
-                        Text('Continue with Apple', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.black)),
-                      ],
-                    ),
                   ),
                 ],
                 const SizedBox(height: 20),
