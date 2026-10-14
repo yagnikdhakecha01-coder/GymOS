@@ -64,7 +64,7 @@ class GymSettingsViewModel extends ChangeNotifier {
     }
   }
 
-  void saveGymInfo({
+  Future<bool> saveGymInfo({
     required String name,
     required String logo,
     required String address,
@@ -72,18 +72,38 @@ class GymSettingsViewModel extends ChangeNotifier {
     required String email,
     required String timing,
     required String weeklyOff,
-  }) {
+  }) async {
     final updated = Map<String, dynamic>.from(gymInfo);
     updated['name'] = name;
+    updated['gym_name'] = name;
     updated['logo'] = logo;
+    updated['logo_url'] = logo;
     updated['address'] = address;
     updated['phone'] = phone;
+    updated['phone_number'] = phone;
     updated['email'] = email;
     updated['timing'] = timing;
     updated['weeklyOff'] = weeklyOff;
 
-    _authViewModel.setGymInfo(updated);
+    final gymId = _authViewModel.activeAssociation?.gymId ?? _authViewModel.gymInfo?['id'];
+    if (gymId != null && SupabaseService.isInitialized) {
+      try {
+        await SupabaseService.client.from('gyms').update({
+          'name': name,
+          'gym_name': name,
+          'phone_number': phone,
+          'email': email,
+          'address': address,
+          'logo_url': logo,
+        }).eq('id', gymId);
+      } catch (e) {
+        debugPrint('Supabase gyms update error: $e');
+      }
+    }
+
+    await _authViewModel.setGymInfo(updated);
     notifyListeners();
+    return true;
   }
 
   // --- Fitness Goals CRUD ---

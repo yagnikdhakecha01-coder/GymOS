@@ -15,12 +15,16 @@ import 'member_exercise_library_screen.dart';
 class MemberWorkoutPlanScreen extends StatefulWidget {
   final String? memberId;
   final String? gymId;
+  final String? workoutPlanId;
+  final String? workoutPlanTitle;
   final int? initialDayOfWeek; // 1 = Mon, 7 = Sun
 
   const MemberWorkoutPlanScreen({
     super.key,
     this.memberId,
     this.gymId,
+    this.workoutPlanId,
+    this.workoutPlanTitle,
     this.initialDayOfWeek,
   });
 
@@ -35,17 +39,21 @@ class _MemberWorkoutPlanScreenState extends State<MemberWorkoutPlanScreen> {
   bool _isSaving = false;
   String _memberId = '';
   String _gymId = '';
+  String _workoutPlanId = '';
+  String _workoutPlanTitle = '';
+  Map<String, dynamic> _ownerSchedule = {};
+  bool _hasOwnerPlan = false;
 
   // Day index 1..7 mapping to schedule map
   final Map<int, Map<String, dynamic>> _weeklySchedule = {};
 
   static const List<Map<String, dynamic>> _defaultDays = [
-    {'day': 1, 'name': 'Monday', 'short': 'Mon', 'muscle': 'Chest & Triceps', 'is_rest': false},
-    {'day': 2, 'name': 'Tuesday', 'short': 'Tue', 'muscle': 'Back & Biceps', 'is_rest': false},
-    {'day': 3, 'name': 'Wednesday', 'short': 'Wed', 'muscle': 'Legs & Core', 'is_rest': false},
-    {'day': 4, 'name': 'Thursday', 'short': 'Thu', 'muscle': 'Shoulders & Abs', 'is_rest': false},
-    {'day': 5, 'name': 'Friday', 'short': 'Fri', 'muscle': 'Chest & Back', 'is_rest': false},
-    {'day': 6, 'name': 'Saturday', 'short': 'Sat', 'muscle': 'Full Body / Cardio', 'is_rest': false},
+    {'day': 1, 'name': 'Monday', 'short': 'Mon', 'muscle': 'Chest Day', 'is_rest': false},
+    {'day': 2, 'name': 'Tuesday', 'short': 'Tue', 'muscle': 'Back Day', 'is_rest': false},
+    {'day': 3, 'name': 'Wednesday', 'short': 'Wed', 'muscle': 'Leg Day', 'is_rest': false},
+    {'day': 4, 'name': 'Thursday', 'short': 'Thu', 'muscle': 'Shoulder Day', 'is_rest': false},
+    {'day': 5, 'name': 'Friday', 'short': 'Fri', 'muscle': 'Arm Day', 'is_rest': false},
+    {'day': 6, 'name': 'Saturday', 'short': 'Sat', 'muscle': 'Cardio & Core', 'is_rest': false},
     {'day': 7, 'name': 'Sunday', 'short': 'Sun', 'muscle': 'Rest & Recovery', 'is_rest': true},
   ];
 
@@ -57,10 +65,12 @@ class _MemberWorkoutPlanScreenState extends State<MemberWorkoutPlanScreen> {
     super.initState();
     _memberId = widget.memberId ?? '';
     _gymId = widget.gymId ?? '';
+    _workoutPlanId = widget.workoutPlanId ?? '';
+    _workoutPlanTitle = widget.workoutPlanTitle ?? '';
     final todayWeekday = DateTime.now().weekday; // 1..7
     _selectedDay = widget.initialDayOfWeek ?? todayWeekday;
 
-    // Seed defaults first
+    // Seed initial defaults
     for (final d in _defaultDays) {
       _weeklySchedule[d['day'] as int] = {
         'day_of_week': d['day'],
@@ -76,6 +86,66 @@ class _MemberWorkoutPlanScreenState extends State<MemberWorkoutPlanScreen> {
 
   String get _cacheKey => 'member_weekly_schedule_$_memberId';
 
+  void _seedFromOwnerSchedule(Map<String, dynamic> rawSchedule) {
+    _ownerSchedule = Map<String, dynamic>.from(rawSchedule);
+    _hasOwnerPlan = true;
+    const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+    for (int dayNum = 1; dayNum <= 7; dayNum++) {
+      final dayName = dayNames[dayNum - 1];
+      dynamic dayList;
+      for (final entry in rawSchedule.entries) {
+        if (entry.key.toString().trim().toLowerCase() == dayName.toLowerCase()) {
+          dayList = entry.value;
+          break;
+        }
+      }
+
+      final List<String> splits = [];
+      if (dayList is List) {
+        for (final item in dayList) {
+          String t = '';
+          if (item is Map) {
+            t = item['title']?.toString() ?? '';
+          } else if (item is String) {
+            t = item;
+          }
+          if (t.trim().isNotEmpty) splits.add(t.trim());
+        }
+      } else if (dayList is Map) {
+        final t = dayList['title']?.toString() ?? '';
+        if (t.trim().isNotEmpty) splits.add(t.trim());
+      } else if (dayList is String && dayList.trim().isNotEmpty) {
+        splits.add(dayList.trim());
+      }
+
+      bool isRest = false;
+      String muscle = '';
+      if (splits.isEmpty) {
+        isRest = true;
+        muscle = 'Rest & Recovery';
+      } else {
+        final realSplits = splits.where((s) => !s.toLowerCase().contains('rest')).toList();
+        if (realSplits.isEmpty) {
+          isRest = true;
+          muscle = 'Rest & Recovery';
+        } else {
+          isRest = false;
+          muscle = realSplits.join(' & ');
+        }
+      }
+
+      final existingExercises = _weeklySchedule[dayNum]?['exercises'] as List? ?? [];
+      _weeklySchedule[dayNum] = {
+        'day_of_week': dayNum,
+        'muscle_group': muscle,
+        'is_rest_day': isRest,
+        'notes': _weeklySchedule[dayNum]?['notes'] ?? '',
+        'exercises': existingExercises,
+      };
+    }
+  }
+
   Future<void> _loadSchedule() async {
     final prefs = await SharedPreferences.getInstance();
     if (_memberId.isEmpty) {
@@ -84,8 +154,26 @@ class _MemberWorkoutPlanScreenState extends State<MemberWorkoutPlanScreen> {
     if (_gymId.isEmpty) {
       _gymId = prefs.getString('gymos_gym_id') ?? '';
     }
+    if (_workoutPlanId.isEmpty) {
+      _workoutPlanId = prefs.getString('member_cached_workout_id') ?? '';
+    }
+    if (_workoutPlanTitle.isEmpty) {
+      _workoutPlanTitle = prefs.getString('member_cached_workout_title') ?? '';
+    }
 
-    // 1. Instant load from local cache
+    // 1. Instant load from local owner plan cache if available
+    final cachedOwnerSchedStr = prefs.getString('member_cached_workout_schedule_$_memberId') ??
+        prefs.getString('member_cached_workout_schedule');
+    if (cachedOwnerSchedStr != null && cachedOwnerSchedStr.isNotEmpty) {
+      try {
+        final map = jsonDecode(cachedOwnerSchedStr);
+        if (map is Map) {
+          _seedFromOwnerSchedule(Map<String, dynamic>.from(map));
+        }
+      } catch (_) {}
+    }
+
+    // 2. Overlay any member personal customizations cached locally
     final cachedStr = prefs.getString(_cacheKey);
     if (cachedStr != null) {
       try {
@@ -109,57 +197,152 @@ class _MemberWorkoutPlanScreenState extends State<MemberWorkoutPlanScreen> {
             };
           }
         }
-        if (mounted) setState(() => _isLoading = false);
       } catch (_) {}
     }
 
-    // 2. Fetch from Supabase
-    if (SupabaseService.isInitialized && _memberId.isNotEmpty) {
+    if (mounted) setState(() => _isLoading = false);
+
+    // 3. Online fetch: Get fresh owner plan if not cached, and sync member custom overrides
+    if (SupabaseService.isInitialized) {
       try {
-        final res = await SupabaseService.client
-            .from('member_weekly_schedule')
-            .select()
-            .eq('member_id', _memberId);
+        // If workout plan ID wasn't known, query member record to get assigned_workout_id
+        if (_workoutPlanId.isEmpty && _memberId.isNotEmpty) {
+          final mRes = await SupabaseService.client
+              .from('members')
+              .select('assigned_workout_id')
+              .eq('id', _memberId)
+              .maybeSingle();
+          if (mRes != null && mRes['assigned_workout_id'] != null) {
+            _workoutPlanId = mRes['assigned_workout_id'].toString();
+            await prefs.setString('member_cached_workout_id', _workoutPlanId);
+          }
+        }
 
-        if (res.isNotEmpty) {
-          for (final row in res) {
-            final day = (row['day_of_week'] as num?)?.toInt();
-            if (day != null && day >= 1 && day <= 7) {
-              List<Map<String, dynamic>> exList = [];
-              if (row['exercises'] is List) {
-                exList = (row['exercises'] as List)
-                    .map((e) => Map<String, dynamic>.from(e as Map))
-                    .toList();
-              } else if (row['exercises'] is String) {
-                try {
-                  exList = (jsonDecode(row['exercises']) as List)
-                      .map((e) => Map<String, dynamic>.from(e as Map))
-                      .toList();
-                } catch (_) {}
-              }
-
-              _weeklySchedule[day] = {
-                'day_of_week': day,
-                'muscle_group': row['muscle_group'] ?? _weeklySchedule[day]?['muscle_group'] ?? 'General',
-                'is_rest_day': row['is_rest_day'] ?? false,
-                'notes': row['notes'] ?? '',
-                'exercises': exList,
-              };
+        // Fetch fresh owner workout plan
+        if (_workoutPlanId.isNotEmpty) {
+          final wData = await SupabaseService.client
+              .from('workout_plans')
+              .select('title, schedule')
+              .eq('id', _workoutPlanId)
+              .maybeSingle();
+          if (wData != null) {
+            _workoutPlanTitle = wData['title'] ?? _workoutPlanTitle;
+            await prefs.setString('member_cached_workout_title', _workoutPlanTitle);
+            dynamic raw = wData['schedule'];
+            if (raw is String && raw.isNotEmpty) {
+              try { raw = jsonDecode(raw); } catch (_) {}
+            }
+            if (raw is Map) {
+              await prefs.setString('member_cached_workout_schedule_$_memberId', jsonEncode(raw));
+              await prefs.setString('member_cached_workout_schedule', jsonEncode(raw));
+              _seedFromOwnerSchedule(Map<String, dynamic>.from(raw));
             }
           }
+        }
 
-          // Cache fresh data
-          await prefs.setString(
-              _cacheKey,
-              jsonEncode(_weeklySchedule.values.toList()));
+        // Overlay any cloud-saved personal overrides
+        if (_memberId.isNotEmpty) {
+          final res = await SupabaseService.client
+              .from('member_weekly_schedule')
+              .select()
+              .eq('member_id', _memberId);
+
+          if (res.isNotEmpty) {
+            for (final row in res) {
+              final day = (row['day_of_week'] as num?)?.toInt();
+              if (day != null && day >= 1 && day <= 7) {
+                List<Map<String, dynamic>> exList = [];
+                if (row['exercises'] is List) {
+                  exList = (row['exercises'] as List)
+                      .map((e) => Map<String, dynamic>.from(e as Map))
+                      .toList();
+                } else if (row['exercises'] is String) {
+                  try {
+                    exList = (jsonDecode(row['exercises']) as List)
+                        .map((e) => Map<String, dynamic>.from(e as Map))
+                        .toList();
+                  } catch (_) {}
+                }
+
+                _weeklySchedule[day] = {
+                  'day_of_week': day,
+                  'muscle_group': row['muscle_group'] ?? _weeklySchedule[day]?['muscle_group'] ?? 'General',
+                  'is_rest_day': row['is_rest_day'] ?? false,
+                  'notes': row['notes'] ?? '',
+                  'exercises': exList,
+                };
+              }
+            }
+
+            await prefs.setString(_cacheKey, jsonEncode(_weeklySchedule.values.toList()));
+          }
         }
       } catch (e) {
-        debugPrint('Error fetching weekly schedule: $e');
+        debugPrint('Error fetching weekly schedule from Supabase: $e');
       }
     }
 
     if (mounted) {
       setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _resetToOwnerPlan() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          'Reset to Gym Plan?',
+          style: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 18),
+        ),
+        content: Text(
+          'This will reset your 7-day routine back to the official plan assigned by your gym.',
+          style: GoogleFonts.inter(fontSize: 13, color: AppTheme.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: GoogleFonts.inter(color: AppTheme.textSecondary, fontWeight: FontWeight.w600)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primary, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Reset', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => _isLoading = true);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_cacheKey);
+
+    if (SupabaseService.isInitialized && _memberId.isNotEmpty) {
+      try {
+        await SupabaseService.client
+            .from('member_weekly_schedule')
+            .delete()
+            .eq('member_id', _memberId);
+      } catch (_) {}
+    }
+
+    if (_ownerSchedule.isNotEmpty) {
+      _seedFromOwnerSchedule(_ownerSchedule);
+    }
+    setState(() => _isLoading = false);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Routine restored to official gym plan!'),
+          backgroundColor: AppTheme.success,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ),
+      );
     }
   }
 
@@ -324,13 +507,27 @@ class _MemberWorkoutPlanScreenState extends State<MemberWorkoutPlanScreen> {
               color: AppTheme.textPrimary, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
-        title: Text(
-          'My Workout Plan',
-          style: GoogleFonts.inter(
-            fontSize: 18,
-            fontWeight: FontWeight.w800,
-            color: AppTheme.textPrimary,
-          ),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'My Workout Plan',
+              style: GoogleFonts.inter(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: AppTheme.textPrimary,
+              ),
+            ),
+            if (_workoutPlanTitle.isNotEmpty)
+              Text(
+                'Plan: $_workoutPlanTitle',
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.primary,
+                ),
+              ),
+          ],
         ),
         actions: [
           if (_isSaving)
@@ -346,6 +543,12 @@ class _MemberWorkoutPlanScreenState extends State<MemberWorkoutPlanScreen> {
                   ),
                 ),
               ),
+            ),
+          if (_hasOwnerPlan)
+            IconButton(
+              icon: const Icon(Icons.restore_rounded, color: AppTheme.primary),
+              tooltip: 'Reset to Official Gym Plan',
+              onPressed: _resetToOwnerPlan,
             ),
           IconButton(
             icon: const Icon(Icons.fitness_center_rounded, color: AppTheme.primary),

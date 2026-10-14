@@ -1821,9 +1821,7 @@ class _AddMemberWizardScreenState extends State<AddMemberWizardScreen> {
       customCreatedAt = widget.trialStartTime;
     }
 
-    final attVm = Provider.of<AttendanceViewModel>(context, listen: false);
-    final isBiometricGym = (attVm.settings?.isEnabled ?? true) &&
-        (attVm.settings?.method == 'Biometric' || attVm.settings?.method == 'QR + Biometric');
+    final enteredPin = int.tryParse(_biometricPinController.text.trim());
 
     final newMember = Member(
       id: id,
@@ -1846,7 +1844,7 @@ class _AddMemberWizardScreenState extends State<AddMemberWizardScreen> {
       paymentStatus: (double.tryParse(_remainingController.text) ?? 0.0) <= 0 ? 'Paid' : 'Partial',
       extraFields: extra,
       createdAt: customCreatedAt,
-      biometricPin: isBiometricGym ? int.tryParse(_biometricPinController.text.trim()) : null,
+      biometricPin: enteredPin,
     );
 
     final vm = Provider.of<MembersViewModel>(context, listen: false);

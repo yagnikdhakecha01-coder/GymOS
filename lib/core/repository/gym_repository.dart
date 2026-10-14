@@ -1033,8 +1033,16 @@ class GymRepository extends ChangeNotifier {
             );
           } else if (action == 'update') {
             final id = payload['id'] as String;
+            final gymId = payload['gym_id'] as String?;
             final updateData = Map<String, dynamic>.from(payload)..remove('id')..remove('uuid')..remove('gym_id');
-            await SupabaseService.client.from(table).update(updateData).eq('id', id);
+            var q = SupabaseService.client.from(table).update(updateData).eq('id', id);
+            if (gymId != null && gymId.isNotEmpty) {
+              q = q.eq('gym_id', gymId);
+            }
+            final List res = await q.select('id');
+            if (res.isEmpty) {
+              print('CRUD Sync Warning: Update on $table matched 0 rows for id $id.');
+            }
           } else if (action == 'insert') {
             await SupabaseService.client.from(table).upsert(payload);
           } else if (action == 'delete') {
@@ -2336,6 +2344,7 @@ class GymRepository extends ChangeNotifier {
       'total_received_amount': member.totalReceivedAmount,
       'payment_status': member.paymentStatus,
       'extra_fields': member.extraFields,
+      if (member.biometricPin != null) 'biometric_pin': member.biometricPin,
     };
 
     // Direct Supabase update or insert when online
@@ -2344,12 +2353,29 @@ class GymRepository extends ChangeNotifier {
       try {
         if (isUpdate) {
           final updatePayload = Map<String, dynamic>.from(data)..remove('id')..remove('gym_id');
-          await SupabaseService.client.from('members').update(updatePayload).eq('id', member.id);
+          final List res = await SupabaseService.client
+              .from('members')
+              .update(updatePayload)
+              .eq('id', member.id)
+              .eq('gym_id', gymId)
+              .select('id');
+          if (res.isNotEmpty) {
+            isDirectlyInserted = true;
+          } else {
+            print('saveMember direct Supabase update affected 0 rows for member ${member.id}. Falling back to queue.');
+          }
         } else {
-          await SupabaseService.client.from('members').insert(data);
+          final List res = await SupabaseService.client
+              .from('members')
+              .insert(data)
+              .select('id');
+          if (res.isNotEmpty) {
+            isDirectlyInserted = true;
+          }
         }
-        isDirectlyInserted = true;
-        _lastMembersRaw = ''; // Reset cache signature so next fetch updates cleanly
+        if (isDirectlyInserted) {
+          _lastMembersRaw = ''; // Reset cache signature so next fetch updates cleanly
+        }
       } catch (e) {
         print('saveMember direct Supabase operation skipped/failed: $e. Fallback to queue.');
       }
@@ -2366,6 +2392,8 @@ class GymRepository extends ChangeNotifier {
         'retry_count': 0,
         'error_message': null,
       });
+      await _saveQueuesToStorage();
+      unawaited(_processCrudQueue());
     }
 
     // 3. Queue PT assignment update offline if applicable
@@ -2476,6 +2504,7 @@ class GymRepository extends ChangeNotifier {
       'total_received_amount': member.totalReceivedAmount,
       'payment_status': member.paymentStatus,
       'extra_fields': member.extraFields,
+      if (member.biometricPin != null) 'biometric_pin': member.biometricPin,
     };
 
     // Direct Supabase upsert when online
@@ -2833,6 +2862,7 @@ class GymRepository extends ChangeNotifier {
       'commission_percentage': staff.commissionPercentage,
       'qualification': staff.qualification,
       'notes': staff.notes,
+      if (staff.biometricPin != null) 'biometric_pin': staff.biometricPin,
     };
 
     // Direct Supabase update or insert when online
@@ -2842,12 +2872,29 @@ class GymRepository extends ChangeNotifier {
       try {
         if (isUpdate) {
           final updatePayload = Map<String, dynamic>.from(data)..remove('id')..remove('gym_id');
-          await SupabaseService.client.from('staff').update(updatePayload).eq('id', staff.id);
+          final List res = await SupabaseService.client
+              .from('staff')
+              .update(updatePayload)
+              .eq('id', staff.id)
+              .eq('gym_id', gymId)
+              .select('id');
+          if (res.isNotEmpty) {
+            isDirectlyInserted = true;
+          } else {
+            print('saveStaff direct Supabase update affected 0 rows for staff ${staff.id}. Falling back to queue.');
+          }
         } else {
-          await SupabaseService.client.from('staff').insert(data);
+          final List res = await SupabaseService.client
+              .from('staff')
+              .insert(data)
+              .select('id');
+          if (res.isNotEmpty) {
+            isDirectlyInserted = true;
+          }
         }
-        isDirectlyInserted = true;
-        _lastStaffRaw = ''; // Reset cache signature so next fetch updates cleanly
+        if (isDirectlyInserted) {
+          _lastStaffRaw = ''; // Reset cache signature so next fetch updates cleanly
+        }
       } catch (e) {
         print('saveStaff direct Supabase operation skipped/failed: $e. Fallback to queue.');
       }
@@ -2864,6 +2911,8 @@ class GymRepository extends ChangeNotifier {
         'retry_count': 0,
         'error_message': null,
       });
+      await _saveQueuesToStorage();
+      unawaited(_processCrudQueue());
     }
 
     // 3. Queue staff shift assignment
@@ -4754,6 +4803,7 @@ class GymRepository extends ChangeNotifier {
   Future<void> saveAttendanceSettingsToSupabase(GymAttendanceSettings settings) async {
     // 1. Save locally instantly
     _attendanceSettings = settings;
+    await _storage.setString(_attendanceSettingsKey, jsonEncode(settings.toJson()));
     await _storage.setString(LocalStorageService.keyAttendanceSettings, jsonEncode(settings.toJson()));
     notifyListeners();
 
@@ -5296,7 +5346,9 @@ class GymRepository extends ChangeNotifier {
   Future<void> saveStaffRoles(List<Map<String, dynamic>> roles) async {
     if (!SupabaseService.isInitialized) return;
     try {
-      await SupabaseService.client.from('staff_roles').upsert(roles);
+      await SupabaseService.client
+          .from('staff_roles')
+          .upsert(roles, onConflict: 'gym_id, role_name');
     } catch (e) {
       print('saveStaffRoles error: $e');
       rethrow;

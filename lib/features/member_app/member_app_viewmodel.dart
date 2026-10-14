@@ -63,6 +63,7 @@ class MemberAppViewModel extends ChangeNotifier {
   // ── Today's Training ──
   String _todayMuscleGroup = 'Chest Day'; // Chest, Back, Leg, Shoulder, Arm, Rest, Cardio
   List<String> _todaySplits = ['Chest Day'];
+  Map<String, dynamic> _weeklyWorkoutSchedule = {};
   String _gymId = '';
   bool _isTrainingCompleted = false;
 
@@ -230,7 +231,20 @@ class MemberAppViewModel extends ChangeNotifier {
 
   String get todayMuscleGroup => _todayMuscleGroup;
   List<String> get todaySplits => _todaySplits;
+  Map<String, dynamic> get weeklyWorkoutSchedule => _weeklyWorkoutSchedule;
+  bool get hasAssignedWorkout => _assignedWorkoutId.isNotEmpty && (_weeklyWorkoutSchedule.isNotEmpty || _assignedWorkoutTitle.isNotEmpty);
+  bool get isRestDay {
+    if (!hasAssignedWorkout) return false;
+    final normalized = _todayMuscleGroup.toLowerCase();
+    if (normalized == 'rest day' || normalized.contains('rest & recovery')) return true;
+    if (_todaySplits.length == 1 && _todaySplits.first.toLowerCase().contains('rest')) return true;
+    return false;
+  }
+
   String get todayWorkoutImage {
+    if (!hasAssignedWorkout || _todayMuscleGroup == 'No Plan Assigned') {
+      return 'assets/images/member/rest_day.png';
+    }
     final firstSplit = _todaySplits.isNotEmpty ? _todaySplits.first : _todayMuscleGroup;
     final group = firstSplit.toLowerCase();
     if (group.contains('chest')) return 'assets/images/member/chest_day.png';
@@ -498,13 +512,18 @@ class MemberAppViewModel extends ChangeNotifier {
       } catch (_) {}
     }
 
+    _assignedWorkoutId = prefs.getString('member_cached_workout_id') ?? _assignedWorkoutId;
     _assignedWorkoutTitle = prefs.getString('member_cached_workout_title') ?? _assignedWorkoutTitle;
-    _todayMuscleGroup = prefs.getString('member_cached_today_muscle') ?? _todayMuscleGroup;
 
-    final cachedSplits = prefs.getStringList('member_cached_today_splits');
-    if (cachedSplits != null && cachedSplits.isNotEmpty) {
-      _todaySplits = cachedSplits;
+    final cachedScheduleStr = prefs.getString('member_cached_workout_schedule_$_memberId') ??
+        prefs.getString('member_cached_workout_schedule');
+    if (cachedScheduleStr != null && cachedScheduleStr.isNotEmpty) {
+      try {
+        _weeklyWorkoutSchedule = Map<String, dynamic>.from(jsonDecode(cachedScheduleStr));
+      } catch (_) {}
     }
+
+    _computeTodayWorkoutFromSchedule(prefs);
     _assignedDietTitle = prefs.getString('member_cached_diet_title') ?? _assignedDietTitle;
 
     final cachedDietPlanJson = prefs.getString('member_cached_diet_plan_json');
@@ -608,6 +627,74 @@ class MemberAppViewModel extends ChangeNotifier {
     _generateCurrentWeek();
     notifyListeners();
     await loadMemberDataFromSupabase();
+  }
+
+  /// Evaluates today's splits and muscle group from the 7-day schedule offline.
+  /// Guarantees that:
+  /// 1. Unassigned members are marked 'No Plan Assigned' (never falsely labeled 'Rest Day').
+  /// 2. Multi-splits (e.g. Chest Day & Bicep Day) are cleanly parsed and combined.
+  /// 3. Genuine Rest Days set by the owner are respected.
+  void _computeTodayWorkoutFromSchedule([SharedPreferences? prefs]) {
+    if (_assignedWorkoutId.isEmpty || _weeklyWorkoutSchedule.isEmpty) {
+      _todaySplits = [];
+      _todayMuscleGroup = 'No Plan Assigned';
+      if (prefs != null) {
+        prefs.setString('member_cached_today_muscle', _todayMuscleGroup);
+        prefs.setStringList('member_cached_today_splits', _todaySplits);
+      }
+      return;
+    }
+
+    final todayFull = DateFormat('EEEE').format(DateTime.now()); // e.g. "Wednesday"
+    final todayShort = DateFormat('E').format(DateTime.now());   // e.g. "Wed"
+
+    dynamic todayList;
+    for (final entry in _weeklyWorkoutSchedule.entries) {
+      final key = entry.key.toString().trim().toLowerCase();
+      if (key == todayFull.toLowerCase() || key == todayShort.toLowerCase()) {
+        todayList = entry.value;
+        break;
+      }
+    }
+
+    final List<String> splits = [];
+    if (todayList is List) {
+      for (final item in todayList) {
+        String splitTitle = '';
+        if (item is Map) {
+          splitTitle = item['title']?.toString() ?? '';
+        } else if (item is String) {
+          splitTitle = item;
+        }
+        if (splitTitle.trim().isNotEmpty) {
+          splits.add(splitTitle.trim());
+        }
+      }
+    } else if (todayList is Map) {
+      final t = todayList['title']?.toString() ?? '';
+      if (t.trim().isNotEmpty) splits.add(t.trim());
+    } else if (todayList is String && todayList.trim().isNotEmpty) {
+      splits.add(todayList.trim());
+    }
+
+    if (splits.isEmpty) {
+      _todaySplits = ['Rest Day'];
+      _todayMuscleGroup = 'Rest Day';
+    } else {
+      final realSplits = splits.where((s) => !s.toLowerCase().contains('rest')).toList();
+      if (realSplits.isEmpty) {
+        _todaySplits = ['Rest Day'];
+        _todayMuscleGroup = 'Rest Day';
+      } else {
+        _todaySplits = realSplits;
+        _todayMuscleGroup = realSplits.join(' & ');
+      }
+    }
+
+    if (prefs != null) {
+      prefs.setString('member_cached_today_muscle', _todayMuscleGroup);
+      prefs.setStringList('member_cached_today_splits', _todaySplits);
+    }
   }
 
   Future<Map<String, dynamic>> completeTodayWorkout(BuildContext context) async {
@@ -802,43 +889,33 @@ class MemberAppViewModel extends ChangeNotifier {
                     rawSchedule = jsonDecode(rawSchedule);
                   } catch (_) {}
                 }
-                final todayName = DateFormat('EEEE').format(DateTime.now());
-                dynamic todayList;
                 if (rawSchedule is Map) {
-                  todayList = rawSchedule[todayName];
-                }
-                if (todayList is List && todayList.isNotEmpty) {
-                  final List<String> splits = [];
-                  for (final item in todayList) {
-                    String splitTitle = '';
-                    if (item is Map) {
-                      splitTitle = item['title']?.toString() ?? '';
-                    } else if (item is String) {
-                      splitTitle = item;
-                    }
-                    if (splitTitle.trim().isNotEmpty) {
-                      splits.add(splitTitle.trim());
-                    }
-                  }
-                  _todaySplits = splits.isNotEmpty ? splits : ['Rest Day'];
-                  _todayMuscleGroup = _todaySplits.join(' + ');
+                  _weeklyWorkoutSchedule = Map<String, dynamic>.from(rawSchedule);
                 } else {
-                  _todaySplits = ['Rest Day'];
-                  _todayMuscleGroup = 'Rest Day';
+                  _weeklyWorkoutSchedule = {};
                 }
-                prefs.setString('member_cached_workout_title', _assignedWorkoutTitle);
-                prefs.setString('member_cached_today_muscle', _todayMuscleGroup);
-                prefs.setStringList('member_cached_today_splits', _todaySplits);
+                await prefs.setString('member_cached_workout_id', _assignedWorkoutId);
+                await prefs.setString('member_cached_workout_title', _assignedWorkoutTitle);
+                await prefs.setString('member_cached_workout_schedule_$_memberId', jsonEncode(_weeklyWorkoutSchedule));
+                await prefs.setString('member_cached_workout_schedule', jsonEncode(_weeklyWorkoutSchedule));
+
+                _computeTodayWorkoutFromSchedule(prefs);
               } else {
                 _assignedWorkoutTitle = '';
-                _todaySplits = ['Rest Day'];
-                _todayMuscleGroup = 'Rest Day';
+                _weeklyWorkoutSchedule = {};
+                _todaySplits = [];
+                _todayMuscleGroup = 'No Plan Assigned';
+                await prefs.setString('member_cached_today_muscle', _todayMuscleGroup);
+                await prefs.setStringList('member_cached_today_splits', _todaySplits);
               }
             } catch (_) {}
           } else {
             _assignedWorkoutTitle = '';
-            _todaySplits = ['Rest Day'];
-            _todayMuscleGroup = 'Rest Day';
+            _weeklyWorkoutSchedule = {};
+            _todaySplits = [];
+            _todayMuscleGroup = 'No Plan Assigned';
+            await prefs.setString('member_cached_today_muscle', _todayMuscleGroup);
+            await prefs.setStringList('member_cached_today_splits', _todaySplits);
           }
         }
 
@@ -1666,6 +1743,14 @@ class MemberAppViewModel extends ChangeNotifier {
                         ? newRecord['avatar'] 
                         : _memberAvatar;
                     _membershipStatus = newRecord['status'] ?? _membershipStatus;
+
+                    final newWorkoutId = newRecord['assigned_workout_id']?.toString() ?? '';
+                    if (newWorkoutId != _assignedWorkoutId) {
+                      _assignedWorkoutId = newWorkoutId;
+                      prefs.setString('member_cached_workout_id', _assignedWorkoutId);
+                      fetchWorkoutPlanTask();
+                    }
+
                     notifyListeners();
                   }
                 },
@@ -2239,7 +2324,13 @@ class MemberAppViewModel extends ChangeNotifier {
     await prefs.remove('member_check_in_time');
     await prefs.remove('member_check_in_date');
     await prefs.remove('member_cached_workout_title');
+    await prefs.remove('member_cached_workout_id');
+    await prefs.remove('member_cached_workout_schedule');
+    if (_memberId.isNotEmpty) {
+      await prefs.remove('member_cached_workout_schedule_$_memberId');
+    }
     await prefs.remove('member_cached_today_muscle');
+    await prefs.remove('member_cached_today_splits');
     await prefs.remove('member_cached_diet_title');
     await prefs.remove('member_cached_diet_plan_json');
     _assignedDietPlan = null;
@@ -2274,7 +2365,9 @@ class MemberAppViewModel extends ChangeNotifier {
     _attendancePercentage = 0;
     _membershipDaysLeft = 0;
     _pendingAmount = 0.0;
-    _todayMuscleGroup = 'Rest Day';
+    _todayMuscleGroup = 'No Plan Assigned';
+    _todaySplits = [];
+    _weeklyWorkoutSchedule.clear();
     _isTrainingCompleted = false;
     _membershipPlan = '';
     _membershipStatus = 'Inactive';

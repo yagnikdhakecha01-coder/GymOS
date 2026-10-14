@@ -450,7 +450,31 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen>
                                         ),
                                         const SizedBox(height: 10),
                                         // Title: Day + Muscle Group (Handles single or multiple splits cleanly)
-                                        if (vm.todaySplits.length <= 1)
+                                        if (!vm.hasAssignedWorkout || vm.todayMuscleGroup == 'No Plan Assigned')
+                                          Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                'No Plan Assigned',
+                                                style: GoogleFonts.inter(
+                                                  fontSize: 20,
+                                                  fontWeight: FontWeight.w800,
+                                                  color: const Color(0xFF111827),
+                                                  letterSpacing: -0.5,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 3),
+                                              Text(
+                                                'Ask your gym to assign workout',
+                                                style: GoogleFonts.inter(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w500,
+                                                  color: const Color(0xFF6B7280),
+                                                ),
+                                              ),
+                                            ],
+                                          )
+                                        else if (vm.todaySplits.length <= 1)
                                           Text(
                                             vm.todayMuscleGroup,
                                             style: GoogleFonts.inter(
@@ -511,19 +535,33 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen>
                                         Container(
                                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                                           decoration: BoxDecoration(
-                                            color: vm.isTrainingCompleted
-                                                ? const Color(0xFFDCFCE7)
-                                                : const Color(0xFFFEF3C7),
+                                            color: (!vm.hasAssignedWorkout || vm.todayMuscleGroup == 'No Plan Assigned')
+                                                ? const Color(0xFFF1F5F9)
+                                                : (vm.isRestDay
+                                                    ? const Color(0xFFF3E8FF)
+                                                    : (vm.isTrainingCompleted
+                                                        ? const Color(0xFFDCFCE7)
+                                                        : const Color(0xFFFEF3C7))),
                                             borderRadius: BorderRadius.circular(6),
                                           ),
                                           child: Text(
-                                            vm.isTrainingCompleted ? 'Workout Completed 🎉' : 'Not Completed Yet',
+                                            (!vm.hasAssignedWorkout || vm.todayMuscleGroup == 'No Plan Assigned')
+                                                ? 'Plan Pending'
+                                                : (vm.isRestDay
+                                                    ? 'Rest & Recovery Day 🧘'
+                                                    : (vm.isTrainingCompleted
+                                                        ? 'Workout Completed 🎉'
+                                                        : 'Not Completed Yet')),
                                             style: GoogleFonts.inter(
                                               fontSize: 11,
                                               fontWeight: FontWeight.w700,
-                                              color: vm.isTrainingCompleted
-                                                  ? const Color(0xFF15803D)
-                                                  : const Color(0xFFD97706),
+                                              color: (!vm.hasAssignedWorkout || vm.todayMuscleGroup == 'No Plan Assigned')
+                                                  ? const Color(0xFF64748B)
+                                                  : (vm.isRestDay
+                                                      ? const Color(0xFF7C3AED)
+                                                      : (vm.isTrainingCompleted
+                                                          ? const Color(0xFF15803D)
+                                                          : const Color(0xFFD97706))),
                                             ),
                                           ),
                                         ),

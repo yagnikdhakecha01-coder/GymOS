@@ -611,7 +611,7 @@ class _AddStaffSheetState extends State<AddStaffSheet> {
                   department: _selectedRole == 'Trainer' ? 'Training' : 'Administration',
                   status: 'Active',
                   avatar: '',
-                  joinDate: '16 Jul 2026',
+                  joinDate: DateFormat('dd MMM yyyy').format(DateTime.now()),
                   shift: _gymShiftMode == 'Single Shift' ? 'Single Shift' : 'Morning Shift',
                   experience: 'N/A',
                   rating: 4.5,

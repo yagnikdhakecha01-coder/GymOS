@@ -135,7 +135,7 @@ class _BroadcastScreenState extends State<BroadcastScreen> with SingleTickerProv
     final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
 
     final newAnn = Announcement(
-      id: 'ann_${DateTime.now().millisecondsSinceEpoch}',
+      id: AnnouncementsService.generateUuidV4(),
       title: title,
       message: message,
       image: _imageUrl,

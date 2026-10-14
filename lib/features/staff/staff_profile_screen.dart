@@ -239,6 +239,12 @@ class _StaffProfileScreenState extends State<StaffProfileScreen> {
     final dobCtrl = TextEditingController(text: staff.dob);
     final addressCtrl = TextEditingController(text: staff.address);
     final salaryCtrl = TextEditingController(text: staff.salary.toStringAsFixed(0));
+    final aadhaarCtrl = TextEditingController(text: staff.aadhaar);
+    final emergencyNameCtrl = TextEditingController(text: staff.emergencyName);
+    final emergencyPhoneCtrl = TextEditingController(text: staff.emergencyPhone);
+    final qualificationCtrl = TextEditingController(text: staff.qualification);
+    final notesCtrl = TextEditingController(text: staff.notes);
+    final biometricPinCtrl = TextEditingController(text: staff.biometricPin != null ? staff.biometricPin.toString() : '');
     
     String gender = ['Male', 'Female', 'Other'].contains(staff.gender) ? staff.gender : 'Male';
     String salaryType = ['Fixed Salary', 'Commission', 'Both'].contains(staff.salaryType) ? staff.salaryType : 'Fixed Salary';
@@ -371,6 +377,56 @@ class _StaffProfileScreenState extends State<StaffProfileScreen> {
                         ),
                       ],
                     ),
+                     const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: aadhaarCtrl,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(labelText: 'Aadhaar Number'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextField(
+                            controller: biometricPinCtrl,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(labelText: 'Biometric PIN / ID'),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: emergencyNameCtrl,
+                            decoration: const InputDecoration(labelText: 'Emergency Contact Name'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextField(
+                            controller: emergencyPhoneCtrl,
+                            keyboardType: TextInputType.phone,
+                            decoration: const InputDecoration(labelText: 'Emergency Phone'),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: qualificationCtrl,
+                      decoration: const InputDecoration(labelText: 'Qualification / Certifications'),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: notesCtrl,
+                      maxLines: 2,
+                      decoration: const InputDecoration(labelText: 'Notes / Remarks'),
+                    ),
                     const SizedBox(height: 20),
                     ElevatedButton(
                       style: ElevatedButton.styleFrom(
@@ -394,6 +450,12 @@ class _StaffProfileScreenState extends State<StaffProfileScreen> {
                           salaryType: salaryType,
                           shift: shift,
                           shiftType: newShiftType,
+                          aadhaar: aadhaarCtrl.text.trim(),
+                          emergencyName: emergencyNameCtrl.text.trim(),
+                          emergencyPhone: emergencyPhoneCtrl.text.trim(),
+                          qualification: qualificationCtrl.text.trim(),
+                          notes: notesCtrl.text.trim(),
+                          biometricPin: int.tryParse(biometricPinCtrl.text.trim()),
                         );
 
                         Navigator.pop(dialogCtx);

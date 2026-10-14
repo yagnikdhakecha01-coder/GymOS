@@ -227,7 +227,7 @@ class _GymInfoScreenState extends State<GymInfoScreen> {
         }
       }
 
-      vm.saveGymInfo(
+      await vm.saveGymInfo(
         name: _nameController.text.trim(),
         logo: _logo,
         address: _addressController.text.trim(),
@@ -237,10 +237,12 @@ class _GymInfoScreenState extends State<GymInfoScreen> {
         weeklyOff: _weeklyOff,
       );
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Gym details saved successfully!'), backgroundColor: AppTheme.success),
-      );
-      Navigator.pop(context);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Gym details saved successfully!'), backgroundColor: AppTheme.success),
+        );
+        Navigator.pop(context);
+      }
     }
   }
 

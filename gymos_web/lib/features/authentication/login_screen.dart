@@ -186,18 +186,6 @@ class _LoginScreenState extends State<LoginScreen> {
       return true;
     }).toList();
 
-    // If matchingAssocs is empty right after login/social sign-in, re-sync associations once
-    // to give database auto-link triggers time to finish
-    if (matchingAssocs.isEmpty && (selectedRole == 'member' || selectedRole == 'staff')) {
-      await authVm.loadCurrentProfile();
-      matchingAssocs = authVm.userAssociations.where((a) {
-        if (selectedRole == 'owner') return a.role == UserRole.owner;
-        if (selectedRole == 'staff') return a.role == UserRole.staff;
-        if (selectedRole == 'member') return a.role == UserRole.member;
-        return true;
-      }).toList();
-    }
-
     if (!mounted) return;
 
     if (matchingAssocs.length > 1) {

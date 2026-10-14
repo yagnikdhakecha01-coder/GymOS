@@ -1362,19 +1362,28 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
                           biometricPin: int.tryParse(biometricPinController.text.trim()),
                         );
 
-                        await membersVm.saveMember(updated);
+                        try {
+                          await membersVm.saveMember(updated);
 
-                        if (Navigator.canPop(sheetContext)) {
-                          Navigator.pop(sheetContext);
-                        }
+                          if (Navigator.canPop(sheetContext)) {
+                            Navigator.pop(sheetContext);
+                          }
 
-                        if (mounted) {
-                          setState(() {});
-                          SuccessDialog.show(
-                            context,
-                            title: 'Member Details Updated!',
-                            message: 'Goal and profile information for ${updated.name} have been updated successfully.',
-                          );
+                          if (mounted) {
+                            setState(() {});
+                            SuccessDialog.show(
+                              context,
+                              title: 'Member Details Updated!',
+                              message: 'Goal and profile information for ${updated.name} have been updated successfully.',
+                            );
+                          }
+                        } catch (e) {
+                          if (mounted) {
+                            setSheetState(() => isSaving = false);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Failed to update member: $e'), backgroundColor: Colors.red),
+                            );
+                          }
                         }
                       },
                       child: isSaving

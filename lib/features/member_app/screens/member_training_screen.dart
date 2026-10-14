@@ -6,7 +6,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/theme/theme.dart';
 import '../member_app_viewmodel.dart';
 import 'member_guided_workout_screen.dart';
-import 'member_exercise_library_screen.dart';
 import 'member_workout_plan_screen.dart';
 import '../widgets/workout_category_selector_sheet.dart';
 
@@ -127,19 +126,31 @@ class MemberTrainingScreen extends StatelessWidget {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                           decoration: BoxDecoration(
-                            color: vm.isTrainingCompleted
-                                ? AppTheme.successLight
-                                : const Color(0xFFEDE9FE),
+                            color: (!vm.hasAssignedWorkout || muscle == 'No Plan Assigned')
+                                ? const Color(0xFFF1F5F9)
+                                : (vm.isRestDay
+                                    ? const Color(0xFFF3E8FF)
+                                    : (vm.isTrainingCompleted
+                                        ? AppTheme.successLight
+                                        : const Color(0xFFEDE9FE))),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
-                            vm.isTrainingCompleted ? 'Completed' : 'Not Completed',
+                            (!vm.hasAssignedWorkout || muscle == 'No Plan Assigned')
+                                ? 'No Plan Assigned'
+                                : (vm.isRestDay
+                                    ? 'Rest Day'
+                                    : (vm.isTrainingCompleted ? 'Completed' : 'Not Completed')),
                             style: GoogleFonts.inter(
                               fontSize: 11,
                               fontWeight: FontWeight.w700,
-                              color: vm.isTrainingCompleted
-                                  ? AppTheme.success
-                                  : AppTheme.primary,
+                              color: (!vm.hasAssignedWorkout || muscle == 'No Plan Assigned')
+                                  ? const Color(0xFF64748B)
+                                  : (vm.isRestDay
+                                      ? const Color(0xFF7C3AED)
+                                      : (vm.isTrainingCompleted
+                                          ? AppTheme.success
+                                          : AppTheme.primary)),
                             ),
                           ),
                         ),
@@ -147,9 +158,11 @@ class MemberTrainingScreen extends StatelessWidget {
 
                         // Subtitle
                         Text(
-                          muscle.contains('Rest') 
-                              ? 'Rest day — recovery is part of training!'
-                              : 'Ready to crush ${muscle.toLowerCase()}?',
+                          (!vm.hasAssignedWorkout || muscle == 'No Plan Assigned')
+                              ? 'No workout plan assigned yet. Ask your trainer or gym owner to set up your routine.'
+                              : (vm.isRestDay
+                                  ? 'Rest day — recovery is part of training!'
+                                  : 'Ready to crush $muscle?'),
                           textAlign: TextAlign.center,
                           style: GoogleFonts.inter(
                             fontSize: 13,
@@ -160,7 +173,7 @@ class MemberTrainingScreen extends StatelessWidget {
                         const SizedBox(height: 20),
 
                         // 🏋️ START GUIDED WORKOUT BUTTON
-                        if (!muscle.contains('Rest'))
+                        if (vm.hasAssignedWorkout && !vm.isRestDay && muscle != 'No Plan Assigned')
                           SizedBox(
                             width: double.infinity,
                             height: 50,
@@ -280,6 +293,8 @@ class MemberTrainingScreen extends StatelessWidget {
                           onTap: () => Navigator.push(context,
                             MaterialPageRoute(builder: (_) => MemberWorkoutPlanScreen(
                               memberId: vm.memberId,
+                              workoutPlanId: vm.assignedWorkoutId,
+                              workoutPlanTitle: vm.assignedWorkoutTitle,
                             ))),
                         ),
                       ),

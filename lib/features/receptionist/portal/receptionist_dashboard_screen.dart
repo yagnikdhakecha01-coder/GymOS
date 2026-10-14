@@ -7,6 +7,7 @@ import '../../../core/theme/theme.dart';
 import '../../../core/widgets/custom_card.dart';
 import '../../../core/services/supabase_service.dart';
 import '../../../core/services/gym_logo_cache_service.dart';
+import '../../../core/services/announcements_service.dart';
 import '../../authentication/auth_viewmodel.dart';
 import '../../attendance/owner_scanner_screen.dart';
 import '../../attendance/manual_attendance_screen.dart';
@@ -1651,14 +1652,33 @@ class _ReceptionistDashboardScreenState extends State<ReceptionistDashboardScree
               child: const Text('Cancel'),
             ),
             ElevatedButton(
-              onPressed: () {
+              onPressed: () async {
                 final msg = msgController.text.trim();
                 if (msg.isNotEmpty) {
-                  vm.logActivity('Broadcast Sent: $msg', 'more');
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Announcement broadcasted successfully.')),
+                  final authVm = Provider.of<AuthViewModel>(context, listen: false);
+                  final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'];
+
+                  final ann = Announcement(
+                    id: AnnouncementsService.generateUuidV4(),
+                    title: 'Reception Announcement',
+                    message: msg,
+                    image: '',
+                    audience: 'Both (Staff & Members)',
+                    date: DateFormat('dd MMM yyyy').format(DateTime.now()),
+                    status: 'Sent',
                   );
+                  await AnnouncementsService.addAnnouncement(ann, gymId: gymId);
+
+                  vm.logActivity('Broadcast Sent: $msg', 'more');
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Announcement broadcasted successfully to all members and staff!'),
+                        backgroundColor: AppTheme.success,
+                      ),
+                    );
+                  }
                 }
               },
               child: const Text('Send'),

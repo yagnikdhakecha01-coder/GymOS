@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'supabase_service.dart';
 
@@ -107,28 +108,56 @@ class AnnouncementsService {
     return [];
   }
 
+  static bool isValidUuid(String? id) {
+    if (id == null) return false;
+    final uuidRegex = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
+    return uuidRegex.hasMatch(id);
+  }
+
+  static String generateUuidV4() {
+    final rng = math.Random.secure();
+    final bytes = List<int>.generate(16, (_) => rng.nextInt(256));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
+  }
+
   static Future<void> addAnnouncement(Announcement ann, {String? gymId}) async {
     final prefs = await SharedPreferences.getInstance();
     final cacheKey = _getKey(gymId);
+
+    final resolvedId = isValidUuid(ann.id) ? ann.id : generateUuidV4();
+    final resolvedAnn = Announcement(
+      id: resolvedId,
+      title: ann.title,
+      message: ann.message,
+      image: ann.image,
+      audience: ann.audience,
+      date: ann.date,
+      status: ann.status,
+    );
+
     final current = await getAnnouncements(gymId: gymId);
-    current.insert(0, ann);
+    current.insert(0, resolvedAnn);
     await prefs.setString(cacheKey, jsonEncode(current.map((e) => e.toJson()).toList()));
 
     if (SupabaseService.isInitialized && gymId != null && gymId.isNotEmpty) {
       try {
-        final String audienceLower = ann.audience.toLowerCase();
+        final String audienceLower = resolvedAnn.audience.toLowerCase();
         final bool targetStaff = audienceLower.contains('staff') || audienceLower.contains('both');
         final bool targetMembers = audienceLower.contains('member') || audienceLower.contains('both');
         final String targetRole = (targetStaff && targetMembers) ? 'Both' : (targetStaff ? 'Staff' : 'Member');
 
         await SupabaseService.client.from('announcements').insert({
+          'id': resolvedId,
           'gym_id': gymId,
-          'title': ann.title,
-          'message': ann.message,
-          'image': ann.image,
-          'audience': ann.audience,
+          'title': resolvedAnn.title,
+          'message': resolvedAnn.message,
+          'image': resolvedAnn.image,
+          'audience': resolvedAnn.audience,
           'target_role': targetRole,
-          'status': ann.status,
+          'status': resolvedAnn.status,
         });
 
         // Direct client-side notification fanout (backup for DB trigger)
@@ -212,8 +241,12 @@ class AnnouncementsService {
 
     if (SupabaseService.isInitialized) {
       try {
-        await SupabaseService.client.from('announcements').delete().eq('id', id);
-      } catch (_) {}
+        if (isValidUuid(id)) {
+          await SupabaseService.client.from('announcements').delete().eq('id', id);
+        }
+      } catch (e) {
+        print('Error deleting announcement from Supabase: $e');
+      }
     }
   }
 }

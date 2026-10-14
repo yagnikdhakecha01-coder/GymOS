@@ -859,12 +859,7 @@ class AuthViewModel extends ChangeNotifier {
       final uid = profile?.id ?? authUser?.id;
       if (uid != null) {
         // Fetch associations
-        var allAssociations = await _authService.getUserGymAssociations(uid);
-        if (allAssociations != null && allAssociations.isEmpty && (_selectedRole == 'member' || _selectedRole == 'staff')) {
-          // Allow asynchronous database triggers (e.g. handle_auto_link_member_on_auth_user) a brief window to complete on first-time signup/login
-          await Future.delayed(const Duration(milliseconds: 350));
-          allAssociations = await _authService.getUserGymAssociations(uid);
-        }
+        final allAssociations = await _authService.getUserGymAssociations(uid);
         if (allAssociations != null) {
           _userAssociations = allAssociations;
         }

@@ -57,7 +57,9 @@ class MembersViewModel extends ChangeNotifier {
 
   Future<void> saveMember(Member member) async {
     await _repository.saveMember(member);
-    await fetchMembers();
+    _cachedFilteredMembers = null;
+    _countsDirty = true;
+    notifyListeners();
   }
 
   void clearAllData() {

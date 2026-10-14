@@ -60,6 +60,7 @@ class _AddOldMemberScreenState extends State<AddOldMemberScreen> {
 
   // Notes
   final _notesController = TextEditingController();
+  final _biometricPinController = TextEditingController();
 
   bool _isSaving = false;
 
@@ -80,6 +81,7 @@ class _AddOldMemberScreenState extends State<AddOldMemberScreen> {
     _amountReceivedController.dispose();
     _remainingController.dispose();
     _notesController.dispose();
+    _biometricPinController.dispose();
     super.dispose();
   }
 
@@ -264,6 +266,7 @@ class _AddOldMemberScreenState extends State<AddOldMemberScreen> {
       totalReceivedAmount: paidAmount,
       paymentStatus: pendingAmount <= 0 ? 'Paid' : 'Partial',
       extraFields: extra,
+      biometricPin: int.tryParse(_biometricPinController.text.trim()),
     );
 
     final vm = Provider.of<MembersViewModel>(context, listen: false);
@@ -677,6 +680,49 @@ class _AddOldMemberScreenState extends State<AddOldMemberScreen> {
                         const SizedBox(width: 12),
                         _genderChip('Female', Icons.female),
                       ],
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Biometric & Face PIN
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        _fieldLabel('Biometric & Face User ID / PIN'),
+                        TextButton.icon(
+                          onPressed: () async {
+                            final authVm = Provider.of<AuthViewModel>(context, listen: false);
+                            final gymId = authVm.activeAssociation?.gymId ?? authVm.gymInfo?['id'] ?? '';
+                            if (gymId.isEmpty) return;
+                            try {
+                              final res = await SupabaseService.client.rpc('get_next_available_biometric_pin', params: {'p_gym_id': gymId});
+                              if (res != null && res['next_pin'] != null) {
+                                _biometricPinController.text = res['next_pin'].toString();
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Auto-assigned PIN #${res['next_pin']}'),
+                                      duration: const Duration(seconds: 1),
+                                      behavior: SnackBarBehavior.floating,
+                                    ),
+                                  );
+                                }
+                              }
+                            } catch (_) {}
+                          },
+                          icon: const Icon(Icons.auto_awesome_rounded, size: 14, color: AppTheme.primary),
+                          label: Text('Auto-Assign PIN', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.primary)),
+                        ),
+                      ],
+                    ),
+                    TextFormField(
+                      controller: _biometricPinController,
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        hintText: 'e.g. 101, 1024',
+                        prefixIcon: const Icon(Icons.face_retouching_natural_rounded, color: AppTheme.primary),
+                        helperText: 'Machine par isi ID se face scan karein.',
+                        helperStyle: GoogleFonts.inter(fontSize: 11, color: AppTheme.textSecondary),
+                      ),
                     ),
 
                     // ══════════════════════════════════════

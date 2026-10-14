@@ -91,15 +91,24 @@ class _DietDetailScreenState extends State<DietDetailScreen> {
     );
 
     final dietVm = Provider.of<DietViewModel>(context, listen: false);
-    await dietVm.saveDiet(newPlan);
+    final error = await dietVm.saveDiet(newPlan);
 
     if (mounted) {
       Navigator.pop(context);
-      SaveSuccessScreen.show(
-        context,
-        title: 'Save Successful',
-        message: 'Diet plan has been saved successfully.',
-      );
+      if (error != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Saved locally, but cloud sync failed: $error'),
+            backgroundColor: AppTheme.danger,
+          ),
+        );
+      } else {
+        SaveSuccessScreen.show(
+          context,
+          title: 'Save Successful',
+          message: 'Diet plan has been saved successfully.',
+        );
+      }
     }
   }
 

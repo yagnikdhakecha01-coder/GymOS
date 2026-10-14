@@ -39,6 +39,7 @@ class Staff {
   final String shift1End; // e.g. '02:00 PM' or '11:00 AM'
   final String shift2Start; // e.g. '04:00 PM'
   final String shift2End; // e.g. '09:00 PM'
+  final int? biometricPin;
 
   Staff({
     required this.id,
@@ -89,6 +90,7 @@ class Staff {
     this.shift1End = '05:00 PM',
     this.shift2Start = '04:00 PM',
     this.shift2End = '09:00 PM',
+    this.biometricPin,
   });
 
   factory Staff.fromJson(Map<String, dynamic> json) {
@@ -176,6 +178,7 @@ class Staff {
       shift1End: s1End,
       shift2Start: s2Start,
       shift2End: s2End,
+      biometricPin: (json['biometric_pin'] ?? json['biometricPin']) as int?,
     );
   }
 
@@ -217,6 +220,7 @@ class Staff {
       'shift1_end': shift1End,
       'shift2_start': shift2Start,
       'shift2_end': shift2End,
+      if (biometricPin != null) 'biometric_pin': biometricPin,
     };
   }
 
@@ -257,6 +261,7 @@ class Staff {
     String? shift1End,
     String? shift2Start,
     String? shift2End,
+    int? biometricPin,
   }) {
     return Staff(
       id: id ?? this.id,
@@ -295,6 +300,7 @@ class Staff {
       shift1End: shift1End ?? this.shift1End,
       shift2Start: shift2Start ?? this.shift2Start,
       shift2End: shift2End ?? this.shift2End,
+      biometricPin: biometricPin ?? this.biometricPin,
     );
   }
 }
