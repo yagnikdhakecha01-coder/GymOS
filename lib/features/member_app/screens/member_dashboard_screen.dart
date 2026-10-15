@@ -601,6 +601,17 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen>
                               // Complete Workout button
                               GestureDetector(
                                 onTap: () async {
+                                  if (!vm.hasAssignedWorkout || vm.todayMuscleGroup == 'No Plan Assigned') {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: const Text('No workout plan assigned yet. Ask your gym owner to assign your weekly routine!'),
+                                        backgroundColor: const Color(0xFF64748B),
+                                        behavior: SnackBarBehavior.floating,
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                      ),
+                                    );
+                                    return;
+                                  }
                                   if (vm.isTrainingCompleted) return;
                                   final res = await vm.completeTodayWorkout(context);
                                   if (context.mounted) {
@@ -616,24 +627,34 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen>
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(vertical: 14),
                                   decoration: BoxDecoration(
-                                    color: vm.isTrainingCompleted ? const Color(0xFFDCFCE7) : const Color(0xFF7C3AED),
+                                    color: (!vm.hasAssignedWorkout || vm.todayMuscleGroup == 'No Plan Assigned')
+                                        ? const Color(0xFFF1F5F9)
+                                        : (vm.isTrainingCompleted ? const Color(0xFFDCFCE7) : const Color(0xFF7C3AED)),
                                     borderRadius: BorderRadius.circular(16),
                                   ),
                                   child: Row(
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
                                       Icon(
-                                        vm.isTrainingCompleted ? Icons.check_circle_rounded : Icons.task_alt_rounded,
-                                        color: vm.isTrainingCompleted ? const Color(0xFF15803D) : Colors.white,
+                                        (!vm.hasAssignedWorkout || vm.todayMuscleGroup == 'No Plan Assigned')
+                                            ? Icons.schedule_rounded
+                                            : (vm.isTrainingCompleted ? Icons.check_circle_rounded : Icons.task_alt_rounded),
+                                        color: (!vm.hasAssignedWorkout || vm.todayMuscleGroup == 'No Plan Assigned')
+                                            ? const Color(0xFF64748B)
+                                            : (vm.isTrainingCompleted ? const Color(0xFF15803D) : Colors.white),
                                         size: 20,
                                       ),
                                       const SizedBox(width: 8),
                                       Text(
-                                        vm.isTrainingCompleted ? 'Workout Done 🎉' : 'Complete Workout',
+                                        (!vm.hasAssignedWorkout || vm.todayMuscleGroup == 'No Plan Assigned')
+                                            ? 'Plan Pending — Ask Gym to Assign'
+                                            : (vm.isTrainingCompleted ? 'Workout Done 🎉' : 'Complete Workout'),
                                         style: GoogleFonts.inter(
-                                          fontSize: 15,
+                                          fontSize: 14,
                                           fontWeight: FontWeight.w700,
-                                          color: vm.isTrainingCompleted ? const Color(0xFF15803D) : Colors.white,
+                                          color: (!vm.hasAssignedWorkout || vm.todayMuscleGroup == 'No Plan Assigned')
+                                              ? const Color(0xFF64748B)
+                                              : (vm.isTrainingCompleted ? const Color(0xFF15803D) : Colors.white),
                                         ),
                                       ),
                                     ],

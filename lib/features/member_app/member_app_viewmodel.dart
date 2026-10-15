@@ -907,6 +907,11 @@ class MemberAppViewModel extends ChangeNotifier {
                 _todayMuscleGroup = 'No Plan Assigned';
                 await prefs.setString('member_cached_today_muscle', _todayMuscleGroup);
                 await prefs.setStringList('member_cached_today_splits', _todaySplits);
+                await prefs.remove('member_cached_workout_id');
+                await prefs.remove('member_cached_workout_title');
+                await prefs.remove('member_cached_workout_schedule_$_memberId');
+                await prefs.remove('member_cached_workout_schedule');
+                await prefs.remove('member_cached_schedule_json');
               }
             } catch (_) {}
           } else {
@@ -916,6 +921,11 @@ class MemberAppViewModel extends ChangeNotifier {
             _todayMuscleGroup = 'No Plan Assigned';
             await prefs.setString('member_cached_today_muscle', _todayMuscleGroup);
             await prefs.setStringList('member_cached_today_splits', _todaySplits);
+            await prefs.remove('member_cached_workout_id');
+            await prefs.remove('member_cached_workout_title');
+            await prefs.remove('member_cached_workout_schedule_$_memberId');
+            await prefs.remove('member_cached_workout_schedule');
+            await prefs.remove('member_cached_schedule_json');
           }
         }
 

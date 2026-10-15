@@ -48,13 +48,13 @@ class _MemberWorkoutPlanScreenState extends State<MemberWorkoutPlanScreen> {
   final Map<int, Map<String, dynamic>> _weeklySchedule = {};
 
   static const List<Map<String, dynamic>> _defaultDays = [
-    {'day': 1, 'name': 'Monday', 'short': 'Mon', 'muscle': 'Chest Day', 'is_rest': false},
-    {'day': 2, 'name': 'Tuesday', 'short': 'Tue', 'muscle': 'Back Day', 'is_rest': false},
-    {'day': 3, 'name': 'Wednesday', 'short': 'Wed', 'muscle': 'Leg Day', 'is_rest': false},
-    {'day': 4, 'name': 'Thursday', 'short': 'Thu', 'muscle': 'Shoulder Day', 'is_rest': false},
-    {'day': 5, 'name': 'Friday', 'short': 'Fri', 'muscle': 'Arm Day', 'is_rest': false},
-    {'day': 6, 'name': 'Saturday', 'short': 'Sat', 'muscle': 'Cardio & Core', 'is_rest': false},
-    {'day': 7, 'name': 'Sunday', 'short': 'Sun', 'muscle': 'Rest & Recovery', 'is_rest': true},
+    {'day': 1, 'name': 'Monday', 'short': 'Mon', 'muscle': '', 'is_rest': false},
+    {'day': 2, 'name': 'Tuesday', 'short': 'Tue', 'muscle': '', 'is_rest': false},
+    {'day': 3, 'name': 'Wednesday', 'short': 'Wed', 'muscle': '', 'is_rest': false},
+    {'day': 4, 'name': 'Thursday', 'short': 'Thu', 'muscle': '', 'is_rest': false},
+    {'day': 5, 'name': 'Friday', 'short': 'Fri', 'muscle': '', 'is_rest': false},
+    {'day': 6, 'name': 'Saturday', 'short': 'Sat', 'muscle': '', 'is_rest': false},
+    {'day': 7, 'name': 'Sunday', 'short': 'Sun', 'muscle': '', 'is_rest': true},
   ];
 
   static const String _imgBase =
@@ -70,11 +70,11 @@ class _MemberWorkoutPlanScreenState extends State<MemberWorkoutPlanScreen> {
     final todayWeekday = DateTime.now().weekday; // 1..7
     _selectedDay = widget.initialDayOfWeek ?? todayWeekday;
 
-    // Seed initial defaults
+    // Seed initial structure without fake muscle splits
     for (final d in _defaultDays) {
       _weeklySchedule[d['day'] as int] = {
         'day_of_week': d['day'],
-        'muscle_group': d['muscle'],
+        'muscle_group': '',
         'is_rest_day': d['is_rest'],
         'notes': '',
         'exercises': <Map<String, dynamic>>[],
@@ -161,21 +161,23 @@ class _MemberWorkoutPlanScreenState extends State<MemberWorkoutPlanScreen> {
       _workoutPlanTitle = prefs.getString('member_cached_workout_title') ?? '';
     }
 
-    // 1. Instant load from local owner plan cache if available
-    final cachedOwnerSchedStr = prefs.getString('member_cached_workout_schedule_$_memberId') ??
-        prefs.getString('member_cached_workout_schedule');
-    if (cachedOwnerSchedStr != null && cachedOwnerSchedStr.isNotEmpty) {
-      try {
-        final map = jsonDecode(cachedOwnerSchedStr);
-        if (map is Map) {
-          _seedFromOwnerSchedule(Map<String, dynamic>.from(map));
-        }
-      } catch (_) {}
+    // 1. Instant load from local owner plan cache ONLY IF workoutPlanId is present
+    if (_workoutPlanId.isNotEmpty) {
+      final cachedOwnerSchedStr = prefs.getString('member_cached_workout_schedule_$_memberId') ??
+          prefs.getString('member_cached_workout_schedule');
+      if (cachedOwnerSchedStr != null && cachedOwnerSchedStr.isNotEmpty) {
+        try {
+          final map = jsonDecode(cachedOwnerSchedStr);
+          if (map is Map) {
+            _seedFromOwnerSchedule(Map<String, dynamic>.from(map));
+          }
+        } catch (_) {}
+      }
     }
 
-    // 2. Overlay any member personal customizations cached locally
+    // 2. Overlay any member personal customizations cached locally (only if plan is active)
     final cachedStr = prefs.getString(_cacheKey);
-    if (cachedStr != null) {
+    if (_hasOwnerPlan && cachedStr != null) {
       try {
         final List list = jsonDecode(cachedStr);
         for (final item in list) {
@@ -190,7 +192,7 @@ class _MemberWorkoutPlanScreenState extends State<MemberWorkoutPlanScreen> {
             }
             _weeklySchedule[day] = {
               'day_of_week': day,
-              'muscle_group': map['muscle_group'] ?? _weeklySchedule[day]?['muscle_group'] ?? 'General',
+              'muscle_group': map['muscle_group'] ?? _weeklySchedule[day]?['muscle_group'] ?? '',
               'is_rest_day': map['is_rest_day'] ?? false,
               'notes': map['notes'] ?? '',
               'exercises': exList,
@@ -202,29 +204,48 @@ class _MemberWorkoutPlanScreenState extends State<MemberWorkoutPlanScreen> {
 
     if (mounted) setState(() => _isLoading = false);
 
-    // 3. Online fetch: Get fresh owner plan if not cached, and sync member custom overrides
-    if (SupabaseService.isInitialized) {
+    // 3. Online fetch: Always verify fresh assigned_workout_id directly from Supabase
+    if (SupabaseService.isInitialized && _memberId.isNotEmpty) {
       try {
-        // If workout plan ID wasn't known, query member record to get assigned_workout_id
-        if (_workoutPlanId.isEmpty && _memberId.isNotEmpty) {
-          final mRes = await SupabaseService.client
-              .from('members')
-              .select('assigned_workout_id')
-              .eq('id', _memberId)
-              .maybeSingle();
-          if (mRes != null && mRes['assigned_workout_id'] != null) {
-            _workoutPlanId = mRes['assigned_workout_id'].toString();
-            await prefs.setString('member_cached_workout_id', _workoutPlanId);
-          }
-        }
+        final mRes = await SupabaseService.client
+            .from('members')
+            .select('assigned_workout_id')
+            .eq('id', _memberId)
+            .maybeSingle();
 
-        // Fetch fresh owner workout plan
-        if (_workoutPlanId.isNotEmpty) {
+        final cloudPlanId = mRes?['assigned_workout_id']?.toString() ?? '';
+
+        if (cloudPlanId.isEmpty) {
+          // Gym owner has NOT assigned any plan to this member!
+          _workoutPlanId = '';
+          _workoutPlanTitle = '';
+          _hasOwnerPlan = false;
+          _ownerSchedule = {};
+          await prefs.remove('member_cached_workout_id');
+          await prefs.remove('member_cached_workout_title');
+          await prefs.remove('member_cached_workout_schedule_$_memberId');
+          await prefs.remove('member_cached_workout_schedule');
+          await prefs.remove('member_cached_schedule_json');
+          // Reset weekly schedule to empty so no fake splits show up
+          for (final d in _defaultDays) {
+            _weeklySchedule[d['day'] as int] = {
+              'day_of_week': d['day'],
+              'muscle_group': '',
+              'is_rest_day': d['is_rest'],
+              'notes': '',
+              'exercises': <Map<String, dynamic>>[],
+            };
+          }
+        } else {
+          _workoutPlanId = cloudPlanId;
+          await prefs.setString('member_cached_workout_id', _workoutPlanId);
+
           final wData = await SupabaseService.client
               .from('workout_plans')
               .select('title, schedule')
               .eq('id', _workoutPlanId)
               .maybeSingle();
+
           if (wData != null) {
             _workoutPlanTitle = wData['title'] ?? _workoutPlanTitle;
             await prefs.setString('member_cached_workout_title', _workoutPlanTitle);
@@ -237,11 +258,16 @@ class _MemberWorkoutPlanScreenState extends State<MemberWorkoutPlanScreen> {
               await prefs.setString('member_cached_workout_schedule', jsonEncode(raw));
               _seedFromOwnerSchedule(Map<String, dynamic>.from(raw));
             }
+          } else {
+            _workoutPlanId = '';
+            _workoutPlanTitle = '';
+            _hasOwnerPlan = false;
+            _ownerSchedule = {};
           }
         }
 
-        // Overlay any cloud-saved personal overrides
-        if (_memberId.isNotEmpty) {
+        // Overlay any cloud-saved personal overrides ONLY IF plan exists
+        if (_hasOwnerPlan && _memberId.isNotEmpty) {
           final res = await SupabaseService.client
               .from('member_weekly_schedule')
               .select()
@@ -492,8 +518,13 @@ class _MemberWorkoutPlanScreenState extends State<MemberWorkoutPlanScreen> {
   Widget build(BuildContext context) {
     final today = DateTime.now().weekday;
     final currentDayData = _weeklySchedule[_selectedDay] ?? {};
-    final String muscle = currentDayData['muscle_group']?.toString() ?? 'General';
-    final bool isRest = currentDayData['is_rest_day'] == true;
+    final String rawMuscle = (currentDayData['muscle_group']?.toString() ?? '').trim();
+    final bool hasAssignedForDay = _hasOwnerPlan && rawMuscle.isNotEmpty && rawMuscle != 'No Plan Assigned';
+    final String muscle = hasAssignedForDay
+        ? rawMuscle
+        : (_hasOwnerPlan ? 'Rest & Recovery' : 'No Plan Assigned');
+    final bool isRest = currentDayData['is_rest_day'] == true ||
+        (_hasOwnerPlan && muscle.toLowerCase().contains('rest'));
     final List exercises = (currentDayData['exercises'] as List?) ?? [];
 
     return Scaffold(
@@ -518,13 +549,22 @@ class _MemberWorkoutPlanScreenState extends State<MemberWorkoutPlanScreen> {
                 color: AppTheme.textPrimary,
               ),
             ),
-            if (_workoutPlanTitle.isNotEmpty)
+            if (_hasOwnerPlan && _workoutPlanTitle.isNotEmpty)
               Text(
                 'Plan: $_workoutPlanTitle',
                 style: GoogleFonts.inter(
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
                   color: AppTheme.primary,
+                ),
+              )
+            else
+              Text(
+                'No Plan Assigned',
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF64748B),
                 ),
               ),
           ],
@@ -558,7 +598,7 @@ class _MemberWorkoutPlanScreenState extends State<MemberWorkoutPlanScreen> {
                 context,
                 MaterialPageRoute(
                   builder: (_) => MemberExerciseLibraryScreen(
-                    initialMuscleGroup: muscle,
+                    initialMuscleGroup: _hasOwnerPlan ? muscle : null,
                     memberId: widget.memberId,
                     gymId: widget.gymId,
                   ),
@@ -592,6 +632,8 @@ class _MemberWorkoutPlanScreenState extends State<MemberWorkoutPlanScreen> {
                         final isToday = dayNum == today;
                         final dayPlan = _weeklySchedule[dayNum];
                         final exCount = (dayPlan?['exercises'] as List?)?.length ?? 0;
+                        final dayMuscle = (dayPlan?['muscle_group']?.toString() ?? '').trim();
+                        final bool hasDaySplit = _hasOwnerPlan && dayMuscle.isNotEmpty && dayMuscle != 'No Plan Assigned';
 
                         return GestureDetector(
                           onTap: () => setState(() => _selectedDay = dayNum),
@@ -639,9 +681,13 @@ class _MemberWorkoutPlanScreenState extends State<MemberWorkoutPlanScreen> {
                                 ),
                                 const SizedBox(height: 3),
                                 Text(
-                                  isToday ? 'TODAY' : '$exCount',
+                                  isToday
+                                      ? 'TODAY'
+                                      : (_hasOwnerPlan
+                                          ? (exCount > 0 ? '$exCount' : (hasDaySplit ? '✓' : 'Rest'))
+                                          : '-'),
                                   style: GoogleFonts.inter(
-                                    fontSize: isToday ? 10 : 14,
+                                    fontSize: (isToday || !_hasOwnerPlan || (exCount == 0 && !hasDaySplit)) ? 10 : 13,
                                     fontWeight: FontWeight.w800,
                                     color: isSelected
                                         ? Colors.white
@@ -667,167 +713,100 @@ class _MemberWorkoutPlanScreenState extends State<MemberWorkoutPlanScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Day Target Focus Card
-                        Container(
-                          padding: const EdgeInsets.all(18),
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: isRest
-                                  ? [const Color(0xFF0F172A), const Color(0xFF1E293B)]
-                                  : [const Color(0xFF4338CA), const Color(0xFF6366F1)],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                            borderRadius: BorderRadius.circular(20),
-                            boxShadow: [
-                              BoxShadow(
-                                color: (isRest ? const Color(0xFF0F172A) : const Color(0xFF4338CA))
-                                    .withValues(alpha: 0.25),
-                                blurRadius: 12,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Container(
-                                        padding: const EdgeInsets.all(8),
-                                        decoration: BoxDecoration(
-                                          color: Colors.white.withValues(alpha: 0.2),
-                                          borderRadius: BorderRadius.circular(10),
-                                        ),
-                                        child: Icon(
-                                          isRest
-                                              ? Icons.bedtime_rounded
-                                              : Icons.fitness_center_rounded,
-                                          color: Colors.white,
-                                          size: 18,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 10),
-                                      Text(
-                                        _getDayName(_selectedDay),
-                                        style: GoogleFonts.inter(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w800,
-                                          color: Colors.white,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  // Edit muscle button
-                                  IconButton(
-                                    icon: const Icon(Icons.edit_rounded, color: Colors.white, size: 18),
-                                    onPressed: () => _editMuscleGroup(_selectedDay),
-                                    tooltip: 'Change Target Muscle',
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 12),
-                              Text(
-                                isRest ? 'Rest & Recovery Day' : muscle,
-                                style: GoogleFonts.inter(
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w800,
-                                  color: Colors.white,
-                                  letterSpacing: -0.5,
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                isRest
-                                    ? 'Rest is when muscles recover and grow stronger.'
-                                    : '${exercises.length} planned exercises for this session',
-                                style: GoogleFonts.inter(
-                                  fontSize: 12,
-                                  color: Colors.white.withValues(alpha: 0.85),
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              // Rest Day Toggle
-                              Row(
-                                children: [
-                                  Text(
-                                    'Mark as Rest Day',
-                                    style: GoogleFonts.inter(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                      color: Colors.white70,
-                                    ),
-                                  ),
-                                  const Spacer(),
-                                  Switch(
-                                    value: isRest,
-                                    activeThumbColor: Colors.white,
-                                    activeTrackColor: AppTheme.success,
-                                    inactiveThumbColor: Colors.white,
-                                    inactiveTrackColor: Colors.white24,
-                                    onChanged: (val) {
-                                      setState(() {
-                                        currentDayData['is_rest_day'] = val;
-                                      });
-                                      _saveDaySchedule(_selectedDay);
-                                    },
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-
-                        const SizedBox(height: 20),
-
-                        // Section Title: Exercises
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              'PLANNED EXERCISES (${exercises.length})',
-                              style: GoogleFonts.inter(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 0.8,
-                                color: const Color(0xFF64748B),
-                              ),
-                            ),
-                            TextButton.icon(
-                              icon: const Icon(Icons.add_rounded, size: 16),
-                              label: const Text('Add Exercise'),
-                              style: TextButton.styleFrom(
-                                foregroundColor: AppTheme.primary,
-                                visualDensity: VisualDensity.compact,
-                              ),
-                              onPressed: () async {
-                                await Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => MemberExerciseLibraryScreen(
-                                      initialMuscleGroup: muscle,
-                                      memberId: widget.memberId,
-                                      gymId: widget.gymId,
-                                    ),
-                                  ),
-                                );
-                                _loadSchedule();
-                              },
-                            ),
-                          ],
-                        ),
-
-                        const SizedBox(height: 10),
-
-                        // Exercise List
-                        if (exercises.isEmpty)
+                        if (!_hasOwnerPlan) ...[
+                          // Day Target Focus Card for Unassigned State
                           Container(
                             width: double.infinity,
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 24, vertical: 36),
+                            padding: const EdgeInsets.all(20),
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: [Color(0xFF1E293B), Color(0xFF334155)],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                              borderRadius: BorderRadius.circular(20),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(0xFF1E293B).withValues(alpha: 0.25),
+                                  blurRadius: 12,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.all(8),
+                                          decoration: BoxDecoration(
+                                            color: Colors.white.withValues(alpha: 0.15),
+                                            borderRadius: BorderRadius.circular(10),
+                                          ),
+                                          child: const Icon(
+                                            Icons.calendar_today_rounded,
+                                            color: Colors.white,
+                                            size: 18,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Text(
+                                          _getDayName(_selectedDay),
+                                          style: GoogleFonts.inter(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w800,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withValues(alpha: 0.2),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Text(
+                                        'Plan Pending',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 14),
+                                Text(
+                                  'No Plan Assigned',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.white,
+                                    letterSpacing: -0.5,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  'Ask your gym to assign workout routine',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 13,
+                                    color: Colors.white.withValues(alpha: 0.85),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          // Informative Card
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 36),
                             decoration: BoxDecoration(
                               color: Colors.white,
                               borderRadius: BorderRadius.circular(18),
@@ -850,51 +829,286 @@ class _MemberWorkoutPlanScreenState extends State<MemberWorkoutPlanScreen> {
                                 ),
                                 const SizedBox(height: 14),
                                 Text(
-                                  'No exercises planned for ${_getDayName(_selectedDay)}',
+                                  'No workout assigned for ${_getDayName(_selectedDay)}',
+                                  textAlign: TextAlign.center,
                                   style: GoogleFonts.inter(
-                                    fontSize: 15,
+                                    fontSize: 16,
                                     fontWeight: FontWeight.w700,
                                     color: const Color(0xFF0F172A),
                                   ),
                                 ),
-                                const SizedBox(height: 6),
+                                const SizedBox(height: 8),
                                 Text(
-                                  'Add exercises from the library to customize your workout routine.',
+                                  'Your gym owner has not assigned a weekly workout routine to your account yet. Once assigned, your routine (Chest, Back, Shoulders, etc.) will appear here automatically.\n\nYou can still browse exercises from the library!',
                                   textAlign: TextAlign.center,
                                   style: GoogleFonts.inter(
-                                    fontSize: 12,
+                                    fontSize: 13,
                                     color: const Color(0xFF64748B),
+                                    height: 1.4,
                                   ),
                                 ),
-                                const SizedBox(height: 18),
+                                const SizedBox(height: 20),
                                 ElevatedButton.icon(
                                   icon: const Icon(Icons.search_rounded, size: 16),
                                   label: const Text('Browse Exercise Library'),
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: AppTheme.primary,
                                     foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 20, vertical: 12),
-                                    shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(12)),
+                                    padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                   ),
-                                  onPressed: () async {
-                                    await Navigator.push(
+                                  onPressed: () {
+                                    Navigator.push(
                                       context,
                                       MaterialPageRoute(
                                         builder: (_) => MemberExerciseLibraryScreen(
-                                          initialMuscleGroup: muscle,
                                           memberId: widget.memberId,
                                           gymId: widget.gymId,
                                         ),
                                       ),
                                     );
-                                    _loadSchedule();
                                   },
                                 ),
                               ],
                             ),
-                          )
+                          ),
+                        ] else ...[
+                          // Day Target Focus Card (Owner Plan Assigned)
+                          Container(
+                            padding: const EdgeInsets.all(18),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: isRest
+                                    ? [const Color(0xFF0F172A), const Color(0xFF1E293B)]
+                                    : [const Color(0xFF4338CA), const Color(0xFF6366F1)],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                              borderRadius: BorderRadius.circular(20),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: (isRest ? const Color(0xFF0F172A) : const Color(0xFF4338CA))
+                                      .withValues(alpha: 0.25),
+                                  blurRadius: 12,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.all(8),
+                                          decoration: BoxDecoration(
+                                            color: Colors.white.withValues(alpha: 0.2),
+                                            borderRadius: BorderRadius.circular(10),
+                                          ),
+                                          child: Icon(
+                                            isRest
+                                                ? Icons.bedtime_rounded
+                                                : Icons.fitness_center_rounded,
+                                            color: Colors.white,
+                                            size: 18,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Text(
+                                          _getDayName(_selectedDay),
+                                          style: GoogleFonts.inter(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w800,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    // Edit muscle button
+                                    IconButton(
+                                      icon: const Icon(Icons.edit_rounded, color: Colors.white, size: 18),
+                                      onPressed: () => _editMuscleGroup(_selectedDay),
+                                      tooltip: 'Change Target Muscle',
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                Text(
+                                  isRest ? 'Rest & Recovery Day' : muscle,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.white,
+                                    letterSpacing: -0.5,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  isRest
+                                      ? 'Rest is when muscles recover and grow stronger.'
+                                      : '${exercises.length} planned exercises for this session',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    color: Colors.white.withValues(alpha: 0.85),
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                // Rest Day Toggle
+                                Row(
+                                  children: [
+                                    Text(
+                                      'Mark as Rest Day',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.white70,
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    Switch(
+                                      value: isRest,
+                                      activeThumbColor: Colors.white,
+                                      activeTrackColor: AppTheme.success,
+                                      inactiveThumbColor: Colors.white,
+                                      inactiveTrackColor: Colors.white24,
+                                      onChanged: (val) {
+                                        setState(() {
+                                          currentDayData['is_rest_day'] = val;
+                                        });
+                                        _saveDaySchedule(_selectedDay);
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+
+                          const SizedBox(height: 20),
+
+                          // Section Title: Exercises
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'PLANNED EXERCISES (${exercises.length})',
+                                style: GoogleFonts.inter(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 0.8,
+                                  color: const Color(0xFF64748B),
+                                ),
+                              ),
+                              TextButton.icon(
+                                icon: const Icon(Icons.add_rounded, size: 16),
+                                label: const Text('Add Exercise'),
+                                style: TextButton.styleFrom(
+                                  foregroundColor: AppTheme.primary,
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                                onPressed: () async {
+                                  await Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => MemberExerciseLibraryScreen(
+                                        initialMuscleGroup: muscle,
+                                        memberId: widget.memberId,
+                                        gymId: widget.gymId,
+                                      ),
+                                    ),
+                                  );
+                                  _loadSchedule();
+                                },
+                              ),
+                            ],
+                          ),
+
+                          const SizedBox(height: 10),
+
+                          // Exercise List
+                          if (exercises.isEmpty)
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 24, vertical: 30),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(18),
+                                border: Border.all(color: const Color(0xFFE2E8F0)),
+                              ),
+                              child: Column(
+                                children: [
+                                  Container(
+                                    width: 56,
+                                    height: 56,
+                                    decoration: BoxDecoration(
+                                      color: AppTheme.primary.withValues(alpha: 0.08),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.fitness_center_rounded,
+                                      size: 28,
+                                      color: AppTheme.primary,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 14),
+                                  Text(
+                                    isRest
+                                        ? 'Rest Day Scheduled'
+                                        : 'Target Focus: $muscle',
+                                    textAlign: TextAlign.center,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w700,
+                                      color: const Color(0xFF0F172A),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    isRest
+                                        ? 'Your gym has scheduled rest and recovery for ${_getDayName(_selectedDay)}.'
+                                        : 'Your gym has scheduled $muscle for ${_getDayName(_selectedDay)}. Tap below to explore all exercises for this workout!',
+                                    textAlign: TextAlign.center,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 12,
+                                      color: const Color(0xFF64748B),
+                                      height: 1.4,
+                                    ),
+                                  ),
+                                  if (!isRest) ...[
+                                    const SizedBox(height: 18),
+                                    ElevatedButton.icon(
+                                      icon: const Icon(Icons.search_rounded, size: 16),
+                                      label: Text('Browse $muscle Exercises'),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: AppTheme.primary,
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 20, vertical: 12),
+                                        shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(12)),
+                                      ),
+                                      onPressed: () async {
+                                        await Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) => MemberExerciseLibraryScreen(
+                                              initialMuscleGroup: muscle,
+                                              memberId: widget.memberId,
+                                              gymId: widget.gymId,
+                                            ),
+                                          ),
+                                        );
+                                        _loadSchedule();
+                                      },
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            )
                         else
                           ListView.builder(
                             shrinkWrap: true,
@@ -1013,6 +1227,7 @@ class _MemberWorkoutPlanScreenState extends State<MemberWorkoutPlanScreen> {
                               );
                             },
                           ),
+                        ],
                       ],
                     ),
                   ),
