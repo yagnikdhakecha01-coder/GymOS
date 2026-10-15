@@ -550,6 +550,10 @@ class _MemberExerciseLibraryScreenState
     }
 
     await prefs.setString(cacheKey, jsonEncode(schedule));
+    final activeMode = prefs.getString('member_active_plan_mode_$memberId');
+    if (activeMode == null) {
+      await prefs.setString('member_active_plan_mode_$memberId', 'custom');
+    }
 
     // Upsert to Supabase
     if (SupabaseService.isInitialized && gymId.isNotEmpty) {

@@ -18,6 +18,7 @@ import '../widgets/member_rules_agreement_dialog.dart';
 import '../../../core/widgets/skeleton_shimmer.dart';
 import '../../../core/widgets/app_cached_avatar.dart';
 import 'member_shell.dart';
+import 'member_workout_plan_screen.dart';
 
 class MemberDashboardScreen extends StatefulWidget {
   const MemberDashboardScreen({super.key});
@@ -465,7 +466,7 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen>
                                               ),
                                               const SizedBox(height: 3),
                                               Text(
-                                                'Ask your gym to assign workout',
+                                                'Tap to create custom routine or ask gym',
                                                 style: GoogleFonts.inter(
                                                   fontSize: 12,
                                                   fontWeight: FontWeight.w500,
@@ -551,7 +552,9 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen>
                                                     ? 'Rest & Recovery Day 🧘'
                                                     : (vm.isTrainingCompleted
                                                         ? 'Workout Completed 🎉'
-                                                        : 'Not Completed Yet')),
+                                                        : (vm.isCustomPlanActive
+                                                            ? 'My Custom Routine ⭐'
+                                                            : 'Not Completed Yet'))),
                                             style: GoogleFonts.inter(
                                               fontSize: 11,
                                               fontWeight: FontWeight.w700,
@@ -561,7 +564,9 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen>
                                                       ? const Color(0xFF7C3AED)
                                                       : (vm.isTrainingCompleted
                                                           ? const Color(0xFF15803D)
-                                                          : const Color(0xFFD97706))),
+                                                          : (vm.isCustomPlanActive
+                                                              ? const Color(0xFF7C3AED)
+                                                               : const Color(0xFFD97706)))),
                                             ),
                                           ),
                                         ),
@@ -602,12 +607,14 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen>
                               GestureDetector(
                                 onTap: () async {
                                   if (!vm.hasAssignedWorkout || vm.todayMuscleGroup == 'No Plan Assigned') {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: const Text('No workout plan assigned yet. Ask your gym owner to assign your weekly routine!'),
-                                        backgroundColor: const Color(0xFF64748B),
-                                        behavior: SnackBarBehavior.floating,
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => MemberWorkoutPlanScreen(
+                                          memberId: vm.memberId,
+                                          workoutPlanId: vm.assignedWorkoutId,
+                                          workoutPlanTitle: vm.assignedWorkoutTitle,
+                                        ),
                                       ),
                                     );
                                     return;
@@ -628,7 +635,7 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen>
                                   padding: const EdgeInsets.symmetric(vertical: 14),
                                   decoration: BoxDecoration(
                                     color: (!vm.hasAssignedWorkout || vm.todayMuscleGroup == 'No Plan Assigned')
-                                        ? const Color(0xFFF1F5F9)
+                                        ? const Color(0xFFEDE9FE)
                                         : (vm.isTrainingCompleted ? const Color(0xFFDCFCE7) : const Color(0xFF7C3AED)),
                                     borderRadius: BorderRadius.circular(16),
                                   ),
@@ -637,23 +644,23 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen>
                                     children: [
                                       Icon(
                                         (!vm.hasAssignedWorkout || vm.todayMuscleGroup == 'No Plan Assigned')
-                                            ? Icons.schedule_rounded
+                                            ? Icons.edit_calendar_rounded
                                             : (vm.isTrainingCompleted ? Icons.check_circle_rounded : Icons.task_alt_rounded),
                                         color: (!vm.hasAssignedWorkout || vm.todayMuscleGroup == 'No Plan Assigned')
-                                            ? const Color(0xFF64748B)
+                                            ? const Color(0xFF7C3AED)
                                             : (vm.isTrainingCompleted ? const Color(0xFF15803D) : Colors.white),
                                         size: 20,
                                       ),
                                       const SizedBox(width: 8),
                                       Text(
                                         (!vm.hasAssignedWorkout || vm.todayMuscleGroup == 'No Plan Assigned')
-                                            ? 'Plan Pending — Ask Gym to Assign'
+                                            ? 'Create Custom Routine or Ask Gym'
                                             : (vm.isTrainingCompleted ? 'Workout Done 🎉' : 'Complete Workout'),
                                         style: GoogleFonts.inter(
                                           fontSize: 14,
                                           fontWeight: FontWeight.w700,
                                           color: (!vm.hasAssignedWorkout || vm.todayMuscleGroup == 'No Plan Assigned')
-                                              ? const Color(0xFF64748B)
+                                              ? const Color(0xFF7C3AED)
                                               : (vm.isTrainingCompleted ? const Color(0xFF15803D) : Colors.white),
                                         ),
                                       ),

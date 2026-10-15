@@ -61,11 +61,14 @@ class MemberAppViewModel extends ChangeNotifier {
   List<String> _declaredHolidays = [];
 
   // ── Today's Training ──
-  String _todayMuscleGroup = 'Chest Day'; // Chest, Back, Leg, Shoulder, Arm, Rest, Cardio
-  List<String> _todaySplits = ['Chest Day'];
+  String _todayMuscleGroup = 'No Plan Assigned'; // Chest, Back, Leg, Shoulder, Arm, Rest, Cardio
+  List<String> _todaySplits = [];
   Map<String, dynamic> _weeklyWorkoutSchedule = {};
   String _gymId = '';
   bool _isTrainingCompleted = false;
+  String _activePlanMode = 'gym'; // 'gym' or 'custom'
+  bool _hasCustomPlan = false;
+  final Map<int, Map<String, dynamic>> _customWeeklySchedule = {};
 
   // Training History List
   final List<Map<String, dynamic>> _trainingHistory = [];
@@ -232,7 +235,20 @@ class MemberAppViewModel extends ChangeNotifier {
   String get todayMuscleGroup => _todayMuscleGroup;
   List<String> get todaySplits => _todaySplits;
   Map<String, dynamic> get weeklyWorkoutSchedule => _weeklyWorkoutSchedule;
-  bool get hasAssignedWorkout => _assignedWorkoutId.isNotEmpty && (_weeklyWorkoutSchedule.isNotEmpty || _assignedWorkoutTitle.isNotEmpty);
+  String get activePlanMode => _activePlanMode;
+  bool get isCustomPlanActive => _activePlanMode == 'custom';
+  bool get hasCustomPlan => _hasCustomPlan;
+  Map<int, Map<String, dynamic>> get customWeeklySchedule => _customWeeklySchedule;
+
+  bool get hasAssignedWorkout {
+    if (_activePlanMode == 'custom') {
+      return _hasCustomPlan && _todayMuscleGroup != 'No Plan Assigned';
+    }
+    return _assignedWorkoutId.isNotEmpty &&
+        (_weeklyWorkoutSchedule.isNotEmpty || _assignedWorkoutTitle.isNotEmpty) &&
+        _todayMuscleGroup != 'No Plan Assigned';
+  }
+
   bool get isRestDay {
     if (!hasAssignedWorkout) return false;
     final normalized = _todayMuscleGroup.toLowerCase();
@@ -629,12 +645,117 @@ class MemberAppViewModel extends ChangeNotifier {
     await loadMemberDataFromSupabase();
   }
 
-  /// Evaluates today's splits and muscle group from the 7-day schedule offline.
-  /// Guarantees that:
-  /// 1. Unassigned members are marked 'No Plan Assigned' (never falsely labeled 'Rest Day').
-  /// 2. Multi-splits (e.g. Chest Day & Bicep Day) are cleanly parsed and combined.
-  /// 3. Genuine Rest Days set by the owner are respected.
+  /// Loads member's custom weekly schedule from SharedPreferences cache.
+  void _loadCustomScheduleFromCache([SharedPreferences? prefs]) {
+    if (prefs == null) return;
+    _customWeeklySchedule.clear();
+    _hasCustomPlan = false;
+    final cachedStr = prefs.getString('member_weekly_schedule_$_memberId');
+    if (cachedStr != null && cachedStr.isNotEmpty) {
+      try {
+        final List list = jsonDecode(cachedStr);
+        bool foundAny = false;
+        for (final item in list) {
+          if (item is Map) {
+            final day = (item['day_of_week'] as num?)?.toInt();
+            if (day != null && day >= 1 && day <= 7) {
+              _customWeeklySchedule[day] = Map<String, dynamic>.from(item);
+              final m = (item['muscle_group']?.toString() ?? '').trim();
+              final exs = item['exercises'] as List? ?? [];
+              if ((m.isNotEmpty && !m.toLowerCase().contains('no plan') && !m.toLowerCase().contains('rest')) || exs.isNotEmpty) {
+                foundAny = true;
+              }
+            }
+          }
+        }
+        _hasCustomPlan = foundAny;
+      } catch (_) {}
+    }
+  }
+
+  /// Sets active plan mode ('gym' or 'custom') and updates dashboard immediately.
+  Future<void> setActivePlanMode(String mode) async {
+    _activePlanMode = mode;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('member_active_plan_mode_$_memberId', mode);
+    _computeTodayWorkoutFromSchedule(prefs);
+    notifyListeners();
+  }
+
+  /// Reloads workout schedules (e.g. after editing custom plan in workout plan screen).
+  Future<void> reloadWorkoutSchedules() async {
+    final prefs = await SharedPreferences.getInstance();
+    final storedMode = prefs.getString('member_active_plan_mode_$_memberId');
+    if (storedMode != null && storedMode.isNotEmpty) {
+      _activePlanMode = storedMode;
+    }
+    _loadCustomScheduleFromCache(prefs);
+    _computeTodayWorkoutFromSchedule(prefs);
+    notifyListeners();
+  }
+
+  /// Evaluates today's splits and muscle group from either the Custom Routine or Gym Schedule.
   void _computeTodayWorkoutFromSchedule([SharedPreferences? prefs]) {
+    if (prefs != null) {
+      _loadCustomScheduleFromCache(prefs);
+      final storedMode = prefs.getString('member_active_plan_mode_$_memberId');
+      if (storedMode != null && storedMode.isNotEmpty) {
+        _activePlanMode = storedMode;
+      } else {
+        _activePlanMode = _assignedWorkoutId.isNotEmpty ? 'gym' : (_hasCustomPlan ? 'custom' : 'gym');
+      }
+    }
+
+    final todayWeekday = DateTime.now().weekday; // 1 = Mon ... 7 = Sun
+    final todayFull = DateFormat('EEEE').format(DateTime.now());
+    final todayShort = DateFormat('E').format(DateTime.now());
+
+    // ── 1. CUSTOM PLAN MODE ──
+    if (_activePlanMode == 'custom' || (_assignedWorkoutId.isEmpty && _hasCustomPlan)) {
+      final dayData = _customWeeklySchedule[todayWeekday];
+      if (dayData != null) {
+        final isRest = dayData['is_rest_day'] == true;
+        final rawMuscle = (dayData['muscle_group']?.toString() ?? '').trim();
+        final List exercises = (dayData['exercises'] as List?) ?? [];
+
+        if (isRest || rawMuscle.toLowerCase().contains('rest')) {
+          _todaySplits = ['Rest Day'];
+          _todayMuscleGroup = 'Rest Day';
+        } else if (rawMuscle.isNotEmpty && rawMuscle != 'No Plan Assigned') {
+          _todaySplits = [rawMuscle];
+          _todayMuscleGroup = rawMuscle;
+        } else if (exercises.isNotEmpty) {
+          final targets = exercises
+              .map((e) => (e['target'] ?? e['body_part'] ?? e['name'] ?? '').toString().trim())
+              .where((s) => s.isNotEmpty)
+              .toSet()
+              .take(2)
+              .toList();
+          final derived = targets.isNotEmpty ? targets.join(' & ') : 'Custom Workout';
+          _todaySplits = [derived];
+          _todayMuscleGroup = derived;
+        } else {
+          _todaySplits = ['Rest Day'];
+          _todayMuscleGroup = 'Rest Day';
+        }
+      } else {
+        if (_hasCustomPlan) {
+          _todaySplits = ['Rest Day'];
+          _todayMuscleGroup = 'Rest Day';
+        } else {
+          _todaySplits = [];
+          _todayMuscleGroup = 'No Plan Assigned';
+        }
+      }
+
+      if (prefs != null) {
+        prefs.setString('member_cached_today_muscle', _todayMuscleGroup);
+        prefs.setStringList('member_cached_today_splits', _todaySplits);
+      }
+      return;
+    }
+
+    // ── 2. OFFICIAL GYM PLAN MODE ──
     if (_assignedWorkoutId.isEmpty || _weeklyWorkoutSchedule.isEmpty) {
       _todaySplits = [];
       _todayMuscleGroup = 'No Plan Assigned';
@@ -644,9 +765,6 @@ class MemberAppViewModel extends ChangeNotifier {
       }
       return;
     }
-
-    final todayFull = DateFormat('EEEE').format(DateTime.now()); // e.g. "Wednesday"
-    final todayShort = DateFormat('E').format(DateTime.now());   // e.g. "Wed"
 
     dynamic todayList;
     for (final entry in _weeklyWorkoutSchedule.entries) {
@@ -903,29 +1021,23 @@ class MemberAppViewModel extends ChangeNotifier {
               } else {
                 _assignedWorkoutTitle = '';
                 _weeklyWorkoutSchedule = {};
-                _todaySplits = [];
-                _todayMuscleGroup = 'No Plan Assigned';
-                await prefs.setString('member_cached_today_muscle', _todayMuscleGroup);
-                await prefs.setStringList('member_cached_today_splits', _todaySplits);
                 await prefs.remove('member_cached_workout_id');
                 await prefs.remove('member_cached_workout_title');
                 await prefs.remove('member_cached_workout_schedule_$_memberId');
                 await prefs.remove('member_cached_workout_schedule');
                 await prefs.remove('member_cached_schedule_json');
+                _computeTodayWorkoutFromSchedule(prefs);
               }
             } catch (_) {}
           } else {
             _assignedWorkoutTitle = '';
             _weeklyWorkoutSchedule = {};
-            _todaySplits = [];
-            _todayMuscleGroup = 'No Plan Assigned';
-            await prefs.setString('member_cached_today_muscle', _todayMuscleGroup);
-            await prefs.setStringList('member_cached_today_splits', _todaySplits);
             await prefs.remove('member_cached_workout_id');
             await prefs.remove('member_cached_workout_title');
             await prefs.remove('member_cached_workout_schedule_$_memberId');
             await prefs.remove('member_cached_workout_schedule');
             await prefs.remove('member_cached_schedule_json');
+            _computeTodayWorkoutFromSchedule(prefs);
           }
         }
 
