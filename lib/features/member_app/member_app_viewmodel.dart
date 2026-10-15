@@ -718,10 +718,12 @@ class MemberAppViewModel extends ChangeNotifier {
         final rawMuscle = (dayData['muscle_group']?.toString() ?? '').trim();
         final List exercises = (dayData['exercises'] as List?) ?? [];
 
-        if (isRest || rawMuscle.toLowerCase().contains('rest')) {
+        if (isRest) {
           _todaySplits = ['Rest Day'];
           _todayMuscleGroup = 'Rest Day';
-        } else if (rawMuscle.isNotEmpty && rawMuscle != 'No Plan Assigned') {
+        } else if (rawMuscle.isNotEmpty &&
+            rawMuscle != 'No Plan Assigned' &&
+            !rawMuscle.toLowerCase().contains('rest')) {
           _todaySplits = [rawMuscle];
           _todayMuscleGroup = rawMuscle;
         } else if (exercises.isNotEmpty) {
@@ -735,8 +737,8 @@ class MemberAppViewModel extends ChangeNotifier {
           _todaySplits = [derived];
           _todayMuscleGroup = derived;
         } else {
-          _todaySplits = ['Rest Day'];
-          _todayMuscleGroup = 'Rest Day';
+          _todaySplits = [];
+          _todayMuscleGroup = 'No Plan Assigned';
         }
       } else {
         if (_hasCustomPlan) {

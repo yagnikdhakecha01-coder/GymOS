@@ -813,16 +813,22 @@ class _MemberWorkoutPlanScreenState extends State<MemberWorkoutPlanScreen> {
         (currentDayData['muscle_group']?.toString() ?? '').trim();
 
     final bool hasSplitConfigured =
-        rawMuscle.isNotEmpty && rawMuscle != 'No Plan Assigned';
+        rawMuscle.isNotEmpty &&
+        rawMuscle != 'No Plan Assigned' &&
+        !rawMuscle.toLowerCase().contains('rest');
 
-    final String displayMuscle = hasSplitConfigured
-        ? rawMuscle
-        : (isCustomView
-            ? 'No Muscle Focus Set'
-            : (_hasOwnerPlan ? 'Rest & Recovery' : 'No Plan Assigned'));
+    final bool isRest = isCustomView
+        ? (currentDayData['is_rest_day'] == true)
+        : (currentDayData['is_rest_day'] == true ||
+            rawMuscle.toLowerCase().contains('rest'));
 
-    final bool isRest = currentDayData['is_rest_day'] == true ||
-        displayMuscle.toLowerCase().contains('rest');
+    final String displayMuscle = isRest
+        ? 'Rest & Recovery Day'
+        : (hasSplitConfigured
+            ? rawMuscle
+            : (isCustomView
+                ? 'No Muscle Focus Set'
+                : (_hasOwnerPlan ? 'Rest & Recovery' : 'No Plan Assigned')));
 
     final List exercises = (currentDayData['exercises'] as List?) ?? [];
 
@@ -945,7 +951,8 @@ class _MemberWorkoutPlanScreenState extends State<MemberWorkoutPlanScreen> {
                             },
                             child: AnimatedContainer(
                               duration: const Duration(milliseconds: 200),
-                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 8),
                               decoration: BoxDecoration(
                                 color: !isCustomView
                                     ? Colors.white
@@ -961,49 +968,54 @@ class _MemberWorkoutPlanScreenState extends State<MemberWorkoutPlanScreen> {
                                       ]
                                     : null,
                               ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    Icons.business_rounded,
-                                    size: 16,
-                                    color: !isCustomView
-                                        ? AppTheme.primary
-                                        : const Color(0xFF64748B),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    'Gym Plan',
-                                    style: GoogleFonts.inter(
-                                      fontSize: 13,
-                                      fontWeight: !isCustomView
-                                          ? FontWeight.w800
-                                          : FontWeight.w600,
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.center,
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.business_rounded,
+                                      size: 16,
                                       color: !isCustomView
-                                          ? const Color(0xFF0F172A)
+                                          ? AppTheme.primary
                                           : const Color(0xFF64748B),
                                     ),
-                                  ),
-                                  if (_activePlanMode == 'gym' && _hasOwnerPlan) ...[
-                                    const SizedBox(width: 6),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 6, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFFDCFCE7),
-                                        borderRadius: BorderRadius.circular(6),
-                                      ),
-                                      child: Text(
-                                        'ACTIVE',
-                                        style: GoogleFonts.inter(
-                                          fontSize: 9,
-                                          fontWeight: FontWeight.w800,
-                                          color: const Color(0xFF15803D),
-                                        ),
+                                    const SizedBox(width: 5),
+                                    Text(
+                                      'Gym Plan',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 13,
+                                        fontWeight: !isCustomView
+                                            ? FontWeight.w800
+                                            : FontWeight.w600,
+                                        color: !isCustomView
+                                            ? const Color(0xFF0F172A)
+                                            : const Color(0xFF64748B),
                                       ),
                                     ),
+                                    if (_activePlanMode == 'gym' && _hasOwnerPlan) ...[
+                                      const SizedBox(width: 5),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 5, vertical: 1.5),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFDCFCE7),
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: Text(
+                                          'ACTIVE',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 8.5,
+                                            fontWeight: FontWeight.w800,
+                                            color: const Color(0xFF15803D),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ],
-                                ],
+                                ),
                               ),
                             ),
                           ),
@@ -1019,7 +1031,8 @@ class _MemberWorkoutPlanScreenState extends State<MemberWorkoutPlanScreen> {
                             },
                             child: AnimatedContainer(
                               duration: const Duration(milliseconds: 200),
-                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 8),
                               decoration: BoxDecoration(
                                 color: isCustomView
                                     ? Colors.white
@@ -1035,49 +1048,54 @@ class _MemberWorkoutPlanScreenState extends State<MemberWorkoutPlanScreen> {
                                       ]
                                     : null,
                               ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    Icons.auto_awesome_rounded,
-                                    size: 16,
-                                    color: isCustomView
-                                        ? const Color(0xFF7C3AED)
-                                        : const Color(0xFF64748B),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    'My Custom Plan',
-                                    style: GoogleFonts.inter(
-                                      fontSize: 13,
-                                      fontWeight: isCustomView
-                                          ? FontWeight.w800
-                                          : FontWeight.w600,
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.center,
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.auto_awesome_rounded,
+                                      size: 16,
                                       color: isCustomView
-                                          ? const Color(0xFF0F172A)
+                                          ? const Color(0xFF7C3AED)
                                           : const Color(0xFF64748B),
                                     ),
-                                  ),
-                                  if (_activePlanMode == 'custom') ...[
-                                    const SizedBox(width: 6),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 6, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFFEDE9FE),
-                                        borderRadius: BorderRadius.circular(6),
-                                      ),
-                                      child: Text(
-                                        'ACTIVE',
-                                        style: GoogleFonts.inter(
-                                          fontSize: 9,
-                                          fontWeight: FontWeight.w800,
-                                          color: const Color(0xFF7C3AED),
-                                        ),
+                                    const SizedBox(width: 5),
+                                    Text(
+                                      'My Custom Plan',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 13,
+                                        fontWeight: isCustomView
+                                            ? FontWeight.w800
+                                            : FontWeight.w600,
+                                        color: isCustomView
+                                            ? const Color(0xFF0F172A)
+                                            : const Color(0xFF64748B),
                                       ),
                                     ),
+                                    if (_activePlanMode == 'custom') ...[
+                                      const SizedBox(width: 5),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 5, vertical: 1.5),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFEDE9FE),
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: Text(
+                                          'ACTIVE',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 8.5,
+                                            fontWeight: FontWeight.w800,
+                                            color: const Color(0xFF7C3AED),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ],
-                                ],
+                                ),
                               ),
                             ),
                           ),
@@ -1156,10 +1174,13 @@ class _MemberWorkoutPlanScreenState extends State<MemberWorkoutPlanScreen> {
                             (dayPlan?['exercises'] as List?)?.length ?? 0;
                         final dayMuscle =
                             (dayPlan?['muscle_group']?.toString() ?? '').trim();
-                        final isDayRest = dayPlan?['is_rest_day'] == true ||
-                            dayMuscle.toLowerCase().contains('rest');
+                        final isDayRest = isCustomView
+                            ? (dayPlan?['is_rest_day'] == true)
+                            : (dayPlan?['is_rest_day'] == true ||
+                                dayMuscle.toLowerCase().contains('rest'));
                         final bool hasSplit = dayMuscle.isNotEmpty &&
-                            dayMuscle != 'No Plan Assigned';
+                            dayMuscle != 'No Plan Assigned' &&
+                            !dayMuscle.toLowerCase().contains('rest');
 
                         return GestureDetector(
                           onTap: () => setState(() => _selectedDay = dayNum),
@@ -1218,17 +1239,11 @@ class _MemberWorkoutPlanScreenState extends State<MemberWorkoutPlanScreen> {
                                 Text(
                                   isToday
                                       ? 'TODAY'
-                                      : (isCustomView
-                                          ? (exCount > 0
+                                      : (isDayRest
+                                          ? 'Rest'
+                                          : (exCount > 0
                                               ? '$exCount'
-                                              : (hasSplit
-                                                  ? (isDayRest ? 'Rest' : '✓')
-                                                  : '-'))
-                                          : (_hasOwnerPlan
-                                              ? (exCount > 0
-                                                  ? '$exCount'
-                                                  : (hasSplit ? '✓' : 'Rest'))
-                                              : '-')),
+                                              : (hasSplit ? '✓' : '-'))),
                                   style: GoogleFonts.inter(
                                     fontSize: isToday ? 10 : 13,
                                     fontWeight: FontWeight.w800,
@@ -1370,35 +1385,41 @@ class _MemberWorkoutPlanScreenState extends State<MemberWorkoutPlanScreen> {
                                     mainAxisAlignment:
                                         MainAxisAlignment.spaceBetween,
                                     children: [
-                                      Row(
-                                        children: [
-                                          Container(
-                                            padding: const EdgeInsets.all(8),
-                                            decoration: BoxDecoration(
-                                              color: Colors.white
-                                                  .withValues(alpha: 0.2),
-                                              borderRadius:
-                                                  BorderRadius.circular(10),
+                                      Expanded(
+                                        child: Row(
+                                          children: [
+                                            Container(
+                                              padding: const EdgeInsets.all(8),
+                                              decoration: BoxDecoration(
+                                                color: Colors.white
+                                                    .withValues(alpha: 0.2),
+                                                borderRadius:
+                                                    BorderRadius.circular(10),
+                                              ),
+                                              child: Icon(
+                                                isRest
+                                                    ? Icons.bedtime_rounded
+                                                    : Icons.fitness_center_rounded,
+                                                color: Colors.white,
+                                                size: 18,
+                                              ),
                                             ),
-                                            child: Icon(
-                                              isRest
-                                                  ? Icons.bedtime_rounded
-                                                  : Icons.fitness_center_rounded,
-                                              color: Colors.white,
-                                              size: 18,
+                                            const SizedBox(width: 10),
+                                            Flexible(
+                                              child: Text(
+                                                _getDayName(_selectedDay),
+                                                overflow: TextOverflow.ellipsis,
+                                                style: GoogleFonts.inter(
+                                                  fontSize: 16,
+                                                  fontWeight: FontWeight.w800,
+                                                  color: Colors.white,
+                                                ),
+                                              ),
                                             ),
-                                          ),
-                                          const SizedBox(width: 10),
-                                          Text(
-                                            _getDayName(_selectedDay),
-                                            style: GoogleFonts.inter(
-                                              fontSize: 16,
-                                              fontWeight: FontWeight.w800,
-                                              color: Colors.white,
-                                            ),
-                                          ),
-                                        ],
+                                          ],
+                                        ),
                                       ),
+                                      const SizedBox(width: 8),
                                       Container(
                                         padding: const EdgeInsets.symmetric(
                                             horizontal: 10, vertical: 4),
@@ -1591,6 +1612,14 @@ class _MemberWorkoutPlanScreenState extends State<MemberWorkoutPlanScreen> {
                                           if (val) {
                                             currentDayData['muscle_group'] =
                                                 'Rest Day';
+                                          } else {
+                                            final m = (currentDayData['muscle_group']
+                                                        ?.toString() ??
+                                                    '')
+                                                .trim();
+                                            if (m.toLowerCase().contains('rest')) {
+                                              currentDayData['muscle_group'] = '';
+                                            }
                                           }
                                         });
                                         _saveCustomDaySchedule(_selectedDay);
